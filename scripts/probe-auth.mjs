@@ -68,6 +68,22 @@ check("client can sign in", !authErr && !!auth.session, authErr?.message ?? PROB
   check("search RPC finds OWN documents", (data?.length ?? 0) > 0, `hits ${data?.length ?? 0}`);
 }
 
+
+// 10. RAG retrieval isolation: match_lexical for a term that exists ONLY in
+//     KHAI docs must return nothing for this Fund The Climb client.
+{
+  const { data } = await sb.rpc("match_lexical", { p_query: "perinatal maternal screening nurtur", p_count: 6 });
+  const foreign = (data ?? []).filter(r => r.tenant_id !== FTC);
+  check("RAG match_lexical returns NOTHING cross-tenant", foreign.length === 0, `foreign hits ${foreign.length}`);
+}
+// 11. Vector match RPC is also tenant-scoped (runs even with no embeddings yet).
+{
+  const zero = JSON.stringify(new Array(1024).fill(0));
+  const { data, error } = await sb.rpc("match_chunks", { p_query_embedding: zero, p_match_count: 6 });
+  const foreign = (data ?? []).filter(r => r.tenant_id !== FTC);
+  check("RAG match_chunks returns NOTHING cross-tenant", !error && foreign.length === 0, error ? error.message.slice(0,40) : `foreign ${foreign.length}`);
+}
+
 await sb.auth.signOut();
 console.log(failures === 0 ? "\nALL AUTHENTICATED PROBES PASSED — a logged-in attacker reaches nothing." : `\n${failures} PROBE(S) FAILED — STOP EVERYTHING.`);
 process.exit(failures === 0 ? 0 : 1);

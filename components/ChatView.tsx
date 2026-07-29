@@ -1,33 +1,38 @@
 "use client";
-// Canned answers over live rows — Phase 6 replaces with tenant-scoped RAG.
+// Real RAG chat via /api/chat. Retrieval is RLS-scoped; answers are grounded
+// in the tenant's own documents with citations. While Bedrock generation is
+// being provisioned, answers are extractive (top passages) and clearly noted;
+// they become generated automatically once Bedrock is live — no UI change.
 import { useRef, useState } from "react";
 import { DocDrawer } from "./DocBits";
 import Drawer from "./Drawer";
 import type { DocumentWithTags } from "@/lib/types";
 
-interface Msg { role: "user" | "assistant"; content: string; citations: string[] }
-
-const CANNED: { q: RegExp; tenant: string; a: string; titles: string[] }[] = [
-  { q: /transport|uplift|ride/i, tenant: "Fund The Climb Foundation", a: "Transportation is a core program. Uplift Transportation provides rides to treatment for people in recovery, addressing the barrier of missed appointments. The 2025–2027 strategic plan targets a 40% increase in rides, and there is a dedicated line-item budget for drivers, vehicles, and dispatch.", titles: ["Strategic Plan 2025–2027", "Program budget — Uplift Transportation", "Interview — Lili Reitz, Executive Director"] },
-  { q: /found|story|why|start/i, tenant: "Fund The Climb Foundation", a: "The founding story comes through clearly in the leadership interview: Lili Reitz started the organization after watching clients miss treatment appointments solely because they lacked a way to get there. That insight became the Uplift Transportation program.", titles: ["Interview — Lili Reitz, Executive Director", "Website — About & Programs (captured)"] },
-  { q: /fund|money|grant|revenue|990|budget/i, tenant: "Fund The Climb Foundation", a: "On funding: the Form 990 (2024) documents revenue and program expenses, and the strategic plan calls out a goal to diversify beyond opioid settlement dollars. A prior ODH SUD application is on file and can be reused as a starting narrative.", titles: ["IRS Form 990 (2024)", "Prior grant application — ODH SUD", "Strategic Plan 2025–2027"] },
-  { q: /screen|perinatal|maternal|nurtur/i, tenant: "KHAI Ventures", a: "KHAI's core product is nurtur, a perinatal and maternal mental health screening tool. The seed deck describes the screening workflow, clinical partnerships, and the market context; the founder interview explains why universal screening is the mission.", titles: ["Company website & product pages", "Pitch deck (Seed)", "Interview — Howie Greenman, Founder"] },
-];
+interface Cite { id: string; title: string }
+interface Msg { role: "user" | "assistant"; content: string; citations: Cite[]; generated?: boolean; mode?: string }
 
 export default function ChatView({ tenantName, docs }: { tenantName: string; docs: DocumentWithTags[] }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>();
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [showBedrock, setShowBedrock] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   const openDoc = docs.find(d => d.id === openDocId) ?? null;
+  const scroll = () => setTimeout(() => streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" }), 40);
 
-  const ask = (q: string) => {
-    const hit = CANNED.find(c => c.tenant === tenantName && c.q.test(q));
-    const citations = hit ? hit.titles.map(t => docs.find(d => d.title === t)?.id).filter((x): x is string => Boolean(x)) : [];
-    const content = hit ? hit.a : "Your documents don't contain a passage that answers that directly, so I won't guess. Try rephrasing, or browse the Library — and if this is something your Inven(s)tory should cover, that's worth telling the For Granted team.";
-    setMsgs(m => [...m, { role: "user", content: q, citations: [] }, { role: "assistant", content, citations }]);
-    setTimeout(() => streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" }), 50);
+  const ask = async (q: string) => {
+    if (busy) return;
+    setMsgs(m => [...m, { role: "user", content: q, citations: [] }]); setBusy(true); scroll();
+    try {
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, sessionId }) });
+      const b = await res.json();
+      if (!res.ok) { setMsgs(m => [...m, { role: "assistant", content: b.error ?? "Something went wrong.", citations: [] }]); }
+      else { setSessionId(b.sessionId); setMsgs(m => [...m, { role: "assistant", content: b.content, citations: b.citations ?? [], generated: b.generated, mode: b.mode }]); }
+    } catch { setMsgs(m => [...m, { role: "assistant", content: "Network error — please try again.", citations: [] }]); }
+    setBusy(false); scroll();
   };
   const send = () => { const v = input.trim(); if (!v) return; setInput(""); ask(v); };
 
@@ -50,23 +55,26 @@ export default function ChatView({ tenantName, docs }: { tenantName: string; doc
         {msgs.map((m, i) => (
           <div key={i} className={`msg ${m.role === "user" ? "me" : "ai"}`}>
             <div className="who">{m.role === "user" ? "You" : "AI"}</div>
-            <div className="bubble"><p>{m.content}</p>
-              {m.citations.length > 0 && (
-                <div className="cites">{m.citations.map(id => {
-                  const d = docs.find(x => x.id === id);
-                  return d ? <span key={id} className="cite" onClick={() => setOpenDocId(id)}>{d.title}</span> : null;
-                })}</div>
+            <div className="bubble">
+              <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>
+              {m.role === "assistant" && m.mode === "extractive" && (
+                <div className="ai-disclaimer" style={{ marginTop: 0 }}>Showing source passages while AI generation is being provisioned — citations are live.</div>
+              )}
+              {m.citations && m.citations.length > 0 && (
+                <div className="cites">{m.citations.map(c => (
+                  <span key={c.id} className="cite" onClick={() => setOpenDocId(c.id)}>{c.title}</span>
+                ))}</div>
               )}
             </div>
           </div>
         ))}
+        {busy && <div className="msg ai"><div className="who">AI</div><div className="bubble"><p className="empty">Reading your documents…</p></div></div>}
       </div>
       <div className="chat-input">
-        <input placeholder="Ask about this Inven(s)tory…" value={input}
+        <input placeholder="Ask about this Inven(s)tory…" value={input} disabled={busy}
           onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} />
-        <button className="btn inline" onClick={send}>Send</button>
+        <button className="btn inline" onClick={send} disabled={busy}>Send</button>
       </div>
-      <div className="ai-disclaimer">Mock answers until Phase 6 — the real, Bedrock-powered pipeline.</div>
       {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} />}
       {showBedrock && (
         <Drawer onClose={() => setShowBedrock(false)}>
