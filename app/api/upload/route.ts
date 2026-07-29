@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import { processDocument } from "@/lib/server/ingest";
+import { markStaleOnUpload } from "@/lib/server/artifacts";
 
 export const maxDuration = 60;
 
@@ -51,5 +52,7 @@ export async function POST(req: NextRequest) {
     tags.map(tag => ({ document_id: docId, tenant_id: tenantId, tag })));
 
   try { await processDocument(docId); } catch { /* status=failed already recorded; card shows it */ }
+  // New material invalidates approved Story Intelligence -> stale (offers regenerate).
+  await markStaleOnUpload(tenantId);
   return NextResponse.json({ id: docId });
 }
