@@ -12,13 +12,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => { if (!user) router.replace("/"); }, [user, router]);
-  useEffect(() => { setNavOpen(false); }, [path]);
   if (!user || !tenantId) return null;
 
   const admin = role === "admin";
   const pending = admin ? getPendingReviews().length : 0;
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
+  const closeNav = () => setNavOpen(false);
 
   return (
     <div className="shell">
@@ -48,14 +48,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         )}
         <div className="nav-section-label">Workspace</div>
-        <Link className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
-        <Link className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
-        <Link className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
+        <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
+        <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
+        <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
         {admin && (
           <div>
             <div className="nav-section-label" style={{ marginTop: 16 }}>Admin</div>
-            <Link className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
-            <Link className={nav("/admin/reviews")} href="/admin/reviews">
+            <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
+            <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
               <span className="ic">✦</span> Artifact reviews
               {pending > 0 && <span className="badge-count">{pending}</span>}
             </Link>

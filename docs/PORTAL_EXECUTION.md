@@ -37,6 +37,11 @@ Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 - [ ] Phase 8.5 — HARDENING GATE (unskippable): fresh-eyes red team, hostile-document injection probe, upload hygiene, rate limits, headers, session behavior, audit-log spot check; real-device pass by BOTH founders; Lighthouse a11y 90+; sign-off recorded here.
 - [ ] Phase 9 — Supabase Pro + Vercel Pro (HUMAN buys), portal.forgranted.com DNS (HUMAN adds CNAME), full probe suite vs production, backup restore demonstrated, then first client invite.
 
+## Dependency security posture (2026-07-29)
+- postcss + sharp advisories (production-relevant, shipped in Next): FIXED via package.json overrides (postcss ^8.5.18 -> 8.5.24, sharp ^0.35.0 -> 0.35.3). Keep overrides until Next bumps its pins, then remove.
+- brace-expansion DoS advisories: residual HIGH flags confined to the ESLint dev toolchain (linter only, never deployed; exploitation requires hostile glob input to the linter on a dev machine). No non-breaking fix exists today: the fix chain requires eslint@10, which breaks eslint-plugin-react (verified: getFilename crash). DECISION: accept + document, dismiss Dependabot alerts with reason "vulnerable code not invoked at runtime", RE-CHECK at Phase 8.5 gate — ecosystem patch will likely land well before then.
+- eslint@9 retained; lint is clean and caught one real bug (setState-in-effect in Shell.tsx, fixed by closing nav on link tap).
+
 ## Status log
 - 2026-07-28: Phase 0 executed. All four credentials verified by live calls (sts get-caller-identity; Titan embed test call returned 1024-dim vector in us-east-1; supabase projects list; vercel whoami; GitHub API /user).
 - 2026-07-28: FINDING — Supabase project "Inven(s)tory" was created in Canada (Central). Recommended: recreate in us-east-1 (co-locate with Bedrock; keep client data + AI processing in one US region) while project is empty. Region cannot be changed after creation. RESOLVED 2026-07-29: Canada project deleted via Management API; recreated in us-east-1 (ref dafofmvbbggrmyfnjspg). DB password in password manager + .env.local (SUPABASE_DB_PASSWORD).
