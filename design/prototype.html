@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inven(s)tory Portal — Prototype</title>
+<style>
+  /* ----------------------------------------------------------------
+     Inven(s)tory Portal — clickable prototype (mock data, no backend)
+     Clean / simple visual design with a light gold accent.
+     A dev firm can read this as a living spec for the real build.
+  ---------------------------------------------------------------- */
+  :root{
+    --bg:#f6f7f9;
+    --panel:#ffffff;
+    --ink:#1f2430;
+    --muted:#6b7280;
+    --line:#e6e8ec;
+    --accent:#9a7b2f;        /* subtle nod to brand */
+    --accent-soft:#f3ecd9;
+    --l1:#2f6f9a;            /* Layer I  */
+    --l2:#7a5bb0;            /* Layer II */
+    --l3:#b07a3a;            /* Layer III*/
+    --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);background:var(--bg);font-size:14px;line-height:1.5;
+  }
+  button{font-family:inherit;cursor:pointer}
+  .hidden{display:none !important}
+
+  /* ---------- Login ---------- */
+  #login{height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+  .login-card{
+    width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);padding:32px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .brand .logo{width:34px;height:34px;border-radius:9px;background:var(--accent);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .brand h1{font-size:18px;margin:0}
+  .login-card p.sub{color:var(--muted);margin:2px 0 22px}
+  label{display:block;font-weight:600;margin:14px 0 6px;font-size:13px}
+  input,select,textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+    font-size:14px;background:#fff;color:var(--ink);outline:none;
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .role-toggle{display:flex;gap:8px;margin-top:6px}
+  .role-toggle button{
+    flex:1;padding:10px;border:1px solid var(--line);background:#fff;border-radius:9px;
+    font-weight:600;color:var(--muted)
+  }
+  .role-toggle button.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .btn{
+    background:var(--accent);color:#fff;border:none;padding:11px 16px;border-radius:9px;
+    font-weight:600;font-size:14px;width:100%;margin-top:22px
+  }
+  .btn.secondary{background:#fff;color:var(--ink);border:1px solid var(--line);width:auto;margin:0}
+  .btn.ghost{background:transparent;color:var(--accent);border:none;width:auto;margin:0;padding:8px 10px}
+  .hint{font-size:12px;color:var(--muted);margin-top:14px;text-align:center}
+
+  /* ---------- App shell ---------- */
+  #app{height:100%;display:grid;grid-template-columns:240px 1fr;grid-template-rows:58px 1fr}
+  .topbar{
+    grid-column:1 / 3;display:flex;align-items:center;gap:16px;padding:0 20px;
+    background:var(--panel);border-bottom:1px solid var(--line)
+  }
+  .topbar .brand h1{font-size:15px}
+  .topbar .spacer{flex:1}
+  .userchip{display:flex;align-items:center;gap:10px}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .userchip .meta{line-height:1.2}
+  .userchip .meta .name{font-weight:600;font-size:13px}
+  .userchip .meta .role{font-size:11px;color:var(--muted)}
+
+  .sidebar{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;overflow:auto}
+  .nav-section-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
+    margin:6px 8px 6px}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;color:var(--ink);
+    font-weight:500;margin-bottom:2px;border:none;background:none;width:100%;text-align:left;font-size:14px
+  }
+  .nav-item:hover{background:#f3f4f6}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .nav-item .ic{width:18px;text-align:center}
+  .nav-upload{margin-top:14px}
+  .nav-upload .btn{width:100%}
+
+  .client-switch{margin:4px 4px 14px}
+  .client-switch select{font-weight:600}
+  .admin-flag{font-size:11px;color:var(--accent);font-weight:700;margin:0 4px 8px}
+
+  .main{overflow:auto;padding:24px 28px}
+  .page-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}
+  .page-head h2{margin:0;font-size:22px}
+  .page-head p{margin:3px 0 0;color:var(--muted)}
+  .page-head .spacer{flex:1}
+
+  /* ---------- Library / layers ---------- */
+  .filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .chip{
+    border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 13px;font-size:13px;
+    color:var(--muted);font-weight:600
+  }
+  .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .chip.l1.active{background:var(--l1);border-color:var(--l1)}
+  .chip.l2.active{background:var(--l2);border-color:var(--l2)}
+  .chip.l3.active{background:var(--l3);border-color:var(--l3)}
+
+  .layer-block{margin-bottom:22px}
+  /* Each layer sits on its own tinted canvas with a colored frame + top accent */
+  .layer-canvas{border-radius:16px;padding:18px 18px 20px;border:1px solid;position:relative;overflow:hidden}
+  .layer-canvas:before{content:"";position:absolute;top:0;left:0;right:0;height:4px}
+  .layer-canvas.l1{background:#eef4f9;border-color:#d4e3ef}
+  .layer-canvas.l1:before{background:var(--l1)}
+  .layer-canvas.l2{background:#f4eff9;border-color:#e3d8ef}
+  .layer-canvas.l2:before{background:var(--l2)}
+  .layer-canvas.l3{background:#f9f3ea;border-color:#efe1cd}
+  .layer-canvas.l3:before{background:var(--l3)}
+  .layer-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .layer-dot{width:11px;height:11px;border-radius:50%}
+  .layer-badge{font-size:11px;font-weight:800;letter-spacing:.04em;color:#fff;border-radius:6px;padding:3px 8px}
+  .l1 .layer-badge{background:var(--l1)} .l2 .layer-badge{background:var(--l2)} .l3 .layer-badge{background:var(--l3)}
+  .layer-head h3{margin:0;font-size:16px}
+  .l1 .layer-head h3{color:#234e6c} .l2 .layer-head h3{color:#523c7c} .l3 .layer-head h3{color:#7c5526}
+  .layer-head .count{color:var(--muted);font-size:13px;font-weight:600}
+  .layer-head .desc{color:var(--muted);font-size:12.5px;margin-left:2px}
+  /* cards sit on white so they pop against the tinted canvas */
+  .layer-canvas .doc-card{border-color:rgba(0,0,0,.06)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .doc-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:.12s;position:relative
+  }
+  .doc-card:hover{transform:translateY(-2px);border-color:#d7dae0}
+  .doc-card .ftype{font-size:11px;font-weight:700;color:#fff;border-radius:6px;padding:2px 7px;display:inline-block}
+  .ftype.pdf{background:#c0492f}.ftype.docx{background:#2f6f9a}.ftype.web{background:#4b8b5b}
+  .ftype.note{background:#7a5bb0}.ftype.xlsx{background:#3f7d4f}.ftype.audio{background:#b07a3a}
+  .doc-card h4{margin:10px 0 4px;font-size:14.5px;line-height:1.35}
+  .doc-card .dmeta{color:var(--muted);font-size:12px}
+  .doc-card .tags{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-size:11px;background:#f1f2f4;color:#4b5563;border-radius:6px;padding:2px 7px;font-weight:600}
+  .empty{color:var(--muted);font-size:13px;padding:8px 2px}
+
+  /* ---------- Themes panel ---------- */
+  .themes-panel{
+    background:linear-gradient(180deg,#fbf8f1,#fff);border:1px solid var(--line);
+    border-radius:16px;padding:18px 20px;margin-bottom:22px;position:relative
+  }
+  .themes-panel .tp-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .themes-panel .tp-head h3{margin:0;font-size:16px}
+  .themes-panel .tp-head .spark{color:var(--accent);font-size:16px}
+  .themes-panel .tp-sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .tp-cta{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .tp-cta .btn{width:auto;margin:0}
+  .pending-note{
+    display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid #e7dcc0;
+    border-radius:10px;padding:13px 15px;color:#6e5720;font-size:13.5px;font-weight:600
+  }
+  .spinner{width:16px;height:16px;border:2px solid #d8c89a;border-top-color:var(--accent);border-radius:50%;
+    animation:spin 1s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .stamp{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .stamp b{color:var(--accent)}
+  .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .theme-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 16px;box-shadow:var(--shadow)}
+  .theme-card h4{margin:0 0 6px;font-size:14.5px}
+  .theme-card p{margin:0 0 10px;font-size:13px;color:#3b4252;line-height:1.55}
+  .theme-card .cites{margin-top:4px}
+  .cite-label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+    margin:12px 0 6px;display:flex;align-items:center;gap:5px;border-top:1px solid var(--line);padding-top:10px}
+  .cite-label .ci-hint{font-weight:400;cursor:help;color:#b9b9b9;font-size:12px}
+  .theme-card textarea{min-height:84px;font-size:13px;margin-bottom:8px}
+  .gap-note{margin-top:12px;font-size:13px;color:#6b5b3a;background:#fcf7ea;border-left:3px solid var(--l3);
+    padding:8px 12px;border-radius:0 8px 8px 0}
+  .review-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px dashed var(--accent);
+    border-radius:10px;padding:11px 14px;margin-bottom:14px}
+  .review-bar .rb-label{font-weight:700;color:var(--accent);font-size:13px}
+  .review-bar .spacer{flex:1}
+  .review-bar .btn{width:auto;margin:0;padding:8px 14px}
+  .card-tools{display:flex;gap:8px;margin-top:4px}
+  .card-tools button{font-size:12px;border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 9px;color:var(--muted);font-weight:600}
+  .card-tools button:hover{border-color:var(--accent);color:var(--accent)}
+  .badge-count{background:var(--accent);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px;margin-left:auto}
+
+  /* toast */
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:#1f2430;color:#fff;padding:12px 18px;border-radius:10px;font-size:13.5px;z-index:60;
+    transition:.25s;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast .tk{color:#f0d99a;font-weight:700}
+
+  /* ---------- Search ---------- */
+  .searchbar{position:relative;margin-bottom:8px}
+  .searchbar input{padding-left:38px;font-size:15px;padding-top:12px;padding-bottom:12px}
+  .searchbar .si{position:absolute;left:12px;top:11px;color:var(--muted)}
+  .result{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer
+  }
+  .result:hover{border-color:#d7dae0}
+  .result h4{margin:0 0 3px;font-size:14.5px}
+  .result .snippet{color:#3b4252;font-size:13px}
+  .result .snippet mark{background:var(--accent-soft);color:var(--accent);padding:0 2px;border-radius:3px}
+  .result .rmeta{color:var(--muted);font-size:12px;margin-top:7px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* ---------- AI chat ---------- */
+  .chat-wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;height:calc(100vh - 58px - 48px)}
+  .chat-stream{flex:1;overflow:auto;padding:4px 2px 12px}
+  .msg{display:flex;gap:12px;margin-bottom:18px}
+  .msg .who{width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:12px}
+  .msg.ai .who{background:var(--accent);color:#fff}
+  .msg.me .who{background:#e6e8ec;color:#4b5563}
+  .msg .bubble{font-size:14px}
+  .msg .bubble p{margin:0 0 8px}
+  .cites{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .cite{font-size:12px;border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 9px;font-weight:600;color:var(--accent);cursor:pointer}
+  .cite:before{content:"\1F4C4  ";}
+  .suggest{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .suggest button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;color:var(--ink)}
+  .suggest button:hover{border-color:var(--accent);color:var(--accent)}
+  .chat-input{display:flex;gap:10px;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fff}
+  .chat-input input{border:none;box-shadow:none}
+  .chat-input input:focus{box-shadow:none}
+  .chat-input .btn{width:auto;margin:0;padding:9px 16px}
+
+  /* ---------- Admin overview ---------- */
+  .client-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .client-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);cursor:pointer}
+  .client-card:hover{border-color:#d7dae0;transform:translateY(-2px);transition:.12s}
+  .client-card h4{margin:0 0 8px}
+  .client-card .nums{display:flex;gap:14px;color:var(--muted);font-size:12.5px}
+  .client-card .nums b{color:var(--ink)}
+
+  /* ---------- Drawer (doc detail / upload) ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(16,24,40,.35);display:flex;justify-content:flex-end;z-index:40}
+  .drawer{width:440px;max-width:92vw;background:#fff;height:100%;box-shadow:-4px 0 24px rgba(0,0,0,.12);
+    padding:24px;overflow:auto;animation:slidein .16s ease}
+  @keyframes slidein{from{transform:translateX(30px);opacity:.6}to{transform:none;opacity:1}}
+  .drawer .x{float:right;border:none;background:none;font-size:20px;color:var(--muted)}
+  .drawer h3{margin:4px 0 2px}
+  .kv{display:flex;gap:10px;margin:10px 0;font-size:13px}
+  .kv .k{width:90px;color:var(--muted)}
+  .dropzone{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted);
+    background:#fafbfc;margin:6px 0 4px}
+  .dropzone strong{color:var(--ink)}
+  .tag-input-row{display:flex;gap:8px;margin-top:6px}
+  .tag-input-row input{flex:1}
+  .tagedit{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .tagedit .tag{cursor:pointer}
+  .tagedit .tag:after{content:" \00D7";color:#9ca3af}
+  .req{color:#c0492f}
+</style>
+</head>
+<body>
+
+<!-- ============================ LOGIN ============================ -->
+<div id="login">
+  <div class="login-card">
+    <div class="brand"><div class="logo">i</div><h1>Inven(s)tory Portal</h1></div>
+    <p class="sub">Your story, organized and fundable.</p>
+
+    <label>Email</label>
+    <input id="loginEmail" value="lili@fundtheclimb.org" />
+    <label>Password</label>
+    <input type="password" value="••••••••" />
+
+    <label>Sign in as (demo)</label>
+    <div class="role-toggle">
+      <button id="roleClient" class="active" onclick="setRole('client')">Client</button>
+      <button id="roleAdmin" onclick="setRole('admin')">For Granted admin</button>
+    </div>
+
+    <button class="btn" onclick="signIn()">Sign in</button>
+    <div class="hint">Demo prototype — pick a role to explore. No real authentication.</div>
+  </div>
+</div>
+
+<!-- ============================ APP ============================ -->
+<div id="app" class="hidden">
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand"><div class="logo">i</div><h1>Inven(s)tory Portal</h1></div>
+    <div class="spacer"></div>
+    <div class="userchip">
+      <div class="meta" style="text-align:right">
+        <div class="name" id="userName">—</div>
+        <div class="role" id="userRole">—</div>
+      </div>
+      <div class="avatar" id="userAvatar">—</div>
+      <button class="btn ghost" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div id="adminSwitch" class="hidden">
+      <div class="admin-flag">ADMIN VIEW</div>
+      <div class="client-switch">
+        <label style="margin-top:0">Viewing client</label>
+        <select id="clientSelect" onchange="switchClient(this.value)"></select>
+      </div>
+    </div>
+
+    <div class="nav-section-label">Workspace</div>
+    <button class="nav-item active" data-view="library" onclick="go('library')"><span class="ic">▦</span> Library</button>
+    <button class="nav-item" data-view="search" onclick="go('search')"><span class="ic">⌕</span> Search</button>
+    <button class="nav-item" data-view="chat" onclick="go('chat')"><span class="ic">✦</span> Ask AI</button>
+
+    <div id="adminNav" class="hidden">
+      <div class="nav-section-label" style="margin-top:16px">Admin</div>
+      <button class="nav-item" data-view="clients" onclick="go('clients')"><span class="ic">◫</span> All clients</button>
+      <button class="nav-item" data-view="reviews" onclick="go('reviews')"><span class="ic">✦</span> Theme reviews <span class="badge-count" id="reviewBadge">0</span></button>
+    </div>
+
+    <div class="nav-upload">
+      <button class="btn" onclick="openUpload()">＋ Upload document</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="main"><!-- views injected here --></div>
+</div>
+
+<!-- Drawer / overlay mount -->
+<div id="overlayMount"></div>
+
+<script>
+/* =====================================================================
+   MOCK DATA  (in the real app this comes from the backend, scoped by tenant)
+===================================================================== */
+const LAYERS = {
+  I:   {name:"Layer I — Public Story",    color:"var(--l1)", desc:"Everything the world can see"},
+  II:  {name:"Layer II — Internal Strategy",color:"var(--l2)", desc:"Behind-the-scenes operational truth"},
+  III: {name:"Layer III — Living Voice",   color:"var(--l3)", desc:"The human voice from interviews"},
+};
+
+const CLIENTS = {
+  ftc: {
+    name:"Fund The Climb Foundation",
+    docs:[
+      {id:1, title:"Website — About & Programs (captured)", type:"web", layer:"I", date:"May 2026", tags:["overview","programs"],
+       snippet:"Fund The Climb operates the Uplift Transportation program and P.L.U.S. Housing in the Franklinton neighborhood, serving people in recovery from substance use disorder."},
+      {id:2, title:"IRS Form 990 (2024)", type:"pdf", layer:"I", date:"2024", tags:["financials","990"],
+       snippet:"Total revenue and functional expenses for the fiscal year, including program service accomplishments for recovery housing and transportation."},
+      {id:3, title:"News coverage — Local recovery feature", type:"web", layer:"I", date:"Mar 2026", tags:["press","impact"],
+       snippet:"A local outlet profiled Basecamp Recovery Center and the foundation's transportation work removing barriers to treatment."},
+      {id:4, title:"Strategic Plan 2025–2027", type:"docx", layer:"II", date:"Jan 2025", tags:["strategy","goals"],
+       snippet:"Three-year goals: expand Uplift rides by 40%, open a second recovery residence, and diversify funding beyond opioid settlement dollars."},
+      {id:5, title:"Prior grant application — ODH SUD", type:"pdf", layer:"II", date:"2025", tags:["grant","past-application"],
+       snippet:"Submitted narrative describing need, target population, and the transportation-to-treatment evidence base in Franklin County."},
+      {id:6, title:"Program budget — Uplift Transportation", type:"xlsx", layer:"II", date:"2026", tags:["budget","transportation"],
+       snippet:"Line-item budget covering drivers, vehicle leasing, fuel, and dispatch software for the ride program."},
+      {id:7, title:"Interview — Lili Reitz, Executive Director", type:"audio", layer:"III", date:"Apr 2026", tags:["leadership","founding-story"],
+       snippet:"Lili describes founding the organization after seeing clients miss treatment appointments solely because they had no way to get there."},
+      {id:8, title:"Interview — Peer recovery coach", type:"note", layer:"III", date:"Apr 2026", tags:["staff-voice","impact"],
+       snippet:"A coach recounts a participant who kept every appointment for the first time once transportation was guaranteed."},
+    ],
+  },
+  khai: {
+    name:"KHAI Ventures",
+    docs:[
+      {id:1, title:"Company website & product pages", type:"web", layer:"I", date:"May 2026", tags:["overview","product"],
+       snippet:"KHAI Ventures builds nurtur, a perinatal and maternal mental health screening tool, and the PPD Screen product."},
+      {id:2, title:"Press — maternal health innovation award", type:"web", layer:"I", date:"Feb 2026", tags:["press","recognition"],
+       snippet:"Coverage of recognition for early detection of perinatal mood and anxiety disorders."},
+      {id:3, title:"Pitch deck (Seed)", type:"pdf", layer:"II", date:"2026", tags:["fundraising","deck"],
+       snippet:"Market size, the nurtur screening workflow, clinical partnerships, and the Kaleidoscope Assets fund strategy."},
+      {id:4, title:"Investor newsletter Q1", type:"docx", layer:"II", date:"2026", tags:["traction","updates"],
+       snippet:"Quarterly traction: pilot sites onboarded, screening volume, and regulatory milestones."},
+      {id:5, title:"Interview — Howie Greenman, Founder", type:"audio", layer:"III", date:"Mar 2026", tags:["leadership","vision"],
+       snippet:"Howie explains why universal perinatal screening matters and the personal story behind the company."},
+    ],
+  },
+};
+
+/* =====================================================================
+   THEME SYNTHESIS  (in the real app: an LLM pass over the client's
+   documents, backed by embeddings clustering, then human review.)
+   Each client.themes = { status:'none'|'pending'|'approved', cards:[], gap, ts, by }
+===================================================================== */
+const THEME_TEMPLATES = {
+  ftc:{
+    cards:[
+      {title:"Transportation is the linchpin of recovery",
+       body:"Across the public site, the 2025–2027 strategic plan, the Uplift budget, and Lili Reitz's interview, one mechanism recurs: people stay in treatment when getting there is solved. It reads less like a service and more like the precondition for everything else.",
+       cites:["Strategic Plan 2025–2027","Program budget — Uplift Transportation","Interview — Lili Reitz, Executive Director"]},
+      {title:"Mission thread: dignity through access",
+       body:"The work is consistently framed as removing barriers so people in recovery can show up for their own lives — an access, dignity, and follow-through values throughline that appears in both public and internal materials.",
+       cites:["Website — About & Programs (captured)","Interview — Peer recovery coach"]},
+      {title:"A deliberate move beyond settlement dollars",
+       body:"Financial filings and the strategic plan together signal intent to diversify funding beyond opioid settlement money — a sign of organizational maturity that funders tend to reward.",
+       cites:["Strategic Plan 2025–2027","IRS Form 990 (2024)","Prior grant application — ODH SUD"]},
+      {title:"Lived-experience credibility in the voices",
+       body:"The Layer III interviews carry their strongest emotional conviction around concrete moments of change — a participant keeping every appointment for the first time — giving the story authentic, fundable proof.",
+       cites:["Interview — Lili Reitz, Executive Director","Interview — Peer recovery coach"]},
+    ],
+    gap:"Layer II is light on board governance and outcomes data. Adding these would strengthen the strategy layer and the case to funders."
+  },
+  khai:{
+    cards:[
+      {title:"Universal perinatal screening as the core mission",
+       body:"The site, the seed deck, and the founder interview converge on one conviction: maternal mental health conditions are common and detectable, and screening should be universal. The mission is stated consistently across public and investor materials.",
+       cites:["Company website & product pages","Pitch deck (Seed)","Interview — Howie Greenman, Founder"]},
+      {title:"Clinical credibility paired with a fundable market",
+       body:"Internal materials balance a clinical-validation narrative with market-size and traction framing, positioning the company for both non-dilutive grants and investor capital.",
+       cites:["Pitch deck (Seed)","Investor newsletter Q1"]},
+      {title:"A personal origin powering the vision",
+       body:"The founder interview supplies the human 'why' behind the product — the kind of origin story that anchors grant narratives and differentiates from competitors.",
+       cites:["Interview — Howie Greenman, Founder","Press — maternal health innovation award"]},
+    ],
+    gap:"Layer III is sparse. Additional voices (clinicians, pilot-site staff) would deepen the human story."
+  },
+};
+function freshThemes(){ return {status:'none', cards:[], gap:'', ts:'', by:''}; }
+// Per-client Slack routing (real channel + review canvas for Fund The Climb).
+CLIENTS.ftc.slack  = {channel:'#fund-the-climb', canvas:'https://for-granted.slack.com/docs/T0B1AACPHDG/F0B79UJHGGN'};
+CLIENTS.khai.slack = {channel:'#khai-ventures', canvas:''};
+CLIENTS.ftc.themes  = freshThemes();
+// KHAI seeded as a pending draft so an admin has something waiting to review.
+CLIENTS.khai.themes = {status:'pending', cards:JSON.parse(JSON.stringify(THEME_TEMPLATES.khai.cards)),
+                       gap:THEME_TEMPLATES.khai.gap, ts:'today', by:''};
+
+/* =====================================================================
+   STATE
+===================================================================== */
+let state = { role:"client", clientId:"ftc", view:"library", layerFilter:"all" };
+function setRole(r){
+  state.role=r;
+  document.getElementById('roleClient').classList.toggle('active',r==='client');
+  document.getElementById('roleAdmin').classList.toggle('active',r==='admin');
+}
+
+/* =====================================================================
+   AUTH (mock)
+===================================================================== */
+function signIn(){
+  if(state.role==='admin'){ state.clientId='ftc'; }
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  setupChrome();
+  go('library');
+}
+function signOut(){
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');
+}
+function setupChrome(){
+  const admin = state.role==='admin';
+  document.getElementById('adminSwitch').classList.toggle('hidden',!admin);
+  document.getElementById('adminNav').classList.toggle('hidden',!admin);
+  if(admin){
+    const sel=document.getElementById('clientSelect');
+    sel.innerHTML=Object.entries(CLIENTS).map(([id,c])=>`<option value="${id}">${c.name}</option>`).join('');
+    sel.value=state.clientId;
+    document.getElementById('userName').textContent="Tyler Kohrt";
+    document.getElementById('userRole').textContent="For Granted · Admin";
+    document.getElementById('userAvatar').textContent="TK";
+  } else {
+    document.getElementById('userName').textContent="Lili Reitz";
+    document.getElementById('userRole').textContent=CLIENTS[state.clientId].name;
+    document.getElementById('userAvatar').textContent="LR";
+  }
+}
+function switchClient(id){ state.clientId=id; setupChrome(); render(); }
+
+/* =====================================================================
+   NAV
+===================================================================== */
+function go(view){
+  state.view=view;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  render();
+}
+function curClient(){ return CLIENTS[state.clientId]; }
+
+/* =====================================================================
+   RENDER
+===================================================================== */
+function render(){
+  const main=document.getElementById('main');
+  if(state.view==='library') main.innerHTML=viewLibrary();
+  else if(state.view==='search') { main.innerHTML=viewSearch(); setTimeout(()=>document.getElementById('searchInput')?.focus(),0); runSearch(); }
+  else if(state.view==='chat') main.innerHTML=viewChat();
+  else if(state.view==='clients') main.innerHTML=viewClients();
+  else if(state.view==='reviews') main.innerHTML=viewReviews();
+  updateReviewBadge();
+}
+
+/* ---- Library ---- */
+function viewLibrary(){
+  const c=curClient();
+  const adminBanner = state.role==='admin'
+    ? `<div class="admin-flag" style="margin-bottom:6px">Admin · viewing ${c.name}</div>` : '';
+  const filterChips = `
+    <div class="filters">
+      <button class="chip ${state.layerFilter==='all'?'active':''}" onclick="setFilter('all')">All layers</button>
+      <button class="chip l1 ${state.layerFilter==='I'?'active':''}" onclick="setFilter('I')">Layer I</button>
+      <button class="chip l2 ${state.layerFilter==='II'?'active':''}" onclick="setFilter('II')">Layer II</button>
+      <button class="chip l3 ${state.layerFilter==='III'?'active':''}" onclick="setFilter('III')">Layer III</button>
+    </div>`;
+  const layersToShow = state.layerFilter==='all' ? ['I','II','III'] : [state.layerFilter];
+  const cls = {I:'l1',II:'l2',III:'l3'};
+  const short = {I:'LAYER I',II:'LAYER II',III:'LAYER III'};
+  const blocks = layersToShow.map(L=>{
+    const docs=c.docs.filter(d=>d.layer===L);
+    const cards = docs.length
+      ? `<div class="grid">${docs.map(docCard).join('')}</div>`
+      : `<div class="empty">No documents in this layer yet.</div>`;
+    return `<div class="layer-block layer-canvas ${cls[L]}">
+      <div class="layer-head">
+        <span class="layer-badge">${short[L]}</span>
+        <h3>${LAYERS[L].name.split('— ')[1]}</h3>
+        <span class="desc">&ldquo;${LAYERS[L].desc}&rdquo;</span>
+        <span class="count">· ${docs.length} ${docs.length===1?'document':'documents'}</span>
+      </div>${cards}</div>`;
+  }).join('');
+  return `${adminBanner}
+    <div class="page-head">
+      <div><h2>${c.name}</h2><p>The complete Inven(s)tory — ${c.docs.length} documents across three layers.</p></div>
+      <div class="spacer"></div>
+      <button class="btn secondary" onclick="openUpload()">＋ Upload</button>
+    </div>
+    ${viewThemesPanel()}
+    ${filterChips}${blocks}`;
+}
+
+/* ---- Themes emerging panel (with human-in-the-loop review) ---- */
+function viewThemesPanel(){
+  const t=curClient().themes, admin=state.role==='admin';
+  const head=`<div class="tp-head"><span class="spark">✦</span><h3>Themes emerging from your Inven(s)tory</h3></div>`;
+
+  // STATE: none -> show Generate
+  if(t.status==='none'){
+    return `<div class="themes-panel">${head}
+      <p class="tp-sub">Let our analysis read across every document and surface the themes, motifs, and mission threads in your story. A For Granted team member reviews the result before it appears here.</p>
+      <div class="tp-cta">
+        <button class="btn" onclick="generateThemes()">✦ Generate Themes</button>
+        <span class="tp-sub" style="margin:0">Takes a moment, then goes to the For Granted team for review.</span>
+      </div></div>`;
+  }
+
+  // STATE: pending
+  if(t.status==='pending'){
+    if(!admin){
+      return `<div class="themes-panel">${head}
+        <div class="pending-note"><span class="spinner"></span>
+          Your themes are being reviewed by the For Granted team. You'll see them here once approved — usually within a day or two.</div></div>`;
+    }
+    // admin review mode
+    const sl=curClient().slack||{};
+    const slackBtn = sl.canvas
+      ? `<a class="btn secondary" style="width:auto;margin:0;text-decoration:none" href="${sl.canvas}" target="_blank">↗ Review in ${sl.channel}</a>` : '';
+    return `<div class="themes-panel">${head}
+      <div class="review-bar">
+        <span class="rb-label">DRAFT · awaiting your review</span>
+        <span class="tp-sub" style="margin:0">Edit any card, drop weak ones, then publish to the client.</span>
+        <span class="spacer"></span>
+        ${slackBtn}
+        <button class="btn secondary" onclick="regenThemes()">Regenerate</button>
+        <button class="btn" onclick="approveThemes()">Approve &amp; publish</button>
+      </div>
+      ${themeCardsHTML(t,true)}
+      ${t.gap?`<div class="gap-note"><b>Suggested next step:</b> ${t.gap}</div>`:''}
+    </div>`;
+  }
+
+  // STATE: approved
+  return `<div class="themes-panel">${head}
+    <p class="tp-sub">These are the themes we found in your story. Each card lists the documents it was drawn from under <b>Sourced from</b> — click any to open it.</p>
+    <div class="stamp">Reviewed and approved by <b>For Granted</b> · ${t.ts}${admin?` &nbsp;·&nbsp; <a href="#" onclick="regenThemes();return false" style="color:var(--accent)">regenerate</a>`:''}</div>
+    ${themeCardsHTML(t,false)}
+    ${t.gap?`<div class="gap-note"><b>Suggested next step:</b> ${t.gap}</div>`:''}
+  </div>`;
+}
+function themeCardsHTML(t,editable){
+  return `<div class="theme-grid">${t.cards.map((c,i)=>{
+    const body = editable
+      ? `<textarea onchange="editThemeBody(${i},this.value)">${c.body}</textarea>`
+      : `<p>${c.body}</p>`;
+    const tools = editable ? `<div class="card-tools"><button onclick="removeThemeCard(${i})">Remove card</button></div>` : '';
+    return `<div class="theme-card">
+      <h4>${c.title}</h4>${body}
+      <div class="cite-label" title="The documents this theme was drawn from. Click any to open it.">Sourced from <span class="ci-hint">&#9432;</span></div>
+      <div class="cites">${c.cites.map(ci=>`<span class="cite" onclick="openDocByTitle('${ci.replace(/'/g,"")}')">${ci}</span>`).join('')}</div>
+      ${tools}</div>`;
+  }).join('')}</div>`;
+}
+function docCard(d){
+  return `<div class="doc-card" onclick="openDoc(${d.id})">
+    <span class="ftype ${d.type}">${d.type.toUpperCase()}</span>
+    <h4>${d.title}</h4>
+    <div class="dmeta">${d.date}</div>
+    <div class="tags">${d.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
+  </div>`;
+}
+function setFilter(f){ state.layerFilter=f; render(); }
+
+/* ---- Search ---- */
+function viewSearch(){
+  return `<div class="page-head"><div><h2>Search</h2><p>Find anything by the words inside documents or by tag — within ${curClient().name}.</p></div></div>
+    <div class="searchbar"><span class="si">⌕</span>
+      <input id="searchInput" placeholder="Try: transportation, budget, founding story, 990…" oninput="runSearch()" />
+    </div>
+    <div class="filters" id="tagFilters"></div>
+    <div id="searchResults"></div>`;
+}
+function allTags(){ const s=new Set(); curClient().docs.forEach(d=>d.tags.forEach(t=>s.add(t))); return [...s]; }
+let activeTag=null;
+function runSearch(){
+  const q=(document.getElementById('searchInput')?.value||'').toLowerCase().trim();
+  // tag chips
+  const tf=document.getElementById('tagFilters');
+  if(tf) tf.innerHTML = `<button class="chip ${!activeTag?'active':''}" onclick="setTag(null)">All tags</button>` +
+    allTags().map(t=>`<button class="chip ${activeTag===t?'active':''}" onclick="setTag('${t}')">${t}</button>`).join('');
+  let docs=curClient().docs.filter(d=>{
+    const text=(d.title+' '+d.snippet+' '+d.tags.join(' ')).toLowerCase();
+    const matchQ = !q || text.includes(q);
+    const matchTag = !activeTag || d.tags.includes(activeTag);
+    return matchQ && matchTag;
+  });
+  const out=document.getElementById('searchResults');
+  if(!docs.length){ out.innerHTML=`<div class="empty">No matches. Try a different term or tag.</div>`; return; }
+  out.innerHTML=docs.map(d=>{
+    let snip=d.snippet;
+    if(q){ const re=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); snip=snip.replace(re,'<mark>$1</mark>'); }
+    return `<div class="result" onclick="openDoc(${d.id})">
+      <h4>${d.title}</h4>
+      <div class="snippet">${snip}</div>
+      <div class="rmeta"><span class="layer-dot" style="background:${LAYERS[d.layer].color}"></span> ${LAYERS[d.layer].name}
+        · ${d.date} ${d.tags.map(t=>`<span class="tag">${t}</span>`).join(' ')}</div>
+    </div>`;
+  }).join('');
+}
+function setTag(t){ activeTag=t; runSearch(); }
+
+/* ---- AI chat ---- */
+const CANNED = [
+  {q:/transport|uplift|ride/i, a:`Transportation is a core program. <b>Uplift Transportation</b> provides rides to treatment for people in recovery, addressing the barrier of missed appointments. The 2025–2027 strategic plan targets a 40% increase in rides, and there is a dedicated line-item budget for drivers, vehicles, and dispatch.`, c:[ "Strategic Plan 2025–2027","Program budget — Uplift Transportation","Interview — Lili Reitz"]},
+  {q:/found|story|why|start/i, a:`The founding story comes through clearly in the leadership interview: <b>Lili Reitz</b> started the organization after watching clients miss treatment appointments solely because they lacked a way to get there. That insight became the Uplift Transportation program.`, c:["Interview — Lili Reitz, Executive Director","Website — About & Programs"]},
+  {q:/fund|money|grant|revenue|990|budget/i, a:`On funding: the Form 990 (2024) documents revenue and program expenses, and the strategic plan calls out a goal to <b>diversify beyond opioid settlement dollars</b>. A prior ODH SUD application is on file and can be reused as a starting narrative.`, c:["IRS Form 990 (2024)","Prior grant application — ODH SUD","Strategic Plan 2025–2027"]},
+];
+function viewChat(){
+  return `<div class="chat-wrap">
+    <div class="page-head" style="margin-bottom:10px"><div><h2>Ask AI</h2>
+      <p>Ask anything about ${curClient().name}. Answers with citations are drawn only from your own documents, with your data protected by Amazon Bedrock.
+        <button class="btn ghost" style="padding:2px 6px;font-size:12.5px" onclick="openBedrockInfo()">Learn More</button></p></div></div>
+    <div class="suggest">
+      <button onclick="ask('What is the transportation program?')">What is the transportation program?</button>
+      <button onclick="ask('What is the founding story?')">What is the founding story?</button>
+      <button onclick="ask('How is the organization funded?')">How is it funded?</button>
+    </div>
+    <div class="chat-stream" id="chatStream">
+      <div class="msg ai"><div class="who">AI</div><div class="bubble">
+        <p>Hi — I can answer questions about <b>${curClient().name}</b> using only their Inven(s)tory documents. Try one of the suggestions, or ask your own.</p>
+      </div></div>
+    </div>
+    <div class="chat-input">
+      <input id="chatInput" placeholder="Ask about this client's Inven(s)tory…" onkeydown="if(event.key==='Enter')sendChat()" />
+      <button class="btn" onclick="sendChat()">Send</button>
+    </div>
+  </div>`;
+}
+function openBedrockInfo(){
+  mount(`<div class="drawer">
+    <button class="x" onclick="closeOverlay()">×</button>
+    <h3>How your data is protected</h3>
+    <p style="color:var(--muted);margin-top:2px">AI privacy on the For Granted platform</p>
+    <p style="margin-top:14px;line-height:1.6">When you ask a question or run any AI feature in this portal, it is processed through <b>Amazon Bedrock</b>, running inside For Granted's own secure cloud account — not on a public AI service.</p>
+    <p style="line-height:1.6">What that means for your organization:</p>
+    <div class="kv"><div class="k" style="width:26px">✓</div><div><b>Processed in our account.</b> Every question and answer is handled inside infrastructure For Granted controls.</div></div>
+    <div class="kv"><div class="k" style="width:26px">✓</div><div><b>Nothing is stored.</b> Amazon Bedrock does not retain your prompts or the answers it generates.</div></div>
+    <div class="kv"><div class="k" style="width:26px">✓</div><div><b>No training on your data.</b> Amazon is contractually prohibited from using your material to train AI models.</div></div>
+    <div class="kv"><div class="k" style="width:26px">✓</div><div><b>Your documents stay put.</b> Your Inven(s)tory lives only in For Granted's systems, visible only to your organization and the For Granted team.</div></div>
+    <p style="line-height:1.6;margin-top:10px">In short: no AI company ever holds your data.</p>
+    <a class="btn secondary" style="display:inline-block;text-decoration:none;margin-top:8px" href="https://aws.amazon.com/bedrock/faqs/" target="_blank" rel="noopener">↗ Read Amazon Bedrock's FAQ</a>
+  </div>`);
+}
+function sendChat(){ const i=document.getElementById('chatInput'); const v=i.value.trim(); if(!v)return; i.value=''; ask(v); }
+function ask(q){
+  const stream=document.getElementById('chatStream');
+  stream.innerHTML += `<div class="msg me"><div class="who">You</div><div class="bubble"><p>${q}</p></div></div>`;
+  const hit = CANNED.find(c=>c.q.test(q));
+  const ans = hit ? hit.a : `Based on the available documents, I can point you to the most relevant material, though I don't have a specific passage that answers that directly. You might rephrase, or browse the Library.`;
+  const cites = hit ? hit.c : [];
+  stream.innerHTML += `<div class="msg ai"><div class="who">AI</div><div class="bubble">
+      <p>${ans}</p>
+      ${cites.length?`<div class="cites">${cites.map(c=>`<span class="cite" onclick="openDocByTitle('${c.replace(/'/g,"")}')">${c}</span>`).join('')}</div>`:''}
+    </div></div>`;
+  stream.scrollTop=stream.scrollHeight;
+}
+
+/* ---- Admin: all clients ---- */
+function viewClients(){
+  const cards=Object.entries(CLIENTS).map(([id,c])=>{
+    const n={I:0,II:0,III:0}; c.docs.forEach(d=>n[d.layer]++);
+    return `<div class="client-card" onclick="switchClient('${id}');go('library')">
+      <h4>${c.name}</h4>
+      <div class="nums"><span><b>${c.docs.length}</b> docs</span>
+        <span>L1 <b>${n.I}</b></span><span>L2 <b>${n.II}</b></span><span>L3 <b>${n.III}</b></span></div>
+    </div>`;
+  }).join('');
+  return `<div class="page-head"><div><h2>All clients</h2><p>Pick any client to open their complete account and Inven(s)tory.</p></div></div>
+    <div class="client-grid">${cards}</div>`;
+}
+
+/* ---- Theme actions (generate / review / approve) ---- */
+function generateThemes(){
+  const tpl=THEME_TEMPLATES[state.clientId], c=curClient();
+  c.themes={status:'pending', cards:JSON.parse(JSON.stringify(tpl?tpl.cards:[])), gap:tpl?tpl.gap:'', ts:'just now', by:''};
+  render();
+  const sl=c.slack||{};
+  if(sl.canvas){
+    window.open(sl.canvas,'_blank');
+    toast(`Draft posted to <span class="tk">${sl.channel}</span> · opening the Slack review canvas…`);
+  } else {
+    toast(`Draft generated · <span class="tk">Tyler &amp; Shane</span> notified${sl.channel?` in ${sl.channel}`:''} to review`);
+  }
+}
+function regenThemes(){
+  const tpl=THEME_TEMPLATES[state.clientId], c=curClient();
+  c.themes.status='pending';
+  c.themes.cards=JSON.parse(JSON.stringify(tpl?tpl.cards:[]));
+  c.themes.gap=tpl?tpl.gap:''; c.themes.ts='just now';
+  render(); toast('Fresh draft generated for review');
+}
+function approveThemes(){
+  const c=curClient(); c.themes.status='approved';
+  c.themes.ts=new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+  c.themes.by='For Granted';
+  render(); toast('Approved and published to the client ✓');
+}
+function editThemeBody(i,v){ curClient().themes.cards[i].body=v; }
+function removeThemeCard(i){ curClient().themes.cards.splice(i,1); render(); }
+function pendingReviewCount(){ return Object.values(CLIENTS).filter(c=>c.themes&&c.themes.status==='pending').length; }
+function updateReviewBadge(){
+  const b=document.getElementById('reviewBadge'); if(!b) return;
+  const n=pendingReviewCount(); b.textContent=n; b.style.display=n?'inline-block':'none';
+}
+function viewReviews(){
+  const pend=Object.entries(CLIENTS).filter(([id,c])=>c.themes&&c.themes.status==='pending');
+  const rows=pend.length
+    ? pend.map(([id,c])=>`<div class="client-card" onclick="switchClient('${id}');go('library')">
+        <h4>${c.name}</h4>
+        <div class="nums"><span><b>${c.themes.cards.length}</b> draft themes</span><span>generated ${c.themes.ts}</span></div>
+      </div>`).join('')
+    : `<div class="empty">No drafts awaiting review. Generate themes from a client's Library.</div>`;
+  return `<div class="page-head"><div><h2>Theme reviews</h2><p>Drafts waiting for For Granted approval before they reach the client dashboard.</p></div></div>
+    <div class="client-grid">${rows}</div>`;
+}
+function toast(html){
+  let el=document.getElementById('toast');
+  if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); }
+  el.innerHTML=html; el.classList.add('show');
+  clearTimeout(window._tt); window._tt=setTimeout(()=>el.classList.remove('show'),3400);
+}
+
+/* =====================================================================
+   DRAWERS — doc detail + upload
+===================================================================== */
+function openDoc(id){
+  const d=curClient().docs.find(x=>x.id===id); if(!d) return;
+  mount(`<div class="drawer">
+    <button class="x" onclick="closeOverlay()">×</button>
+    <span class="ftype ${d.type}">${d.type.toUpperCase()}</span>
+    <h3 style="margin-top:10px">${d.title}</h3>
+    <div class="kv"><div class="k">Layer</div><div><span class="layer-dot" style="display:inline-block;background:${LAYERS[d.layer].color}"></span> ${LAYERS[d.layer].name}</div></div>
+    <div class="kv"><div class="k">Added</div><div>${d.date}</div></div>
+    <div class="kv"><div class="k">Tags</div><div>${d.tags.map(t=>`<span class="tag">${t}</span>`).join(' ')}</div></div>
+    <div class="kv"><div class="k">Preview</div><div>${d.snippet}</div></div>
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn secondary">Open file</button>
+      <button class="btn secondary" onclick="editDocTags(${d.id})">Edit tags</button>
+    </div>
+  </div>`);
+}
+function openDocByTitle(t){ const d=curClient().docs.find(x=>x.title.replace(/'/g,"")===t); if(d) openDoc(d.id); }
+
+/* ---- Edit tags on an existing document ---- */
+let editDoc={id:null,tags:[]};
+function editDocTags(id){
+  const d=curClient().docs.find(x=>x.id===id); if(!d) return;
+  editDoc={id, tags:[...d.tags]};
+  mount(`<div class="drawer">
+    <button class="x" onclick="closeOverlay()">×</button>
+    <h3>Edit tags</h3>
+    <p style="color:var(--muted);margin-top:2px">${d.title}</p>
+    <label>Tags</label>
+    <div class="tag-input-row">
+      <input id="edTag" placeholder="Add a tag and press Enter" onkeydown="if(event.key==='Enter'){addEditTag();event.preventDefault();}" />
+      <button class="btn secondary" onclick="addEditTag()">Add</button>
+    </div>
+    <div class="tagedit" id="edTags"></div>
+    <p style="color:var(--muted);font-size:12px;margin-top:8px">Click a tag to remove it.</p>
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn" style="width:auto;margin:0" onclick="saveDocTags()">Save tags</button>
+      <button class="btn secondary" onclick="openDoc(${d.id})">Cancel</button>
+    </div>
+  </div>`);
+  drawEditTags();
+}
+function addEditTag(){
+  const i=document.getElementById('edTag'); const v=i.value.trim(); if(!v) return;
+  if(!editDoc.tags.includes(v)) editDoc.tags.push(v);
+  i.value=''; drawEditTags();
+}
+function drawEditTags(){
+  const el=document.getElementById('edTags'); if(!el) return;
+  el.innerHTML = editDoc.tags.length
+    ? editDoc.tags.map((t,idx)=>`<span class="tag" onclick="rmEditTag(${idx})">${t}</span>`).join('')
+    : `<span style="color:var(--muted);font-size:12px">No tags yet — add one above.</span>`;
+}
+function rmEditTag(i){ editDoc.tags.splice(i,1); drawEditTags(); }
+function saveDocTags(){
+  const d=curClient().docs.find(x=>x.id===editDoc.id);
+  if(d) d.tags=[...editDoc.tags];
+  render();            // refresh library/search behind the drawer
+  openDoc(editDoc.id); // reopen the detail view with updated tags
+}
+
+let uploadTags=[];
+function openUpload(){
+  uploadTags=[];
+  mount(`<div class="drawer">
+    <button class="x" onclick="closeOverlay()">×</button>
+    <h3>Upload a document</h3>
+    <p style="color:var(--muted);margin-top:2px">Add a file to ${curClient().name}'s Inven(s)tory.</p>
+    <div class="dropzone"><strong>Drop a file here</strong><br/>or click to browse (PDF, Word, text, audio…)</div>
+    <label>Title</label><input id="upTitle" placeholder="e.g. Board meeting minutes — June" />
+    <label>Layer <span class="req">*</span></label>
+    <select id="upLayer">
+      <option value="I">Layer I — Public Story</option>
+      <option value="II">Layer II — Internal Strategy</option>
+      <option value="III">Layer III — Living Voice</option>
+    </select>
+    <label>Tags</label>
+    <div class="tag-input-row">
+      <input id="upTag" placeholder="Add a tag and press Enter" onkeydown="if(event.key==='Enter'){addUploadTag();event.preventDefault();}" />
+      <button class="btn secondary" onclick="addUploadTag()">Add</button>
+    </div>
+    <div class="tagedit" id="upTags"></div>
+    <button class="btn" onclick="saveUpload()">Save to Inven(s)tory</button>
+  </div>`);
+}
+function addUploadTag(){
+  const i=document.getElementById('upTag'); const v=i.value.trim(); if(!v)return;
+  uploadTags.push(v); i.value=''; drawUploadTags();
+}
+function drawUploadTags(){
+  document.getElementById('upTags').innerHTML=uploadTags.map((t,idx)=>`<span class="tag" onclick="rmUploadTag(${idx})">${t}</span>`).join('');
+}
+function rmUploadTag(i){ uploadTags.splice(i,1); drawUploadTags(); }
+function saveUpload(){
+  const title=document.getElementById('upTitle').value.trim()||"Untitled document";
+  const layer=document.getElementById('upLayer').value;
+  const c=curClient();
+  c.docs.push({id:Date.now(), title, type:"docx", layer, date:"Just now", tags:uploadTags.length?uploadTags:["untagged"],
+    snippet:"Newly uploaded document. In the real app, text is extracted and indexed for search and AI chat."});
+  closeOverlay(); go('library');
+}
+
+/* ---- overlay plumbing ---- */
+function mount(html){ document.getElementById('overlayMount').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeOverlay()">${html}</div>`; }
+function closeOverlay(){ document.getElementById('overlayMount').innerHTML=''; }
+</script>
+</body>
+</html>
