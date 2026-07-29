@@ -54,6 +54,20 @@ check("client can sign in", !authErr && !!auth.session, authErr?.message ?? PROB
   check("client CANNOT read other tenant chunks (RAG isolation)", (data?.length ?? 0) === 0, `rows ${data?.length ?? 0}`);
 }
 
+
+// 8. Search isolation: run the FTS RPC as this client; results must be OWN
+//    tenant only. "screening"/"perinatal" exist only in KHAI's documents.
+{
+  const { data } = await sb.rpc("search_inventory", { p_query: "perinatal screening maternal" });
+  const foreign = (data ?? []).filter(r => r.tenant_id !== FTC);
+  check("search RPC returns NOTHING from other tenant", foreign.length === 0, `foreign hits ${foreign.length}`);
+}
+// 9. Search over own content works (positive control)
+{
+  const { data } = await sb.rpc("search_inventory", { p_query: "transportation" });
+  check("search RPC finds OWN documents", (data?.length ?? 0) > 0, `hits ${data?.length ?? 0}`);
+}
+
 await sb.auth.signOut();
 console.log(failures === 0 ? "\nALL AUTHENTICATED PROBES PASSED — a logged-in attacker reaches nothing." : `\n${failures} PROBE(S) FAILED — STOP EVERYTHING.`);
 process.exit(failures === 0 ? 0 : 1);

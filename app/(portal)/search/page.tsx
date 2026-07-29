@@ -6,10 +6,8 @@ import SearchView from "@/components/SearchView";
 export default async function SearchPage() {
   const session = await getSession();
   if (!session) redirect("/");
-  const [tenant, docs] = await Promise.all([
-    getTenant(session.tenantId),
-    getDocumentsWithTags(session.tenantId),
-  ]);
+  const [tenant, docs] = await Promise.all([getTenant(session.tenantId), getDocumentsWithTags(session.tenantId)]);
   if (!tenant) redirect("/");
-  return <SearchView tenantName={tenant.name} docs={docs} />;
+  const tags = [...new Set(docs.flatMap(d => d.tags))].sort();
+  return <SearchView tenantName={tenant.name} tags={tags} docs={docs} />;
 }
