@@ -21,7 +21,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   // pdf-parse ships its own pdf.js worker; bundling breaks the worker path.
-  serverExternalPackages: ["pdf-parse", "mammoth"],
+  serverExternalPackages: ["unpdf", "mammoth"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

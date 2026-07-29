@@ -19,15 +19,16 @@ interface PageText { page: number | null; text: string }
 
 async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
   if (docKind === "pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    try {
-      const res = await parser.getText();
-      const pages = (res.pages ?? []).map((p: { text?: string }, i: number) => ({ page: i + 1, text: p.text ?? "" }));
-      const totalChars = pages.reduce((n, p) => n + p.text.trim().length, 0);
-      if (totalChars < 20) throw new Error("No extractable text — likely a scanned/image PDF. OCR (Textract) integration pending.");
-      return pages;
-    } finally { await parser.destroy(); }
+    // unpdf: serverless-safe PDF text extraction (no DOMMatrix/browser globals,
+    // unlike pdf-parse/pdf.js which fails on Vercel's Node runtime).
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const res = await extractText(pdf, { mergePages: false });
+    const perPage = Array.isArray(res.text) ? res.text : [res.text];
+    const pages = perPage.map((t, i) => ({ page: i + 1, text: t ?? "" }));
+    const totalChars = pages.reduce((n, p) => n + p.text.trim().length, 0);
+    if (totalChars < 20) throw new Error("No extractable text — likely a scanned/image PDF. OCR (Textract) integration pending.");
+    return pages;
   }
   if (docKind === "docx") {
     const mammoth = await import("mammoth");
