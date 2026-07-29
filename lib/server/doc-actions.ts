@@ -20,3 +20,51 @@ export async function updateDocTagsAction(documentId: string, tags: string[]) {
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "edit_tags", detail: `${documentId} -> [${clean.join(", ")}]` });
   revalidatePath("/library"); revalidatePath("/search");
 }
+
+// Rename a document (RLS-verified: caller's tenant only).
+export async function renameDocAction(documentId: string, title: string) {
+  const session = await getSession();
+  if (!session) throw new Error("unauthorized");
+  const clean = title.trim().slice(0, 200);
+  if (!clean) throw new Error("title required");
+  const supabase = await userClient();
+  const { data: doc } = await supabase.from("document").select("id, tenant_id").eq("id", documentId).single();
+  if (!doc) throw new Error("not found");
+  await db.from("document").update({ title: clean }).eq("id", documentId).eq("tenant_id", doc.tenant_id);
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "rename_doc", detail: `${documentId} -> ${clean}` });
+  revalidatePath("/library"); revalidatePath("/search");
+}
+
+// Reprocess a document through ingestion (clears stale failures after a fix).
+export async function reprocessDocAction(documentId: string) {
+  const session = await getSession();
+  if (!session) throw new Error("unauthorized");
+  const supabase = await userClient();
+  const { data: doc } = await supabase.from("document").select("id, tenant_id").eq("id", documentId).single();
+  if (!doc) throw new Error("not found");
+  const { processDocument } = await import("./ingest");
+  try { await processDocument(documentId); }
+  catch (e) { throw new Error(e instanceof Error ? e.message : "reprocess failed"); }
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "reprocess_doc", detail: documentId });
+  revalidatePath("/library"); revalidatePath("/search");
+}
+
+// Delete a document entirely: storage object + DB row (cascades chunks,
+// embeddings, tags, versions). Nulls any draft-bracket reference first.
+export async function deleteDocAction(documentId: string) {
+  const session = await getSession();
+  if (!session) throw new Error("unauthorized");
+  const supabase = await userClient();
+  const { data: doc } = await supabase.from("document").select("id, tenant_id, storage_key").eq("id", documentId).single();
+  if (!doc) throw new Error("not found");
+  // detach FK reference from any grant-draft bracket
+  await db.from("draft_bracket").update({ filed_document_id: null }).eq("filed_document_id", documentId);
+  // remove all stored versions under this doc's folder
+  const folder = doc.storage_key.split("/").slice(0, 2).join("/");
+  const { data: objs } = await db.storage.from("documents").list(folder);
+  if (objs?.length) await db.storage.from("documents").remove(objs.map(o => `${folder}/${o.name}`));
+  // delete the row (cascades chunks/embeddings/tags/versions)
+  await db.from("document").delete().eq("id", documentId).eq("tenant_id", doc.tenant_id);
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "delete_doc", detail: documentId });
+  revalidatePath("/library"); revalidatePath("/search");
+}

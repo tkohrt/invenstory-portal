@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
-import { updateDocTagsAction } from "@/lib/server/doc-actions";
+import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
@@ -37,27 +37,53 @@ export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => 
   const [editing, setEditing] = useState(false);
   const [tags, setTags] = useState<string[]>(d.tags);
   const [newTag, setNewTag] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [fileErr, setFileErr] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [title, setTitle] = useState(d.title);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const openFile = async () => {
-    setFileErr(null);
+    setMsg(null);
     const res = await fetch(`/api/file?documentId=${d.id}`);
-    if (!res.ok) { setFileErr("Couldn't open this file."); return; }
+    if (!res.ok) { setMsg("Couldn't open this file."); return; }
     const { url } = await res.json();
     window.open(url, "_blank", "noopener,noreferrer");
   };
   const addTag = () => { const t = newTag.trim(); if (t && !tags.includes(t)) setTags([...tags, t]); setNewTag(""); };
-  const saveTags = async () => { setBusy(true); await updateDocTagsAction(d.id, tags); setBusy(false); setEditing(false); router.refresh(); };
+  const saveTags = async () => { setBusy("tags"); await updateDocTagsAction(d.id, tags); setBusy(null); setEditing(false); router.refresh(); };
+  const saveTitle = async () => { setBusy("title"); await renameDocAction(d.id, title); setBusy(null); setRenaming(false); router.refresh(); };
+  const reprocess = async () => {
+    setBusy("reprocess"); setMsg(null);
+    try { await reprocessDocAction(d.id); setMsg("Reprocessed — refreshing."); router.refresh(); }
+    catch (e) { setMsg(e instanceof Error ? e.message : "Reprocess failed"); }
+    setBusy(null);
+  };
+  const del = async () => { setBusy("delete"); await deleteDocAction(d.id); setBusy(null); onClose(); router.refresh(); };
+
+  const failed = d.status === "failed";
 
   return (
     <Drawer onClose={onClose}>
       <span className={`ftype ${d.doc_kind}`}>{d.doc_kind.toUpperCase()}</span>
-      <h3 style={{ marginTop: 10 }}>{d.title}</h3>
+      {!renaming
+        ? <h3 style={{ marginTop: 10 }}>{d.title}</h3>
+        : <div style={{ marginTop: 10 }}>
+            <input value={title} onChange={e => setTitle(e.target.value)} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn inline" onClick={saveTitle} disabled={busy === "title"}>{busy === "title" ? "Saving…" : "Save name"}</button>
+              <button className="btn secondary" onClick={() => { setTitle(d.title); setRenaming(false); }}>Cancel</button>
+            </div>
+          </div>}
       <div className="kv"><div className="k">Layer</div><div><span className="layer-dot" style={{ background: meta.color }} /> Layer {d.layer} — {meta.name}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.uploader_name}</div></div>
-      <div className="kv"><div className="k">Version</div><div>v{d.current_version}</div></div>
       <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>
+      {failed && (
+        <div className="metric-gap" style={{ marginTop: 6 }}>
+          This document couldn&rsquo;t be read. If the issue has been fixed, reprocess it.
+          <div style={{ marginTop: 8 }}><button className="btn inline" onClick={reprocess} disabled={busy === "reprocess"}>{busy === "reprocess" ? "Reprocessing…" : "↻ Reprocess"}</button></div>
+        </div>
+      )}
       <div className="kv"><div className="k">Tags</div><div>
         {!editing
           ? (tags.length ? tags.map(t => <span key={t} className="tag" style={{ marginRight: 4 }}>{t}</span>) : <span style={{ color: "var(--muted)" }}>none</span>)
@@ -72,18 +98,27 @@ export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => 
             </div>}
       </div></div>
       <div className="kv"><div className="k">Preview</div><div>{d.snippet}</div></div>
-      {d.doc_kind === "audio" && (
-        <div className="kv"><div className="k">Audio</div><div className="empty">Player + transcript land with file ingestion.</div></div>
-      )}
-      {fileErr && <div className="metric-gap" style={{ marginTop: 8 }}>{fileErr}</div>}
-      <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
+      {msg && <div className="metric-gap" style={{ marginTop: 8 }}>{msg}</div>}
+      <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn secondary" onClick={openFile}>Open file</button>
         {!editing
           ? <button className="btn secondary" onClick={() => { setTags(d.tags); setEditing(true); }}>Edit tags</button>
           : <>
-              <button className="btn inline" onClick={saveTags} disabled={busy}>{busy ? "Saving…" : "Save tags"}</button>
+              <button className="btn inline" onClick={saveTags} disabled={busy === "tags"}>{busy === "tags" ? "Saving…" : "Save tags"}</button>
               <button className="btn secondary" onClick={() => setEditing(false)}>Cancel</button>
             </>}
+        {!renaming && <button className="btn secondary" onClick={() => { setTitle(d.title); setRenaming(true); }}>Rename</button>}
+      </div>
+      <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+        {!confirmDel
+          ? <button className="btn secondary" style={{ color: "#c0492f", borderColor: "#e7c3ba" }} onClick={() => setConfirmDel(true)}>Delete document</button>
+          : <div className="metric-gap">
+              Permanently delete &ldquo;{d.title}&rdquo; and all its extracted text? This can&rsquo;t be undone.
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn inline" style={{ background: "#c0492f" }} onClick={del} disabled={busy === "delete"}>{busy === "delete" ? "Deleting…" : "Delete permanently"}</button>
+                <button className="btn secondary" onClick={() => setConfirmDel(false)}>Keep it</button>
+              </div>
+            </div>}
       </div>
     </Drawer>
   );
