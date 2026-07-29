@@ -52,6 +52,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
         <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
+        <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> In the Works</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
         {artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav} className={nav(`/story-intelligence/${t.slug}`)} href={`/story-intelligence/${t.slug}`}>

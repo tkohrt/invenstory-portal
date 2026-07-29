@@ -141,3 +141,21 @@ export interface CiteDoc { id: string; title: string }
 export interface ArtifactCardView extends ArtifactCard { citation_docs: CiteDoc[] }
 export interface ArtifactBundle { type: ArtifactType; set: ArtifactSet; cards: ArtifactCardView[] }
 export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }
+
+// ---- Grant Drafts ("In the Works") ----
+export type DraftStatus = "drafting" | "client_review" | "submitted" | "won" | "lost";
+export interface GrantDraft {
+  id: string; tenant_id: string; title: string; funder: string | null;
+  amount_cents: number | null; deadline: string | null; status: DraftStatus;
+  body: string; outcome_note: string | null; created_by: string;
+  created_at: string; updated_at: string;
+}
+export interface DraftBracket {
+  id: string; draft_id: string; tenant_id: string; label: string;
+  answer: string | null; answered_by: string | null; answered_at: string | null;
+  filed_document_id: string | null; sort_order: number;
+}
+export interface DraftWithBrackets extends GrantDraft {
+  brackets: DraftBracket[];
+  answered_count: number;
+}

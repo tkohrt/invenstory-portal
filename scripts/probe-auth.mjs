@@ -84,6 +84,28 @@ check("client can sign in", !authErr && !!auth.session, authErr?.message ?? PROB
   check("RAG match_chunks returns NOTHING cross-tenant", !error && foreign.length === 0, error ? error.message.slice(0,40) : `foreign ${foreign.length}`);
 }
 
+
+// 12. Grant drafts isolation: client cannot read another tenant's drafts.
+{
+  const { data } = await sb.from("grant_draft").select("id").eq("tenant_id", KHAI);
+  check("client CANNOT read other tenant grant_draft", (data?.length ?? 0) === 0, `rows ${data?.length ?? 0}`);
+}
+// 13. Draft brackets isolation.
+{
+  const { data } = await sb.from("draft_bracket").select("id").eq("tenant_id", KHAI);
+  check("client CANNOT read other tenant draft_bracket", (data?.length ?? 0) === 0, `rows ${data?.length ?? 0}`);
+}
+// 14. Client cannot CREATE a grant_draft (admin-only write).
+{
+  const { error } = await sb.from("grant_draft").insert({ tenant_id: FTC, title: "FORGED", body: "x", created_by: "b3000000-0000-4000-8000-000000000003" });
+  check("client CANNOT create grant_draft (admin-only)", !!error, error ? error.code : "INSERT SUCCEEDED");
+}
+// 15. Client CAN see own tenant's draft (positive control).
+{
+  const { data } = await sb.from("grant_draft").select("id").eq("tenant_id", FTC);
+  check("client sees OWN grant drafts", (data?.length ?? 0) > 0, `rows ${data?.length ?? 0}`);
+}
+
 await sb.auth.signOut();
 console.log(failures === 0 ? "\nALL AUTHENTICATED PROBES PASSED — a logged-in attacker reaches nothing." : `\n${failures} PROBE(S) FAILED — STOP EVERYTHING.`);
 process.exit(failures === 0 ? 0 : 1);

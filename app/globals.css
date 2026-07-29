@@ -240,3 +240,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
   .userchip .meta{display:none}
   .chat-wrap{height:calc(100vh - 58px - 32px)}
 }
+
+/* ---------- Grant Drafts ("In the Works") ---------- */
+.draft-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.status-pill{font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;display:inline-block}
+.status-pill.drafting{background:#e0e7ff;color:#3730a3}
+.status-pill.client_review{background:var(--accent-soft);color:#6e5720}
+.status-pill.submitted{background:#dbeafe;color:#1e40af}
+.status-pill.won{background:#dcfce7;color:#166534}
+.status-pill.lost{background:#fee2e2;color:#991b1b}
+.draft-card .dc-meta{color:var(--muted);font-size:12.5px;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
+.draft-progress{height:6px;background:#eef0f3;border-radius:999px;margin-top:10px;overflow:hidden}
+.draft-progress > i{display:block;height:100%;background:var(--accent)}
+.draft-body{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;line-height:1.7;white-space:pre-wrap;font-size:14px}
+.bracket-token{background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:1px 6px;font-weight:700;font-style:italic;cursor:pointer}
+.bracket-token.filled{background:#dcfce7;color:#166534;font-style:normal}
+.qcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:14px 16px;margin-bottom:12px}
+.qcard h4{margin:0 0 8px;font-size:14.5px}
+.qcard.filled{border-left-color:#22c55e}
+.qcard .answered{font-size:13px;color:#3b4252;background:#f7fbf8;border-radius:8px;padding:8px 10px}
+.status-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 18px}
