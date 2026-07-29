@@ -93,6 +93,7 @@ export interface ChatMessage {
 export interface ArtifactType {
   slug: string;
   name: string;
+  nav_label: string;
   description: string;
   prompt_ref: string;
   card_schema: Record<string, unknown>;

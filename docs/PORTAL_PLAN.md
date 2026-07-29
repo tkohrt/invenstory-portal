@@ -131,6 +131,8 @@ Headroom to the $100 cap absorbs growth in AI usage as clients actually adopt ch
 
 ## 6. The Artifact Engine — the core that everything generated runs on
 
+**Naming (decided 2026-07-29):** internal/engineering name is the **artifact engine** (tables, code, prompts). The client-facing umbrella term for everything it produces is **Story Intelligence** — matching For Granted's public positioning. UI: a Story Intelligence sidebar section with one sub-page per artifact type at /story-intelligence/[slug], driven by the artifact_type registry (new types self-register in the nav). The Library page stays purely documents.
+
 The spec treats emergent themes as a feature. It is actually the first instance of a pattern: **synthesize from the centralized corpus → draft → route to Slack → For Granted review → publish with citations → mark stale when documents change.** Build that lifecycle once, generically, and every future generated output — impact metrics, answer libraries, quote banks — becomes a prompt plus a card layout instead of a new feature. This is the product expression of the founding belief: centralization is what makes generation possible, and the engine is what makes it compound.
 
 **6.1 Data model (replaces theme-specific tables):**

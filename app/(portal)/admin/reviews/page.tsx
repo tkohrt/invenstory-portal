@@ -10,8 +10,8 @@ export default function ReviewsPage() {
   const pending = getPendingReviews();
   return (
     <div>
-      <div className="page-head"><div><h2>Artifact reviews</h2>
-        <p>Drafts of every artifact type, across all clients, waiting for For Granted approval.</p></div></div>
+      <div className="page-head"><div><h2>Story Intelligence reviews</h2>
+        <p>Story Intelligence drafts across all clients, waiting for For Granted approval before they reach a client.</p></div></div>
       {pending.length === 0 && <div className="empty">No drafts awaiting review.</div>}
       <div className="client-grid">
         {pending.map(({ set, tenant, type, cards }) => (

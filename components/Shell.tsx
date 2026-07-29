@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "@/lib/session";
-import { getPendingReviews, getTenant, getTenants } from "@/lib/data";
+import { getArtifactTypes, getPendingReviews, getTenant, getTenants } from "@/lib/data";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { user, role, tenantId, signOut, switchTenant } = useSession();
@@ -51,12 +51,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
         <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
+        <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
+        {getArtifactTypes().map(t => (
+          <Link key={t.slug} onClick={closeNav} className={nav(`/story-intelligence/${t.slug}`)} href={`/story-intelligence/${t.slug}`}>
+            <span className="ic">◈</span> {t.nav_label}
+          </Link>
+        ))}
         {admin && (
           <div>
             <div className="nav-section-label" style={{ marginTop: 16 }}>Admin</div>
             <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
             <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
-              <span className="ic">✦</span> Artifact reviews
+              <span className="ic">✦</span> Story Intelligence reviews
               {pending > 0 && <span className="badge-count">{pending}</span>}
             </Link>
           </div>

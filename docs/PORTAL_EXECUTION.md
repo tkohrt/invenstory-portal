@@ -43,6 +43,7 @@ Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 - eslint@9 retained; lint is clean and caught one real bug (setState-in-effect in Shell.tsx, fixed by closing nav on link tap).
 
 ## Status log
+- 2026-07-29: NAMING — client-facing term for artifact-engine output is "Story Intelligence"; SI panels moved off Library onto /story-intelligence/[slug] pages (registry-driven nav). Internal name remains artifact engine.
 - 2026-07-28: Phase 0 executed. All four credentials verified by live calls (sts get-caller-identity; Titan embed test call returned 1024-dim vector in us-east-1; supabase projects list; vercel whoami; GitHub API /user).
 - 2026-07-28: FINDING — Supabase project "Inven(s)tory" was created in Canada (Central). Recommended: recreate in us-east-1 (co-locate with Bedrock; keep client data + AI processing in one US region) while project is empty. Region cannot be changed after creation. RESOLVED 2026-07-29: Canada project deleted via Management API; recreated in us-east-1 (ref dafofmvbbggrmyfnjspg). DB password in password manager + .env.local (SUPABASE_DB_PASSWORD).
 - 2026-07-28: FINDING — GitHub PAT is fine-grained and could not create repos (Administration permission missing). Repo created manually; token needs Contents read/write for push.

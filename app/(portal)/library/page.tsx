@@ -1,9 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useSession } from "@/lib/session";
-import { getArtifactSet, getArtifactTypes, getDocument, getDocuments, getTenant } from "@/lib/data";
+import { getDocument, getDocuments, getTenant } from "@/lib/data";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "@/components/DocBits";
-import ArtifactPanel from "@/components/ArtifactPanel";
 import type { Layer } from "@/lib/types";
 
 export default function LibraryPage() {
@@ -27,11 +26,6 @@ export default function LibraryPage() {
         <div className="spacer" />
         <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
-
-      {getArtifactTypes().map(t => {
-        const set = getArtifactSet(tenantId, t.slug);
-        return set ? <ArtifactPanel key={t.slug} type={t} set={set} isAdmin={admin} onOpenDoc={setOpenDocId} /> : null;
-      })}
 
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
