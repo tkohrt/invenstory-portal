@@ -139,7 +139,7 @@ The spec treats emergent themes as a feature. It is actually the first instance 
 
 | Table | Fields | Purpose |
 |---|---|---|
-| `artifact_type` | slug, name, description, prompt_ref, card_schema (JSONB), corpus_filter | Registry of what can be generated; `corpus_filter` scopes which layers/tags feed it (e.g., Voice Bank reads Layer III only) |
+| `artifact_type` | slug, name, description, prompt_ref, card_schema (JSONB), corpus_filter | Registry of what can be generated; `corpus_filter` scopes which layers/tags feed it when a type warrants it; DEFAULT (decided 2026-07-29) is all three layers for full context — Themes and Impact Metrics read everything. Reserve filters for types like a future Voice Bank that quotes Layer III verbatim |
 | `artifact_set` | id, tenant_id, type_slug, status (none/pending/approved/stale), version, generated_at, reviewed_by, model_used, token_cost | One generation run per tenant per type; carries the spec §11.3 status model for *all* types |
 | `artifact_card` | id, set_id, tenant_id, title, payload (JSONB), citations (chunk ids), sort_order | Cards; JSONB payload lets each type define its own fields (a metric's formula, a quote's audio timestamp) with no migration |
 

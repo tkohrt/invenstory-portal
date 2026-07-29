@@ -101,7 +101,8 @@ export default function ArtifactPanel({
         <div className="stale-note">Documents have been added since this was approved.
           <button className="btn secondary">Regenerate</button></div>
       )}
-      <div className="stamp">Reviewed and approved by <b>{reviewer} · For Granted</b>{set.generated_at ? ` · ${new Date(set.generated_at).toLocaleDateString()}` : ""}</div>
+      <div className="stamp">Reviewed and approved by <b>{reviewer} · For Granted</b>{set.generated_at ? ` · ${new Date(set.generated_at).toLocaleDateString()}` : ""}
+        {isAdmin && <button className="btn ghost" style={{ fontSize: 12, padding: "0 6px" }}>↻ Regenerate</button>}</div>
       {grid(false)}
       {set.gap_note && <div className="gap-note"><b>Suggested next step:</b> {set.gap_note}</div>}
     </div>

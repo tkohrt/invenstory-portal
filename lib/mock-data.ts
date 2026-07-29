@@ -78,7 +78,7 @@ export const documentTags: DocumentTag[] = [
 
 export const artifactTypes: ArtifactType[] = [
   { slug: "themes", nav_label: "Themes", name: "Themes emerging from your Inven(s)tory", description: "The story threads running across every document.", prompt_ref: "prompts/themes.md", card_schema: { body: "string" }, corpus_filter: null },
-  { slug: "impact_metrics", nav_label: "Impact Metrics", name: "Impact metrics your story supports", description: "Funder-ready metrics grounded in your own documents.", prompt_ref: "prompts/impact_metrics.md", card_schema: { measures: "string", why: "string", how: "string", formula: "string", example: "string", gap: "string" }, corpus_filter: { layers: ["I", "II"] } },
+  { slug: "impact_metrics", nav_label: "Impact Metrics", name: "Impact metrics your story supports", description: "Funder-ready metrics grounded in your own documents.", prompt_ref: "prompts/impact_metrics.md", card_schema: { measures: "string", why: "string", how: "string", formula: "string", example: "string", gap: "string" }, corpus_filter: null },
 ];
 
 export const artifactSets: ArtifactSet[] = [
