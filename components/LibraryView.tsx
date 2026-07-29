@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
@@ -9,6 +10,7 @@ export default function LibraryView({ tenantName, docs, isAdmin }: {
   const [filter, setFilter] = useState<Layer | "all">("all");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const router = useRouter();
   const layers: Layer[] = filter === "all" ? ["I", "II", "III"] : [filter];
   const openDoc = docs.find(d => d.id === openDocId) ?? null;
 
@@ -44,7 +46,7 @@ export default function LibraryView({ tenantName, docs, isAdmin }: {
         );
       })}
       {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} />}
-      {uploading && <UploadDrawer tenantName={tenantName} onClose={() => setUploading(false)} />}
+      {uploading && <UploadDrawer tenantName={tenantName} onClose={() => setUploading(false)} onDone={() => router.refresh()} />}
     </div>
   );
 }

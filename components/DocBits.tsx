@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Drawer from "./Drawer";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
@@ -51,23 +52,48 @@ export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => 
   );
 }
 
-export function UploadDrawer({ tenantName, onClose }: { tenantName: string; onClose: () => void }) {
+export function UploadDrawer({ tenantName, onClose, onDone }: {
+  tenantName: string; onClose: () => void; onDone: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [layer, setLayer] = useState("I");
+  const [tags, setTags] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!file) { setError("Choose a file first."); return; }
+    setBusy(true); setError(null);
+    const fd = new FormData();
+    fd.set("file", file); fd.set("title", title); fd.set("layer", layer); fd.set("tags", tags);
+    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    setBusy(false);
+    if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? `Upload failed (${res.status})`); return; }
+    onDone(); onClose();
+  };
+
   return (
     <Drawer onClose={onClose}>
       <h3>Upload a document</h3>
       <p style={{ color: "var(--muted)", marginTop: 2 }}>Add a file to {tenantName}&rsquo;s Inven(s)tory.</p>
-      <div className="dropzone"><strong>Drop a file here</strong><br />or click to browse (PDF, Word, text, audio…)</div>
-      <label>Title</label><input placeholder="e.g. Board meeting minutes — June" />
+      <label>File <span className="req">*</span></label>
+      <input type="file" accept=".pdf,.docx,.doc,.txt,.md,.html,.xlsx,.mp3,.m4a,.wav"
+        onChange={e => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, "")); }} />
+      <label>Title</label>
+      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Board meeting minutes — June" />
       <label>Layer <span className="req">*</span></label>
-      <select defaultValue="I">
+      <select value={layer} onChange={e => setLayer(e.target.value)}>
         <option value="I">Layer I — Public Story</option>
         <option value="II">Layer II — Internal Strategy</option>
         <option value="III">Layer III — Living Voice</option>
       </select>
-      <label>Tags</label>
-      <div className="tag-input-row"><input placeholder="Add a tag and press Enter" /><button className="btn secondary">Add</button></div>
-      <button className="btn" onClick={onClose}>Save to Inven(s)tory</button>
-      <div className="hint">Real uploads and ingestion arrive in Phase 3b.</div>
+      <label>Tags (comma-separated)</label>
+      <input value={tags} onChange={e => setTags(e.target.value)} placeholder="budget, transportation" />
+      {error && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {error}</div>}
+      <button className="btn" onClick={submit} disabled={busy}>
+        {busy ? "Uploading and reading the document…" : "Save to Inven(s)tory"}</button>
+      <div className="hint">Text is extracted, chunked, and embedded on upload — the document becomes searchable in seconds.</div>
     </Drawer>
   );
 }
