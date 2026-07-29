@@ -19,7 +19,7 @@ Bedrock region is us-east-1 (Titan embed v2 not served on-demand in us-east-2; v
 ## Accounts and identities (verified 2026-07-28)
 - GitHub: tkohrt (repo owner). Commit email: 301011219+tkohrt@users.noreply.github.com
 - Vercel: tyler-2114 (token verified via `vercel whoami`)
-- Supabase: token verified via `projects list`. Project "Inven(s)tory" ref pcfctukjatukjthhynla — see Status Log re: region.
+- Supabase: token verified via `projects list`. Project "Inven(s)tory" ref dafofmvbbggrmyfnjspg, region us-east-1 (co-located with Bedrock).
 - AWS: account 065148797929, IAM user portal-build (Bedrock+Textract only). Root has MFA; $25 budget alarm set.
 - Claude (Anthropic) model authorization: PENDING new-account restriction; not needed until Phase 6. Nova is the form-free fallback.
 
@@ -39,7 +39,7 @@ Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 
 ## Status log
 - 2026-07-28: Phase 0 executed. All four credentials verified by live calls (sts get-caller-identity; Titan embed test call returned 1024-dim vector in us-east-1; supabase projects list; vercel whoami; GitHub API /user).
-- 2026-07-28: FINDING — Supabase project "Inven(s)tory" was created in Canada (Central). Recommended: recreate in us-east-1 (co-locate with Bedrock; keep client data + AI processing in one US region) while project is empty. Region cannot be changed after creation. DECISION PENDING.
+- 2026-07-28: FINDING — Supabase project "Inven(s)tory" was created in Canada (Central). Recommended: recreate in us-east-1 (co-locate with Bedrock; keep client data + AI processing in one US region) while project is empty. Region cannot be changed after creation. RESOLVED 2026-07-29: Canada project deleted via Management API; recreated in us-east-1 (ref dafofmvbbggrmyfnjspg). DB password in password manager + .env.local (SUPABASE_DB_PASSWORD).
 - 2026-07-28: FINDING — GitHub PAT is fine-grained and could not create repos (Administration permission missing). Repo created manually; token needs Contents read/write for push.
 - 2026-07-28: Claude use-case form blocked by new-account restriction; retry after 24h or AWS support case (Account and billing, free tier).
 
