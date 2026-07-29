@@ -43,6 +43,7 @@ Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 - eslint@9 retained; lint is clean and caught one real bug (setState-in-effect in Shell.tsx, fixed by closing nav on link tap).
 
 ## Status log
+- 2026-07-29: BUG+FIX — prod 500 on every route: NEXT_PUBLIC_SUPABASE_URL was never set on Vercel (only non-public SUPABASE_URL), so proxy.ts middleware got undefined URL and threw. NEXT_PUBLIC_ vars must be set BEFORE the build that inlines them. Added to all targets; redeployed. Lesson: middleware failures 500 the WHOLE site — test canonical alias after every deploy (playbook #6 cousin).
 - 2026-07-29: DECISION (Tyler) — every SI artifact reads all three layers by default; corpus_filter reserved for types that quote a layer verbatim. impact_metrics filter removed. Admin-only Regenerate added to approved sets.
 - 2026-07-29: NAMING — client-facing term for artifact-engine output is "Story Intelligence"; SI panels moved off Library onto /story-intelligence/[slug] pages (registry-driven nav). Internal name remains artifact engine.
 - 2026-07-28: Phase 0 executed. All four credentials verified by live calls (sts get-caller-identity; Titan embed test call returned 1024-dim vector in us-east-1; supabase projects list; vercel whoami; GitHub API /user).
