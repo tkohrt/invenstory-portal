@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
-import { signInAction } from "@/lib/server/actions";
-import LoginRoleToggle from "@/components/LoginRoleToggle";
+import { signInAction, requestPasswordResetAction } from "@/lib/server/actions";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; notice?: string }> }) {
+  const { error, notice } = await searchParams;
   const session = await getSession();
   if (session) redirect("/library");
   return (
@@ -13,13 +13,21 @@ export default async function LoginPage() {
         <p className="sub">Find your story. Fund your mission.</p>
         <form action={signInAction}>
           <label>Email</label>
-          <input name="email" defaultValue="lili@fundtheclimb.org" autoComplete="email" />
+          <input name="email" type="email" required autoComplete="email" />
           <label>Password</label>
-          <input name="password" type="password" defaultValue="········" autoComplete="current-password" />
-          <LoginRoleToggle />
+          <input name="password" type="password" required autoComplete="current-password" />
+          {error && <div className="metric-gap" style={{ marginTop: 12 }}><b>Problem:</b> {error}</div>}
+          {notice && <div className="gap-note" style={{ marginTop: 12 }}>{notice}</div>}
           <button className="btn" type="submit">Sign in</button>
         </form>
-        <div className="hint">Phase 3a — live database, mock identity (real authentication lands in Phase 4).</div>
+        <form action={requestPasswordResetAction}>
+          <label style={{ marginTop: 18 }}>Forgot your password?</label>
+          <div className="tag-input-row">
+            <input name="email" type="email" placeholder="Your email" autoComplete="email" />
+            <button className="btn secondary" type="submit">Send reset link</button>
+          </div>
+        </form>
+        <div className="hint">Access is by For Granted invitation.</div>
       </div>
     </div>
   );
