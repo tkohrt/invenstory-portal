@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
+import { updateDocTagsAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
@@ -31,6 +33,23 @@ export function DocCard({ d, onOpen }: { d: DocumentWithTags; onOpen: (id: strin
 
 export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => void }) {
   const meta = LAYER_META[d.layer];
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [tags, setTags] = useState<string[]>(d.tags);
+  const [newTag, setNewTag] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fileErr, setFileErr] = useState<string | null>(null);
+
+  const openFile = async () => {
+    setFileErr(null);
+    const res = await fetch(`/api/file?documentId=${d.id}`);
+    if (!res.ok) { setFileErr("Couldn't open this file."); return; }
+    const { url } = await res.json();
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  const addTag = () => { const t = newTag.trim(); if (t && !tags.includes(t)) setTags([...tags, t]); setNewTag(""); };
+  const saveTags = async () => { setBusy(true); await updateDocTagsAction(d.id, tags); setBusy(false); setEditing(false); router.refresh(); };
+
   return (
     <Drawer onClose={onClose}>
       <span className={`ftype ${d.doc_kind}`}>{d.doc_kind.toUpperCase()}</span>
@@ -39,14 +58,32 @@ export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => 
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.uploader_name}</div></div>
       <div className="kv"><div className="k">Version</div><div>v{d.current_version}</div></div>
       <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>
-      <div className="kv"><div className="k">Tags</div><div>{d.tags.map(t => <span key={t} className="tag" style={{ marginRight: 4 }}>{t}</span>)}</div></div>
+      <div className="kv"><div className="k">Tags</div><div>
+        {!editing
+          ? (tags.length ? tags.map(t => <span key={t} className="tag" style={{ marginRight: 4 }}>{t}</span>) : <span style={{ color: "var(--muted)" }}>none</span>)
+          : <div>
+              <div className="tagedit">{tags.map((t, i) => <span key={t} className="tag" onClick={() => setTags(tags.filter((_, j) => j !== i))}>{t}</span>)}</div>
+              <div className="tag-input-row" style={{ marginTop: 8 }}>
+                <input value={newTag} onChange={e => setNewTag(e.target.value)} placeholder="Add a tag, Enter"
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} />
+                <button className="btn secondary" onClick={addTag}>Add</button>
+              </div>
+              <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>Click a tag to remove it.</p>
+            </div>}
+      </div></div>
       <div className="kv"><div className="k">Preview</div><div>{d.snippet}</div></div>
       {d.doc_kind === "audio" && (
-        <div className="kv"><div className="k">Audio</div><div className="empty">Player + transcript land with file ingestion (Phase 3b).</div></div>
+        <div className="kv"><div className="k">Audio</div><div className="empty">Player + transcript land with file ingestion.</div></div>
       )}
+      {fileErr && <div className="metric-gap" style={{ marginTop: 8 }}>{fileErr}</div>}
       <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
-        <button className="btn secondary">Open file</button>
-        <button className="btn secondary">Edit tags</button>
+        <button className="btn secondary" onClick={openFile}>Open file</button>
+        {!editing
+          ? <button className="btn secondary" onClick={() => { setTags(d.tags); setEditing(true); }}>Edit tags</button>
+          : <>
+              <button className="btn inline" onClick={saveTags} disabled={busy}>{busy ? "Saving…" : "Save tags"}</button>
+              <button className="btn secondary" onClick={() => setEditing(false)}>Cancel</button>
+            </>}
       </div>
     </Drawer>
   );
