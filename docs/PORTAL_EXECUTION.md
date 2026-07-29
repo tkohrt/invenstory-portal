@@ -26,7 +26,7 @@ Bedrock region is us-east-1 (Titan embed v2 not served on-demand in us-east-2; v
 ## Phases
 Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 - [x] Phase 0 — accounts, credential verification, this repo. (2026-07-28)
-- [x] Phase 1 — Next.js scaffold. (2026-07-29) tsc clean, `next build` clean, 7 routes. Preview: https://invenstory-portal.vercel.app (canonical alias verified 200 + content grep). lib/types.ts + lib/mock-data.ts + lib/data.ts are the schema contract/swap point; lib/session.tsx is the Phase 4 swap point. Dependabot version-updates config committed; HUMAN STEP outstanding: enable Dependabot ALERTS in repo Settings -> Security (token lacked admin scope, API 403). Vercel project: for-granted/invenstory-portal.
+- [x] Phase 1 — Next.js scaffold. (2026-07-29) tsc clean, `next build` clean, 7 routes. Preview: https://invenstory-portal.vercel.app (canonical alias verified 200 + content grep). lib/types.ts + lib/mock-data.ts + lib/data.ts are the schema contract/swap point; lib/session.tsx is the Phase 4 swap point. Dependabot alerts + security updates enabled by Tyler 2026-07-29. Vercel project: for-granted/invenstory-portal.
 - [ ] Phase 2 — migrations, RLS everywhere, storage path policy {tenant}/{doc}/{version}; attack-probe script committed at scripts/probe.ts; HUMAN reviews probe output. Pre-RLS dump as rollback.
 - [ ] Phase 3 — data.ts swap, uploads, ingestion worker (extract → Textract if scanned → chunk w/ page+offsets → Titan embed → write). Status chips live.
 - [ ] Phase 4 — Supabase Auth via management API; signups OFF (invite-only); TOTP MFA; Resend SMTP (HUMAN: 2 DNS records); admin = role-table membership; callback handles ?code= AND ?token_hash=.
