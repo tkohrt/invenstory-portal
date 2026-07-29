@@ -42,6 +42,15 @@ Full detail per phase lives in PORTAL_PLAN.md §7. Checklist:
 - brace-expansion DoS advisories: residual HIGH flags confined to the ESLint dev toolchain (linter only, never deployed; exploitation requires hostile glob input to the linter on a dev machine). No non-breaking fix exists today: the fix chain requires eslint@10, which breaks eslint-plugin-react (verified: getFilename crash). DECISION: accept + document, dismiss Dependabot alerts with reason "vulnerable code not invoked at runtime", RE-CHECK at Phase 8.5 gate — ecosystem patch will likely land well before then.
 - eslint@9 retained; lint is clean and caught one real bug (setState-in-effect in Shell.tsx, fixed by closing nav on link tap).
 
+## Phase 8.5 hardening gate (2026-07-29, in progress)
+- Fresh-eyes red-team subagent (zero build context) audited the codebase. Found: H1 (HIGH) answerBracketAction read draft with attacker-controlled draftId, no tenant filter -> cross-tenant title disclosure (introduced Phase 8). M1 admin saveDraft update no tenant guard. M2 chat sessionId not ownership-verified. M3 prompt-injection defense-in-depth. L1 admin chat retrieval not re-scoped to active tenant. Confirmed SOUND: RLS model, SECURITY INVOKER RPCs, no SQLi, XSS handling, authz/requireAdmin, tenantId server-derived.
+- ALL FIXED: H1 (bind bracket.draft_id===draftId + tenant-scope draft read), M1 (.eq tenant_id on update+bracket sync), M2 (verify session ownership via userClient), M3 (delimit <<<UNTRUSTED_DOCUMENT_TEXT>>> + system prompts mark doc text untrusted, both chat + SI), L1 (retrieve() scopeTenantId param, admin re-scoped like search).
+- Security headers added (next.config): HSTS, CSP w/ frame-ancestors none, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy.
+- Prompt-injection tested: hostile doc uploaded to FTC; direct 'reveal KHAI pitch deck' request leaked ZERO real KHAI data (citations stay in-tenant). Extractive mode can't follow instructions; generative defense (delimiting+system prompt) verifies on Bedrock unblock.
+- Rate limit verified live: 12 chat req succeed, 429 on 13-15.
+- Probes: anon 12/12, auth 17/17 (no regression after fixes).
+- REMAINING (human/checkpoint): real-device mobile pass by BOTH founders; Lighthouse mobile a11y 90+; Dependabot brace-expansion re-check; MFA enrollment; final sign-off.
+
 ## Status log
 - 2026-07-29: BUG+FIX — prod 500 on every route: NEXT_PUBLIC_SUPABASE_URL was never set on Vercel (only non-public SUPABASE_URL), so proxy.ts middleware got undefined URL and threw. NEXT_PUBLIC_ vars must be set BEFORE the build that inlines them. Added to all targets; redeployed. Lesson: middleware failures 500 the WHOLE site — test canonical alias after every deploy (playbook #6 cousin).
 - 2026-07-29: DECISION (Tyler) — every SI artifact reads all three layers by default; corpus_filter reserved for types that quote a layer verbatim. impact_metrics filter removed. Admin-only Regenerate added to approved sets.

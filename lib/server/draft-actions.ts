@@ -25,7 +25,7 @@ export async function saveDraftAction(input: {
   };
   let draftId = input.id;
   if (draftId) {
-    await db.from("grant_draft").update(row).eq("id", draftId);
+    await db.from("grant_draft").update(row).eq("id", draftId).eq("tenant_id", s.tenantId);
   } else {
     const { data } = await db.from("grant_draft").insert(row).select("id").single();
     draftId = data?.id;
@@ -33,7 +33,7 @@ export async function saveDraftAction(input: {
   if (!draftId) throw new Error("save failed");
   // sync brackets with the body
   const labels = parseBrackets(input.body);
-  const { data: existing } = await db.from("draft_bracket").select("id, label").eq("draft_id", draftId);
+  const { data: existing } = await db.from("draft_bracket").select("id, label").eq("draft_id", draftId).eq("tenant_id", s.tenantId);
   const have = new Map((existing ?? []).map(b => [b.label, b.id]));
   // insert new labels
   const toInsert = labels.filter(l => !have.has(l)).map((label, i) => ({
@@ -62,7 +62,11 @@ export async function answerBracketAction(draftId: string, bracketId: string, an
   if (!s) throw new Error("unauthorized");
   const { data: bracket } = await db.from("draft_bracket").select("*").eq("id", bracketId).eq("tenant_id", s.tenantId).single();
   if (!bracket) throw new Error("bracket not found");
-  const { data: draft } = await db.from("grant_draft").select("title").eq("id", draftId).single();
+  // Bind the bracket to the claimed draft and scope the draft read to the
+  // caller's tenant — never trust a client-supplied draftId (red-team H1).
+  if (bracket.draft_id !== draftId) throw new Error("bracket/draft mismatch");
+  const { data: draft } = await db.from("grant_draft").select("title").eq("id", draftId).eq("tenant_id", s.tenantId).single();
+  if (!draft) throw new Error("draft not found");
 
   // File the answer into the Inven(s)tory (reuse the ingestion pipeline).
   const docId = crypto.randomUUID();

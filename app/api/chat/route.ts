@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
 
   // Ensure a chat session (RLS-scoped insert as the user).
   let sid = sessionId as string | undefined;
+  if (sid) {
+    // Verify a supplied session belongs to this caller (RLS-scoped) — red-team M2.
+    const { data: owned } = await supabase.from("chat_session").select("id").eq("id", sid).maybeSingle();
+    if (!owned) sid = undefined;
+  }
   if (!sid) {
     const { data: s } = await supabase.from("chat_session")
       .insert({ tenant_id: session.tenantId, user_id: session.user.id, title: q.slice(0, 60) })
@@ -39,7 +44,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Retrieve (RLS-scoped) -> generate (Bedrock or extractive fallback).
-  const { passages, mode } = await retrieve(q);
+  // Admins have RLS lifted, so re-scope retrieval to the tenant being viewed
+  // (parity with the search route) — red-team L1.
+  const r = await retrieve(q, 6, session.role === "admin" ? session.tenantId : undefined);
+  const passages = r.passages;
+  const mode = r.mode;
   const answer = await generate(q, passages);
 
   // Persist both turns (service client: author_user_id set explicitly).
