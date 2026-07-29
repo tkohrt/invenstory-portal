@@ -1,25 +1,20 @@
 "use client";
-// One panel renders EVERY artifact type — the engine's UI half.
-// Type-specific rendering is confined to CardBody below.
-import { getArtifactCards, getDocument, getUser } from "@/lib/data";
-import type { ArtifactCard, ArtifactSet, ArtifactType } from "@/lib/types";
+// One panel renders EVERY Story Intelligence artifact type.
+import type { ArtifactBundle, ArtifactCardView } from "@/lib/types";
 
-function Cites({ card, onOpenDoc }: { card: ArtifactCard; onOpenDoc: (id: string) => void }) {
+function Cites({ card, onOpenDoc }: { card: ArtifactCardView; onOpenDoc: (id: string) => void }) {
   return (
     <div>
       <div className="cite-label" title="The documents this card was drawn from.">Sourced from</div>
       <div className="cites">
-        {card.citations.map(id => {
-          const d = getDocument(card.tenant_id, id);
-          return d ? <span key={id} className="cite" onClick={() => onOpenDoc(id)}>{d.title}</span> : null;
-        })}
+        {card.citation_docs.map(d => <span key={d.id} className="cite" onClick={() => onOpenDoc(d.id)}>{d.title}</span>)}
       </div>
     </div>
   );
 }
 
-function CardBody({ type, card }: { type: ArtifactType; card: ArtifactCard }) {
-  if (type.slug === "impact_metrics") {
+function CardBody({ slug, card }: { slug: string; card: ArtifactCardView }) {
+  if (slug === "impact_metrics") {
     const p = card.payload;
     return (
       <div>
@@ -35,12 +30,11 @@ function CardBody({ type, card }: { type: ArtifactType; card: ArtifactCard }) {
   return <p>{card.payload.body}</p>;
 }
 
-export default function ArtifactPanel({
-  type, set, isAdmin, onOpenDoc,
-}: { type: ArtifactType; set: ArtifactSet; isAdmin: boolean; onOpenDoc: (id: string) => void }) {
-  const head = (
-    <div className="tp-head"><span className="spark">✦</span><h3>{type.name}</h3></div>
-  );
+export default function ArtifactPanel({ bundle, isAdmin, onOpenDoc }: {
+  bundle: ArtifactBundle; isAdmin: boolean; onOpenDoc: (id: string) => void;
+}) {
+  const { type, set, cards } = bundle;
+  const head = <div className="tp-head"><span className="spark">✦</span><h3>{type.name}</h3></div>;
 
   if (set.status === "none") {
     return (
@@ -53,8 +47,6 @@ export default function ArtifactPanel({
       </div>
     );
   }
-
-  const cards = getArtifactCards(set.id);
 
   if (set.status === "pending" && !isAdmin) {
     return (
@@ -70,7 +62,7 @@ export default function ArtifactPanel({
       {cards.map(c => (
         <div key={c.id} className="theme-card">
           <h4>{c.title}</h4>
-          {editable ? <textarea defaultValue={c.payload.body ?? c.payload.measures} /> : <CardBody type={type} card={c} />}
+          {editable ? <textarea defaultValue={c.payload.body ?? c.payload.measures} /> : <CardBody slug={type.slug} card={c} />}
           <Cites card={c} onOpenDoc={onOpenDoc} />
           {editable && <div className="card-tools"><button>Remove card</button></div>}
         </div>
@@ -94,14 +86,13 @@ export default function ArtifactPanel({
     );
   }
 
-  const reviewer = set.reviewed_by ? getUser(set.reviewed_by)?.full_name ?? "For Granted" : "For Granted";
   return (
     <div className="themes-panel">{head}
       {set.status === "stale" && (
         <div className="stale-note">Documents have been added since this was approved.
           <button className="btn secondary">Regenerate</button></div>
       )}
-      <div className="stamp">Reviewed and approved by <b>{reviewer} · For Granted</b>{set.generated_at ? ` · ${new Date(set.generated_at).toLocaleDateString()}` : ""}
+      <div className="stamp">Reviewed and approved by <b>For Granted</b>{set.generated_at ? ` · ${new Date(set.generated_at).toLocaleDateString()}` : ""}
         {isAdmin && <button className="btn ghost" style={{ fontSize: 12, padding: "0 6px" }}>↻ Regenerate</button>}</div>
       {grid(false)}
       {set.gap_note && <div className="gap-note"><b>Suggested next step:</b> {set.gap_note}</div>}

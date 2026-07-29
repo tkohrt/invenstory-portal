@@ -131,3 +131,13 @@ export interface AuditLog {
   detail: string;
   created_at: string;
 }
+
+// ---- View shapes (server joins, consumed by client components) ----
+export interface DocumentWithTags extends Document {
+  tags: string[];
+  uploader_name: string;
+}
+export interface CiteDoc { id: string; title: string }
+export interface ArtifactCardView extends ArtifactCard { citation_docs: CiteDoc[] }
+export interface ArtifactBundle { type: ArtifactType; set: ArtifactSet; cards: ArtifactCardView[] }
+export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }

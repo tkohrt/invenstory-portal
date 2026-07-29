@@ -1,22 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSession } from "@/lib/session";
-import { getArtifactTypes, getPendingReviews, getTenant, getTenants } from "@/lib/data";
+import { signOutAction, switchTenantAction } from "@/lib/server/actions";
+import type { AppUser, ArtifactType, Tenant } from "@/lib/types";
 
-export default function Shell({ children }: { children: React.ReactNode }) {
-  const { user, role, tenantId, signOut, switchTenant } = useSession();
-  const router = useRouter();
+export interface ShellProps {
+  user: AppUser; role: "client" | "admin"; tenantId: string;
+  tenants: Tenant[]; artifactTypes: ArtifactType[]; pendingCount: number;
+  children?: React.ReactNode;
+}
+
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, children }: ShellProps) {
   const path = usePathname();
+  const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
-
-  useEffect(() => { if (!user) router.replace("/"); }, [user, router]);
-  if (!user || !tenantId) return null;
-
   const admin = role === "admin";
-  const pending = admin ? getPendingReviews().length : 0;
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
   const closeNav = () => setNavOpen(false);
 
@@ -29,10 +30,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <div className="userchip">
           <div className="meta">
             <div className="name">{user.full_name}</div>
-            <div className="role">{admin ? "For Granted · Admin" : getTenant(tenantId)?.name}</div>
+            <div className="role">{admin ? "For Granted · Admin" : tenantName}</div>
           </div>
           <div className="avatar">{initials}</div>
-          <button className="btn ghost" onClick={() => { signOut(); router.push("/"); }}>Sign out</button>
+          <button className="btn ghost" onClick={() => signOutAction()}>Sign out</button>
         </div>
       </div>
       <div className={`sidebar${navOpen ? " open" : ""}`}>
@@ -41,8 +42,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div className="admin-flag">ADMIN VIEW</div>
             <div className="client-switch">
               <label style={{ marginTop: 0 }}>Viewing client</label>
-              <select value={tenantId} onChange={e => switchTenant(e.target.value)}>
-                {getTenants().map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <select value={tenantId} onChange={async e => { await switchTenantAction(e.target.value); router.refresh(); }}>
+                {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
           </div>
@@ -52,7 +53,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
-        {getArtifactTypes().map(t => (
+        {artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav} className={nav(`/story-intelligence/${t.slug}`)} href={`/story-intelligence/${t.slug}`}>
             <span className="ic">◈</span> {t.nav_label}
           </Link>
@@ -63,7 +64,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
             <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
               <span className="ic">✦</span> Story Intelligence reviews
-              {pending > 0 && <span className="badge-count">{pending}</span>}
+              {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
             </Link>
           </div>
         )}
