@@ -10,6 +10,8 @@ export type ArtifactStatus = "none" | "pending" | "approved" | "stale";
 export interface Tenant {
   id: string;
   name: string;
+  org_type: "nonprofit" | "startup" | null;
+  website: string | null;
   slack_channel_id: string | null;
   created_at: string;
 }
