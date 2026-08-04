@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOutAction, switchTenantAction } from "@/lib/server/actions";
+import { setArtifactVisibilityAction } from "@/lib/server/artifact-actions";
 import type { AppUser, NavArtifact, Tenant } from "@/lib/types";
 
 export interface ShellProps {
@@ -15,7 +16,15 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
   const admin = role === "admin";
+  const toggleVisibility = async (e: React.MouseEvent, slug: string, currentlyVisible: boolean) => {
+    e.preventDefault(); e.stopPropagation();
+    setTogglingSlug(slug);
+    await setArtifactVisibilityAction(slug, !currentlyVisible);
+    setTogglingSlug(null);
+    router.refresh();
+  };
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
@@ -60,7 +69,13 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             href={`/story-intelligence/${t.slug}`}
             title={admin ? (t.visible ? "Visible to client" : "Hidden from client") : undefined}>
             <span className="ic">◈</span> {t.nav_label}
-            {admin && <span className={`vis-dot ${t.visible ? "on" : "off"}`} />}
+            {admin && (
+              <button type="button"
+                className={`vis-dot ${t.visible ? "on" : "off"}${togglingSlug === t.slug ? " busy" : ""}`}
+                onClick={e => toggleVisibility(e, t.slug, t.visible)}
+                aria-label={t.visible ? "Hide from client" : "Show to client"}
+                title={t.visible ? "Visible to client — click to hide" : "Hidden from client — click to show"} />
+            )}
           </Link>
         ))}
         {admin && (

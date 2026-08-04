@@ -286,3 +286,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .vis-dot.off{background:#d1495b}
 .nav-item.nav-hidden{color:var(--muted);opacity:.7}
 .nav-item.nav-hidden .ic{opacity:.6}
+
+/* Clickable visibility dot */
+button.vis-dot{border:none;padding:0;cursor:pointer;width:10px;height:10px;transition:transform .1s}
+button.vis-dot:hover{transform:scale(1.35)}
+button.vis-dot.busy{opacity:.5}
