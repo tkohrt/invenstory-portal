@@ -8,7 +8,7 @@ export default async function LibraryPage() {
   if (!session) redirect("/");
   const [tenant, docs, contact] = await Promise.all([
     getTenant(session.tenantId),
-    getDocumentsWithTags(session.tenantId),
+    getDocumentsWithTags(session.tenantId, session.role !== "admin"),
     getPrimaryContact(session.tenantId),
   ]);
   if (!tenant) redirect("/");

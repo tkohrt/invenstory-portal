@@ -8,7 +8,7 @@ export default async function ChatPage() {
   if (!session) redirect("/");
   const [tenant, docs] = await Promise.all([
     getTenant(session.tenantId),
-    getDocumentsWithTags(session.tenantId),
+    getDocumentsWithTags(session.tenantId, session.role !== "admin"),
   ]);
   if (!tenant) redirect("/");
   return <ChatView tenantName={tenant.name} docs={docs} isAdmin={session.role === "admin"} />;

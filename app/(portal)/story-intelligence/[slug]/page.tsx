@@ -10,7 +10,7 @@ export default async function StoryIntelligencePage({ params }: { params: Promis
   const [tenant, bundles, docs] = await Promise.all([
     getTenant(session.tenantId),
     getArtifactBundles(session.tenantId),
-    getDocumentsWithTags(session.tenantId),
+    getDocumentsWithTags(session.tenantId, session.role !== "admin"),
   ]);
   const bundle = bundles.find(b => b.type.slug === slug);
   if (!tenant || !bundle) return <div className="empty">This Story Intelligence page doesn&rsquo;t exist.</div>;

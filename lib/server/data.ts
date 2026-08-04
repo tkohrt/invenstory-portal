@@ -23,7 +23,7 @@ export async function getTenant(id: string): Promise<Tenant | null> {
   return data as Tenant | null;
 }
 
-export async function getDocumentsWithTags(tenantId: string): Promise<DocumentWithTags[]> {
+export async function getDocumentsWithTags(tenantId: string, redactForClient = false): Promise<DocumentWithTags[]> {
   const s = await userClient();
   const { data, error } = await s
     .from("document")
@@ -33,6 +33,7 @@ export async function getDocumentsWithTags(tenantId: string): Promise<DocumentWi
   if (error) throw error;
   return (data ?? []).map((d: Record<string, unknown>) => ({
     ...(d as unknown as Document),
+    error_detail: redactForClient ? null : ((d as unknown as Document).error_detail),
     tags: ((d.document_tag as { tag: string }[]) ?? []).map(t => t.tag),
     uploader_name: (d.app_user as { full_name: string } | null)?.full_name ?? "—",
   }));
