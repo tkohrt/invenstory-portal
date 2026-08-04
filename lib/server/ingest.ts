@@ -17,6 +17,25 @@ const EMBED_MODEL = process.env.BEDROCK_EMBED_MODEL_ID ?? "amazon.titan-embed-te
 
 interface PageText { page: number | null; text: string }
 
+// Decode text robustly: many transcript exports are UTF-16. Detect by BOM.
+function decodeText(buffer: Buffer): string {
+  if (buffer.length >= 2) {
+    if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.toString("utf16le");
+    if (buffer[0] === 0xfe && buffer[1] === 0xff) {
+      const swapped = Buffer.from(buffer);
+      for (let i = 0; i + 1 < swapped.length; i += 2) { const t = swapped[i]; swapped[i] = swapped[i + 1]; swapped[i + 1] = t; }
+      return swapped.toString("utf16le");
+    }
+  }
+  return buffer.toString("utf8");
+}
+
+// Postgres text cannot store null bytes; strip them, a leading BOM, and other
+// non-printable control chars (keep tab/newline/carriage return).
+function sanitizeText(s: string): string {
+  return s.replace(/^\uFEFF/, "").replace(/\u0000/g, "").replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
+
 async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
   if (docKind === "pdf") {
     // unpdf: serverless-safe PDF text extraction (no DOMMatrix/browser globals,
@@ -36,7 +55,7 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
     return [{ page: null, text: res.value }];
   }
   if (docKind === "note" || docKind === "web") {
-    return [{ page: null, text: buffer.toString("utf8") }];
+    return [{ page: null, text: decodeText(buffer) }];
   }
   if (docKind === "audio") {
     throw new Error("Audio transcription pending (Transcribe/Whisper integration — Phase 3b follow-up).");
@@ -93,7 +112,9 @@ export async function processDocument(documentId: string): Promise<void> {
     const { data: blob, error: dlErr } = await db.storage.from("documents").download(doc.storage_key);
     if (dlErr || !blob) throw new Error(`storage download failed: ${dlErr?.message}`);
     const buffer = Buffer.from(await blob.arrayBuffer());
-    const pages = await extract(buffer, doc.doc_kind);
+    const rawPages = await extract(buffer, doc.doc_kind);
+    const pages = rawPages.map(p => ({ ...p, text: sanitizeText(p.text) }));
+    if (pages.reduce((n, p) => n + p.text.trim().length, 0) < 20) throw new Error("No usable text after decoding — the file may be empty, image-only, or an unsupported encoding.");
     const chunks = chunkPages(pages);
     if (chunks.length === 0) throw new Error("extraction produced no text");
     // replace any prior chunks (reprocess-safe)
