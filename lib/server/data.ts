@@ -64,6 +64,18 @@ export async function getArtifactBundles(tenantId: string): Promise<ArtifactBund
   return bundles;
 }
 
+
+// Nav-visible artifact types: admins see all (to manage/toggle); clients see
+// only types whose set is client_visible for their tenant.
+export async function getNavArtifactTypes(tenantId: string, isAdmin: boolean): Promise<ArtifactType[]> {
+  const s = await userClient();
+  const { data: types } = await s.from("artifact_type").select("*").order("slug");
+  if (isAdmin) return (types ?? []) as ArtifactType[];
+  const { data: sets } = await s.from("artifact_set").select("type_slug, client_visible").eq("tenant_id", tenantId);
+  const visible = new Set((sets ?? []).filter(x => x.client_visible).map(x => x.type_slug));
+  return ((types ?? []) as ArtifactType[]).filter(t => visible.has(t.slug));
+}
+
 export async function getArtifactTypes(): Promise<ArtifactType[]> {
   const s = await userClient();
   const { data } = await s.from("artifact_type").select("*").order("slug");

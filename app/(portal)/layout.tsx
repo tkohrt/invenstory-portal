@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Shell from "@/components/Shell";
 import { getSession } from "@/lib/server/session";
-import { getArtifactTypes, getPendingReviews, getTenants } from "@/lib/server/data";
+import { getNavArtifactTypes, getPendingReviews, getTenants } from "@/lib/server/data";
 import { userClient } from "@/lib/server/supabase";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
@@ -10,7 +10,7 @@ export default async function PortalLayout({ children }: { children: React.React
   const db = await userClient();
   const [tenants, types, pending] = await Promise.all([
     getTenants(),
-    getArtifactTypes(),
+    getNavArtifactTypes(session.tenantId, session.role === "admin"),
     session.role === "admin" ? getPendingReviews() : Promise.resolve([]),
   ]);
   return (

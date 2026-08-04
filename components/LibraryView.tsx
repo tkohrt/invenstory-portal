@@ -79,12 +79,12 @@ export default function LibraryView({ tenantId, tenantName, orgType, website, co
               <span className="count">· {layerDocs.length} {layerDocs.length === 1 ? "document" : "documents"}</span>
             </div>
             {layerDocs.length
-              ? <div className="grid">{layerDocs.map(d => <DocCard key={d.id} d={d} onOpen={setOpenDocId} />)}</div>
+              ? <div className="grid">{layerDocs.map(d => <DocCard key={d.id} d={d} onOpen={setOpenDocId} isAdmin={isAdmin} />)}</div>
               : <div className="empty">No documents in this layer yet — this is where your story grows next.</div>}
           </div>
         );
       })}
-      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} />}
+      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
       {uploading && <UploadDrawer tenantName={tenantName} onClose={() => setUploading(false)} onDone={() => router.refresh()} />}
     </div>
   );

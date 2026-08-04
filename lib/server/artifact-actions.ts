@@ -51,3 +51,12 @@ export async function editSICardAction(slug: string, cardId: string, field: stri
   await db.from("artifact_card").update({ payload: { ...card.payload, [field]: value } }).eq("id", cardId);
   revalidatePath(`/story-intelligence/${slug}`);
 }
+
+export async function setArtifactVisibilityAction(slug: string, visible: boolean) {
+  const s = await requireAdmin();
+  await db.from("artifact_set").update({ client_visible: visible })
+    .eq("tenant_id", s.tenantId).eq("type_slug", slug);
+  await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "si_visibility", detail: `${slug}=${visible ? "visible" : "hidden"}` });
+  revalidatePath(`/story-intelligence/${slug}`);
+  revalidatePath("/library");
+}

@@ -16,14 +16,14 @@ export function StatusChip({ status }: { status: DocumentWithTags["status"] }) {
   return <span className={`status-chip ${status}`}>{status === "failed" ? "needs attention" : status}</span>;
 }
 
-export function DocCard({ d, onOpen }: { d: DocumentWithTags; onOpen: (id: string) => void }) {
+export function DocCard({ d, onOpen, isAdmin }: { d: DocumentWithTags; onOpen: (id: string) => void; isAdmin?: boolean }) {
   return (
     <div className="doc-card" onClick={() => onOpen(d.id)}>
       <span className={`ftype ${d.doc_kind}`}>{d.doc_kind.toUpperCase()}</span>
       <h4>{d.title}</h4>
       <div className="dmeta">
         <span>{new Date(d.created_at).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
-        <StatusChip status={d.status} />
+        {isAdmin && <StatusChip status={d.status} />}
         <span className="provenance">{d.source === "for_granted" ? "Added by For Granted" : "Added by you"}</span>
       </div>
       <div className="tags">{d.tags.map(t => <span key={t} className="tag">{t}</span>)}</div>
@@ -31,7 +31,7 @@ export function DocCard({ d, onOpen }: { d: DocumentWithTags; onOpen: (id: strin
   );
 }
 
-export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => void }) {
+export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClose: () => void; isAdmin?: boolean }) {
   const meta = LAYER_META[d.layer];
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -77,8 +77,8 @@ export function DocDrawer({ d, onClose }: { d: DocumentWithTags; onClose: () => 
           </div>}
       <div className="kv"><div className="k">Layer</div><div><span className="layer-dot" style={{ background: meta.color }} /> Layer {d.layer} — {meta.name}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.uploader_name}</div></div>
-      <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>
-      {failed && (
+      {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
+      {failed && isAdmin && (
         <div className="metric-gap" style={{ marginTop: 6 }}>
           This document couldn&rsquo;t be read. If the issue has been fixed, reprocess it.
           <div style={{ marginTop: 8 }}><button className="btn inline" onClick={reprocess} disabled={busy === "reprocess"}>{busy === "reprocess" ? "Reprocessing…" : "↻ Reprocess"}</button></div>

@@ -11,7 +11,7 @@ import type { DocumentWithTags } from "@/lib/types";
 interface Cite { id: string; title: string }
 interface Msg { role: "user" | "assistant"; content: string; citations: Cite[]; generated?: boolean; mode?: string }
 
-export default function ChatView({ tenantName, docs }: { tenantName: string; docs: DocumentWithTags[] }) {
+export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,7 +75,7 @@ export default function ChatView({ tenantName, docs }: { tenantName: string; doc
           onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} />
         <button className="btn inline" onClick={send} disabled={busy}>Send</button>
       </div>
-      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} />}
+      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
       {showBedrock && (
         <Drawer onClose={() => setShowBedrock(false)}>
           <h3>How your data is protected</h3>

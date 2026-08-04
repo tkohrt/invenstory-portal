@@ -9,5 +9,5 @@ export default async function SearchPage() {
   const [tenant, docs] = await Promise.all([getTenant(session.tenantId), getDocumentsWithTags(session.tenantId)]);
   if (!tenant) redirect("/");
   const tags = [...new Set(docs.flatMap(d => d.tags))].sort();
-  return <SearchView tenantName={tenant.name} tags={tags} docs={docs} />;
+  return <SearchView tenantName={tenant.name} tags={tags} docs={docs} isAdmin={session.role === "admin"} />;
 }

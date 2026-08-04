@@ -14,5 +14,6 @@ export default async function StoryIntelligencePage({ params }: { params: Promis
   ]);
   const bundle = bundles.find(b => b.type.slug === slug);
   if (!tenant || !bundle) return <div className="empty">This Story Intelligence page doesn&rsquo;t exist.</div>;
+  if (session.role !== "admin" && !bundle.set.client_visible) return <div className="empty">This Story Intelligence view isn&rsquo;t available.</div>;
   return <SIView tenantName={tenant.name} bundle={bundle} docs={docs} isAdmin={session.role === "admin"} />;
 }

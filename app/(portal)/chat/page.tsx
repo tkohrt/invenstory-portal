@@ -11,5 +11,5 @@ export default async function ChatPage() {
     getDocumentsWithTags(session.tenantId),
   ]);
   if (!tenant) redirect("/");
-  return <ChatView tenantName={tenant.name} docs={docs} />;
+  return <ChatView tenantName={tenant.name} docs={docs} isAdmin={session.role === "admin"} />;
 }

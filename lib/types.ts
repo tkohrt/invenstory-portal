@@ -113,6 +113,7 @@ export interface ArtifactSet {
   model_used: string | null;
   token_cost: number | null;
   gap_note: string | null;
+  client_visible: boolean;
 }
 
 export interface ArtifactCard {
