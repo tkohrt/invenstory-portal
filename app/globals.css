@@ -266,3 +266,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .profile-line a{color:var(--accent);text-decoration:none}
 .profile-line a:hover{text-decoration:underline}
 .profile-line .sep{color:var(--line)}
+
+/* Admin inline profile edit */
+.profile-line .btn.ghost{vertical-align:baseline}
+.profile-edit{margin:8px 0 0;max-width:480px}
+.profile-edit .pe-row{display:flex;gap:8px;margin-bottom:8px}
+.profile-edit .pe-row input{flex:1}
+.profile-edit .role-toggle button{padding:7px 10px;font-size:13px}

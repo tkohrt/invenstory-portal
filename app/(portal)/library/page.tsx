@@ -14,6 +14,7 @@ export default async function LibraryPage() {
   if (!tenant) redirect("/");
   return (
     <LibraryView
+      tenantId={tenant.id}
       tenantName={tenant.name}
       orgType={tenant.org_type}
       website={tenant.website}

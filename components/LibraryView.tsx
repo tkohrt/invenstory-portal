@@ -2,15 +2,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
+import { updateClientProfileAction } from "@/lib/server/admin-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function LibraryView({ tenantName, orgType, website, contactName, docs, isAdmin }: {
-  tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
+export default function LibraryView({ tenantId, tenantName, orgType, website, contactName, docs, isAdmin }: {
+  tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
   contactName: string | null; docs: DocumentWithTags[]; isAdmin: boolean;
 }) {
-  const contactLabel = orgType === "startup" ? "Founder" : "Executive Director";
+  const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [pf, setPf] = useState({ website: website ?? "", contactName: contactName ?? "", orgType: (orgType ?? "nonprofit") as "nonprofit" | "startup" });
+  const [savingPf, setSavingPf] = useState(false);
+  const saveProfile = async () => { setSavingPf(true); await updateClientProfileAction({ tenantId, ...pf }); setSavingPf(false); setEditingProfile(false); router.refresh(); };
   const [filter, setFilter] = useState<Layer | "all">("all");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -25,12 +30,32 @@ export default function LibraryView({ tenantName, orgType, website, contactName,
         <div>
           <h2>{tenantName}</h2>
           <p>The complete Inven(s)tory — {docs.length} documents across three layers.</p>
-          {(contactName || website) && (
+          {!editingProfile && (
             <p className="profile-line">
-              {contactName && <span>{contactLabel}: {contactName}</span>}
+              {contactName && <span>{contactLabel(orgType)}: {contactName}</span>}
               {contactName && website && <span className="sep"> | </span>}
               {website && <span>Website: <a href={normalizeUrl(website)} target="_blank" rel="noopener noreferrer">{website}</a></span>}
+              {!contactName && !website && isAdmin && <span style={{ fontStyle: "italic" }}>No contact or website set</span>}
+              {isAdmin && <button className="btn ghost" style={{ fontSize: 12, padding: "0 6px" }} onClick={() => setEditingProfile(true)}>Edit</button>}
             </p>
+          )}
+          {editingProfile && isAdmin && (
+            <div className="profile-edit">
+              <div className="pe-row">
+                <div className="role-toggle" style={{ margin: 0 }}>
+                  <button type="button" className={pf.orgType === "nonprofit" ? "active" : ""} onClick={() => setPf({ ...pf, orgType: "nonprofit" })}>Nonprofit</button>
+                  <button type="button" className={pf.orgType === "startup" ? "active" : ""} onClick={() => setPf({ ...pf, orgType: "startup" })}>Startup</button>
+                </div>
+              </div>
+              <div className="pe-row">
+                <input value={pf.contactName} onChange={e => setPf({ ...pf, contactName: e.target.value })} placeholder={`${contactLabel(pf.orgType)} name`} />
+                <input value={pf.website} onChange={e => setPf({ ...pf, website: e.target.value })} placeholder="Website" />
+              </div>
+              <div className="pe-row">
+                <button className="btn inline" onClick={saveProfile} disabled={savingPf}>{savingPf ? "Saving…" : "Save"}</button>
+                <button className="btn secondary" onClick={() => { setPf({ website: website ?? "", contactName: contactName ?? "", orgType: (orgType ?? "nonprofit") }); setEditingProfile(false); }}>Cancel</button>
+              </div>
+            </div>
           )}
         </div>
         <div className="spacer" />

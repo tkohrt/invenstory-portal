@@ -56,3 +56,16 @@ export async function createClientAction(input: {
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: tenant.id, action: "create_client", detail: `${orgName} (${input.orgType}) / ${email}` });
   return { ok: true, email, tempPassword: pw };
 }
+
+export async function updateClientProfileAction(input: {
+  tenantId: string; website: string; contactName: string; orgType: "nonprofit" | "startup";
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await getSession();
+  if (!session || session.role !== "admin") return { ok: false, error: "admin required" };
+  await db.from("tenant").update({ website: input.website.trim() || null, org_type: input.orgType }).eq("id", input.tenantId);
+  const { data: u } = await db.from("app_user").select("id")
+    .eq("tenant_id", input.tenantId).eq("role", "client").order("created_at").limit(1).maybeSingle();
+  if (u && input.contactName.trim()) await db.from("app_user").update({ full_name: input.contactName.trim() }).eq("id", u.id);
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: input.tenantId, action: "edit_client_profile", detail: `${input.orgType} / ${input.website}` });
+  return { ok: true };
+}
