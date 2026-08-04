@@ -3,11 +3,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOutAction, switchTenantAction } from "@/lib/server/actions";
-import type { AppUser, ArtifactType, Tenant } from "@/lib/types";
+import type { AppUser, NavArtifact, Tenant } from "@/lib/types";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
-  tenants: Tenant[]; artifactTypes: ArtifactType[]; pendingCount: number;
+  tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number;
   children?: React.ReactNode;
 }
 
@@ -55,8 +55,12 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> In the Works</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
         {artifactTypes.map(t => (
-          <Link key={t.slug} onClick={closeNav} className={nav(`/story-intelligence/${t.slug}`)} href={`/story-intelligence/${t.slug}`}>
+          <Link key={t.slug} onClick={closeNav}
+            className={`${nav(`/story-intelligence/${t.slug}`)}${admin && !t.visible ? " nav-hidden" : ""}`}
+            href={`/story-intelligence/${t.slug}`}
+            title={admin ? (t.visible ? "Visible to client" : "Hidden from client") : undefined}>
             <span className="ic">◈</span> {t.nav_label}
+            {admin && <span className={`vis-dot ${t.visible ? "on" : "off"}`} />}
           </Link>
         ))}
         {admin && (

@@ -279,3 +279,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .vis-toggle.on{border-color:#22c55e;color:#166534;background:#f2fbf5}
 .vis-toggle.off{border-color:#e7c3ba;color:#992f18;background:#fdf4f1}
 .vis-toggle:hover{filter:brightness(0.98)}
+
+/* Sidebar Story Intelligence visibility indicators (admin) */
+.vis-dot{width:8px;height:8px;border-radius:50%;margin-left:auto;flex:none}
+.vis-dot.on{background:#22c55e}
+.vis-dot.off{background:#d1495b}
+.nav-item.nav-hidden{color:var(--muted);opacity:.7}
+.nav-item.nav-hidden .ic{opacity:.6}

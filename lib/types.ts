@@ -143,6 +143,7 @@ export interface DocumentWithTags extends Document {
 export interface CiteDoc { id: string; title: string }
 export interface ArtifactCardView extends ArtifactCard { citation_docs: CiteDoc[] }
 export interface ArtifactBundle { type: ArtifactType; set: ArtifactSet; cards: ArtifactCardView[] }
+export interface NavArtifact { slug: string; nav_label: string; visible: boolean }
 export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }
 
 // ---- Grant Drafts ("In the Works") ----
