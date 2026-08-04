@@ -90,3 +90,10 @@ export async function getPendingReviews(): Promise<PendingReview[]> {
   return ((sets ?? []) as (ArtifactSet & { tenant: Tenant; artifact_type: ArtifactType })[])
     .map(s => ({ set: s, type: s.artifact_type, tenant: s.tenant, card_count: 0 }));
 }
+
+export async function getPrimaryContact(tenantId: string): Promise<string | null> {
+  const s = await userClient();
+  const { data } = await s.from("app_user").select("full_name")
+    .eq("tenant_id", tenantId).eq("role", "client").order("created_at").limit(1).maybeSingle();
+  return data?.full_name ?? null;
+}

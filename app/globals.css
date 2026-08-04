@@ -260,3 +260,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .qcard.filled{border-left-color:#22c55e}
 .qcard .answered{font-size:13px;color:#3b4252;background:#f7fbf8;border-radius:8px;padding:8px 10px}
 .status-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 18px}
+
+/* Account profile line (library header) */
+.profile-line{margin:4px 0 0;color:var(--muted);font-size:13px}
+.profile-line a{color:var(--accent);text-decoration:none}
+.profile-line a:hover{text-decoration:underline}
+.profile-line .sep{color:var(--line)}

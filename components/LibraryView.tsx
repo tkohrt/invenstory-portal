@@ -4,9 +4,13 @@ import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
-export default function LibraryView({ tenantName, docs, isAdmin }: {
-  tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean;
+function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
+
+export default function LibraryView({ tenantName, orgType, website, contactName, docs, isAdmin }: {
+  tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
+  contactName: string | null; docs: DocumentWithTags[]; isAdmin: boolean;
 }) {
+  const contactLabel = orgType === "startup" ? "Founder" : "Executive Director";
   const [filter, setFilter] = useState<Layer | "all">("all");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -18,7 +22,17 @@ export default function LibraryView({ tenantName, docs, isAdmin }: {
     <div>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {tenantName}</div>}
       <div className="page-head">
-        <div><h2>{tenantName}</h2><p>The complete Inven(s)tory — {docs.length} documents across three layers.</p></div>
+        <div>
+          <h2>{tenantName}</h2>
+          <p>The complete Inven(s)tory — {docs.length} documents across three layers.</p>
+          {(contactName || website) && (
+            <p className="profile-line">
+              {contactName && <span>{contactLabel}: {contactName}</span>}
+              {contactName && website && <span className="sep"> | </span>}
+              {website && <span>Website: <a href={normalizeUrl(website)} target="_blank" rel="noopener noreferrer">{website}</a></span>}
+            </p>
+          )}
+        </div>
         <div className="spacer" />
         <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
