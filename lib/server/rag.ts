@@ -10,9 +10,8 @@ import "server-only";
 //    upgrades to hybrid the moment Bedrock is live.
 //  - generate(): calls Bedrock Converse. On ANY Bedrock failure it returns an
 //    honest extractive answer built from the retrieved passages.
-import {
-  BedrockRuntimeClient, InvokeModelCommand, ConverseCommand,
-} from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { embedText } from "./embed";
 import { userClient } from "./supabase";
 
 const REGION = process.env.PORTAL_AWS_REGION ?? "us-east-1";
@@ -35,13 +34,7 @@ export interface Passage {
 }
 
 async function embedQuery(text: string): Promise<number[] | null> {
-  try {
-    const res = await bedrock().send(new InvokeModelCommand({
-      modelId: EMBED_MODEL, contentType: "application/json",
-      body: JSON.stringify({ inputText: text.slice(0, 8000) }),
-    }));
-    return JSON.parse(new TextDecoder().decode(res.body)).embedding as number[];
-  } catch { return null; }
+  return embedText(text);
 }
 
 type LexRow = { document_id: string; tenant_id: string; title: string; text: string; page_number: number | null; rank: number };

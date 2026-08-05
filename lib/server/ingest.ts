@@ -3,17 +3,10 @@ import "server-only";
 // Runs inline after upload (docs at this scale take seconds). Scanned-PDF OCR
 // via Textract needs an S3 staging bucket + IAM change — journaled follow-up;
 // until then image-only PDFs fail loudly with a clear error, never silently.
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { embedText } from "./embed";
 import { db } from "./db";
 
-const bedrock = new BedrockRuntimeClient({
-  region: process.env.PORTAL_AWS_REGION ?? "us-east-1",
-  credentials: {
-    accessKeyId: process.env.PORTAL_AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.PORTAL_AWS_SECRET_ACCESS_KEY!,
-  },
-});
-const EMBED_MODEL = process.env.BEDROCK_EMBED_MODEL_ID ?? "amazon.titan-embed-text-v2:0";
+const EMBED_MODEL = "gte-small";
 
 interface PageText { page: number | null; text: string }
 
@@ -95,13 +88,9 @@ export function chunkPages(pages: PageText[], target = 1100, overlap = 150): {
 }
 
 export async function embed(text: string): Promise<number[]> {
-  const res = await bedrock.send(new InvokeModelCommand({
-    modelId: EMBED_MODEL,
-    body: JSON.stringify({ inputText: text.slice(0, 8000) }),
-    contentType: "application/json",
-  }));
-  const body = JSON.parse(new TextDecoder().decode(res.body));
-  return body.embedding as number[];
+  const v = await embedText(text);
+  if (!v) throw new Error("embedding unavailable");
+  return v;
 }
 
 export async function processDocument(documentId: string): Promise<void> {
