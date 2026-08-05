@@ -3,6 +3,7 @@ import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import { processDocument } from "@/lib/server/ingest";
 import { markStaleOnUpload } from "@/lib/server/artifacts";
+import { notifyClientUpload } from "@/lib/server/notify";
 
 export const maxDuration = 60;
 
@@ -54,5 +55,10 @@ export async function POST(req: NextRequest) {
   try { await processDocument(docId); } catch { /* status=failed already recorded; card shows it */ }
   // New material invalidates approved Story Intelligence -> stale (offers regenerate).
   await markStaleOnUpload(tenantId);
+  // Notify the For Granted team when a client (not an admin) uploads.
+  if (session.role === "client") {
+    const { data: t } = await db.from("tenant").select("name").eq("id", tenantId).single();
+    await notifyClientUpload({ org: t?.name ?? "a client", uploader: session.user.full_name, title: title || file.name, layer });
+  }
   return NextResponse.json({ id: docId });
 }
