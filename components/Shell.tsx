@@ -67,7 +67,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <div className="nav-section-label">Workspace</div>
         <Link onClick={closeNav} className={nav("/dashboard")} href="/dashboard"><span className="ic">▤</span> Dashboard</Link>
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
-        <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
+        <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask your Inven(s)tory</Link>
         <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
         <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> Grants In The Works</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>

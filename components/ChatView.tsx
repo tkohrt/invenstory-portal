@@ -38,9 +38,9 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
 
   return (
     <div className="chat-wrap">
-      <div className="page-head" style={{ marginBottom: 10 }}><div><h2>Ask AI</h2>
+      <div className="page-head" style={{ marginBottom: 10 }}><div><h2>Ask your Inven(s)tory</h2>
         <p>Ask anything about {tenantName}. Answers with citations are drawn only from your own documents,
-          with your data protected by Amazon Bedrock.{" "}
+          with your data protected by Supabase and Amazon Bedrock.{" "}
           <button className="btn ghost" style={{ fontSize: 12.5, padding: "0 4px" }} onClick={() => setShowBedrock(true)}>Learn More</button></p>
       </div></div>
       <div className="suggest">
