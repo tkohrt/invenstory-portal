@@ -58,6 +58,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           </div>
         )}
         <div className="nav-section-label">Workspace</div>
+        <Link onClick={closeNav} className={nav("/dashboard")} href="/dashboard"><span className="ic">▤</span> Dashboard</Link>
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
         <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>

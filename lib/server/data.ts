@@ -5,6 +5,7 @@ import "server-only";
 // is_admin() lifts the filter and the activeTenant arg simply *selects* which
 // client to view. The Phase 3 service-role scaffold is gone from this file.
 import { userClient } from "./supabase";
+import { db } from "./db";
 import type {
   ArtifactBundle, ArtifactCard, ArtifactSet, ArtifactType, CiteDoc,
   Document, DocumentWithTags, Layer, Tenant, TenantSummary,
@@ -111,4 +112,49 @@ export async function getPrimaryContact(tenantId: string): Promise<string | null
   const { data } = await s.from("app_user").select("full_name")
     .eq("tenant_id", tenantId).eq("role", "client").order("created_at").limit(1).maybeSingle();
   return data?.full_name ?? null;
+}
+
+export async function getClientStats(tenantId: string): Promise<import("@/lib/types").ClientStats> {
+  const s = await userClient();
+  const [{ data: docs }, { data: drafts }, wc] = await Promise.all([
+    s.from("document").select("layer").eq("tenant_id", tenantId),
+    s.from("grant_draft").select("status, amount_cents").eq("tenant_id", tenantId),
+    s.rpc("tenant_word_count", { p_tenant: tenantId }),
+  ]);
+  const byLayer = { I: 0, II: 0, III: 0 } as Record<import("@/lib/types").Layer, number>;
+  (docs ?? []).forEach(d => { byLayer[d.layer as import("@/lib/types").Layer] += 1; });
+  const dr = (drafts ?? []) as { status: string; amount_cents: number | null }[];
+  const applied = dr.filter(d => ["submitted", "won", "lost"].includes(d.status)).length;
+  const won = dr.filter(d => d.status === "won").length;
+  const inProgress = dr.filter(d => ["drafting", "client_review"].includes(d.status)).length;
+  const revenueWonCents = dr.filter(d => d.status === "won").reduce((n, d) => n + (d.amount_cents ?? 0), 0);
+  return { docs: (docs ?? []).length, byLayer, words: Number(wc.data ?? 0), applied, won, inProgress, revenueWonCents };
+}
+
+export async function getPortfolioStats(): Promise<import("@/lib/types").PortfolioStats> {
+  const { data: tenants } = await db.from("tenant").select("id, name").order("name");
+  const { data: docs } = await db.from("document").select("tenant_id");
+  const { data: drafts } = await db.from("grant_draft").select("tenant_id, status, amount_cents");
+  const dr = (drafts ?? []) as { tenant_id: string; status: string; amount_cents: number | null }[];
+  let totalWords = 0;
+  const perClient = await Promise.all((tenants ?? []).map(async (t: { id: string; name: string }) => {
+    const { data: wc } = await db.rpc("tenant_word_count", { p_tenant: t.id });
+    totalWords += Number(wc ?? 0);
+    const clientDrafts = dr.filter(d => d.tenant_id === t.id);
+    return {
+      name: t.name,
+      docs: (docs ?? []).filter(d => d.tenant_id === t.id).length,
+      won: clientDrafts.filter(d => d.status === "won").length,
+      revenueWonCents: clientDrafts.filter(d => d.status === "won").reduce((n, d) => n + (d.amount_cents ?? 0), 0),
+    };
+  }));
+  return {
+    tenants: (tenants ?? []).length,
+    totalDocs: (docs ?? []).length,
+    totalWords,
+    applied: dr.filter(d => ["submitted", "won", "lost"].includes(d.status)).length,
+    won: dr.filter(d => d.status === "won").length,
+    revenueWonCents: dr.filter(d => d.status === "won").reduce((n, d) => n + (d.amount_cents ?? 0), 0),
+    perClient,
+  };
 }

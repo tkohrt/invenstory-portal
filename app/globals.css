@@ -298,3 +298,17 @@ button.vis-dot.busy{opacity:.5}
 .acct-card.danger{border-color:#e7c3ba}
 .acct-note{color:var(--muted);font-size:13px;margin:0 0 12px}
 .acct-card code{background:#f1f2f4;padding:2px 6px;border-radius:6px;font-size:12px}
+
+/* Dashboard */
+.section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 10px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.stat-card.accent{background:linear-gradient(180deg,#fbf8f1,#fff);border-color:#e7dcc0}
+.stat-value{font-family:var(--font-heading),Georgia,serif;font-size:30px;font-weight:700;line-height:1.1;color:var(--ink)}
+.stat-card.accent .stat-value{color:var(--accent)}
+.stat-label{font-size:13px;color:var(--muted);margin-top:4px;font-weight:600}
+.stat-sub{font-size:12px;color:var(--muted);margin-top:6px}
+.portfolio-table{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.pt-row{display:grid;grid-template-columns:2fr 1fr 1fr 1.4fr;padding:11px 16px;border-bottom:1px solid var(--line);font-size:13.5px}
+.pt-row:last-child{border-bottom:none}
+.pt-head{background:#faf9f6;font-weight:700;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em}

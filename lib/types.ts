@@ -163,3 +163,14 @@ export interface DraftWithBrackets extends GrantDraft {
   brackets: DraftBracket[];
   answered_count: number;
 }
+
+// ---- Dashboard stats ----
+export interface ClientStats {
+  docs: number; byLayer: Record<Layer, number>; words: number;
+  applied: number; won: number; inProgress: number; revenueWonCents: number;
+}
+export interface PortfolioClient { name: string; docs: number; won: number; revenueWonCents: number }
+export interface PortfolioStats {
+  tenants: number; totalDocs: number; totalWords: number;
+  applied: number; won: number; revenueWonCents: number; perClient: PortfolioClient[];
+}
