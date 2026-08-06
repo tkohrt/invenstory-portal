@@ -291,3 +291,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 button.vis-dot{border:none;padding:0;cursor:pointer;width:10px;height:10px;transition:transform .1s}
 button.vis-dot:hover{transform:scale(1.35)}
 button.vis-dot.busy{opacity:.5}
+
+/* Account page */
+.acct-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.acct-card h3{margin:0 0 12px;font-size:16px}
+.acct-card.danger{border-color:#e7c3ba}
+.acct-note{color:var(--muted);font-size:13px;margin:0 0 12px}
+.acct-card code{background:#f1f2f4;padding:2px 6px;border-radius:6px;font-size:12px}

@@ -34,3 +34,21 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
     } catch { /* slack best-effort */ }
   }
 }
+
+export async function notifyAccountClosure(d: { org: string; requester: string; email: string; reason: string }) {
+  const line = `${d.requester} (${d.org}, ${d.email}) requested to close their account.` + (d.reason ? ` Reason: ${d.reason}` : "");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"], subject: `Account closure request — ${d.org}`, html: `<p>${line}</p><p>Follow up with the client to handle offboarding, export, and any contractual wind-down.</p>` }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:warning: *Account closure request* — ${line}` }) });
+    } catch { /* best-effort */ }
+  }
+}
