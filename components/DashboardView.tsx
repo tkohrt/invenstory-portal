@@ -31,10 +31,10 @@ export default function DashboardView(props:
 
         <div className="section-label" style={{ marginTop: 22 }}>Grant outcomes</div>
         <div className="stat-grid">
-          <Stat label="Grant revenue won" value={money(s.revenueWonCents)} accent />
-          <Stat label="Grants won" value={num(s.won)} />
+          <Stat label="Applications in progress" value={num(s.inProgress)} />
           <Stat label="Applications submitted" value={num(s.applied)} />
-          <Stat label="In progress" value={num(s.inProgress)} />
+          <Stat label="Grants won" value={num(s.won)} />
+          <Stat label="Grant revenue won" value={money(s.revenueWonCents)} accent />
         </div>
 
         <div className="section-label" style={{ marginTop: 22 }}>Coming soon</div>
