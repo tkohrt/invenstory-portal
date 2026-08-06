@@ -48,7 +48,6 @@ function NewClientDrawer({ onClose, onCreated }: { onClose: () => void; onCreate
       <Drawer onClose={onClose}>
         <h3>Client created ✓</h3>
         <p style={{ color: "var(--muted)", marginTop: 2 }}>{f.orgName} is ready. Share these sign-in details with the client.</p>
-        <div className="kv"><div className="k">Portal</div><div>invenstory-portal.vercel.app</div></div>
         <div className="kv"><div className="k">Email</div><div>{result.email}</div></div>
         <div className="kv"><div className="k">Temp password</div><div><code style={{ background: "#f1f2f4", padding: "2px 6px", borderRadius: 6 }}>{result.tempPassword}</code></div></div>
         <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 10 }}>Ask the client to change their password after first sign-in. This is shown once.</p>
