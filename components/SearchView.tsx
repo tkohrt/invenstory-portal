@@ -20,9 +20,9 @@ function renderPassage(raw: string) {
   return { __html: marked };
 }
 
-export default function SearchView({ tenantName, tags, docs, isAdmin }: {
-  tenantName: string; tags: string[]; docs: DocumentWithTags[]; isAdmin: boolean }) {
-  const [q, setQ] = useState("");
+export default function SearchView({ tenantName, tags, docs, isAdmin, initialQuery }: {
+  tenantName: string; tags: string[]; docs: DocumentWithTags[]; isAdmin: boolean; initialQuery?: string }) {
+  const [q, setQ] = useState(initialQuery ?? "");
   const [tag, setTag] = useState<string | null>(null);
   const [layer, setLayer] = useState<Layer | null>(null);
   const [hits, setHits] = useState<Hit[]>([]);

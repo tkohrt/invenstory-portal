@@ -312,3 +312,12 @@ button.vis-dot.busy{opacity:.5}
 .pt-row{display:grid;grid-template-columns:2fr 1fr 1fr 1.4fr;padding:11px 16px;border-bottom:1px solid var(--line);font-size:13.5px}
 .pt-row:last-child{border-bottom:none}
 .pt-head{background:#faf9f6;font-weight:700;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+
+/* Topbar search + clickable user chip */
+.topbar-search{flex:1;max-width:520px;position:relative;display:flex;align-items:center;margin:0 18px}
+.topbar-search .ts-icon{position:absolute;left:12px;color:var(--muted);font-size:15px;pointer-events:none}
+.topbar-search input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--line);border-radius:10px;background:#fafbfc;font-size:14px}
+.topbar-search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.userchip-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:10px;padding:4px 6px}
+.userchip-link:hover{background:#f3f4f6}
+@media (max-width:900px){ .topbar-search{margin:0 10px;max-width:none} .topbar-search input::placeholder{color:transparent} }

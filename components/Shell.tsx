@@ -16,6 +16,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  const [topQuery, setTopQuery] = useState("");
+  const submitSearch = (e: React.FormEvent) => { e.preventDefault(); const v = topQuery.trim(); if (v) router.push(`/search?q=${encodeURIComponent(v)}`); };
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
   const admin = role === "admin";
   const toggleVisibility = async (e: React.MouseEvent, slug: string, currentlyVisible: boolean) => {
@@ -35,13 +37,18 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
       <div className="topbar">
         <button className="menu-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Menu">☰</button>
         <div className="brand"><div className="logo">i</div><h1>Inven(s)tory Portal</h1></div>
-        <div className="spacer" />
+        <form className="topbar-search" onSubmit={submitSearch}>
+          <span className="ts-icon">⌕</span>
+          <input value={topQuery} onChange={e => setTopQuery(e.target.value)} placeholder="Search this Inven(s)tory…" aria-label="Search" />
+        </form>
         <div className="userchip">
-          <div className="meta">
-            <div className="name">{user.full_name}</div>
-            <div className="role">{admin ? "For Granted · Admin" : tenantName}</div>
-          </div>
-          <div className="avatar">{initials}</div>
+          <Link href="/account" className="userchip-link" onClick={closeNav}>
+            <div className="meta">
+              <div className="name">{user.full_name}</div>
+              <div className="role">{admin ? "For Granted · Admin" : tenantName}</div>
+            </div>
+            <div className="avatar">{initials}</div>
+          </Link>
           <button className="btn ghost" onClick={() => signOutAction()}>Sign out</button>
         </div>
       </div>
@@ -60,7 +67,6 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <div className="nav-section-label">Workspace</div>
         <Link onClick={closeNav} className={nav("/dashboard")} href="/dashboard"><span className="ic">▤</span> Dashboard</Link>
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> Library</Link>
-        <Link onClick={closeNav} className={nav("/search")} href="/search"><span className="ic">⌕</span> Search</Link>
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask AI</Link>
         <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
         <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> Grants In The Works</Link>
