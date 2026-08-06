@@ -36,7 +36,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     <div className="shell">
       <div className="topbar">
         <button className="menu-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Menu">☰</button>
-        <div className="brand"><div className="logo">i</div><h1>Inven(s)tory Portal</h1></div>
+        <div className="brand"><img src="/forgranted-logo.png" alt="For Granted" className="brand-logo" /><h1>Inven(s)tory Portal</h1></div>
         <form className="topbar-search" onSubmit={submitSearch}>
           <span className="ts-icon">⌕</span>
           <input value={topQuery} onChange={e => setTopQuery(e.target.value)} placeholder="Search this Inven(s)tory…" aria-label="Search" />

@@ -321,3 +321,9 @@ button.vis-dot.busy{opacity:.5}
 .userchip-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:10px;padding:4px 6px}
 .userchip-link:hover{background:#f3f4f6}
 @media (max-width:900px){ .topbar-search{margin:0 10px;max-width:none} .topbar-search input::placeholder{color:transparent} }
+
+/* For Granted logo in topbar */
+.brand-logo{height:30px;width:auto;display:block}
+/* full-width topbar search; user chip locked right */
+.topbar-search{max-width:none}
+.topbar .userchip{flex:none;margin-left:8px}

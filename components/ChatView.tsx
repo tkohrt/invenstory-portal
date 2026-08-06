@@ -80,14 +80,16 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
         <Drawer onClose={() => setShowBedrock(false)}>
           <h3>How your data is protected</h3>
           <p style={{ color: "var(--muted)", marginTop: 2 }}>AI privacy on the For Granted platform</p>
-          <p style={{ marginTop: 14, lineHeight: 1.6 }}>When you ask a question or run any AI feature in this portal, it is processed through <b>Amazon Bedrock</b>, running inside For Granted&rsquo;s own secure cloud account — not on a public AI service.</p>
-          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Processed in our account.</b> Every question and answer is handled inside infrastructure For Granted controls.</div></div>
-          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Nothing is stored.</b> Amazon Bedrock does not retain your prompts or the answers it generates.</div></div>
-          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>No training on your data.</b> Amazon is contractually prohibited from using your material to train AI models.</div></div>
-          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Your documents stay put.</b> Your Inven(s)tory lives only in For Granted&rsquo;s systems, visible only to your organization and the For Granted team.</div></div>
+          <p style={{ marginTop: 14, lineHeight: 1.6 }}>Your Inven(s)tory&rsquo;s AI runs across two services that For Granted controls — <b>Supabase</b> for search and retrieval, and <b>Amazon Bedrock</b> for writing answers. Neither is a public AI chatbot, and neither retains or trains on your data.</p>
+          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Search &amp; retrieval (Supabase).</b> Finding the right passages in your documents runs on an open model inside For Granted&rsquo;s own Supabase infrastructure — where your data already lives. Nothing is sent to an outside AI provider.</div></div>
+          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Writing answers (Amazon Bedrock).</b> Composing a written answer runs through Amazon Bedrock inside For Granted&rsquo;s own cloud account — not a public AI service. Bedrock does not store your prompts or answers, and Amazon is contractually prohibited from training on your material.</div></div>
+          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>No training on your data.</b> Neither service uses your documents, questions, or answers to train AI models.</div></div>
+          <div className="kv"><div className="k" style={{ width: 26 }}>✓</div><div><b>Your documents stay put.</b> Your Inven(s)tory is stored in secure infrastructure For Granted controls, visible only to your organization and the For Granted team.</div></div>
           <p style={{ lineHeight: 1.6, marginTop: 10 }}>In short: no AI company ever holds your data.</p>
+          <a className="btn secondary" style={{ display: "inline-block", textDecoration: "none", marginTop: 8, marginRight: 8 }}
+            href="https://supabase.com/privacy" target="_blank" rel="noopener noreferrer">↗ Supabase privacy</a>
           <a className="btn secondary" style={{ display: "inline-block", textDecoration: "none", marginTop: 8 }}
-            href="https://aws.amazon.com/bedrock/faqs/" target="_blank" rel="noopener noreferrer">↗ Read Amazon Bedrock&rsquo;s FAQ</a>
+            href="https://aws.amazon.com/bedrock/faqs/" target="_blank" rel="noopener noreferrer">↗ Amazon Bedrock FAQ</a>
         </Drawer>
       )}
     </div>
