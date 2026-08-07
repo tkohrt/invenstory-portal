@@ -10,6 +10,13 @@ Slack/Resend notifier, and the stats dashboard.
 Status legend used throughout: **[now]** buildable today · **[gen]** needs Bedrock
 generation (scaffolds with the extractive fallback, lights up when the quota clears).
 
+> **Execution status (2026-08-06): DEFERRED.** Spec approved; backend build saved for
+> later. Only the A0 nav/UI shell has shipped.
+>
+> **Locked decision — Shane, 2026-08-06:** answers live in a **dedicated `answer`
+> table** (not on the generic artifact-card engine), because they carry robustness,
+> source, and per-answer sweep state beyond what the card payload holds cleanly. See §2.
+
 ---
 
 ## 0. What shipped already (2026-08-06)
@@ -58,10 +65,10 @@ Per-tenant (RLS: client sees own tenant, admin sees all):
 - `answer` — id, tenant_id, question_id, short_answer (~50w), long_answer (~250w),
   completeness ('strong' | 'partial' | 'missing'), robustness_score (0–100, §4.1),
   source ('auto' | 'human'), status ('draft' | 'in_review' | 'published'),
-  reviewed_by, reviewed_at, updated_at, stale (bool). Implemented as `artifact_card`
-  rows under an `artifact_type = 'answer_library'` set, or as a dedicated `answer`
-  table — recommend a dedicated table since answers now carry gamification and
-  per-answer sweep state beyond what the generic card payload holds cleanly.
+  reviewed_by, reviewed_at, updated_at, stale (bool). **LOCKED (Shane, 2026-08-06):
+  dedicated `answer` table**, not the generic artifact-card engine — chosen because
+  answers carry robustness, source, and per-answer sweep state beyond what the card
+  payload holds cleanly. It still routes through the existing review queue to publish.
 - `answer_citation` — answer_id, document_id, chunk_id, snippet. The "sourced from" list.
 - `answer_relevance` — tenant_id, question_id, relevance_score (0–1), computed_at.
   Cached ranking output (§7) so the list isn't re-scored on every page load.
