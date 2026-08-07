@@ -327,3 +327,15 @@ button.vis-dot.busy{opacity:.5}
 /* full-width topbar search; user chip locked right */
 .topbar-search{max-width:none}
 .topbar .userchip{flex:none;margin-left:8px}
+
+/* Answer Library intro */
+.al-intro-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}
+.al-step{display:flex;gap:10px;align-items:flex-start;background:var(--panel,#fff);border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:14px}
+.al-step-n{flex:none;width:24px;height:24px;border-radius:50%;background:#1A1A1A;color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.al-step strong{display:block;font-size:14px;margin-bottom:2px}
+.al-step p{margin:0;font-size:12.5px;color:var(--muted,#666);line-height:1.4}
+.al-soon{background:var(--panel,#fff);border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:18px 20px}
+.al-soon-lede{margin:6px 0 14px;font-size:13.5px;color:var(--muted,#555);line-height:1.5;max-width:70ch}
+.al-cat-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 20px}
+.al-cat-list li{font-size:13px;padding:8px 12px;border:1px dashed var(--border,#ddd);border-radius:8px;color:#333}
+@media(max-width:720px){.al-intro-grid{grid-template-columns:1fr}.al-cat-list{grid-template-columns:1fr}}
