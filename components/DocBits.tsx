@@ -48,6 +48,9 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   const [confirmDel, setConfirmDel] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [viewing, setViewing] = useState(false);
+  const [fullText, setFullText] = useState<{ title: string; text: string } | null>(null);
+  const [loadingText, setLoadingText] = useState(false);
 
   const openFile = async () => {
     setMsg(null);
@@ -55,6 +58,15 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
     if (!res.ok) { setMsg("Couldn't open this file."); return; }
     const { url } = await res.json();
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+  const openViewer = async () => {
+    setViewing(true);
+    if (!fullText) {
+      setLoadingText(true);
+      const res = await fetch(`/api/document/text?documentId=${d.id}`);
+      if (res.ok) setFullText(await res.json());
+      setLoadingText(false);
+    }
   };
   const addTag = () => { const t = newTag.trim(); if (t && !tags.includes(t)) setTags([...tags, t]); setNewTag(""); };
   const saveTags = async () => { setBusy("tags"); await updateDocTagsAction(d.id, tags); setBusy(null); setEditing(false); router.refresh(); };
@@ -106,6 +118,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
       <div className="kv"><div className="k">Preview</div><div>{d.snippet}</div></div>
       {msg && <div className="metric-gap" style={{ marginTop: 8 }}>{msg}</div>}
       <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn" onClick={openViewer}>View full text</button>
         <button className="btn secondary" onClick={openFile}>Download original</button>
         {!editing
           ? <button className="btn secondary" onClick={() => { setTags(d.tags); setEditing(true); }}>Edit tags</button>
@@ -126,6 +139,23 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
               </div>
             </div>}
       </div>
+      {viewing && (
+        <div className="doc-viewer-overlay" onClick={() => setViewing(false)}>
+          <div className="doc-viewer" onClick={e => e.stopPropagation()}>
+            <div className="dv-head">
+              <div><span className={`ftype ${d.doc_kind}`}>{d.doc_kind.toUpperCase()}</span> <strong style={{ marginLeft: 8 }}>{d.title}</strong></div>
+              <button className="btn ghost" onClick={() => setViewing(false)}>✕ Close</button>
+            </div>
+            <div className="dv-body">
+              {loadingText
+                ? <p className="empty">Loading full text…</p>
+                : fullText?.text
+                  ? <pre className="dv-text">{fullText.text}</pre>
+                  : <p className="empty">No extractable text for this document (it may be audio or a spreadsheet, or still processing).</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </Drawer>
   );
 }

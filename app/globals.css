@@ -439,3 +439,10 @@ button.vis-dot.busy{opacity:.5}
 .answer-card{border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:12px 14px;background:var(--panel,#fff)}
 .answer-card .answer-text{margin:0;white-space:pre-wrap;font-size:13.5px;line-height:1.55}
 .cite.inline.card-src{margin:10px 0 0;display:inline-block}
+
+/* Full-text document viewer modal */
+.doc-viewer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:24px}
+.doc-viewer{background:#fff;border-radius:12px;max-width:840px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.28)}
+.dv-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border,#eee)}
+.dv-body{overflow:auto;padding:16px 20px}
+.dv-text{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.6;margin:0}

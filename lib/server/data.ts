@@ -258,3 +258,22 @@ export async function getChatMessages(sessionId: string, tenantId: string, userI
     citations: ((m.citations as string[]) ?? []).filter(id => titleById.has(id)).map(id => ({ id, title: titleById.get(id)! })),
   }));
 }
+
+// Full extracted text of a document, reconstructed from its chunks (using the
+// char offsets to drop the overlap). RLS-scoped via userClient.
+export async function getDocumentFullText(documentId: string): Promise<{ title: string; text: string } | null> {
+  const s = await userClient();
+  const { data: doc } = await s.from("document").select("title").eq("id", documentId).maybeSingle();
+  if (!doc) return null;
+  const { data: chunks } = await s.from("document_chunk")
+    .select("text, char_start, char_end").eq("document_id", documentId).order("char_start");
+  let text = "";
+  let coveredEnd = 0;
+  for (const c of (chunks ?? []) as { text: string; char_start: number; char_end: number }[]) {
+    if (c.char_end <= coveredEnd) continue;
+    const overlap = Math.max(0, coveredEnd - c.char_start);
+    text += c.text.slice(overlap);
+    coveredEnd = c.char_end;
+  }
+  return { title: doc.title as string, text: text.trim() };
+}
