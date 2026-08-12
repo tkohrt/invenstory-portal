@@ -3,28 +3,37 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOutAction, switchTenantAction } from "@/lib/server/actions";
-import { setArtifactVisibilityAction } from "@/lib/server/artifact-actions";
+import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/server/artifact-actions";
 import type { AppUser, NavArtifact, Tenant } from "@/lib/types";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
   tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number;
+  answerLibraryVisible: boolean;
   children?: React.ReactNode;
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, answerLibraryVisible, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
   const [topQuery, setTopQuery] = useState("");
   const submitSearch = (e: React.FormEvent) => { e.preventDefault(); const v = topQuery.trim(); if (v) router.push(`/search?q=${encodeURIComponent(v)}`); };
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
+  const [togglingFeature, setTogglingFeature] = useState(false);
   const admin = role === "admin";
   const toggleVisibility = async (e: React.MouseEvent, slug: string, currentlyVisible: boolean) => {
     e.preventDefault(); e.stopPropagation();
     setTogglingSlug(slug);
     await setArtifactVisibilityAction(slug, !currentlyVisible);
     setTogglingSlug(null);
+    router.refresh();
+  };
+  const toggleFeature = async (e: React.MouseEvent, key: string, currentlyVisible: boolean) => {
+    e.preventDefault(); e.stopPropagation();
+    setTogglingFeature(true);
+    await setFeatureVisibilityAction(key, !currentlyVisible);
+    setTogglingFeature(false);
     router.refresh();
   };
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -67,7 +76,21 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <div className="nav-section-label">Workspace</div>
         <Link onClick={closeNav} className={nav("/dashboard")} href="/dashboard"><span className="ic">▤</span> Dashboard</Link>
         <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> {tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory"}</Link>
-        <Link onClick={closeNav} className={nav("/answer-library")} href="/answer-library"><span className="ic">◎</span> Answer Library</Link>
+        {(admin || answerLibraryVisible) && (
+          <Link onClick={closeNav}
+            className={`${nav("/answer-library")}${admin && !answerLibraryVisible ? " nav-hidden" : ""}`}
+            href="/answer-library"
+            title={admin ? (answerLibraryVisible ? "Visible to client" : "Hidden from client") : undefined}>
+            <span className="ic">◎</span> Answer Library
+            {admin && (
+              <button type="button"
+                className={`vis-dot ${answerLibraryVisible ? "on" : "off"}${togglingFeature ? " busy" : ""}`}
+                onClick={e => toggleFeature(e, "answer_library", answerLibraryVisible)}
+                aria-label={answerLibraryVisible ? "Hide from client" : "Show to client"}
+                title={answerLibraryVisible ? "Visible to client — click to hide" : "Hidden from client — click to show"} />
+            )}
+          </Link>
+        )}
         <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask your Inven(s)tory</Link>
         <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
         <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> Grants In The Works</Link>

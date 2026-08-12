@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
-import { getTenant } from "@/lib/server/data";
+import { getFeatureVisible, getTenant } from "@/lib/server/data";
 
 export default async function AnswerLibraryPage() {
   const session = await getSession();
@@ -8,6 +8,11 @@ export default async function AnswerLibraryPage() {
   const tenant = await getTenant(session.tenantId);
   if (!tenant) redirect("/");
   const isAdmin = session.role === "admin";
+  // Hidden by default; clients can only reach it once an admin turns it on.
+  if (!isAdmin) {
+    const visible = await getFeatureVisible(session.tenantId, "answer_library");
+    if (!visible) redirect("/dashboard");
+  }
 
   const categories = [
     "Organization overview & mission",

@@ -80,6 +80,15 @@ export async function getNavArtifactTypes(tenantId: string, isAdmin: boolean): P
   return isAdmin ? items : items.filter(i => i.visible);
 }
 
+// Top-level feature visibility (Answer Library, etc.). Defaults HIDDEN: a feature
+// is client-visible only when an explicit row exists with visible = true.
+export async function getFeatureVisible(tenantId: string, featureKey: string): Promise<boolean> {
+  const s = await userClient();
+  const { data } = await s.from("feature_visibility")
+    .select("visible").eq("tenant_id", tenantId).eq("feature_key", featureKey).maybeSingle();
+  return data?.visible ?? false;
+}
+
 export async function getArtifactTypes(): Promise<ArtifactType[]> {
   const s = await userClient();
   const { data } = await s.from("artifact_type").select("*").order("slug");
