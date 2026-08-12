@@ -94,7 +94,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
             </div>
           </div>}
       <div className="kv"><div className="k">Layer</div><div><span className="layer-dot" style={{ background: meta.color }} /> Layer {d.layer} — {meta.name}</div></div>
-      <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.uploader_name}</div></div>
+      <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
       {failed && isAdmin && (
         <div className="metric-gap" style={{ marginTop: 6 }}>
