@@ -44,9 +44,9 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
           <button className="btn ghost" style={{ fontSize: 12.5, padding: "0 4px" }} onClick={() => setShowBedrock(true)}>Learn More</button></p>
       </div></div>
       <div className="suggest">
-        <button onClick={() => ask("What is the transportation program?")}>What is the transportation program?</button>
+        <button onClick={() => ask("What is our mission?")}>What is our mission?</button>
         <button onClick={() => ask("What is the founding story?")}>What is the founding story?</button>
-        <button onClick={() => ask("How is the organization funded?")}>How is it funded?</button>
+        <button onClick={() => ask("Share a story about my organization's impact.")}>Share a story about my organization&rsquo;s impact.</button>
       </div>
       <div className="chat-stream" ref={streamRef}>
         <div className="msg ai"><div className="who">AI</div><div className="bubble">
