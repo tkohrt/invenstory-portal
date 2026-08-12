@@ -45,7 +45,6 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
     { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
-    {                        href: "/account",        ic: "◔", label: "Account",                toggle: false },
     { key: "drafts",         href: "/drafts",         ic: "✎", label: "Grants In The Works",    toggle: true },
   ];
   const closeNav = () => setNavOpen(false);
@@ -102,6 +101,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             </Link>
           );
         })}
+        <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
         {artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav}
