@@ -4,28 +4,54 @@ import { useRouter } from "next/navigation";
 import { switchTenantAction } from "@/lib/server/actions";
 import { createClientAction, type NewClientResult } from "@/lib/server/admin-actions";
 import Drawer from "./Drawer";
-import type { TenantSummary } from "@/lib/types";
+import type { PortfolioStats } from "@/lib/types";
 
-export default function AdminClientsView({ tenants }: { tenants: TenantSummary[] }) {
+const money = (cents: number) => "$" + Math.round(cents / 100).toLocaleString();
+const num = (n: number) => n.toLocaleString();
+
+function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+  return (
+    <div className={`stat-card${accent ? " accent" : ""}`}>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+export default function AdminClientsView({ portfolio: p }: { portfolio: PortfolioStats }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
-  const open = async (id: string) => { await switchTenantAction(id); router.push("/invenstory"); router.refresh(); };
+  const cut = (r: number) => money(Math.round(r * 0.10)) + "–" + money(Math.round(r * 0.15));
+  const open = async (id: string) => { await switchTenantAction(id); router.push("/dashboard"); router.refresh(); };
+
   return (
     <div>
       <div className="page-head">
-        <div><h2>All clients</h2><p>Pick any client to open their complete account and Inven(s)tory.</p></div>
+        <div><h2>All clients</h2><p>Portfolio across every For Granted client. Select a client to open their account.</p></div>
         <div className="spacer" />
         <button className="btn secondary" onClick={() => setAdding(true)}>＋ New client</button>
       </div>
-      <div className="client-grid">
-        {tenants.map(t => (
-          <div key={t.id} className="client-card" onClick={() => open(t.id)}>
-            <h4>{t.name}</h4>
-            <div className="nums"><span><b>{t.doc_count}</b> docs</span>
-              <span>L1 <b>{t.by_layer.I}</b></span><span>L2 <b>{t.by_layer.II}</b></span><span>L3 <b>{t.by_layer.III}</b></span></div>
+
+      <div className="stat-grid">
+        <Stat label="Grant revenue won" value={money(p.revenueWonCents)} sub={`For Granted share (10–15%): ${cut(p.revenueWonCents)}`} accent />
+        <Stat label="Clients" value={num(p.tenants)} />
+        <Stat label="Grants won" value={num(p.won)} />
+        <Stat label="Applications submitted" value={num(p.applied)} />
+        <Stat label="Documents" value={num(p.totalDocs)} />
+        <Stat label="Words captured" value={num(p.totalWords)} />
+      </div>
+
+      <div className="section-label" style={{ marginTop: 22 }}>By client</div>
+      <div className="portfolio-table">
+        <div className="pt-row pt-head"><div>Client</div><div>Docs</div><div>Grants won</div><div>Revenue won</div></div>
+        {p.perClient.map(c => (
+          <div key={c.id} className="pt-row pt-click" onClick={() => open(c.id)} title={`Open ${c.name}`}>
+            <div>{c.name}</div><div>{num(c.docs)}</div><div>{num(c.won)}</div><div>{money(c.revenueWonCents)}</div>
           </div>
         ))}
       </div>
+
       {adding && <NewClientDrawer onClose={() => setAdding(false)} onCreated={() => router.refresh()} />}
     </div>
   );

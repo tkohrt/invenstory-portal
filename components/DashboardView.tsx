@@ -14,14 +14,15 @@ function Stat({ label, value, sub, accent }: { label: string; value: string; sub
 }
 
 export default function DashboardView(props:
-  | { role: "client"; orgName: string; stats: ClientStats }
+  | { role: "client"; orgName: string; stats: ClientStats; adminViewing?: boolean }
   | { role: "admin"; portfolio: PortfolioStats }) {
 
   if (props.role === "client") {
     const s = props.stats;
     return (
       <div>
-        <div className="page-head"><div><h2>{props.orgName}</h2><p>Your Inven(s)tory at a glance.</p></div></div>
+        {props.adminViewing && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {props.orgName}</div>}
+        <div className="page-head"><div><h2>{props.orgName}</h2><p>{props.adminViewing ? "This client\u2019s Inven(s)tory at a glance." : "Your Inven(s)tory at a glance."}</p></div></div>
 
         <div className="section-label">Your story, captured</div>
         <div className="stat-grid">

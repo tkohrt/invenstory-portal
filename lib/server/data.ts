@@ -163,6 +163,7 @@ export async function getPortfolioStats(): Promise<import("@/lib/types").Portfol
     totalWords += Number(wc ?? 0);
     const clientDrafts = dr.filter(d => d.tenant_id === t.id);
     return {
+      id: t.id,
       name: t.name,
       docs: (docs ?? []).filter(d => d.tenant_id === t.id).length,
       won: clientDrafts.filter(d => d.status === "won").length,

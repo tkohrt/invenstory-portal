@@ -396,3 +396,7 @@ button.vis-dot.busy{opacity:.5}
 .bx-table td{padding:5px 14px 5px 0}
 .bx-table td:first-child{color:var(--muted,#888)}
 .bx-pre{background:#f7f7f8;border:1px solid var(--border,#eee);border-radius:8px;padding:12px;font-size:12px;overflow:auto;white-space:pre-wrap}
+
+/* Clickable portfolio rows (admin All clients) */
+.pt-row.pt-click{cursor:pointer;transition:background .12s}
+.pt-row.pt-click:hover{background:#f5f7fb}
