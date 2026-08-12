@@ -34,16 +34,16 @@ function interpret(cfg: VertexCheck["config"], probe: VertexCheck["probe"]): { v
     return { verdict: "Authentication. The service-account credentials are missing or invalid. Confirm GOOGLE_VERTEX_CREDENTIALS is the full service-account JSON (one line) and the key is active.", redLayer: "auth" };
   if (/has not been used|service_disabled|is disabled|enable it by visiting|accessnotconfigured/.test(m))
     return { verdict: "Vertex AI API not enabled. Enable the Vertex AI API on this GCP project, then retry.", redLayer: "api_disabled" };
-  if (/must agree|accept the|not been granted access|publisher model|access to (the )?model|model is not accessible|not enabled/.test(m))
+  if (s === 429 || /resource_exhausted|quota exceeded|quota|rate limit|too many requests/.test(m))
+    return { verdict: "Quota. Vertex reports the per-model online-prediction quota is exhausted (new projects default to 0 for partner models like Claude). Request a quota increase for this model in the GCP Quotas console, then retry.", redLayer: "quota" };
+  if (/must agree|accept the|not been granted access|publisher model|access to (the )?model|model is not accessible|has not been enabled/.test(m))
     return { verdict: "Model access. The Claude model isn't enabled in Vertex AI Model Garden for this project. Open the model in Model Garden and click Enable (accept terms), then retry.", redLayer: "model_access" };
-  if (s === 403 || /permission|aiplatform\.|iam|does not have|forbidden/.test(m))
+  if (s === 403 || /permission denied|permissiondenied|does not have permission|\biam\b|forbidden|roles\/aiplatform/.test(m))
     return { verdict: "Permissions. The service account needs the Vertex AI User role (roles/aiplatform.user). Grant it in IAM. (If the role is present, the model may not be enabled in Model Garden.)", redLayer: "permission" };
   if (s === 404 || /not found|notfound|does not exist|unsupported|invalid model|no endpoints/.test(m))
-    return { verdict: "Model id / region. The model isn't available at this id+region. Check VERTEX_CLAUDE_MODEL (e.g. claude-sonnet-4@20250514) and VERTEX_REGION (us-east5, us-central1, europe-west1, or global).", redLayer: "model_id" };
+    return { verdict: "Model id / region. The model isn't available at this id+region. Check VERTEX_CLAUDE_MODEL and VERTEX_REGION (us-east5, us-central1, europe-west1, or global).", redLayer: "model_id" };
   if (/billing/.test(m))
     return { verdict: "Billing. Enable billing on the GCP project before using paid models.", redLayer: "billing" };
-  if (s === 429 || /resource_exhausted|quota|rate limit|too many requests/.test(m))
-    return { verdict: "Quota. The project's Vertex quota for this model is throttling. Request an increase in the GCP quotas console.", redLayer: "quota" };
   return { verdict: `Unexpected error${probe.errorName ? ` (${probe.errorName})` : ""}. See the message below.`, redLayer: "unknown" };
 }
 
