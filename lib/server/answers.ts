@@ -7,6 +7,7 @@ import "server-only";
 // never overwritten by (re)generation.
 import { db } from "./db";
 import { retrieve, generate, type Passage } from "./rag";
+import { refineExtractive } from "./refine";
 import type { Audience, Completeness } from "@/lib/types";
 
 const WORDS = (s: string, n: number) => s.split(/\s+/).slice(0, n).join(" ");
@@ -39,18 +40,36 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
     const { completeness, robustness } = scoreCompleteness(passages);
 
     let short: string | null = null, long: string | null = null;
+    let completenessOverride: Completeness | null = null, robustnessOverride: number | null = null;
     const citeDocs = [...new Set(passages.map(p => p.document_id))];
     if (passages.length > 0) {
-      const ans = await generate(q.prompt_text, passages);
-      // ans.content is a natural answer (Bedrock) or an extractive digest (fallback).
-      long = WORDS(ans.content, 260);
-      short = WORDS(passages[0].text, 55);
+      if (process.env.BEDROCK_CHAT_MODEL_ID) {
+        // Generative prose when Bedrock is available.
+        const ans = await generate(q.prompt_text, passages);
+        long = WORDS(ans.content, 260);
+        short = WORDS(ans.content, 55);
+      } else {
+        // No generative model: embedding-ranked, cleaned extractive refinement
+        // (Supabase gte-small). Falls back to the raw digest if refinement fails.
+        const refined = await refineExtractive([q.prompt_text, q.guidance ?? ""].join(" ").trim(), passages);
+        if (refined && (refined.short || refined.long)) {
+          short = refined.short ?? refined.long;
+          long = refined.long ?? refined.short;
+          if (refined.topScore >= 0.5 && refined.nGood >= 3) { completenessOverride = "strong"; robustnessOverride = 78; }
+          else if (refined.topScore >= 0.35 || refined.nGood >= 1) { completenessOverride = "partial"; robustnessOverride = 52; }
+          else { completenessOverride = "partial"; robustnessOverride = 40; }
+        } else {
+          const ans = await generate(q.prompt_text, passages);
+          long = WORDS(ans.content, 260);
+          short = WORDS(passages[0].text, 55);
+        }
+      }
     }
 
     // Upsert the answer row.
     const { data: row } = await db.from("answer").upsert({
       tenant_id: tenantId, question_id: q.id, short_answer: short, long_answer: long,
-      completeness, robustness_score: robustness, source: "auto", status: "draft",
+      completeness: completenessOverride ?? completeness, robustness_score: robustnessOverride ?? robustness, source: "auto", status: "draft",
       stale: false, updated_at: new Date().toISOString(),
     }, { onConflict: "tenant_id,question_id" }).select("id").single();
 
@@ -63,7 +82,7 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
       }
       await db.from("answer_event").insert({ tenant_id: tenantId, question_id: q.id, kind: "auto_generated" });
     }
-    summary.generated++; summary[completeness]++;
+    summary.generated++; summary[(completenessOverride ?? completeness)]++;
   }
   await db.from("audit_log").insert({ tenant_id: tenantId, action: "answers_generate",
     detail: `generated=${summary.generated} strong=${summary.strong} partial=${summary.partial} missing=${summary.missing}` });
