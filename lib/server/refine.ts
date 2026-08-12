@@ -15,11 +15,14 @@ const FILLERS: RegExp[] = [
 
 function cleanSentence(s: string): string {
   let t = s.replace(/\s+/g, " ").trim();
-  // drop conversational lead-ins
-  t = t.replace(/^(so|and|but|well|okay|ok|yeah|yep|right|like|now|anyway|i think|i think that|you know)[,\s]+/i, "");
+  // drop conversational lead-ins (repeatedly, e.g. "so, and, ...")
+  for (let i = 0; i < 3; i++) t = t.replace(/^(so|and|but|well|okay|ok|yeah|yep|right|like|now|anyway|i think that|i think|you know)[,\s]+/i, "");
   for (const f of FILLERS) t = t.replace(f, "");
-  t = t.replace(/\s+([,.;:!?])/g, "$1").replace(/([,;])\s*\1+/g, "$1").replace(/\s+/g, " ").trim();
-  t = t.replace(/^[,;:\-\s]+/, "").trim();
+  t = t.replace(/\b(\w+)(?:[,\s]+\1\b)+/gi, "$1");      // collapse stutters: "it, it" / "we're we're"
+  t = t.replace(/\s+([,.;:!?])/g, "$1");                 // no space before punctuation
+  t = t.replace(/([,;:])(?:\s*[,;:])+/g, "$1");          // collapse repeated punctuation
+  t = t.replace(/\s+/g, " ").trim();
+  t = t.replace(/^[,;:\-\s]+/, "").replace(/[,;:\s]+$/, "").trim();  // strip dangling punctuation
   if (t) t = t[0].toUpperCase() + t.slice(1);
   return t;
 }
