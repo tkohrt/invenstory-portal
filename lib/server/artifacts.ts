@@ -4,11 +4,11 @@ import "server-only";
 // Synthesis is Bedrock-armed; while Bedrock is blocked it uses the type's
 // grounded fallback (real corpus evidence, marked model_used='scaffold') so
 // the whole review lifecycle is exercisable today and upgrades on unblock.
-import { ConverseCommand, BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { bedrockRuntime, CHAT_MODEL_ID } from "./bedrock";
 import { db } from "./db";
 import { SI_TYPES, validateCards, type CorpusDoc } from "./si-registry";
 
-const CHAT_MODEL = process.env.BEDROCK_CHAT_MODEL_ID ?? "";
 
 async function loadCorpus(tenantId: string): Promise<CorpusDoc[]> {
   // System operation (like ingestion): service client, explicit tenant scope.
@@ -25,12 +25,10 @@ async function loadCorpus(tenantId: string): Promise<CorpusDoc[]> {
 
 async function synthesize(slug: string, docs: CorpusDoc[]): Promise<{ cards: ReturnType<typeof validateCards>; model: string }> {
   const type = SI_TYPES[slug];
-  if (CHAT_MODEL) {
+  if (CHAT_MODEL_ID) {
     try {
-      const bedrock = new BedrockRuntimeClient({ region: process.env.PORTAL_AWS_REGION ?? "us-east-1",
-        credentials: { accessKeyId: process.env.PORTAL_AWS_ACCESS_KEY_ID!, secretAccessKey: process.env.PORTAL_AWS_SECRET_ACCESS_KEY! } });
-      const res = await bedrock.send(new ConverseCommand({
-        modelId: CHAT_MODEL,
+      const res = await bedrockRuntime().send(new ConverseCommand({
+        modelId: CHAT_MODEL_ID,
         system: [{ text: type.system + " Respond with ONLY the JSON array, no prose." }],
         messages: [{ role: "user", content: [{ text: type.buildPrompt(docs) }] }],
         inferenceConfig: { maxTokens: 1500, temperature: 0.3 },
@@ -42,7 +40,7 @@ async function synthesize(slug: string, docs: CorpusDoc[]): Promise<{ cards: Ret
         const { title, citation_titles, ...payload } = c;
         return { title, payload, citation_titles };
       });
-      return { cards: validateCards(slug, shaped), model: CHAT_MODEL };
+      return { cards: validateCards(slug, shaped), model: CHAT_MODEL_ID };
     } catch { /* fall through to grounded fallback */ }
   }
   return { cards: validateCards(slug, type.fallback(docs)), model: "scaffold" };

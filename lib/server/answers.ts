@@ -8,6 +8,7 @@ import "server-only";
 import { db } from "./db";
 import { retrieve, generate, type Passage } from "./rag";
 import { refineExtractive } from "./refine";
+import { bedrockConfigured } from "./bedrock";
 import type { Audience, Completeness } from "@/lib/types";
 
 const WORDS = (s: string, n: number) => s.split(/\s+/).slice(0, n).join(" ");
@@ -43,7 +44,7 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
     let completenessOverride: Completeness | null = null, robustnessOverride: number | null = null;
     const citeDocs = [...new Set(passages.map(p => p.document_id))];
     if (passages.length > 0) {
-      if (process.env.BEDROCK_CHAT_MODEL_ID) {
+      if (bedrockConfigured()) {
         // Generative prose when Bedrock is available.
         const ans = await generate(q.prompt_text, passages);
         long = WORDS(ans.content, 260);

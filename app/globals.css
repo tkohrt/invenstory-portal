@@ -382,3 +382,17 @@ button.vis-dot.busy{opacity:.5}
 .aq-inactive{opacity:.5}
 .aq-row-actions{display:flex;gap:6px;white-space:nowrap}
 @media(max-width:720px){.aq-grid{grid-template-columns:1fr 1fr}}
+
+/* Bedrock diagnostic */
+.bx-verdict{border-radius:10px;padding:14px 16px;margin:6px 0 18px;border:1px solid var(--border,#e6e6e6)}
+.bx-verdict.ok{background:#e6f4ea;border-color:#bfe3c9}
+.bx-verdict.bad{background:#fdf2e3;border-color:#f2ddba}
+.bx-verdict p{margin:6px 0 0;font-size:13.5px;line-height:1.5}
+.bx-layer{font-weight:700;font-size:14px}
+.bx-row{display:flex;gap:10px;align-items:end;margin:12px 0 18px}
+.bx-row label{flex:1;font-size:12px;color:var(--muted,#666)}
+.bx-row input{width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--border,#ddd);border-radius:8px}
+.bx-table{border-collapse:collapse;font-size:13px;margin-bottom:8px}
+.bx-table td{padding:5px 14px 5px 0}
+.bx-table td:first-child{color:var(--muted,#888)}
+.bx-pre{background:#f7f7f8;border:1px solid var(--border,#eee);border-radius:8px;padding:12px;font-size:12px;overflow:auto;white-space:pre-wrap}

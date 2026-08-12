@@ -10,23 +10,11 @@ import "server-only";
 //    upgrades to hybrid the moment Bedrock is live.
 //  - generate(): calls Bedrock Converse. On ANY Bedrock failure it returns an
 //    honest extractive answer built from the retrieved passages.
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { bedrockRuntime, CHAT_MODEL_ID } from "./bedrock";
 import { embedText } from "./embed";
 import { userClient } from "./supabase";
 
-const REGION = process.env.PORTAL_AWS_REGION ?? "us-east-1";
-const EMBED_MODEL = process.env.BEDROCK_EMBED_MODEL_ID ?? "amazon.titan-embed-text-v2:0";
-const CHAT_MODEL = process.env.BEDROCK_CHAT_MODEL_ID ?? "";
-
-function bedrock() {
-  return new BedrockRuntimeClient({
-    region: REGION,
-    credentials: {
-      accessKeyId: process.env.PORTAL_AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.PORTAL_AWS_SECRET_ACCESS_KEY!,
-    },
-  });
-}
 
 export interface Passage {
   document_id: string; tenant_id: string; title: string;
@@ -84,10 +72,10 @@ export async function generate(question: string, passages: Passage[]): Promise<A
   if (passages.length === 0) {
     return { content: "I couldn't find anything in your documents that speaks to that. Try rephrasing, or it may be something worth adding to your Inven(s)tory.", citations: [], generated: false, mode: "none" };
   }
-  if (CHAT_MODEL) {
+  if (CHAT_MODEL_ID) {
     try {
-      const res = await bedrock().send(new ConverseCommand({
-        modelId: CHAT_MODEL,
+      const res = await bedrockRuntime().send(new ConverseCommand({
+        modelId: CHAT_MODEL_ID,
         system: [{ text: SYSTEM }],
         messages: [{ role: "user", content: [{ text: `Question: ${question}\n\nDocument passages:\n${buildContext(passages)}` }] }],
         inferenceConfig: { maxTokens: 600, temperature: 0.2 },
