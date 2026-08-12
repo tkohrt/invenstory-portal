@@ -12,6 +12,41 @@ import { loadSessionAction, deleteSessionAction } from "@/lib/server/chat-action
 interface Cite { id: string; title: string }
 interface Msg { role: "user" | "assistant"; content: string; citations: Cite[]; generated?: boolean; mode?: string }
 
+const MARKER = /\[\[src:[0-9a-fA-F-]{36}\]\]/;
+const MARKER_G = /(\[\[src:[0-9a-fA-F-]{36}\]\])/g;
+
+function AnswerBody({ content, citations, onOpen }: { content: string; citations: Cite[]; onOpen: (id: string) => void }) {
+  const titleById = new Map(citations.map(c => [c.id, c.title]));
+  // Marker-less (older/historical) messages: plain text + sources at the end.
+  if (!MARKER.test(content)) {
+    return (
+      <>
+        <p style={{ whiteSpace: "pre-wrap" }}>{content}</p>
+        {citations.length > 0 && (
+          <div className="cites">{citations.map(c => (
+            <span key={c.id} className="cite" onClick={() => onOpen(c.id)}>{c.title}</span>
+          ))}</div>
+        )}
+      </>
+    );
+  }
+  // Inline: render text runs, dropping a clickable source chip at each marker.
+  const parts = content.split(MARKER_G);
+  return (
+    <div className="answer-body">
+      {parts.map((part, i) => {
+        const m = part.match(/^\[\[src:([0-9a-fA-F-]{36})\]\]$/);
+        if (m) {
+          const id = m[1]; const title = titleById.get(id);
+          if (!title) return null;
+          return <span key={i} className="cite inline" onClick={() => onOpen(id)} title={`Source: ${title}`}>↗ {title}</span>;
+        }
+        return part ? <span key={i} className="answer-text">{part}</span> : null;
+      })}
+    </div>
+  );
+}
+
 export default function ChatView({ tenantName, docs, isAdmin, sessions: initialSessions }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean; sessions: ChatSessionSummary[] }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -92,14 +127,11 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
           <div key={i} className={`msg ${m.role === "user" ? "me" : "ai"}`}>
             <div className="who">{m.role === "user" ? "You" : "AI"}</div>
             <div className="bubble">
-              <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>
+              {m.role === "assistant"
+                ? <AnswerBody content={m.content} citations={m.citations ?? []} onOpen={setOpenDocId} />
+                : <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>}
               {m.role === "assistant" && m.mode === "extractive" && (
-                <div className="ai-disclaimer" style={{ marginTop: 0 }}>Showing source passages while AI generation is being provisioned — citations are live.</div>
-              )}
-              {m.citations && m.citations.length > 0 && (
-                <div className="cites">{m.citations.map(c => (
-                  <span key={c.id} className="cite" onClick={() => setOpenDocId(c.id)}>{c.title}</span>
-                ))}</div>
+                <div className="ai-disclaimer" style={{ marginTop: 8 }}>Showing source passages while AI generation is being provisioned — each is linked to its document.</div>
               )}
             </div>
           </div>

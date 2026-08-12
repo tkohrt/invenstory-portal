@@ -428,3 +428,8 @@ button.vis-dot.busy{opacity:.5}
   .ch-item{width:auto;border:1px solid var(--border,#eee)}
   .ch-item .ch-del{position:static;opacity:1;margin-left:4px}
 }
+
+/* Inline per-source citations in chat answers */
+.answer-body{line-height:1.55}
+.answer-text{white-space:pre-wrap}
+.cite.inline{display:inline-block;margin:1px 0 1px 5px;font-size:11.5px;vertical-align:baseline}
