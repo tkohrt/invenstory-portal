@@ -6,9 +6,9 @@ import "server-only";
 // honest extractive fallback while the quota is blocked. Human-edited answers are
 // never overwritten by (re)generation.
 import { db } from "./db";
-import { retrieve, generate, type Passage } from "./rag";
+import { retrieve, type Passage } from "./rag";
 import { refineExtractive } from "./refine";
-import { generationConfigured } from "./llm";
+import { generationConfigured, chatComplete } from "./llm";
 import type { Audience, Completeness } from "@/lib/types";
 
 const WORDS = (s: string, n: number) => s.split(/\s+/).slice(0, n).join(" ");
@@ -44,15 +44,23 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
     let completenessOverride: Completeness | null = null, robustnessOverride: number | null = null;
     const citeDocs = [...new Set(passages.map(p => p.document_id))];
     if (passages.length > 0) {
+      // 1) Try a real generative answer (Vertex/Bedrock). Only used if it actually returns.
+      let prose: string | null = null;
       if (generationConfigured()) {
-        // Generative prose when Bedrock is available.
-        const ans = await generate(q.prompt_text, passages);
-        long = WORDS(ans.content, 260);
-        short = WORDS(ans.content, 55);
+        const out = await chatComplete({
+          system: "You are drafting a grant-application answer for an organization using ONLY the provided excerpts from the organization's own documents. Write a clear, specific, well-structured answer to the question. Do not invent facts; if the excerpts are thin, answer with what is supported. No preamble or meta-commentary.",
+          user: `Question: ${q.prompt_text}\n\nExcerpts from the organization's documents:\n${passages.map((p, i) => `[${i + 1}] ${p.text}`).join("\n\n")}`,
+          maxTokens: 600, temperature: 0.3,
+        });
+        prose = out?.text ?? null;
+      }
+      if (prose) {
+        long = WORDS(prose, 260);
+        short = WORDS(prose, 55);
       } else {
-        // No generative model: embedding-ranked, cleaned extractive refinement
-        // (Supabase gte-small). Falls back to the raw digest if refinement fails.
-        const refined = await refineExtractive([q.prompt_text, q.guidance ?? ""].join(" ").trim(), passages);
+        // 2) Embedding-ranked, cleaned extractive refinement (Supabase gte-small) —
+        // the universal fallback whenever no generative model is available/working.
+        const refined = await refineExtractive(query, passages);
         if (refined && (refined.short || refined.long)) {
           short = refined.short ?? refined.long;
           long = refined.long ?? refined.short;
@@ -60,9 +68,9 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
           else if (refined.topScore >= 0.35 || refined.nGood >= 1) { completenessOverride = "partial"; robustnessOverride = 52; }
           else { completenessOverride = "partial"; robustnessOverride = 40; }
         } else {
-          const ans = await generate(q.prompt_text, passages);
-          long = WORDS(ans.content, 260);
+          // 3) Last resort: raw top passage.
           short = WORDS(passages[0].text, 55);
+          long = WORDS(passages.slice(0, 3).map(p => p.text).join(" "), 260);
         }
       }
     }
