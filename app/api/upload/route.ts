@@ -4,13 +4,10 @@ import { db } from "@/lib/server/db";
 import { processDocument } from "@/lib/server/ingest";
 import { markStaleOnUpload } from "@/lib/server/artifacts";
 import { notifyClientUpload } from "@/lib/server/notify";
+import { EXT_TO_KIND } from "@/lib/uploads";
 
 export const maxDuration = 60;
 
-const KIND_BY_EXT: Record<string, string> = {
-  pdf: "pdf", docx: "docx", doc: "docx", txt: "note", md: "note", html: "web",
-  xlsx: "xlsx", xls: "xlsx", mp3: "audio", m4a: "audio", wav: "audio",
-};
 const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
@@ -27,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "file too large (25 MB max)" }, { status: 400 });
   if (!["I", "II", "III"].includes(layer)) return NextResponse.json({ error: "layer required" }, { status: 400 });
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-  const docKind = KIND_BY_EXT[ext];
+  const docKind = EXT_TO_KIND[ext];
   if (!docKind) return NextResponse.json({ error: `unsupported file type .${ext}` }, { status: 400 });
 
   const tenantId = session.tenantId;

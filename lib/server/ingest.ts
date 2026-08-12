@@ -29,6 +29,16 @@ function sanitizeText(s: string): string {
   return s.replace(/^\uFEFF/, "").replace(/\u0000/g, "").replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, "");
 }
 
+function stripRtf(buffer: Buffer): string {
+  let s = buffer.toString("latin1");
+  s = s.replace(/\\'[0-9a-fA-F]{2}/g, "");      // hex-escaped chars
+  s = s.replace(/\\u-?\d+\??/g, "");           // unicode escapes
+  s = s.replace(/\\par[d]?\b/g, "\n");         // paragraph breaks
+  s = s.replace(/\\[a-zA-Z]+-?\d* ?/g, "");     // control words
+  s = s.replace(/[{}]/g, "").replace(/\\\*/g, "");
+  return s.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
   if (docKind === "pdf") {
     // unpdf: serverless-safe PDF text extraction (no DOMMatrix/browser globals,
@@ -49,6 +59,9 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
   }
   if (docKind === "note" || docKind === "web") {
     return [{ page: null, text: decodeText(buffer) }];
+  }
+  if (docKind === "rtf") {
+    return [{ page: null, text: stripRtf(buffer) }];
   }
   if (docKind === "audio") {
     throw new Error("Audio transcription pending (Transcribe/Whisper integration — Phase 3b follow-up).");

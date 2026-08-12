@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
 import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
+import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
   I: { name: "Public Story", desc: "Everything the world can see", color: "var(--l1)", cls: "l1" },
@@ -141,6 +142,7 @@ export function UploadDrawer({ tenantName, onClose, onDone }: {
 
   const submit = async () => {
     if (!file) { setError("Choose a file first."); return; }
+    if (!isAccepted(file.name)) { setError(`That file type isn\u2019t supported yet. Accepted: ${ACCEPTED_LABEL}. Other types can be emailed to ${SUPPORT_EMAIL}.`); return; }
     setBusy(true); setError(null);
     const fd = new FormData();
     fd.set("file", file); fd.set("title", title); fd.set("layer", layer); fd.set("tags", tags);
@@ -155,8 +157,19 @@ export function UploadDrawer({ tenantName, onClose, onDone }: {
       <h3>Upload a document</h3>
       <p style={{ color: "var(--muted)", marginTop: 2 }}>Add a file to {tenantName}&rsquo;s Inven(s)tory.</p>
       <label>File <span className="req">*</span></label>
-      <input type="file" accept=".pdf,.docx,.doc,.txt,.md,.html,.xlsx,.mp3,.m4a,.wav"
-        onChange={e => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, "")); }} />
+      <input type="file" accept={ACCEPT_ATTR}
+        onChange={e => {
+          const f = e.target.files?.[0] ?? null;
+          if (f && !isAccepted(f.name)) {
+            setError(`That file type isn\u2019t supported yet. Accepted: ${ACCEPTED_LABEL}. Other types can be emailed to ${SUPPORT_EMAIL}.`);
+            setFile(null); e.target.value = ""; return;
+          }
+          setError(null); setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, ""));
+        }} />
+      <div className="hint" style={{ marginTop: 4 }}>
+        Accepted: {ACCEPTED_LABEL}. Have an image, slide deck, or another file type? Email it to{" "}
+        <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and we&rsquo;ll add it for you.
+      </div>
       <label>Title</label>
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Board meeting minutes — June" />
       <label>Layer <span className="req">*</span></label>
