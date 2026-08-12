@@ -3,19 +3,22 @@
 // in the tenant's own documents with citations. While Bedrock generation is
 // being provisioned, answers are extractive (top passages) and clearly noted;
 // they become generated automatically once Bedrock is live — no UI change.
-import { useRef, useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 import { DocDrawer } from "./DocBits";
 import Drawer from "./Drawer";
-import type { DocumentWithTags } from "@/lib/types";
+import type { DocumentWithTags, ChatSessionSummary } from "@/lib/types";
+import { loadSessionAction, deleteSessionAction } from "@/lib/server/chat-actions";
 
 interface Cite { id: string; title: string }
 interface Msg { role: "user" | "assistant"; content: string; citations: Cite[]; generated?: boolean; mode?: string }
 
-export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean }) {
+export default function ChatView({ tenantName, docs, isAdmin, sessions: initialSessions }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean; sessions: ChatSessionSummary[] }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>(initialSessions);
+  const [loadingConvo, setLoadingConvo] = useState(false);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [showBedrock, setShowBedrock] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
@@ -30,14 +33,47 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
         body: JSON.stringify({ question: q, sessionId }) });
       const b = await res.json();
       if (!res.ok) { setMsgs(m => [...m, { role: "assistant", content: b.error ?? "Something went wrong.", citations: [] }]); }
-      else { setSessionId(b.sessionId); setMsgs(m => [...m, { role: "assistant", content: b.content, citations: b.citations ?? [], generated: b.generated, mode: b.mode }]); }
+      else {
+        const wasNew = !sessionId && b.sessionId;
+        setSessionId(b.sessionId);
+        if (wasNew) setSessions(list => [{ id: b.sessionId, title: q.slice(0, 60), created_at: new Date().toISOString() }, ...list]);
+        setMsgs(m => [...m, { role: "assistant", content: b.content, citations: b.citations ?? [], generated: b.generated, mode: b.mode }]);
+      }
     } catch { setMsgs(m => [...m, { role: "assistant", content: "Network error — please try again.", citations: [] }]); }
     setBusy(false); scroll();
   };
   const send = () => { const v = input.trim(); if (!v) return; setInput(""); ask(v); };
+  const newConversation = () => { setSessionId(undefined); setMsgs([]); };
+  const openConversation = async (id: string) => {
+    if (busy || loadingConvo) return;
+    setLoadingConvo(true); setSessionId(id);
+    try { const history = await loadSessionAction(id); setMsgs(history.map(h => ({ ...h }))); } catch { /* ignore */ }
+    setLoadingConvo(false); scroll();
+  };
+  const deleteConversation = async (e: MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("Delete this conversation? This can\u2019t be undone.")) return;
+    await deleteSessionAction(id);
+    setSessions(list => list.filter(x => x.id !== id));
+    if (sessionId === id) newConversation();
+  };
 
   return (
-    <div className="chat-wrap">
+    <div className="chat-layout">
+      <aside className="chat-history">
+        <button className="btn secondary chat-new" onClick={newConversation}>＋ New conversation</button>
+        <div className="ch-list">
+          {sessions.length === 0 && <p className="ch-empty">No past conversations yet.</p>}
+          {sessions.map(cs => (
+            <div key={cs.id} className={`ch-item${sessionId === cs.id ? " active" : ""}`} onClick={() => openConversation(cs.id)} title={cs.title}>
+              <span className="ch-title">{cs.title || "Conversation"}</span>
+              <span className="ch-date">{new Date(cs.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              <button className="ch-del" onClick={e => deleteConversation(e, cs.id)} aria-label="Delete conversation" title="Delete">✕</button>
+            </div>
+          ))}
+        </div>
+      </aside>
+      <div className="chat-wrap">
       <div className="page-head" style={{ marginBottom: 10 }}><div><h2>Ask your Inven(s)tory</h2>
         <p>Ask anything about {tenantName}. Answers with citations are drawn only from your own documents,
           with your data protected by Supabase and Amazon Bedrock.{" "}
@@ -49,9 +85,9 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
         <button onClick={() => ask("Share a story about my organization's impact.")}>Share a story about my organization&rsquo;s impact.</button>
       </div>
       <div className="chat-stream" ref={streamRef}>
-        <div className="msg ai"><div className="who">AI</div><div className="bubble">
+        {msgs.length === 0 && <div className="msg ai"><div className="who">AI</div><div className="bubble">
           <p>Hi — I can answer questions about <b>{tenantName}</b> using only their Inven(s)tory documents. Try a suggestion, or ask your own.</p>
-        </div></div>
+        </div></div>}
         {msgs.map((m, i) => (
           <div key={i} className={`msg ${m.role === "user" ? "me" : "ai"}`}>
             <div className="who">{m.role === "user" ? "You" : "AI"}</div>
@@ -92,6 +128,7 @@ export default function ChatView({ tenantName, docs, isAdmin }: { tenantName: st
             href="https://aws.amazon.com/bedrock/faqs/" target="_blank" rel="noopener noreferrer">↗ Amazon Bedrock FAQ</a>
         </Drawer>
       )}
+    </div>
     </div>
   );
 }

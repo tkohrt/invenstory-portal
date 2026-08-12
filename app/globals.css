@@ -404,3 +404,26 @@ button.vis-dot.busy{opacity:.5}
 /* Per-doc admin download button */
 .doc-dl{margin-left:auto;background:none;border:1px solid var(--border,#ddd);border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:3px 7px;color:#333}
 .doc-dl:hover{background:#f0f2f5}
+
+/* Chat history rail */
+.chat-layout{display:flex;gap:16px;align-items:stretch}
+.chat-layout .chat-wrap{flex:1;min-width:0}
+.chat-history{width:236px;flex:none;display:flex;flex-direction:column;gap:10px;border-right:1px solid var(--border,#eee);padding-right:14px}
+.chat-new{width:100%}
+.ch-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.ch-item{position:relative;display:flex;flex-direction:column;gap:1px;padding:8px 26px 8px 10px;border-radius:8px;cursor:pointer}
+.ch-item:hover{background:#f5f7fb}
+.ch-item.active{background:#eef2fb}
+.ch-title{font-size:13px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch-date{font-size:11px;color:var(--muted,#999)}
+.ch-del{position:absolute;right:6px;top:8px;border:none;background:none;color:#bbb;cursor:pointer;font-size:12px;line-height:1;padding:2px;opacity:0;transition:opacity .12s}
+.ch-item:hover .ch-del{opacity:1}
+.ch-del:hover{color:#c0392b}
+.ch-empty{font-size:12.5px;color:var(--muted,#999);padding:6px 4px}
+@media(max-width:760px){
+  .chat-layout{flex-direction:column}
+  .chat-history{width:auto;border-right:none;border-bottom:1px solid var(--border,#eee);padding-right:0;padding-bottom:12px;max-height:180px}
+  .ch-list{flex-direction:row;flex-wrap:wrap;gap:6px}
+  .ch-item{width:auto;border:1px solid var(--border,#eee)}
+  .ch-item .ch-del{position:static;opacity:1;margin-left:4px}
+}

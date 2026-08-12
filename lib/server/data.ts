@@ -227,3 +227,34 @@ export async function getAllQuestions(): Promise<import("@/lib/types").GrantQues
   const { data } = await s.from("grant_question").select("*").order("audience").order("sort_order");
   return (data ?? []) as import("@/lib/types").GrantQuestion[];
 }
+
+// ---- Chat history (per user within tenant) ----
+export async function getChatSessions(tenantId: string, userId: string): Promise<import("@/lib/types").ChatSessionSummary[]> {
+  const s = await userClient();
+  const { data } = await s.from("chat_session")
+    .select("id, title, created_at")
+    .eq("tenant_id", tenantId).eq("user_id", userId)
+    .order("created_at", { ascending: false }).limit(60);
+  return (data ?? []) as import("@/lib/types").ChatSessionSummary[];
+}
+
+export async function getChatMessages(sessionId: string, tenantId: string, userId: string): Promise<import("@/lib/types").ChatHistoryMsg[]> {
+  const s = await userClient();
+  // Only load a session that belongs to this caller (tenant + user).
+  const { data: owned } = await s.from("chat_session").select("id")
+    .eq("id", sessionId).eq("tenant_id", tenantId).eq("user_id", userId).maybeSingle();
+  if (!owned) return [];
+  const { data: msgs } = await s.from("chat_message")
+    .select("role, content, citations, created_at").eq("session_id", sessionId).order("created_at");
+  const ids = [...new Set((msgs ?? []).flatMap((m: Record<string, unknown>) => (m.citations as string[]) ?? []))];
+  const titleById = new Map<string, string>();
+  if (ids.length) {
+    const { data: docs } = await s.from("document").select("id, title").in("id", ids);
+    for (const d of (docs ?? []) as { id: string; title: string }[]) titleById.set(d.id, d.title);
+  }
+  return (msgs ?? []).map((m: Record<string, unknown>) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content as string,
+    citations: ((m.citations as string[]) ?? []).filter(id => titleById.has(id)).map(id => ({ id, title: titleById.get(id)! })),
+  }));
+}

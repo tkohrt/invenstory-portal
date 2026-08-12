@@ -194,3 +194,7 @@ export interface AnswerLibraryItem {
   answer: AnswerRow | null;
   citations: AnswerCite[];
 }
+
+// ---- Chat history ----
+export interface ChatSessionSummary { id: string; title: string; created_at: string }
+export interface ChatHistoryMsg { role: "user" | "assistant"; content: string; citations: { id: string; title: string }[] }
