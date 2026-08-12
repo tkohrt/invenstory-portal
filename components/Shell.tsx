@@ -122,6 +122,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           <div>
             <div className="nav-section-label" style={{ marginTop: 16 }}>Admin</div>
             <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
+            <Link onClick={closeNav} className={nav("/admin/questions")} href="/admin/questions"><span className="ic">◎</span> Question bank</Link>
             <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
               <span className="ic">✦</span> Story Intelligence reviews
               {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}

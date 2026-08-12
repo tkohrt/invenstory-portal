@@ -174,3 +174,23 @@ export interface PortfolioStats {
   tenants: number; totalDocs: number; totalWords: number;
   applied: number; won: number; revenueWonCents: number; perClient: PortfolioClient[];
 }
+
+// ---- Answer Library ----
+export type Audience = "nonprofit" | "startup" | "both";
+export type Completeness = "strong" | "partial" | "missing";
+export interface GrantQuestion {
+  id: string; slug: string; category: string; prompt_text: string;
+  guidance: string | null; audience: Audience; sort_order: number; active: boolean;
+}
+export interface AnswerCite { document_id: string; title: string }
+export interface AnswerRow {
+  short_answer: string | null; long_answer: string | null;
+  completeness: Completeness; robustness_score: number;
+  source: "auto" | "human"; status: "draft" | "in_review" | "published";
+  reviewed_at: string | null; stale: boolean;
+}
+export interface AnswerLibraryItem {
+  question: GrantQuestion;
+  answer: AnswerRow | null;
+  citations: AnswerCite[];
+}

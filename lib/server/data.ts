@@ -179,3 +179,50 @@ export async function getPortfolioStats(): Promise<import("@/lib/types").Portfol
     perClient,
   };
 }
+
+// ---- Answer Library ----
+export async function getAnswerLibrary(tenantId: string, orgType: "nonprofit" | "startup" | null): Promise<import("@/lib/types").AnswerLibraryItem[]> {
+  const s = await userClient();
+  const audiences = ["both", orgType ?? "nonprofit"];
+  const [{ data: questions }, { data: answers }] = await Promise.all([
+    s.from("grant_question").select("*").eq("active", true).in("audience", audiences).order("sort_order"),
+    s.from("answer").select("*").eq("tenant_id", tenantId),
+  ]);
+  const ansByQ = new Map((answers ?? []).map((a: Record<string, unknown>) => [a.question_id as string, a]));
+  // citations for the answers of this tenant
+  const answerIds = (answers ?? []).map((a: Record<string, unknown>) => a.id as string);
+  const citesByAnswer = new Map<string, import("@/lib/types").AnswerCite[]>();
+  if (answerIds.length) {
+    const { data: cites } = await s.from("answer_citation").select("answer_id, document_id").in("answer_id", answerIds);
+    const docIds = [...new Set((cites ?? []).map((c: Record<string, unknown>) => c.document_id as string))];
+    const { data: docs } = await s.from("document").select("id, title").in("id", docIds.length ? docIds : ["00000000-0000-0000-0000-000000000000"]);
+    const titleById = new Map((docs ?? []).map((d: Record<string, unknown>) => [d.id as string, d.title as string]));
+    const ansById = new Map((answers ?? []).map((a: Record<string, unknown>) => [a.id as string, a.question_id as string]));
+    void ansById;
+    for (const c of (cites ?? []) as Record<string, unknown>[]) {
+      const aid = c.answer_id as string;
+      const list = citesByAnswer.get(aid) ?? [];
+      list.push({ document_id: c.document_id as string, title: titleById.get(c.document_id as string) ?? "Document" });
+      citesByAnswer.set(aid, list);
+    }
+  }
+  return ((questions ?? []) as import("@/lib/types").GrantQuestion[]).map(q => {
+    const a = ansByQ.get(q.id) as Record<string, unknown> | undefined;
+    return {
+      question: q,
+      answer: a ? {
+        short_answer: (a.short_answer as string) ?? null, long_answer: (a.long_answer as string) ?? null,
+        completeness: a.completeness as import("@/lib/types").Completeness, robustness_score: (a.robustness_score as number) ?? 0,
+        source: a.source as "auto" | "human", status: a.status as "draft" | "in_review" | "published",
+        reviewed_at: (a.reviewed_at as string) ?? null, stale: (a.stale as boolean) ?? false,
+      } : null,
+      citations: a ? (citesByAnswer.get(a.id as string) ?? []) : [],
+    };
+  });
+}
+
+export async function getAllQuestions(): Promise<import("@/lib/types").GrantQuestion[]> {
+  const s = await userClient();
+  const { data } = await s.from("grant_question").select("*").order("audience").order("sort_order");
+  return (data ?? []) as import("@/lib/types").GrantQuestion[];
+}
