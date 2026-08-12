@@ -21,10 +21,12 @@ export async function embedText(text: string): Promise<number[] | null> {
   } catch { return null; }
 }
 
-// Batch embeddings: one edge call for many texts. Returns aligned vectors (null
-// per empty input). Used for sentence-level ranking in extractive refinement.
-export async function embedTexts(texts: string[]): Promise<(number[] | null)[] | null> {
-  if (!texts.length) return null;
+// Batch embeddings, aligned to input order (null per empty/failed item). The
+// gte-small edge function hits a per-invocation compute limit past ~10 inputs,
+// so we split into small sub-batches — each a separate invocation with its own
+// budget — and concatenate. Returns null only if a whole sub-batch fails.
+const EMBED_BATCH = 8;
+async function embedBatchOnce(texts: string[]): Promise<(number[] | null)[] | null> {
   try {
     const res = await fetch(EMBED_URL, {
       method: "POST",
@@ -35,4 +37,14 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[] |
     const body = await res.json();
     return Array.isArray(body.embeddings) ? body.embeddings as (number[] | null)[] : null;
   } catch { return null; }
+}
+export async function embedTexts(texts: string[]): Promise<(number[] | null)[] | null> {
+  if (!texts.length) return null;
+  const out: (number[] | null)[] = [];
+  for (let i = 0; i < texts.length; i += EMBED_BATCH) {
+    const part = await embedBatchOnce(texts.slice(i, i + EMBED_BATCH));
+    if (!part) return null;
+    out.push(...part);
+  }
+  return out.length === texts.length ? out : null;
 }
