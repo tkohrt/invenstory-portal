@@ -9,18 +9,18 @@ import type { AppUser, NavArtifact, Tenant } from "@/lib/types";
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
   tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number;
-  answerLibraryVisible: boolean;
+  workspaceVis: Record<string, boolean>;
   children?: React.ReactNode;
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, answerLibraryVisible, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, workspaceVis, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
   const [topQuery, setTopQuery] = useState("");
   const submitSearch = (e: React.FormEvent) => { e.preventDefault(); const v = topQuery.trim(); if (v) router.push(`/search?q=${encodeURIComponent(v)}`); };
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
-  const [togglingFeature, setTogglingFeature] = useState(false);
+  const [togglingFeature, setTogglingFeature] = useState<string | null>(null);
   const admin = role === "admin";
   const toggleVisibility = async (e: React.MouseEvent, slug: string, currentlyVisible: boolean) => {
     e.preventDefault(); e.stopPropagation();
@@ -31,14 +31,23 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   };
   const toggleFeature = async (e: React.MouseEvent, key: string, currentlyVisible: boolean) => {
     e.preventDefault(); e.stopPropagation();
-    setTogglingFeature(true);
+    setTogglingFeature(key);
     await setFeatureVisibilityAction(key, !currentlyVisible);
-    setTogglingFeature(false);
+    setTogglingFeature(null);
     router.refresh();
   };
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
+  const invLabel = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory";
+  const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
+    { key: "dashboard",      href: "/dashboard",      ic: "▤", label: "Dashboard",             toggle: true },
+    {                        href: "/library",        ic: "▦", label: invLabel,                 toggle: false },
+    { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
+    { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
+    {                        href: "/account",        ic: "◔", label: "Account",                toggle: false },
+    { key: "drafts",         href: "/drafts",         ic: "✎", label: "Grants In The Works",    toggle: true },
+  ];
   const closeNav = () => setNavOpen(false);
 
   return (
@@ -74,26 +83,25 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           </div>
         )}
         <div className="nav-section-label">Workspace</div>
-        <Link onClick={closeNav} className={nav("/dashboard")} href="/dashboard"><span className="ic">▤</span> Dashboard</Link>
-        <Link onClick={closeNav} className={nav("/library")} href="/library"><span className="ic">▦</span> {tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory"}</Link>
-        {(admin || answerLibraryVisible) && (
-          <Link onClick={closeNav}
-            className={`${nav("/answer-library")}${admin && !answerLibraryVisible ? " nav-hidden" : ""}`}
-            href="/answer-library"
-            title={admin ? (answerLibraryVisible ? "Visible to client" : "Hidden from client") : undefined}>
-            <span className="ic">◎</span> Answer Library
-            {admin && (
-              <button type="button"
-                className={`vis-dot ${answerLibraryVisible ? "on" : "off"}${togglingFeature ? " busy" : ""}`}
-                onClick={e => toggleFeature(e, "answer_library", answerLibraryVisible)}
-                aria-label={answerLibraryVisible ? "Hide from client" : "Show to client"}
-                title={answerLibraryVisible ? "Visible to client — click to hide" : "Hidden from client — click to show"} />
-            )}
-          </Link>
-        )}
-        <Link onClick={closeNav} className={nav("/chat")} href="/chat"><span className="ic">✦</span> Ask your Inven(s)tory</Link>
-        <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
-        <Link onClick={closeNav} className={nav("/drafts")} href="/drafts"><span className="ic">✎</span> Grants In The Works</Link>
+        {workspaceNav.map(item => {
+          const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;
+          if (item.toggle && !admin && !visible) return null;
+          return (
+            <Link key={item.href} onClick={closeNav}
+              className={`${nav(item.href)}${item.toggle && admin && !visible ? " nav-hidden" : ""}`}
+              href={item.href}
+              title={item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
+              <span className="ic">{item.ic}</span> {item.label}
+              {item.toggle && admin && (
+                <button type="button"
+                  className={`vis-dot ${visible ? "on" : "off"}${togglingFeature === item.key ? " busy" : ""}`}
+                  onClick={e => toggleFeature(e, item.key!, visible)}
+                  aria-label={visible ? "Hide from client" : "Show to client"}
+                  title={visible ? "Visible to client — click to hide" : "Hidden from client — click to show"} />
+              )}
+            </Link>
+          );
+        })}
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
         {artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav}

@@ -4,6 +4,7 @@ import "server-only";
 // for security: for a client, RLS restricts to their tenant; for an admin,
 // is_admin() lifts the filter and the activeTenant arg simply *selects* which
 // client to view. The Phase 3 service-role scaffold is gone from this file.
+import { WORKSPACE_FEATURES, WORKSPACE_FEATURE_MAP } from "@/lib/workspace";
 import { userClient } from "./supabase";
 import { db } from "./db";
 import type {
@@ -80,13 +81,24 @@ export async function getNavArtifactTypes(tenantId: string, isAdmin: boolean): P
   return isAdmin ? items : items.filter(i => i.visible);
 }
 
-// Top-level feature visibility (Answer Library, etc.). Defaults HIDDEN: a feature
-// is client-visible only when an explicit row exists with visible = true.
+// Top-level Workspace feature visibility. Each toggleable feature has a default
+// (see lib/workspace.ts). Resolution: an explicit feature_visibility row wins;
+// otherwise the feature's registry default applies (e.g. Answer Library => hidden,
+// Dashboard/Ask/Grants => visible). Unknown keys default hidden.
 export async function getFeatureVisible(tenantId: string, featureKey: string): Promise<boolean> {
+  const map = await getWorkspaceVisibility(tenantId);
+  return map[featureKey] ?? (WORKSPACE_FEATURE_MAP[featureKey]?.defaultVisible ?? false);
+}
+
+// Resolved visibility for every toggleable Workspace feature, applying defaults.
+export async function getWorkspaceVisibility(tenantId: string): Promise<Record<string, boolean>> {
   const s = await userClient();
   const { data } = await s.from("feature_visibility")
-    .select("visible").eq("tenant_id", tenantId).eq("feature_key", featureKey).maybeSingle();
-  return data?.visible ?? false;
+    .select("feature_key, visible").eq("tenant_id", tenantId);
+  const rows = new Map((data ?? []).map((r: { feature_key: string; visible: boolean }) => [r.feature_key, r.visible]));
+  const out: Record<string, boolean> = {};
+  for (const f of WORKSPACE_FEATURES) out[f.key] = rows.get(f.key) ?? f.defaultVisible;
+  return out;
 }
 
 export async function getArtifactTypes(): Promise<ArtifactType[]> {

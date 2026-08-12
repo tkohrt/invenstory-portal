@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
+import { gateFeature } from "@/lib/server/gate";
 import { getTenant } from "@/lib/server/data";
 import { getDraft } from "@/lib/server/drafts";
 import DraftDetailView from "@/components/DraftDetailView";
@@ -8,6 +9,7 @@ export default async function DraftDetailPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const session = await getSession();
   if (!session) redirect("/");
+  await gateFeature(session.role, session.tenantId, "drafts");
   const [tenant, draft] = await Promise.all([getTenant(session.tenantId), getDraft(session.tenantId, id)]);
   if (!tenant) redirect("/");
   if (!draft) return <div className="empty">This draft doesn&rsquo;t exist.</div>;
