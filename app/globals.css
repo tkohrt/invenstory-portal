@@ -433,3 +433,9 @@ button.vis-dot.busy{opacity:.5}
 .answer-body{line-height:1.55}
 .answer-text{white-space:pre-wrap}
 .cite.inline{display:inline-block;margin:1px 0 1px 5px;font-size:11.5px;vertical-align:baseline}
+
+/* Answer cards (Supabase extractive: one card per source passage) */
+.answer-cards{display:flex;flex-direction:column;gap:10px}
+.answer-card{border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:12px 14px;background:var(--panel,#fff)}
+.answer-card .answer-text{margin:0;white-space:pre-wrap;font-size:13.5px;line-height:1.55}
+.cite.inline.card-src{margin:10px 0 0;display:inline-block}

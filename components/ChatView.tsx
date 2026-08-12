@@ -30,19 +30,29 @@ function AnswerBody({ content, citations, onOpen }: { content: string; citations
       </>
     );
   }
-  // Inline: render text runs, dropping a clickable source chip at each marker.
-  const parts = content.split(MARKER_G);
+  // Card per section: text up to each source marker becomes its own card,
+  // footed by a clickable source chip. (Supabase extractive mode — revisit when
+  // Google/AWS generative prose is live.)
+  const sections: { text: string; id: string | null }[] = [];
+  const re = /\[\[src:([0-9a-fA-F-]{36})\]\]/g;
+  let last = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    sections.push({ text: content.slice(last, m.index).trim(), id: m[1] });
+    last = re.lastIndex;
+  }
+  const tail = content.slice(last).trim();
+  if (tail) sections.push({ text: tail, id: null });
+
   return (
-    <div className="answer-body">
-      {parts.map((part, i) => {
-        const m = part.match(/^\[\[src:([0-9a-fA-F-]{36})\]\]$/);
-        if (m) {
-          const id = m[1]; const title = titleById.get(id);
-          if (!title) return null;
-          return <span key={i} className="cite inline" onClick={() => onOpen(id)} title={`Source: ${title}`}>↗ {title}</span>;
-        }
-        return part ? <span key={i} className="answer-text">{part}</span> : null;
-      })}
+    <div className="answer-cards">
+      {sections.filter(sec => sec.text || sec.id).map((sec, i) => (
+        <div key={i} className="answer-card">
+          {sec.text && <p className="answer-text">{sec.text}</p>}
+          {sec.id && titleById.get(sec.id) && (
+            <span className="cite inline card-src" onClick={() => onOpen(sec.id!)} title={`Source: ${titleById.get(sec.id)}`}>↗ {titleById.get(sec.id)}</span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
