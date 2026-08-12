@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { userClient } from "@/lib/server/supabase";
+import { downloadFilename } from "@/lib/server/filename";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -14,11 +15,10 @@ export async function GET(req: NextRequest) {
 
   const supabase = await userClient();
   // RLS: this returns a row only if the doc belongs to the caller's tenant.
-  const { data: doc } = await supabase.from("document").select("storage_key, title, mime_type").eq("id", documentId).single();
+  const { data: doc } = await supabase.from("document").select("storage_key, title, mime_type, doc_kind, original_name").eq("id", documentId).single();
   if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const ext = doc.mime_type?.split("/")?.[1] ?? "bin";
-  const filename = `${doc.title}`.replace(/[^\w.\- ]+/g, "_").slice(0, 80) + (doc.title.includes(".") ? "" : `.${ext}`);
+  const filename = downloadFilename(doc);
   const { data: signed, error } = await supabase.storage.from("documents")
     .createSignedUrl(doc.storage_key, 120, { download: filename }); // 2-min expiry, force download
   if (error || !signed) return NextResponse.json({ error: "could not sign" }, { status: 500 });

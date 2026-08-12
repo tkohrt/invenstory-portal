@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
 
   const { error: docErr } = await db.from("document").insert({
     id: docId, tenant_id: tenantId, title: title || file.name, layer,
+    original_name: file.name,
     storage_key: storageKey, mime_type: file.type || "application/octet-stream",
     doc_kind: docKind, status: "pending", uploaded_by: session.user.id,
     source: session.role === "admin" ? "for_granted" : "client",

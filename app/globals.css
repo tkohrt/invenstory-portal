@@ -400,3 +400,7 @@ button.vis-dot.busy{opacity:.5}
 /* Clickable portfolio rows (admin All clients) */
 .pt-row.pt-click{cursor:pointer;transition:background .12s}
 .pt-row.pt-click:hover{background:#f5f7fb}
+
+/* Per-doc admin download button */
+.doc-dl{margin-left:auto;background:none;border:1px solid var(--border,#ddd);border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:3px 7px;color:#333}
+.doc-dl:hover{background:#f0f2f5}

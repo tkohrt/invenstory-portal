@@ -59,6 +59,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
           )}
         </div>
         <div className="spacer" />
+        {isAdmin && <a className="btn ghost" href="/api/export" title="Download all originals as a .zip">⬇ Download all (.zip)</a>}
         <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
       <div className="filters">

@@ -25,6 +25,11 @@ export function DocCard({ d, onOpen, isAdmin }: { d: DocumentWithTags; onOpen: (
         <span>{new Date(d.created_at).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
         {isAdmin && <StatusChip status={d.status} />}
         <span className="provenance">{d.source === "for_granted" ? "Added by For Granted" : "Added by you"}</span>
+        {isAdmin && <button className="doc-dl" title="Download original" aria-label="Download original"
+          onClick={async (e) => { e.stopPropagation();
+            const res = await fetch(`/api/file?documentId=${d.id}`);
+            if (res.ok) { const { url } = await res.json(); window.open(url, "_blank", "noopener,noreferrer"); }
+          }}>⬇</button>}
       </div>
       <div className="tags">{d.tags.map(t => <span key={t} className="tag">{t}</span>)}</div>
     </div>
@@ -100,7 +105,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
       <div className="kv"><div className="k">Preview</div><div>{d.snippet}</div></div>
       {msg && <div className="metric-gap" style={{ marginTop: 8 }}>{msg}</div>}
       <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="btn secondary" onClick={openFile}>Open file</button>
+        <button className="btn secondary" onClick={openFile}>Download original</button>
         {!editing
           ? <button className="btn secondary" onClick={() => { setTags(d.tags); setEditing(true); }}>Edit tags</button>
           : <>
