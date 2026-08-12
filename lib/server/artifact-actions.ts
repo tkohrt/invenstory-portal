@@ -58,7 +58,7 @@ export async function setArtifactVisibilityAction(slug: string, visible: boolean
     .eq("tenant_id", s.tenantId).eq("type_slug", slug);
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "si_visibility", detail: `${slug}=${visible ? "visible" : "hidden"}` });
   revalidatePath(`/story-intelligence/${slug}`);
-  revalidatePath("/library");
+  revalidatePath("/invenstory");
 }
 
 export async function setFeatureVisibilityAction(featureKey: string, visible: boolean) {

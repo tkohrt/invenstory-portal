@@ -42,7 +42,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const invLabel = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory";
   const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
     { key: "dashboard",      href: "/dashboard",      ic: "▤", label: "Dashboard",             toggle: true },
-    {                        href: "/library",        ic: "▦", label: invLabel,                 toggle: false },
+    {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
     { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     {                        href: "/account",        ic: "◔", label: "Account",                toggle: false },

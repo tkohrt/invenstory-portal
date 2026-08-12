@@ -10,7 +10,7 @@ export async function signInAction(formData: FormData) {
   const supabase = await userClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect("/?error=" + encodeURIComponent("Invalid email or password."));
-  redirect("/library");
+  redirect("/invenstory");
 }
 
 export async function signOutAction() {
@@ -26,7 +26,7 @@ export async function switchTenantAction(tenantId: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/");
   const { data: me } = await db.from("app_user").select("role").eq("auth_id", user.id).single();
-  if (me?.role !== "admin") redirect("/library");
+  if (me?.role !== "admin") redirect("/invenstory");
   (await cookies()).set("active_tenant", tenantId, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
   // audit the cross-tenant view
   await db.from("audit_log").insert({ actor_user_id: null, tenant_id: tenantId, action: "admin_switch_tenant", detail: `admin ${user.email} viewing tenant ${tenantId}` });
@@ -48,5 +48,5 @@ export async function updatePasswordAction(formData: FormData) {
   const supabase = await userClient();
   const { error } = await supabase.auth.updateUser({ password });
   if (error) redirect("/auth/update-password?error=" + encodeURIComponent(error.message));
-  redirect("/library");
+  redirect("/invenstory");
 }

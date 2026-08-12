@@ -6,6 +6,6 @@ import AdminClientsView from "@/components/AdminClientsView";
 export default async function ClientsPage() {
   const session = await getSession();
   if (!session) redirect("/");
-  if (session.role !== "admin") redirect("/library");
+  if (session.role !== "admin") redirect("/invenstory");
   return <AdminClientsView tenants={await getTenantSummaries()} />;
 }

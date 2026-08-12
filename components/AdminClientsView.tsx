@@ -9,7 +9,7 @@ import type { TenantSummary } from "@/lib/types";
 export default function AdminClientsView({ tenants }: { tenants: TenantSummary[] }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
-  const open = async (id: string) => { await switchTenantAction(id); router.push("/library"); router.refresh(); };
+  const open = async (id: string) => { await switchTenantAction(id); router.push("/invenstory"); router.refresh(); };
   return (
     <div>
       <div className="page-head">

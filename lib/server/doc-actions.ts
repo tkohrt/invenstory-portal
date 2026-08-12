@@ -18,7 +18,7 @@ export async function updateDocTagsAction(documentId: string, tags: string[]) {
   await db.from("document_tag").delete().eq("document_id", documentId).eq("tenant_id", doc.tenant_id);
   if (clean.length) await db.from("document_tag").insert(clean.map(tag => ({ document_id: documentId, tenant_id: doc.tenant_id, tag })));
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "edit_tags", detail: `${documentId} -> [${clean.join(", ")}]` });
-  revalidatePath("/library"); revalidatePath("/search");
+  revalidatePath("/invenstory"); revalidatePath("/search");
 }
 
 // Rename a document (RLS-verified: caller's tenant only).
@@ -32,7 +32,7 @@ export async function renameDocAction(documentId: string, title: string) {
   if (!doc) throw new Error("not found");
   await db.from("document").update({ title: clean }).eq("id", documentId).eq("tenant_id", doc.tenant_id);
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "rename_doc", detail: `${documentId} -> ${clean}` });
-  revalidatePath("/library"); revalidatePath("/search");
+  revalidatePath("/invenstory"); revalidatePath("/search");
 }
 
 // Reprocess a document through ingestion (clears stale failures after a fix).
@@ -46,7 +46,7 @@ export async function reprocessDocAction(documentId: string) {
   try { await processDocument(documentId); }
   catch (e) { throw new Error(e instanceof Error ? e.message : "reprocess failed"); }
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "reprocess_doc", detail: documentId });
-  revalidatePath("/library"); revalidatePath("/search");
+  revalidatePath("/invenstory"); revalidatePath("/search");
 }
 
 // Delete a document entirely: storage object + DB row (cascades chunks,
@@ -66,5 +66,5 @@ export async function deleteDocAction(documentId: string) {
   // delete the row (cascades chunks/embeddings/tags/versions)
   await db.from("document").delete().eq("id", documentId).eq("tenant_id", doc.tenant_id);
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "delete_doc", detail: documentId });
-  revalidatePath("/library"); revalidatePath("/search");
+  revalidatePath("/invenstory"); revalidatePath("/search");
 }

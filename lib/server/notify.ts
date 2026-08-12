@@ -18,7 +18,7 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
           from: "For Granted Portal <noreply@forgranted.com>",
           to: ["info@forgranted.com"],
           subject: `New client upload — ${d.org}`,
-          html: `<p>${line}</p><p><a href="${APP_URL}/library">Open the portal</a></p>`,
+          html: `<p>${line}</p><p><a href="${APP_URL}/invenstory">Open the portal</a></p>`,
         }),
       });
     } catch { /* email best-effort */ }
@@ -29,7 +29,7 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
       await fetch(SLACK_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:inbox_tray: *New client upload* — ${line}  <${APP_URL}/library|Open portal>` }),
+        body: JSON.stringify({ text: `:inbox_tray: *New client upload* — ${line}  <${APP_URL}/invenstory|Open portal>` }),
       });
     } catch { /* slack best-effort */ }
   }

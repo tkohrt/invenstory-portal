@@ -6,7 +6,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const next = url.searchParams.get("next") ?? "/library";
+  const next = url.searchParams.get("next") ?? "/invenstory";
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;

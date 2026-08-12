@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { getDocumentsWithTags, getPrimaryContact, getTenant } from "@/lib/server/data";
-import LibraryView from "@/components/LibraryView";
+import InvenstoryView from "@/components/InvenstoryView";
 
-export default async function LibraryPage() {
+export default async function InvenstoryPage() {
   const session = await getSession();
   if (!session) redirect("/");
   const [tenant, docs, contact] = await Promise.all([
@@ -13,7 +13,7 @@ export default async function LibraryPage() {
   ]);
   if (!tenant) redirect("/");
   return (
-    <LibraryView
+    <InvenstoryView
       tenantId={tenant.id}
       tenantName={tenant.name}
       orgType={tenant.org_type}

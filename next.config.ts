@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // The Inven(s)tory page was originally scaffolded at /library. Keep old links working.
+  async redirects() {
+    return [{ source: "/library", destination: "/invenstory", permanent: true }];
+  },
 };
 
 export default nextConfig;

@@ -8,5 +8,5 @@ export async function gateFeature(
 ): Promise<void> {
   if (role === "admin") return;
   const visible = await getFeatureVisible(tenantId, featureKey);
-  if (!visible) redirect("/library");
+  if (!visible) redirect("/invenstory");
 }

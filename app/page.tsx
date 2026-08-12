@@ -5,7 +5,7 @@ import { signInAction, requestPasswordResetAction } from "@/lib/server/actions";
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; notice?: string }> }) {
   const { error, notice } = await searchParams;
   const session = await getSession();
-  if (session) redirect("/library");
+  if (session) redirect("/invenstory");
   return (
     <div className="login-wrap">
       <div className="login-card">

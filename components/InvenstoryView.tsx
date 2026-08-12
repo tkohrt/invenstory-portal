@@ -7,7 +7,7 @@ import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function LibraryView({ tenantId, tenantName, orgType, website, contactName, docs, isAdmin }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, isAdmin }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
   contactName: string | null; docs: DocumentWithTags[]; isAdmin: boolean;
 }) {

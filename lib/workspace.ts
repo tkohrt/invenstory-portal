@@ -2,7 +2,7 @@
 // the per-client admin visibility toggle (sidebar dot) and client-side route
 // gating. To add a future toggleable Workspace item, add one entry here.
 //
-// NOTE: the Inven(s)tory (/library) and Account (/account) are intentionally
+// NOTE: the Inven(s)tory (/invenstory) and Account (/account) are intentionally
 // NOT listed — they are always visible to every client and cannot be toggled.
 export interface WorkspaceFeature {
   key: string; href: string; label: string; icon: string; defaultVisible: boolean;

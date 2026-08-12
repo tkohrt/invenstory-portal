@@ -6,6 +6,6 @@ import AdminReviewsView from "@/components/AdminReviewsView";
 export default async function ReviewsPage() {
   const session = await getSession();
   if (!session) redirect("/");
-  if (session.role !== "admin") redirect("/library");
+  if (session.role !== "admin") redirect("/invenstory");
   return <AdminReviewsView pending={await getPendingReviews()} />;
 }
