@@ -4,8 +4,7 @@ import "server-only";
 // Synthesis is Bedrock-armed; while Bedrock is blocked it uses the type's
 // grounded fallback (real corpus evidence, marked model_used='scaffold') so
 // the whole review lifecycle is exercisable today and upgrades on unblock.
-import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { bedrockRuntime, CHAT_MODEL_ID } from "./bedrock";
+import { chatComplete } from "./llm";
 import { db } from "./db";
 import { SI_TYPES, validateCards, type CorpusDoc } from "./si-registry";
 
@@ -25,22 +24,19 @@ async function loadCorpus(tenantId: string): Promise<CorpusDoc[]> {
 
 async function synthesize(slug: string, docs: CorpusDoc[]): Promise<{ cards: ReturnType<typeof validateCards>; model: string }> {
   const type = SI_TYPES[slug];
-  if (CHAT_MODEL_ID) {
+  const out = await chatComplete({
+    system: type.system + " Respond with ONLY the JSON array, no prose.",
+    user: type.buildPrompt(docs), maxTokens: 1500, temperature: 0.3,
+  });
+  if (out?.text) {
     try {
-      const res = await bedrockRuntime().send(new ConverseCommand({
-        modelId: CHAT_MODEL_ID,
-        system: [{ text: type.system + " Respond with ONLY the JSON array, no prose." }],
-        messages: [{ role: "user", content: [{ text: type.buildPrompt(docs) }] }],
-        inferenceConfig: { maxTokens: 1500, temperature: 0.3 },
-      }));
-      const text = res.output?.message?.content?.map(c => c.text).join("") ?? "";
-      const json = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1));
+      const json = JSON.parse(out.text.slice(out.text.indexOf("["), out.text.lastIndexOf("]") + 1));
       // normalize {title, ...fields, citation_titles} -> {title, payload, citation_titles}
       const shaped = json.map((c: Record<string, unknown>) => {
         const { title, citation_titles, ...payload } = c;
         return { title, payload, citation_titles };
       });
-      return { cards: validateCards(slug, shaped), model: CHAT_MODEL_ID };
+      return { cards: validateCards(slug, shaped), model: out.provider };
     } catch { /* fall through to grounded fallback */ }
   }
   return { cards: validateCards(slug, type.fallback(docs)), model: "scaffold" };

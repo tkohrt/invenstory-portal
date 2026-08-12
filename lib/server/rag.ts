@@ -10,8 +10,7 @@ import "server-only";
 //    upgrades to hybrid the moment Bedrock is live.
 //  - generate(): calls Bedrock Converse. On ANY Bedrock failure it returns an
 //    honest extractive answer built from the retrieved passages.
-import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { bedrockRuntime, CHAT_MODEL_ID } from "./bedrock";
+import { chatComplete } from "./llm";
 import { embedText } from "./embed";
 import { userClient } from "./supabase";
 
@@ -72,18 +71,12 @@ export async function generate(question: string, passages: Passage[]): Promise<A
   if (passages.length === 0) {
     return { content: "I couldn't find anything in your documents that speaks to that. Try rephrasing, or it may be something worth adding to your Inven(s)tory.", citations: [], generated: false, mode: "none" };
   }
-  if (CHAT_MODEL_ID) {
-    try {
-      const res = await bedrockRuntime().send(new ConverseCommand({
-        modelId: CHAT_MODEL_ID,
-        system: [{ text: SYSTEM }],
-        messages: [{ role: "user", content: [{ text: `Question: ${question}\n\nDocument passages:\n${buildContext(passages)}` }] }],
-        inferenceConfig: { maxTokens: 600, temperature: 0.2 },
-      }));
-      const text = res.output?.message?.content?.map(c => c.text).filter(Boolean).join("") ?? "";
-      if (text) return { content: text, citations, generated: true, mode: "bedrock" };
-    } catch { /* fall through to extractive */ }
-  }
+  const out = await chatComplete({
+    system: SYSTEM,
+    user: `Question: ${question}\n\nDocument passages:\n${buildContext(passages)}`,
+    maxTokens: 600, temperature: 0.2,
+  });
+  if (out?.text) return { content: out.text, citations, generated: true, mode: out.provider };
   const top = passages.slice(0, 3);
   const body = top.map(p => `• ${p.text}${p.page_number ? ` (p.${p.page_number} of "${p.title}")` : ` — "${p.title}"`}`).join("\n\n");
   return { content: `Here are the most relevant passages from your own documents:\n\n${body}`, citations, generated: false, mode: "extractive" };
