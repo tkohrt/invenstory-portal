@@ -24,7 +24,7 @@ function AnswerBody({ content, citations, onOpen, mode }: { content: string; cit
         <p style={{ whiteSpace: "pre-wrap" }}>{content}</p>
         {citations.length > 0 && (
           <div className="cites">{citations.map(c => (
-            <span key={c.id} className="cite" onClick={() => onOpen(c.id)}>{c.title}</span>
+            <span key={c.id} className="cite" onClick={() => onOpen(c.id)}>SOURCE: {c.title}</span>
           ))}</div>
         )}
       </>
@@ -47,7 +47,7 @@ function AnswerBody({ content, citations, onOpen, mode }: { content: string; cit
           <div key={i} className="answer-card">
             {sec.text && <p className="answer-text">{sec.text}</p>}
             {sec.id && titleById.get(sec.id) && (
-              <span className="cite inline card-src" onClick={() => onOpen(sec.id!)} title={`Source: ${titleById.get(sec.id)}`}>↗ {titleById.get(sec.id)}</span>
+              <span className="cite inline card-src" onClick={() => onOpen(sec.id!)} title={`Source: ${titleById.get(sec.id)}`}>SOURCE: {titleById.get(sec.id)}</span>
             )}
           </div>
         ))}
@@ -63,7 +63,7 @@ function AnswerBody({ content, citations, onOpen, mode }: { content: string; cit
         if (mm) {
           const id = mm[1]; const title = titleById.get(id);
           if (!title) return null;
-          return <span key={i} className="cite inline" onClick={() => onOpen(id)} title={`Source: ${title}`}>↗ {title}</span>;
+          return <span key={i} className="cite inline" onClick={() => onOpen(id)} title={`Source: ${title}`}>SOURCE: {title}</span>;
         }
         return part ? <span key={i} className="answer-text">{part}</span> : null;
       })}
