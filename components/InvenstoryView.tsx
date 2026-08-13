@@ -3,13 +3,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import { updateClientProfileAction } from "@/lib/server/admin-actions";
+import GardenHeader from "./GardenHeader";
+import { Tendrils } from "./PlantVisual";
+import type { GardenState } from "@/lib/types";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, isAdmin }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, garden, isAdmin }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
-  contactName: string | null; docs: DocumentWithTags[]; isAdmin: boolean;
+  contactName: string | null; docs: DocumentWithTags[]; garden: GardenState; isAdmin: boolean;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -19,12 +22,13 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
   const [filter, setFilter] = useState<Layer | "all">("all");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadLayer, setUploadLayer] = useState<"I"|"II"|"III"|null>(null);
   const router = useRouter();
   const layers: Layer[] = filter === "all" ? ["I", "II", "III"] : [filter];
   const openDoc = docs.find(d => d.id === openDocId) ?? null;
 
   return (
-    <div>
+    <div style={{ position: "relative" }}>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {tenantName}</div>}
       <div className="page-head">
         <div>
@@ -62,6 +66,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         {isAdmin && <a className="btn ghost" href="/api/export" title="Download all originals as a .zip">⬇ Download all (.zip)</a>}
         <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
+      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} />
+      {garden.size === 3 && garden.health === "thriving" && !garden.hidden && <Tendrils species={garden.species ?? "pothos"} />}
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
         {(["I", "II", "III"] as Layer[]).map(L => (
@@ -86,7 +92,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         );
       })}
       {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
-      {uploading && <UploadDrawer tenantName={tenantName} onClose={() => setUploading(false)} onDone={() => router.refresh()} />}
+      {uploading && <UploadDrawer tenantName={tenantName} initialLayer={uploadLayer ?? undefined} onClose={() => { setUploading(false); setUploadLayer(null); }} onDone={() => router.refresh()} />}
     </div>
   );
 }

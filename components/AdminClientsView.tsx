@@ -5,6 +5,8 @@ import { switchTenantAction } from "@/lib/server/actions";
 import { createClientAction, type NewClientResult } from "@/lib/server/admin-actions";
 import Drawer from "./Drawer";
 import type { PortfolioStats } from "@/lib/types";
+import PlantVisual from "./PlantVisual";
+import type { GardenSummary } from "@/lib/server/garden";
 
 const money = (cents: number) => "$" + Math.round(cents / 100).toLocaleString();
 const num = (n: number) => n.toLocaleString();
@@ -19,7 +21,7 @@ function Stat({ label, value, sub, accent }: { label: string; value: string; sub
   );
 }
 
-export default function AdminClientsView({ portfolio: p }: { portfolio: PortfolioStats }) {
+export default function AdminClientsView({ portfolio: p, gardens }: { portfolio: PortfolioStats; gardens: Record<string, GardenSummary> }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const cut = (r: number) => money(Math.round(r * 0.10)) + "–" + money(Math.round(r * 0.15));
@@ -46,8 +48,12 @@ export default function AdminClientsView({ portfolio: p }: { portfolio: Portfoli
       <div className="portfolio-table">
         <div className="pt-row pt-head"><div>Client</div><div>Docs</div><div>Grants won</div><div>Revenue won</div></div>
         {p.perClient.map(c => (
-          <div key={c.id} className="pt-row pt-click" onClick={() => open(c.id)} title={`Open ${c.name}`}>
-            <div>{c.name}</div><div>{num(c.docs)}</div><div>{num(c.won)}</div><div>{money(c.revenueWonCents)}</div>
+          <div key={c.id} className="pt-row pt-click gh-row" onClick={() => open(c.id)} title={`Open ${c.name}`}>
+            <div className="gh-client">
+              {gardens[c.id] && <span className={`gh-plant ${gardens[c.id].health}`}><PlantVisual g={{ ...gardens[c.id], bloom: "none" }} width={44} /></span>}
+              {c.name}
+            </div>
+            <div>{num(c.docs)}</div><div>{num(c.won)}</div><div>{money(c.revenueWonCents)}</div>
           </div>
         ))}
       </div>

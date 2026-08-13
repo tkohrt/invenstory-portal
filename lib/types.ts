@@ -198,3 +198,20 @@ export interface AnswerLibraryItem {
 // ---- Chat history ----
 export interface ChatSessionSummary { id: string; title: string; created_at: string }
 export interface ChatHistoryMsg { role: "user" | "assistant"; content: string; citations: { id: string; title: string }[] }
+
+// ---- Inven(s)tory Garden ----
+export type PlantSpecies = "pothos" | "monstera" | "spider";
+export type PlantHealth = "thriving" | "okay" | "thirsty";
+export interface GardenState {
+  species: PlantSpecies | null;      // null = not yet chosen (render pothos)
+  size: 1 | 2 | 3;
+  health: PlantHealth;
+  score: number;                     // 0-100
+  pot: string; trinket: string | null; variegation: string | null; hidden: boolean;
+  bloom: "none" | "bud" | "flower";
+  achievements: { key: string; unlocked_at: string }[];
+  newAchievements: string[];         // unlocked during this computation
+  unlocks: { pots: string[]; trinkets: string[]; variegations: string[] };
+  prompt: { text: string; layer: "I" | "II" | "III" | null };
+  stats: { docs: number; words: number; layersCovered: number; daysSinceUpload: number | null };
+}

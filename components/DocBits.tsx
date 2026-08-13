@@ -160,12 +160,12 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   );
 }
 
-export function UploadDrawer({ tenantName, onClose, onDone }: {
-  tenantName: string; onClose: () => void; onDone: () => void;
+export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
+  tenantName: string; onClose: () => void; onDone: () => void; initialLayer?: "I" | "II" | "III";
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [layer, setLayer] = useState("I");
+  const [layer, setLayer] = useState<string>(initialLayer ?? "I");
   const [tags, setTags] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
