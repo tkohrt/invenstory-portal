@@ -32,6 +32,15 @@ export default function GardenHeader({ garden, onPrompt }: { garden: GardenState
 
   return (
     <div className="garden">
+      <button className="garden-prompt" onClick={() => onPrompt(g.prompt.layer)}>
+        🌱 {g.prompt.text} <span className="gp-cta">Upload →</span>
+      </button>
+      {!g.species && (
+        <div className="garden-pick">
+          <span>Choose your plant:</span>
+          {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
+        </div>
+      )}
       <div className="garden-left">
         <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
           <PlantVisual g={g} width={230} />
@@ -40,17 +49,6 @@ export default function GardenHeader({ garden, onPrompt }: { garden: GardenState
           <span className={`garden-health ${g.health}`}>{healthLabel}</span>
           <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
         </div>
-      </div>
-      <div className="garden-right">
-        {!g.species && (
-          <div className="garden-pick">
-            <span>Choose your plant:</span>
-            {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
-          </div>
-        )}
-        <button className="garden-prompt" onClick={() => onPrompt(g.prompt.layer)}>
-          🌱 {g.prompt.text} <span className="gp-cta">Upload →</span>
-        </button>
       </div>
 
       {open && (

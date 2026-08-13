@@ -448,9 +448,8 @@ button.vis-dot.busy{opacity:.5}
 .dv-text{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.6;margin:0}
 
 /* Inven(s)tory Garden */
-.garden{display:flex;flex-direction:row;align-items:center;gap:22px;margin:2px 0 16px;position:relative;z-index:1}
-.garden-left{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
-.garden-right{flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0}
+.garden{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin:2px 0 6px;position:relative;z-index:3}
+.garden-left{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;margin-bottom:-14px}
 .garden-plant{background:none;border:none;cursor:pointer;padding:0;line-height:0}
 .garden-plant:hover{filter:brightness(1.04)}
 .garden-meta{display:flex;gap:10px;font-size:12px;color:var(--muted,#777)}
@@ -460,13 +459,13 @@ button.vis-dot.busy{opacity:.5}
 .garden-prompt{border:1px solid #d9e6d9;background:#f2f8f2;color:#2f5d38;border-radius:20px;padding:10px 20px;font-size:13.5px;cursor:pointer;max-width:100%;line-height:1.45}
 .garden-prompt:hover{background:#e8f3e8}
 .gp-cta{font-weight:700;margin-left:6px;white-space:nowrap}
-.with-tendrils{position:relative;padding-left:78px}
-.garden-tendrils{position:absolute;top:-6px;left:0;width:96px;height:100%;max-height:900px;opacity:.34;pointer-events:none;z-index:0}
+.layers-zone{position:relative}
+.plant-overhang{position:absolute;top:-14px;left:-6px;width:min(100%,900px);height:700px;max-height:calc(100% + 14px);opacity:.95;pointer-events:none;z-index:2}
 .garden-opts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
 .garden-locked{font-size:11.5px;color:var(--muted,#999);font-style:italic;align-self:center}
 .ach{font-size:11.5px;border:1px solid var(--border,#eee);border-radius:14px;padding:3px 9px;color:#999}
 .ach.on{color:#3a7d44;border-color:#cfe4cf;background:#f2f8f2}
-@media(max-width:760px){.garden-tendrils{display:none}.with-tendrils{padding-left:0}.garden{flex-direction:column;gap:8px}}
+@media(max-width:760px){.plant-overhang{display:none}}
 
 /* Greenhouse thumbnails on All clients */
 .gh-client{display:flex;align-items:center;gap:8px}
