@@ -32,28 +32,32 @@ export default function GardenHeader({ garden, onPrompt }: { garden: GardenState
 
   return (
     <div className="garden">
-      <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
-        <PlantVisual g={g} width={150} />
-      </button>
-      <div className="garden-meta">
-        <span className={`garden-health ${g.health}`}>{healthLabel}</span>
-        <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
-      </div>
-      {!g.species && (
-        <div className="garden-pick">
-          <span>Choose your plant:</span>
-          {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
+      <div className="garden-left">
+        <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
+          <PlantVisual g={g} width={230} />
+        </button>
+        <div className="garden-meta">
+          <span className={`garden-health ${g.health}`}>{healthLabel}</span>
+          <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
         </div>
-      )}
-      <button className="garden-prompt" onClick={() => onPrompt(g.prompt.layer)}>
-        🌱 {g.prompt.text} <span className="gp-cta">Upload →</span>
-      </button>
+      </div>
+      <div className="garden-right">
+        {!g.species && (
+          <div className="garden-pick">
+            <span>Choose your plant:</span>
+            {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
+          </div>
+        )}
+        <button className="garden-prompt" onClick={() => onPrompt(g.prompt.layer)}>
+          🌱 {g.prompt.text} <span className="gp-cta">Upload →</span>
+        </button>
+      </div>
 
       {open && (
         <Drawer onClose={() => setOpen(false)}>
           <h3>Your garden</h3>
           <p style={{ color: "var(--muted)", marginTop: 2 }}>Your plant grows as your Inven(s)tory grows — and perks up whenever you add something new.</p>
-          <div style={{ textAlign: "center", margin: "10px 0" }}><PlantVisual g={g} width={190} /></div>
+          <div style={{ textAlign: "center", margin: "10px 0" }}><PlantVisual g={g} width={230} /></div>
 
           <div className="section-label">Species</div>
           <div className="garden-opts">{SPECIES.map(s => (

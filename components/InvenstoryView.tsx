@@ -63,16 +63,18 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
           )}
         </div>
         <div className="spacer" />
-        {isAdmin && <a className="btn ghost" href="/api/export" title="Download all originals as a .zip">⬇ Download all (.zip)</a>}
-        <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
       <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} />
+      <div className={garden.size === 3 && garden.health === "thriving" && !garden.hidden ? "with-tendrils" : undefined}>
       {garden.size === 3 && garden.health === "thriving" && !garden.hidden && <Tendrils species={garden.species ?? "pothos"} />}
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
         {(["I", "II", "III"] as Layer[]).map(L => (
           <button key={L} className={`chip ${LAYER_META[L].cls} ${filter === L ? "active" : ""}`} onClick={() => setFilter(L)}>Layer {L}</button>
         ))}
+        <div className="spacer" />
+        {isAdmin && <a className="btn ghost" href="/api/export" title="Download all originals as a .zip">⬇ Download all (.zip)</a>}
+        <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
       {layers.map(L => {
         const layerDocs = docs.filter(d => d.layer === L);
@@ -91,6 +93,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
           </div>
         );
       })}
+      </div>
       {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
       {uploading && <UploadDrawer tenantName={tenantName} initialLayer={uploadLayer ?? undefined} onClose={() => { setUploading(false); setUploadLayer(null); }} onDone={() => router.refresh()} />}
     </div>
