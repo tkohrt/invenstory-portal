@@ -171,7 +171,7 @@ function buildSpider(size){
   ];
   const pick=size===1?[0,1,2,8,3,9]:size===2?[0,1,2,3,4,7,8,9,10,11,12,15]:full.map((_,i)=>i);
   const Lk=size===1?0.66:size===2?0.85:1;
-  const bl=grp(null);
+  const bl=grp("translate(0,-1)");
   pick.forEach((idx,i)=>{const b=full[idx];bl.appendChild(blade(b[0],b[1]*Lk,b[2]*Lk,i%3===2?G.light:i%2?G.mid:G.dark));});
   g.appendChild(bl);
   // 2) front half of the soil oval hides the blade convergence
@@ -179,7 +179,7 @@ function buildSpider(size){
   // 3) TOP layer: front drapes + stolons + pups (above everything, so the
   //    soil never cuts through them)
   if(size===3){
-    [[-6,-2,-4,46,-8,G.dark],[7,-2,5,40,9,G.mid]].forEach(f=>{
+    [[-6,-3,-4,46,-8,G.dark],[7,-3,5,40,9,G.mid]].forEach(f=>{
       const H=f[3], B=f[4];
       g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
         el("path",{d:`M-3,0 C ${-3+B*0.4},${H*0.35} ${-1.6+B*0.8},${H*0.7} ${B},${H} C ${1.6+B*0.8},${H*0.7} ${3+B*0.4},${H*0.35} 3,0 C 2,-2.6 -2,-2.6 -3,0 Z`,fill:f[5]}),
