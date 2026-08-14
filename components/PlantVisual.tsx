@@ -154,12 +154,14 @@ function MonLeaf({ x, y, rot, s, C, fill, solid, varg }: { x: number; y: number;
     </g>
   );
 }
+// Each stem now terminates exactly at its leaf's top notch — the sinus where
+// the two upper lobes convene (computed per leaf from its rotation + scale).
 const MON_STEMS: [string, number, number, number, number, keyof Palette, boolean][] = [
-  ["M-4,0 C -10,-30 -30,-52 -50,-76", -55, -92, 18, 1.45, "mid", false],
-  ["M0,0 C 2,-40 -4,-72 -10,-96", -11, -112, -4, 1.25, "dark", false],
-  ["M4,0 C 14,-28 36,-46 54,-60", 59, -78, -22, 1.3, "light", false],
-  ["M2,0 C 6,-22 8,-34 10,-48", 11, -60, 4, 0.9, "deep", true],
-  ["M6,0 C 20,-8 36,-6 48,4", 55, 10, -30, 1.0, "deep", false],
+  ["M-4,0 C -10,-30 -30,-52 -50,-76 C -52,-88 -51,-100 -49.2,-109.8", -55, -92, 18, 1.45, "mid", false],
+  ["M0,0 C 2,-40 -4,-72 -10,-96 C -11,-107 -12,-118 -12.1,-128.1", -11, -112, -4, 1.25, "dark", false],
+  ["M4,0 C 14,-28 36,-46 54,-60 C 56,-71 54,-83 52.7,-93.5", 59, -78, -22, 1.3, "light", false],
+  ["M2,0 C 6,-22 8,-34 10,-48 C 10.5,-55 11.2,-62 11.6,-69.1", 11, -60, 4, 0.9, "deep", true],
+  ["M6,0 C 20,-8 36,-6 48,4 C 48.4,2.2 48.5,0.5 48.6,-1.2", 55, 10, -30, 1.0, "deep", false],
 ];
 function Monstera({ size, C, droop, thirsty, varg }: { size: 1 | 2 | 3; C: Palette; droop: number; thirsty: boolean; varg: boolean }) {
   const shrink = size === 1 ? 0.72 : size === 2 ? 0.88 : 1;
