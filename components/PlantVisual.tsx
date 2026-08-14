@@ -89,13 +89,13 @@ function Pothos({ size, C, droop, health, variegated }: { size: 1|2|3; C: Palett
       ))}
       {size >= 2 && (
         <PothosVinePath C={C} variegated={variegated}
-          d="M28,-2 C 46,6 58,22 60,44 C 61,58 56,72 48,82"
-          leaves={[{ t: { x: 50, y: 30 }, rot: 70, s: 0.72 }, { t: { x: 58, y: 58 }, rot: 100, s: 0.62 }, { t: { x: 50, y: 80 }, rot: 130, s: 0.5 }]} />
+          d="M28,-2 C 44,4 54,16 56,32"
+          leaves={[{ t: { x: 48, y: 18 }, rot: 74, s: 0.7 }, { t: { x: 56, y: 32 }, rot: 104, s: 0.56 }]} />
       )}
       {size === 3 && (
         <PothosVinePath C={C} variegated={variegated} yellowFirst={health === "thirsty"}
-          d="M-30,0 C -48,8 -58,24 -60,46 C -61,64 -58,84 -60,104"
-          leaves={[{ t: { x: -50, y: 24 }, rot: -68, s: 0.78 }, { t: { x: -60, y: 52 }, rot: -100, s: 0.68 }, { t: { x: -58, y: 82 }, rot: -128, s: 0.58 }, { t: { x: -60, y: 102 }, rot: -95, s: 0.5 }]} />
+          d="M-30,0 C -46,6 -56,18 -58,36"
+          leaves={[{ t: { x: -48, y: 20 }, rot: -70, s: 0.74 }, { t: { x: -58, y: 36 }, rot: -102, s: 0.6 }]} />
       )}
     </g>
   );
@@ -133,10 +133,7 @@ function Monstera({ size, C, droop, yellowIdx, variegated }: { size: 1|2|3; C: P
   const stems = MONSTERA_STEMS.slice(0, size === 3 ? 7 : size === 2 ? 5 : 3);
   return (
     <g>
-      {size === 3 && <>{/* air roots from the main stem base, over the LEFT pot rim */}
-        <path d="M0,-2 C -16,4 -30,10 -40,22 C -46,30 -48,42 -46,54" stroke={ROOT} strokeWidth="2.8" fill="none" opacity=".95" />
-        <path d="M-2,0 C -20,8 -36,20 -44,38 C -48,50 -46,66 -48,80" stroke={ROOT} strokeWidth="2.2" fill="none" opacity=".85" />
-      </>}
+
       {stems.map((st, i) => (
         <g key={i} transform={`rotate(${droop * (st.tip.x >= 0 ? 0.5 : -0.5)})`}>
           <path d={st.d} stroke={C.dark} strokeWidth="2.6" fill="none" />
@@ -179,12 +176,7 @@ function Spider({ size, C, droop, yellowIdx, variegated }: { size: 1|2|3; C: Pal
         const len = (0.7 + 0.42 * Math.abs(Math.sin((i + 1) * 2.3))) * (size === 3 ? 1.18 : size === 2 ? 0.95 : 0.7);
         return <SpiderBlade key={i} angle={angle} len={len} C={C} stripe={stripe} fill={i === yellowIdx ? YELLOW : i % 2 ? C.mid : C.dark} />;
       })}
-      {size === 3 && <>
-        <path d="M-4,-10 C -40,-40 -74,-30 -84,10 C -88,26 -86,44 -88,58" stroke={C.mid} strokeWidth="2.4" fill="none" />
-        <g transform="translate(-88,58) rotate(-155)"><PupRosette C={C} s={0.6} /></g>
-        <path d="M6,-12 C 48,-40 84,-24 92,14" stroke={C.mid} strokeWidth="2.4" fill="none" />
-        <g transform="translate(92,14) rotate(155)"><PupRosette C={C} s={0.55} /></g>
-      </>}
+
     </g>
   );
 }

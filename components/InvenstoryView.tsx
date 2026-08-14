@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import { updateClientProfileAction } from "@/lib/server/admin-actions";
 import GardenHeader from "./GardenHeader";
-import { Overhang } from "./PlantVisual";
 import type { GardenState } from "@/lib/types";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
@@ -66,7 +65,6 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
       </div>
       <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} />
       <div className="layers-zone">
-      {garden.size === 3 && garden.health === "thriving" && !garden.hidden && <Overhang species={garden.species ?? "pothos"} />}
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
         {(["I", "II", "III"] as Layer[]).map(L => (
