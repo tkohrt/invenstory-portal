@@ -56,26 +56,26 @@ function pothosLeaf(x,y,rot,s,fill){
 }
 // Trailing-vine leaf: hangs BELOW its node with the tip pointing DOWN
 // (small tilt for natural sway; petiole drops from the vine to the leaf).
-function vineLeaf(x,y,tilt,s,fill){
-  return grp(`translate(${x},${y}) rotate(${tilt})`,[
-    el("path",{d:"M0,0 C 1,5 0.5,9 0,13",stroke:G.dark,"stroke-width":1.3*s,fill:"none"}),
-    grp(`translate(0,${15*s}) scale(${s})`,[shadowed(f=>heart(f),fill)])
+function vineLeaf(vx,vy,side,tilt,s,fill){
+  // petiole starts ON the vine, curves out to the side, leaf hangs tip-down
+  return grp(`translate(${vx},${vy})`,[
+    el("path",{d:`M0,0 C ${side*5},3 ${side*8.5},8 ${side*8},14`,stroke:G.dark,"stroke-width":1.3*s,fill:"none"}),
+    grp(`translate(${side*8},${14+12*s}) rotate(${tilt}) scale(${s})`,[shadowed(f=>heart(f),fill)])
   ]);
 }
 // monstera leaf: rounded heart w/ slash fenestrations (per sketch), evenodd
-function monLeafPath(){return `M0,14 C-4,18 -10,20 -16,17 C-30,12 -38,-2 -34,-16 C-30,-30 -16,-40 -2,-40 C-1,-41 1,-41 2,-40 C16,-40 30,-30 34,-16 C38,-2 30,12 16,17 C10,20 4,18 0,14 Z
- M-37,-8 L-13,-11 L-14,-6 Z
- M-34,-22 L-12,-22 L-13,-17 Z
- M37,-8 L13,-11 L14,-6 Z
- M34,-22 L12,-22 L13,-17 Z
- M-6,-12 C-11,-17 -15,-24 -16,-31 C-12,-30 -7,-22 -3,-15 Z
- M6,-12 C11,-17 15,-24 16,-31 C12,-30 7,-22 3,-15 Z`;}
+function monLeafPath(){return `M0,-14 C-4,-18 -10,-20 -16,-17 C-29,-12 -35,1 -31,13 C-26,25 -13,35 0,40 C13,35 26,25 31,13 C35,1 29,-12 16,-17 C10,-20 4,-18 0,-14 Z
+ M-6,7 C-12,11 -18,17 -20,25 C-16,25 -9,17 -4,10 Z
+ M-5,-6 C-12,-3 -19,2 -22,8 C-18,9 -11,3 -3,-3 Z
+ M6,7 C12,11 18,17 20,25 C16,25 9,17 4,10 Z
+ M5,-6 C12,-3 19,2 22,8 C18,9 11,3 3,-3 Z
+ M-2,22 C-3,28 -2,31 0,34 C2,31 3,28 2,22 Z`;}
 function monLeaf(x,y,rot,s,fill,solid){
   const shape=f=>{const g=grp(null,[el("path",{d:solid?HEART_BIG:monLeafPath(),"fill-rule":"evenodd",fill:f})]);
-    g.appendChild(el("path",{d:"M0,13 C-1,2 -1,-20 0,-38",stroke:G.deep,"stroke-width":"1.3",opacity:".55",fill:"none"}));
+    g.appendChild(el("path",{d:"M0,-13 C-1,0 -1,20 0,36",stroke:G.deep,"stroke-width":"1.3",opacity:".55",fill:"none"}));
     return g;};
-  // monstera leaves are wider than tall — stretch x, compress y
-  return grp(`translate(${x},${y}) rotate(${rot}) scale(${s*1.22},${s*0.85})`,[shadowed(shape,fill)]);
+  // slightly narrower than the wide pass; lobes up, tip tapers down
+  return grp(`translate(${x},${y}) rotate(${rot}) scale(${s*1.02},${s*0.92})`,[shadowed(shape,fill)]);
 }
 const HEART_BIG="M0,16 C-16,8 -22,-8 -11,-16 C-4,-20 0,-16 0,-11 C0,-16 4,-20 11,-16 C22,-8 16,8 0,16 Z";
 // spider blade: strong fountain arch with drooping tip + pale stripe
@@ -108,11 +108,11 @@ function buildMonstera(){
   g.appendChild(el("path",{d:"M-8,2 C -18,10 -22,22 -22,40 C -22,54 -20,64 -21,74",stroke:ROOT,"stroke-width":"2.4",fill:"none",opacity:".9","stroke-linecap":"round"}));
   // stems (curved, leaning like the sketch)
   const stems=[
-    ["M-4,0 C -10,-30 -30,-52 -50,-76", -55,-88,-20,1.5,G.mid,false],
-    ["M0,0 C 2,-40 -4,-72 -10,-96",     -11,-106,5,1.25,G.dark,false],
-    ["M4,0 C 14,-28 36,-46 54,-60",      59,-72,30,1.35,G.light,false],
-    ["M2,0 C 6,-22 8,-34 10,-48",        11,-56,6,0.9,G.deep,true],
-    ["M6,0 C 20,-8 36,-6 48,4",          55,18,142,1.05,G.deep,false],
+    ["M-4,0 C -10,-30 -30,-52 -50,-76", -55,-92,18,1.45,G.mid,false],
+    ["M0,0 C 2,-40 -4,-72 -10,-96",     -11,-112,-4,1.25,G.dark,false],
+    ["M4,0 C 14,-28 36,-46 54,-60",      59,-78,-22,1.3,G.light,false],
+    ["M2,0 C 6,-22 8,-34 10,-48",        11,-60,4,0.9,G.deep,true],
+    ["M6,0 C 20,-8 36,-6 48,4",          55,10,-30,1.0,G.deep,false],
   ];
   stems.forEach(st=>{
     g.appendChild(el("path",{d:st[0],stroke:G.deep,"stroke-width":"3",fill:"none","stroke-linecap":"round"}));
@@ -130,18 +130,18 @@ function buildPothos(){
   [[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],G.dark)));
   // left trailing vine — leaves hang tip-down with gentle sway
   g.appendChild(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[-44,18,-30,.82,G.mid],[-24,44,22,.74,G.light],[-45,78,-32,.66,G.mid],[-23,102,18,.6,G.light],[-40,128,-20,.54,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[-31,18,-1,-8,.82,G.mid],[-35,44,1,10,.74,G.light],[-33,78,-1,-12,.66,G.mid],[-33,102,1,8,.6,G.light],[-33,128,-1,-5,.54,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
   // right trailing vine (longest, like the sketch)
   g.appendChild(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[48,20,32,.84,G.mid],[26,54,-24,.76,G.light],[49,88,34,.68,G.mid],[25,120,-20,.62,G.light],[47,152,26,.56,G.mid],[31,184,-12,.5,G.light]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[31,20,1,10,.84,G.mid],[39,54,-1,-8,.76,G.light],[38,88,1,12,.68,G.mid],[36,120,-1,-9,.62,G.light],[37,152,1,8,.56,G.mid],[36,184,-1,-4,.5,G.light]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
   // short vine down the pot face
   g.appendChild(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  [[4,16,10,.66,G.mid],[0,34,-14,.58,G.light],[3,50,6,.5,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[3,16,1,6,.66,G.mid],[1,32,-1,-8,.58,G.light],[2,48,1,4,.5,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
   // front crown (mid/light) — irregular mound, tucked in toward center
   [[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],L[4])));
   // rim-drape leaves: hang over the pot edge with tips pointing DOWN
-  g.appendChild(vineLeaf(-8,3,-9,.6,G.light));
-  g.appendChild(vineLeaf(11,3,11,.55,G.mid));
+  g.appendChild(vineLeaf(-8,3,-1,-9,.6,G.light));
+  g.appendChild(vineLeaf(11,3,1,11,.55,G.mid));
   // upright accent leaves cresting the mound
   g.appendChild(pothosLeaf(-6,-13,-8,.88,G.mid));
   g.appendChild(pothosLeaf(10,-10,24,.78,G.light));
@@ -158,13 +158,13 @@ function buildSpider(){
   g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
   g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,126 C 96,148 92,166 94,182",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
   // blades: dense fountain, alternating sides; outer tips drop below rim level
-  // banded fountain: center blades rise nearly straight, mids lean, outers arch over
+  // traced from Tyler's sketch: tall center pair, long left sweepers,
+  // denser + lower right cluster, short spikes between, two front drapes
   const blades=[
-    [-2,100,-4],[3,97,5],[-6,95,-7],[8,93,8],
-    [-13,90,-12],[15,88,13],[-20,85,-17],[22,83,18],
-    [-28,79,-24],[30,77,25],[-36,72,-31],[38,70,32],
-    [-45,64,-40],[46,62,41],[-52,57,-46],[53,55,47],[-58,50,-51],[59,48,52],
-    [-72,48,-60],[73,46,61]
+    [-3,104,-4],[6,98,7],
+    [-14,92,-14],[-26,84,-30],[-40,76,-44],[-54,68,-54],[-66,56,-60],[-32,50,-16],
+    [14,94,16],[24,88,28],[34,84,40],[44,78,48],[54,70,56],[64,62,62],[72,52,66],[38,48,20],
+    [176,44,8],[-174,40,-6]
   ];
   blades.forEach((b,i)=>g.appendChild(blade(b[0],b[1],b[2],i%3===2?G.light:i%2?G.mid:G.dark)));
   // pups (after blades so they read on top of stems)
