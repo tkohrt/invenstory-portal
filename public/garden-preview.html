@@ -32,7 +32,7 @@ function grp(tf,kids){return el("g",tf?{transform:tf}:{},kids);}
 function pot(g,rx){
   const h=Math.round(rx*1.3);
   g.appendChild(el("ellipse",{cx:2,cy:h+6,rx:rx*1.5,ry:6,fill:"#000",opacity:".08"}));
-  g.appendChild(el("path",{d:`M${-rx},0 L${rx},0 L${rx*0.75},${h} Q${rx*0.71},${h+5} ${rx*0.54},${h+5} L${-rx*0.54},${h+5} Q${-rx*0.71},${h+5} ${-rx*0.75},${h} Z`,fill:POT}));
+  g.appendChild(el("path",{d:`M${-rx+5},0 L${rx-5},0 Q${rx},0 ${rx-0.9},4 L${rx*0.75},${h} Q${rx*0.71},${h+5} ${rx*0.54},${h+5} L${-rx*0.54},${h+5} Q${-rx*0.71},${h+5} ${-rx*0.75},${h} L${-rx+0.9},4 Q${-rx},0 ${-rx+5},0 Z`,fill:POT}));
   g.appendChild(el("path",{d:`M${-rx},6 L${-rx},5 Q${-rx},0 ${-rx+5},0 L${rx-5},0 Q${rx},0 ${rx},5 L${rx},6 Z`,fill:POT_RIM}));
   g.appendChild(el("path",{d:`M${-rx*0.8},9 Q${-rx*0.7},${h*0.55} ${-rx*0.6},${h-2}`,stroke:POT_HI,"stroke-width":"3",fill:"none",opacity:".55","stroke-linecap":"round"}));
   g.appendChild(el("ellipse",{cx:0,cy:0,rx:rx-3,ry:4,fill:SOIL}));
