@@ -43,7 +43,7 @@ function shadowed(shapeFn,fill){ // returns group: dark offset copy + colored co
   return grp(null,[ grp("translate(1.4,1.8)",[shapeFn(G.deep)]), shapeFn(fill) ]);
 }
 // pothos heart with petiole
-const HEART="M0,13 C-13,5 -17,-8 -8,-14 C-3,-17 0,-14 0,-10 C0,-14 3,-17 8,-14 C17,-8 13,5 0,13 Z";
+const HEART="M0,16 C-11,7 -16,-6 -8,-12 C-3,-15 0,-12 0,-8 C0,-12 3,-15 8,-12 C16,-6 11,7 0,16 Z";
 function heart(fill){const g=grp(null,[el("path",{d:HEART,fill})]);
   g.appendChild(el("path",{d:"M0,12 C-1,4 -1,-4 0,-11",stroke:G.deep,"stroke-width":"1",opacity:".5",fill:"none"}));
   [[-3,4,-7,-4],[3,4,7,-4]].forEach(v=>g.appendChild(el("path",{d:`M0,${v[1]} Q ${v[0]*1.6},${v[1]-2} ${v[2]},${v[3]}`,stroke:G.deep,"stroke-width":".55",opacity:".45",fill:"none"})));
@@ -63,12 +63,13 @@ function vineLeaf(x,y,tilt,s,fill){
   ]);
 }
 // monstera leaf: rounded heart w/ slash fenestrations (per sketch), evenodd
-function monLeafPath(){return `M0,17 C-19,15 -31,3 -29,-13 C-27,-28 -13,-37 0,-37 C13,-37 27,-28 29,-13 C31,3 19,15 0,17 Z
- M-6,-7 C-12,-11 -18,-17 -20,-25 C-16,-25 -9,-17 -4,-10 Z
- M-5,6 C-12,3 -19,-2 -23,-9 C-19,-10 -11,-3 -3,3 Z
- M6,-7 C12,-11 18,-17 20,-25 C16,-25 9,-17 4,-10 Z
- M5,6 C12,3 19,-2 23,-9 C19,-10 11,-3 3,3 Z
- M-2,-22 C-3,-28 -2,-31 0,-34 C2,-31 3,-28 2,-22 Z`;}
+function monLeafPath(){return `M-2,14 C-17,15 -31,7 -33,-7 C-34,-21 -22,-32 -8,-34 C-3,-35 3,-35 8,-34 C22,-32 34,-21 33,-7 C31,7 17,15 2,14 C1,11.6 -1,11.6 -2,14 Z
+ M-35,-3 L-12,-7 L-13,-2 Z
+ M-32,-17 L-11,-17 L-12,-12 Z
+ M35,-3 L12,-7 L13,-2 Z
+ M32,-17 L11,-17 L12,-12 Z
+ M-6,-8 C-11,-13 -15,-20 -16,-27 C-12,-26 -7,-18 -3,-11 Z
+ M6,-8 C11,-13 15,-20 16,-27 C12,-26 7,-18 3,-11 Z`;}
 function monLeaf(x,y,rot,s,fill,solid){
   const shape=f=>{const g=grp(null,[el("path",{d:solid?HEART_BIG:monLeafPath(),"fill-rule":"evenodd",fill:f})]);
     g.appendChild(el("path",{d:"M0,16 C-1,6 -1,-14 0,-33",stroke:G.deep,"stroke-width":"1.3",opacity:".55",fill:"none"}));
@@ -79,12 +80,12 @@ const HEART_BIG="M0,16 C-16,8 -22,-8 -11,-16 C-4,-20 0,-16 0,-11 C0,-16 4,-20 11
 // spider blade: strong fountain arch with drooping tip + pale stripe
 function blade(rot,L,a,fill){
   const sg=a>=0?1:-1;
-  const d=`M0,0 C ${sg*2},${-L*0.55} ${a*0.35},${-L*1.02} ${a*0.8},${-L*0.95} C ${a*1.15},${-L*0.88} ${a*1.35},${-L*0.6} ${a*1.42},${-L*0.28} C ${a*1.28},${-L*0.44} ${a*0.95},${-L*0.66} ${a*0.6},${-L*0.72} C ${a*0.28},${-L*0.74} ${sg*6},${-L*0.38} ${sg*6},0 Z`;
-  const st=`M${sg*1.6},-2 C ${sg*2},${-L*0.53} ${a*0.38},${-L*0.97} ${a*0.79},${-L*0.9} C ${a*1.08},${-L*0.84} ${a*1.25},${-L*0.6} ${a*1.34},${-L*0.32} C ${a*1.22},${-L*0.46} ${a*0.93},${-L*0.63} ${a*0.62},${-L*0.68} C ${a*0.34},${-L*0.7} ${sg*3.4},${-L*0.36} ${sg*3.2},-2 Z`;
+  const d=`M0,0 C ${sg*1.4},${-L*0.55} ${a*0.32},${-L*1.0} ${a*0.78},${-L*0.97} C ${a*1.05},${-L*0.93} ${a*1.2},${-L*0.7} ${a*1.26},${-L*0.42} C ${a*1.14},${-L*0.56} ${a*0.88},${-L*0.74} ${a*0.58},${-L*0.78} C ${a*0.26},${-L*0.79} ${sg*4.5},${-L*0.4} ${sg*4.5},0 Z`;
+  const st=`M${sg*1.2},-3 C ${sg*1.5},${-L*0.53} ${a*0.36},${-L*0.95} ${a*0.76},${-L*0.9} C ${a*0.9},${-L*0.86} ${a*0.7},${-L*0.76} ${a*0.55},${-L*0.74} C ${a*0.3},${-L*0.73} ${sg*2.4},${-L*0.38} ${sg*2.2},-3 Z`;
   return grp(`rotate(${rot})`,[
-    el("path",{d,fill:G.deep,transform:"translate(1.1,1.2)",opacity:".9"}),
+    el("path",{d,fill:G.deep,transform:"translate(1,1.1)",opacity:".9"}),
     el("path",{d,fill}),
-    el("path",{d:st,fill:G.pale,opacity:".8"})
+    el("path",{d:st,fill:G.pale,opacity:".75"})
   ]);
 }
 function pup(x,y,s,flip){
@@ -101,17 +102,16 @@ function buildMonstera(){
   const P=grp("translate(150,158)"); pot(P,28); s.appendChild(P);
   const g=grp("translate(150,158)");
   // air roots first (over pot, under leaves): right root forks below pot
-  g.appendChild(el("path",{d:"M8,2 C 22,14 30,34 30,60 C 30,96 24,126 26,152",stroke:ROOT,"stroke-width":"2.6",fill:"none"}));
-  g.appendChild(el("path",{d:"M26,152 C 28,162 34,170 40,178",stroke:ROOT,"stroke-width":"2.2",fill:"none"}));
-  g.appendChild(el("path",{d:"M26,152 C 23,163 20,171 21,180",stroke:ROOT,"stroke-width":"2",fill:"none"}));
-  g.appendChild(el("path",{d:"M-10,3 C -20,13 -25,26 -25,44",stroke:ROOT,"stroke-width":"2.2",fill:"none",opacity:".9"}));
+  g.appendChild(el("path",{d:"M6,0 C 18,8 26,20 28,38 C 30,64 23,92 25,118 C 26,132 30,142 36,150",stroke:ROOT,"stroke-width":"3",fill:"none","stroke-linecap":"round"}));
+  g.appendChild(el("path",{d:"M25,118 C 22,132 18,142 18,152",stroke:ROOT,"stroke-width":"2.2",fill:"none","stroke-linecap":"round"}));
+  g.appendChild(el("path",{d:"M-8,2 C -18,10 -22,22 -22,40 C -22,54 -20,64 -21,74",stroke:ROOT,"stroke-width":"2.4",fill:"none",opacity:".9","stroke-linecap":"round"}));
   // stems (curved, leaning like the sketch)
   const stems=[
-    ["M-4,0 C -10,-30 -30,-52 -50,-76", -54,-86,-18,1.3,G.mid,false],
-    ["M0,0 C 2,-40 -4,-72 -10,-96",     -11,-105,4,1.05,G.dark,false],
-    ["M4,0 C 14,-28 36,-46 54,-60",      58,-70,28,1.15,G.light,false],
-    ["M2,0 C 6,-20 9,-32 11,-44",        12,-52,8,0.72,G.deep,true],
-    ["M6,0 C 20,-8 36,-6 48,4",          54,16,140,0.9,G.deep,false],
+    ["M-4,0 C -10,-30 -30,-52 -50,-76", -55,-88,-20,1.5,G.mid,false],
+    ["M0,0 C 2,-40 -4,-72 -10,-96",     -11,-106,5,1.25,G.dark,false],
+    ["M4,0 C 14,-28 36,-46 54,-60",      59,-72,30,1.35,G.light,false],
+    ["M2,0 C 6,-22 8,-34 10,-48",        11,-56,6,0.9,G.deep,true],
+    ["M6,0 C 20,-8 36,-6 48,4",          55,18,142,1.05,G.deep,false],
   ];
   stems.forEach(st=>{
     g.appendChild(el("path",{d:st[0],stroke:G.deep,"stroke-width":"3",fill:"none","stroke-linecap":"round"}));
@@ -129,13 +129,13 @@ function buildPothos(){
   [[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],G.dark)));
   // left trailing vine — leaves hang tip-down with gentle sway
   g.appendChild(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[-34,20,-14,.7,G.mid],[-31,48,10,.62,G.light],[-35,76,-18,.56,G.mid],[-32,106,8,.5,G.light],[-33,128,-6,.45,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[-38,18,-22,.82,G.mid],[-28,46,14,.74,G.light],[-38,80,-26,.66,G.mid],[-29,104,10,.6,G.light],[-34,128,-12,.54,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
   // right trailing vine (longest, like the sketch)
   g.appendChild(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[38,24,16,.72,G.mid],[35,58,-8,.64,G.light],[39,92,20,.58,G.mid],[34,126,-12,.52,G.light],[38,156,14,.47,G.mid],[36,184,-4,.42,G.light]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[42,22,24,.84,G.mid],[31,56,-16,.76,G.light],[43,90,28,.68,G.mid],[30,122,-14,.62,G.light],[41,154,20,.56,G.mid],[35,184,-8,.5,G.light]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
   // short vine down the pot face
   g.appendChild(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  [[3,14,6,.58,G.mid],[1,32,-10,.5,G.light],[2,45,4,.44,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
+  [[4,16,10,.66,G.mid],[0,34,-14,.58,G.light],[3,50,6,.5,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4])));
   // front crown (mid/light) — irregular mound, tucked in toward center
   [[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],L[4])));
   // rim-drape leaves: hang over the pot edge with tips pointing DOWN
@@ -150,22 +150,22 @@ function buildSpider(){
   const P=grp("translate(150,150)"); pot(P,28); s.appendChild(P);
   const g=grp("translate(150,150)");
   // stolons first (thin stems under foliage): two left, one right w/ two pups
-  g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,150",stroke:G.mid,"stroke-width":"1.6",fill:"none"}));
-  g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,130",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
+  g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
+  g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
+  g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,128",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
   // blades: dense fountain, alternating sides; outer tips drop below rim level
-  // rot and arch share the same sign so every blade arcs OUTWARD from center
+  // banded fountain: center blades rise nearly straight, mids lean, outers arch over
   const blades=[
-    [-2,96,-10],[4,92,12],[-7,90,-18],[9,88,20],[-14,86,-30],[15,84,32],
-    [-22,82,-44],[23,80,46],[-30,76,-56],[31,74,58],[-38,70,-68],[39,68,70],
-    [-46,62,-80],[47,60,82],[-53,54,-90],[54,52,92],[-59,46,-98],[60,44,100]
+    [-2,100,-4],[3,97,5],[-6,95,-7],[8,93,8],
+    [-13,90,-12],[15,88,13],[-20,85,-17],[22,83,18],
+    [-28,79,-24],[30,77,25],[-36,72,-31],[38,70,32],
+    [-45,64,-40],[46,62,41],[-52,57,-46],[53,55,47],[-58,50,-51],[59,48,52]
   ];
-  blades.forEach((b,i)=>g.appendChild(blade(b[0],b[1],b[2]*0.42,i%3===0?G.dark:i%3===1?G.mid:G.light)));
+  blades.forEach((b,i)=>g.appendChild(blade(b[0],b[1],b[2],i%3===2?G.light:i%2?G.mid:G.dark)));
   // pups (after blades so they read on top of stems)
-  g.appendChild(pup(-95,96,.6,false));
-  g.appendChild(pup(-66,152,.52,false));
-  g.appendChild(pup(95,132,.58,true));
-  g.appendChild(pup(90,36,.4,true));
+  g.appendChild(pup(-95,96,.95,false));
+  g.appendChild(pup(-66,150,.8,false));
+  g.appendChild(pup(95,130,.9,true));
   s.appendChild(g); return s;
 }
 
