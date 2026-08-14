@@ -163,13 +163,7 @@ function buildSpider(size){
   const s=el("svg",{viewBox:"0 0 300 340",width:"280"});
   const P=grp("translate(150,150)"); pot(P,28); s.appendChild(P);
   const g=grp("translate(150,150)");
-  if(size===3){
-    g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
-    g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
-    g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,126 C 96,148 92,166 94,182",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
-  } else if(size===2){
-    g.appendChild(el("path",{d:"M8,-6 C 44,-16 66,-2 72,26 C 76,44 74,58 75,72",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  }
+  // 1) blades
   const full=[
     [-3,104,-4],[6,98,7],
     [-14,92,-14],[-26,84,-30],[-40,76,-42],[-54,68,-48],[-66,56,-46],[-32,50,-16],
@@ -178,8 +172,11 @@ function buildSpider(size){
   const pick=size===1?[0,1,2,8,3,9]:size===2?[0,1,2,3,4,7,8,9,10,11,12,15]:full.map((_,i)=>i);
   const Lk=size===1?0.66:size===2?0.85:1;
   pick.forEach((idx,i)=>{const b=full[idx];g.appendChild(blade(b[0],b[1]*Lk,b[2]*Lk,i%3===2?G.light:i%2?G.mid:G.dark));});
+  // 2) front half of the soil oval hides the blade convergence
+  g.appendChild(el("path",{d:"M-25,0 A 25 4 0 0 0 25,0 Z",fill:SOIL}));
+  // 3) TOP layer: front drapes + stolons + pups (above everything, so the
+  //    soil never cuts through them)
   if(size===3){
-    // front drapes: outward bow + rounded top cap
     [[-6,-2,-4,46,-8,G.dark],[7,-2,5,40,9,G.mid]].forEach(f=>{
       const H=f[3], B=f[4];
       g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
@@ -187,16 +184,15 @@ function buildSpider(size){
         el("path",{d:`M-1.2,2 C ${-1+B*0.35},${H*0.35} ${-0.6+B*0.7},${H*0.6} ${B*0.86},${H*0.86} C ${0.6+B*0.7},${H*0.6} ${1+B*0.35},${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
       ]));
     });
-  }
-  // front half of the soil oval overlaps the blade bases (hides the convergence);
-  // the back half still sits behind the plant from pot()
-  g.appendChild(el("path",{d:"M-25,0 A 25 4 0 0 0 25,0 Z",fill:SOIL}));
-  if(size===3){
+    g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
+    g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
+    g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,126 C 96,148 92,166 94,182",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
     g.appendChild(pup(-95,96,.95,false));
     g.appendChild(pup(-66,150,.8,false));
     g.appendChild(pup(95,126,.85,true));
     g.appendChild(pup(94,184,.7,true));
   } else if(size===2){
+    g.appendChild(el("path",{d:"M8,-6 C 44,-16 66,-2 72,26 C 76,44 74,58 75,72",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
     g.appendChild(pup(75,76,.7,true));
   }
   s.appendChild(g); return s;
