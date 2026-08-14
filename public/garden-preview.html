@@ -175,7 +175,7 @@ function buildSpider(size){
   pick.forEach((idx,i)=>{const b=full[idx];bl.appendChild(blade(b[0],b[1]*Lk,b[2]*Lk,i%3===2?G.light:i%2?G.mid:G.dark));});
   g.appendChild(bl);
   // 2) front half of the soil oval hides the blade convergence
-  g.appendChild(el("path",{d:"M-25,0 A 25 4 0 0 0 25,0 Z",fill:SOIL}));
+  g.appendChild(el("path",{d:"M-22.9,-1.6 A 25 4 0 1 0 22.9,-1.6 Z",fill:SOIL}));
   // 3) TOP layer: front drapes + stolons + pups (above everything, so the
   //    soil never cuts through them)
   if(size===3){
