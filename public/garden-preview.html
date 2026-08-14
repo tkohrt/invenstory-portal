@@ -179,13 +179,19 @@ function buildSpider(size){
   const Lk=size===1?0.66:size===2?0.85:1;
   pick.forEach((idx,i)=>{const b=full[idx];g.appendChild(blade(b[0],b[1]*Lk,b[2]*Lk,i%3===2?G.light:i%2?G.mid:G.dark));});
   if(size===3){
-    [[-6,-2,-4,46,G.dark],[7,-2,5,40,G.mid]].forEach(f=>{
-      const H=f[3];
+    // front drapes: outward bow + rounded top cap
+    [[-6,-2,-4,46,-8,G.dark],[7,-2,5,40,9,G.mid]].forEach(f=>{
+      const H=f[3], B=f[4];
       g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
-        el("path",{d:`M-3,0 C -2.4,${H*0.35} -1.6,${H*0.7} 0,${H} C 1.6,${H*0.7} 2.4,${H*0.35} 3,0 Z`,fill:f[4]}),
-        el("path",{d:`M-1.2,2 C -1,${H*0.35} -0.6,${H*0.6} 0,${H*0.86} C 0.6,${H*0.6} 1,${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
+        el("path",{d:`M-3,0 C ${-3+B*0.4},${H*0.35} ${-1.6+B*0.8},${H*0.7} ${B},${H} C ${1.6+B*0.8},${H*0.7} ${3+B*0.4},${H*0.35} 3,0 C 2,-2.6 -2,-2.6 -3,0 Z`,fill:f[5]}),
+        el("path",{d:`M-1.2,2 C ${-1+B*0.35},${H*0.35} ${-0.6+B*0.7},${H*0.6} ${B*0.86},${H*0.86} C ${0.6+B*0.7},${H*0.6} ${1+B*0.35},${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
       ]));
     });
+  }
+  // front half of the soil oval overlaps the blade bases (hides the convergence);
+  // the back half still sits behind the plant from pot()
+  g.appendChild(el("path",{d:"M-25,0 A 25 4 0 0 0 25,0 Z",fill:SOIL}));
+  if(size===3){
     g.appendChild(pup(-95,96,.95,false));
     g.appendChild(pup(-66,150,.8,false));
     g.appendChild(pup(95,126,.85,true));
