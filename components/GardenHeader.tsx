@@ -53,8 +53,8 @@ export default function GardenHeader({ garden, onPrompt }: { garden: GardenState
 
       {open && (
         <Drawer onClose={() => setOpen(false)}>
-          <h3>Your garden</h3>
-          <p style={{ color: "var(--muted)", marginTop: 2 }}>Your plant grows as your Inven(s)tory grows — and perks up whenever you add something new.</p>
+          <h3 style={{ color: "#3a7d44", marginTop: 14 }}>Grow your Inven(s)tory</h3>
+          <p style={{ color: "var(--muted)", marginTop: 8 }}>Your plant grows as your Inven(s)tory grows — and perks up whenever you add something new.</p>
           <div style={{ textAlign: "center", margin: "10px 0" }}><PlantVisual g={g} width={230} /></div>
 
           <div className="section-label">Species</div>
