@@ -48,20 +48,17 @@ function heart(fill){const g=grp(null,[el("path",{d:HEART,fill})]);
   g.appendChild(el("path",{d:"M0,12 C-1,4 -1,-4 0,-11",stroke:G.deep,"stroke-width":"1",opacity:".5",fill:"none"}));
   [[-3,4,-7,-4],[3,4,7,-4]].forEach(v=>g.appendChild(el("path",{d:`M0,${v[1]} Q ${v[0]*1.6},${v[1]-2} ${v[2]},${v[3]}`,stroke:G.deep,"stroke-width":".55",opacity:".45",fill:"none"})));
   return g;}
-function pothosLeaf(x,y,rot,s,fill){
-  return grp(`translate(${x},${y}) rotate(${rot})`,[
-    el("path",{d:`M0,0 C 2,${5} 1,${9} 0,${14}`,stroke:G.dark,"stroke-width":1.4*s,fill:"none",transform:"scale(1,-1)"}),
-    grp(`translate(0,${-16*s}) scale(${s})`,[shadowed(f=>{const c=heart(f);return c;},fill)])
-  ]);
+function pothosLeafParts(x,y,rot,s,fill){
+  const stem=grp(`translate(${x},${y}) rotate(${rot})`,[el("path",{d:"M0,0 C 2,5 1,9 0,14",stroke:G.dark,"stroke-width":1.4*s,fill:"none",transform:"scale(1,-1)"})]);
+  const leaf=grp(`translate(${x},${y}) rotate(${rot})`,[grp(`translate(0,${-16*s}) scale(${s})`,[shadowed(f=>heart(f),fill)])]);
+  return [stem,leaf];
 }
 // Trailing-vine leaf: hangs BELOW its node with the tip pointing DOWN
 // (small tilt for natural sway; petiole drops from the vine to the leaf).
-function vineLeaf(vx,vy,side,tilt,s,fill){
-  // petiole starts ON the vine, curves out to the side, leaf hangs tip-down
-  return grp(`translate(${vx},${vy})`,[
-    el("path",{d:`M0,0 C ${side*5},3 ${side*8.5},8 ${side*8},14`,stroke:G.dark,"stroke-width":1.3*s,fill:"none"}),
-    grp(`translate(${side*8},${14+12*s}) rotate(${tilt}) scale(${s})`,[shadowed(f=>heart(f),fill)])
-  ]);
+function vineLeafParts(vx,vy,side,tilt,s,fill){
+  const stem=grp(`translate(${vx},${vy})`,[el("path",{d:`M0,0 C ${side*5},3 ${side*8.5},8 ${side*8},14`,stroke:G.dark,"stroke-width":1.3*s,fill:"none"})]);
+  const leaf=grp(`translate(${vx},${vy})`,[grp(`translate(${side*8},${14+12*s}) rotate(${tilt}) scale(${s})`,[shadowed(f=>heart(f),fill)])]);
+  return [stem,leaf];
 }
 // monstera leaf: rounded heart w/ slash fenestrations (per sketch), evenodd
 function monLeafPath(){return `M0,-14 C-4,-18 -10,-20 -16,-17 C-29,-12 -35,1 -31,13 C-26,25 -13,35 0,40 C13,35 26,25 31,13 C35,1 29,-12 16,-17 C10,-20 4,-18 0,-14 Z
@@ -92,7 +89,7 @@ function blade(rot,L,a,fill){
 function pup(x,y,s,flip){
   const g=grp(`translate(${x},${y}) scale(${flip?-s:s},${s})`);
   [[-64,20],[-38,24],[-12,26],[14,25],[40,22],[64,18],[-88,15],[88,13]].forEach((b,i)=>{
-    g.appendChild(grp(`rotate(${b[0]})`,[el("path",{d:`M0,0 C2,${-b[1]*0.5} 2.6,${-b[1]*0.8} 1,${-b[1]} L-1,${-b[1]} C-2.6,${-b[1]*0.8} -2,${-b[1]*0.5} 0,0 Z`,fill:i%2?G.mid:G.dark})]));
+    g.appendChild(grp(`rotate(${b[0]})`,[el("path",{d:`M0,0 C2.2,${-b[1]*0.45} 2.6,${-b[1]*0.72} 0,${-b[1]} C-2.6,${-b[1]*0.72} -2.2,${-b[1]*0.45} 0,0 Z`,fill:i%2?G.mid:G.dark})]));
   });
   return g;
 }
@@ -121,30 +118,33 @@ function buildMonstera(){
   s.appendChild(g); return s;
 }
 
-// ---------- POTHOS (sketch: pot buried in leaves, two long trails + short face vine) ----------
+// ---------- POTHOS (sketch: pot buried in leaves, two long trails + face vine) ----------
 function buildPothos(){
   const s=el("svg",{viewBox:"0 0 300 340",width:"280"});
   const P=grp("translate(150,120)"); pot(P,24); s.appendChild(P);
   const g=grp("translate(150,120)");
-  // back crown (dark) — jittered, non-mirrored, hugging the pot center
-  [[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],G.dark)));
-  // left trailing vine — leaves hang tip-down with gentle sway
-  g.appendChild(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[-31,18,-1,-8,.82,G.mid],[-35,44,1,10,.74,G.light],[-33,78,-1,-12,.66,G.mid],[-33,102,1,8,.6,G.light],[-33,128,-1,-5,.54,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
-  // right trailing vine (longest, like the sketch)
-  g.appendChild(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  [[31,20,1,10,.84,G.mid],[39,54,-1,-8,.76,G.light],[38,88,1,12,.68,G.mid],[36,120,-1,-9,.62,G.light],[37,152,1,8,.56,G.mid],[36,184,-1,-4,.5,G.light]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
-  // short vine down the pot face
-  g.appendChild(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  [[3,16,1,6,.66,G.mid],[1,32,-1,-8,.58,G.light],[2,48,1,4,.5,G.mid]].forEach(L=>g.appendChild(vineLeaf(L[0],L[1],L[2],L[3],L[4],L[5])));
-  // front crown (mid/light) — irregular mound, tucked in toward center
-  [[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]].forEach(L=>g.appendChild(pothosLeaf(L[0],L[1],L[2],L[3],L[4])));
-  // rim-drape leaves: hang over the pot edge with tips pointing DOWN
-  g.appendChild(vineLeaf(-8,3,-1,-9,.6,G.light));
-  g.appendChild(vineLeaf(11,3,1,11,.55,G.mid));
-  // upright accent leaves cresting the mound
-  g.appendChild(pothosLeaf(-6,-13,-8,.88,G.mid));
-  g.appendChild(pothosLeaf(10,-10,24,.78,G.light));
+  const stems=[], leaves=[];
+  const addP=(x,y,rot,sc,fill)=>{const[st,lf]=pothosLeafParts(x,y,rot,sc,fill);stems.push(st);leaves.push(lf);};
+  const addV=(vx,vy,side,tilt,sc,fill)=>{const[st,lf]=vineLeafParts(vx,vy,side,tilt,sc,fill);stems.push(st);leaves.push(lf);};
+  // vine strokes (background layer)
+  stems.push(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+  stems.push(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+  stems.push(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
+  // back crown (dark)
+  [[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]].forEach(L=>addP(L[0],L[1],L[2],L[3],G.dark));
+  // left vine leaves
+  [[-31,18,-1,-8,.82,G.mid],[-35,44,1,10,.74,G.light],[-33,78,-1,-12,.66,G.mid],[-33,102,1,8,.6,G.light],[-33,128,-1,-5,.54,G.mid]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+  // right vine leaves
+  [[31,20,1,10,.84,G.mid],[39,54,-1,-8,.76,G.light],[38,88,1,12,.68,G.mid],[36,120,-1,-9,.62,G.light],[37,152,1,8,.56,G.mid],[36,184,-1,-4,.5,G.light]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+  // face vine leaves
+  [[3,16,1,6,.66,G.mid],[1,32,-1,-8,.58,G.light],[2,48,1,4,.5,G.mid]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+  // front crown
+  [[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]].forEach(L=>addP(L[0],L[1],L[2],L[3],L[4]));
+  // rim drapes + crest accents
+  addV(-8,3,-1,-9,.6,G.light); addV(11,3,1,11,.55,G.mid);
+  addP(-6,-13,-8,.88,G.mid); addP(10,-10,24,.78,G.light);
+  // stems first (never overlap a leaf), then leaves back-to-front
+  stems.forEach(e=>g.appendChild(e)); leaves.forEach(e=>g.appendChild(e));
   s.appendChild(g); return s;
 }
 
@@ -163,10 +163,17 @@ function buildSpider(){
   const blades=[
     [-3,104,-4],[6,98,7],
     [-14,92,-14],[-26,84,-30],[-40,76,-42],[-54,68,-48],[-66,56,-46],[-32,50,-16],
-    [14,94,16],[24,88,28],[34,84,40],[44,78,46],[54,70,50],[64,62,48],[72,52,46],[38,48,20],
-    [176,44,8],[-174,40,-6]
+    [14,94,16],[24,88,28],[34,84,40],[44,78,46],[54,70,50],[64,62,48],[72,52,46],[38,48,20]
   ];
   blades.forEach((b,i)=>g.appendChild(blade(b[0],b[1],b[2],i%3===2?G.light:i%2?G.mid:G.dark)));
+  // two straighter leaves hanging over the front rim (drawn as their own shapes)
+  [[-6,-2,-4,46,G.dark],[7,-2,5,40,G.mid]].forEach(f=>{
+    const H=f[3];
+    g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
+      el("path",{d:`M-3,0 C -2.4,${H*0.35} -1.6,${H*0.7} 0,${H} C 1.6,${H*0.7} 2.4,${H*0.35} 3,0 Z`,fill:f[4]}),
+      el("path",{d:`M-1.2,2 C -1,${H*0.35} -0.6,${H*0.6} 0,${H*0.86} C 0.6,${H*0.6} 1,${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
+    ]));
+  });
   // pups (after blades so they read on top of stems)
   g.appendChild(pup(-95,96,.95,false));
   g.appendChild(pup(-66,150,.8,false));
