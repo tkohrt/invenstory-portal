@@ -18,7 +18,7 @@
 <body>
 <h1>🪴 Style B — Botanical Layered, reworked to your sketches</h1>
 <div class="sub">Compositions follow your three drawings: the monstera's slash-style fenestrations, leaning stems and forking air root; the pothos mounding over a mostly-hidden pot with two long trailing vines (plus a short one down the pot face); the spider plant's dense arching fountain with stolons carrying pups below the pot on both sides. All trailing growth lives inside the plant's own canvas — nothing overlaps the Inven(s)tory cards. Pot and soil sit <b>behind</b> the plant.</div>
-<div class="row" id="row"></div>
+<div id="sections"></div>
 <div class="notes"><b>If approved:</b> this becomes the production art — parameterized for sizes 1–3 (size 1 = a few leaves/blades, no trailing growth; size 2 = fuller, short trails; size 3 = exactly this), health (droop + one yellowing leaf at "thirsty"), variegation/golden unlocks, all seven pots, and greenhouse thumbnails.</div>
 
 <script>
@@ -68,11 +68,11 @@ function monLeafPath(){return `M0,-14 C-4,-18 -10,-20 -16,-17 C-29,-12 -35,1 -31
  M5,-6 C12,-3 19,2 22,8 C18,9 11,3 3,-3 Z
  M-2,22 C-3,28 -2,31 0,34 C2,31 3,28 2,22 Z`;}
 function monLeaf(x,y,rot,s,fill,solid){
-  const shape=f=>{const g=grp(null,[el("path",{d:solid?HEART_BIG:monLeafPath(),"fill-rule":"evenodd",fill:f})]);
-    g.appendChild(el("path",{d:"M0,-13 C-1,0 -1,20 0,36",stroke:G.deep,"stroke-width":"1.3",opacity:".55",fill:"none"}));
-    return g;};
-  // slightly narrower than the wide pass; lobes up, tip tapers down
-  return grp(`translate(${x},${y}) rotate(${rot}) scale(${s*1.02},${s*0.92})`,[shadowed(shape,fill)]);
+  // no shadow copy behind (it showed through the fenestrations); midrib ends
+  // above the bottom-center slit
+  const g=grp(null,[el("path",{d:solid?HEART_BIG:monLeafPath(),"fill-rule":"evenodd",fill})]);
+  g.appendChild(el("path",{d:"M0,-13 C-1,-4 -1,8 0,19",stroke:G.deep,"stroke-width":"1.3",opacity:".55",fill:"none"}));
+  return grp(`translate(${x},${y}) rotate(${rot}) scale(${s*1.02},${s*0.92})`,[g]);
 }
 const HEART_BIG="M0,16 C-16,8 -22,-8 -11,-16 C-4,-20 0,-16 0,-11 C0,-16 4,-20 11,-16 C22,-8 16,8 0,16 Z";
 // spider blade: strong fountain arch with drooping tip + pale stripe
@@ -94,101 +94,119 @@ function pup(x,y,s,flip){
   return g;
 }
 
-// ---------- MONSTERA (sketch: leaning stems, slash slits, forking air root) ----------
-function buildMonstera(){
+// ---------- MONSTERA ----------
+function buildMonstera(size){
   const s=el("svg",{viewBox:"0 0 300 340",width:"280"});
   const P=grp("translate(150,158)"); pot(P,28); s.appendChild(P);
-  const g=grp("translate(150,158)");
-  // air roots first (over pot, under leaves): right root forks below pot
-  g.appendChild(el("path",{d:"M6,0 C 18,8 26,20 28,38 C 30,62 24,86 25,108 C 26,120 29,128 33,134",stroke:ROOT,"stroke-width":"2.4",fill:"none","stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:"M25,108 C 23,120 20,128 20,136",stroke:ROOT,"stroke-width":"1.9",fill:"none","stroke-linecap":"round"}));
-  g.appendChild(el("path",{d:"M-8,2 C -18,10 -22,22 -22,40 C -22,54 -20,64 -21,74",stroke:ROOT,"stroke-width":"2.4",fill:"none",opacity:".9","stroke-linecap":"round"}));
-  // stems (curved, leaning like the sketch)
-  const stems=[
+  const shrink=size===1?0.72:size===2?0.88:1;
+  const g=grp(`translate(150,158) scale(${shrink})`);
+  if(size===3){
+    g.appendChild(el("path",{d:"M6,0 C 18,8 26,20 28,38 C 30,62 24,86 25,108 C 26,120 29,128 33,134",stroke:ROOT,"stroke-width":"2.4",fill:"none","stroke-linecap":"round"}));
+    g.appendChild(el("path",{d:"M25,108 C 23,120 20,128 20,136",stroke:ROOT,"stroke-width":"1.9",fill:"none","stroke-linecap":"round"}));
+    g.appendChild(el("path",{d:"M-8,2 C -18,10 -22,22 -22,40 C -22,54 -20,64 -21,74",stroke:ROOT,"stroke-width":"2.4",fill:"none",opacity:".9","stroke-linecap":"round"}));
+  }
+  const all=[
     ["M-4,0 C -10,-30 -30,-52 -50,-76", -55,-92,18,1.45,G.mid,false],
     ["M0,0 C 2,-40 -4,-72 -10,-96",     -11,-112,-4,1.25,G.dark,false],
     ["M4,0 C 14,-28 36,-46 54,-60",      59,-78,-22,1.3,G.light,false],
     ["M2,0 C 6,-22 8,-34 10,-48",        11,-60,4,0.9,G.deep,true],
     ["M6,0 C 20,-8 36,-6 48,4",          55,10,-30,1.0,G.deep,false],
   ];
-  stems.forEach(st=>{
+  const pick=size===1?[1,0,3]:size===2?[1,0,2,3]:[0,1,2,3,4];
+  pick.forEach(i=>{const st=all[i];
     g.appendChild(el("path",{d:st[0],stroke:G.deep,"stroke-width":"3",fill:"none","stroke-linecap":"round"}));
     g.appendChild(monLeaf(st[1],st[2],st[3],st[4],st[5],st[6]));
   });
   s.appendChild(g); return s;
 }
 
-// ---------- POTHOS (sketch: pot buried in leaves, two long trails + face vine) ----------
-function buildPothos(){
+// ---------- POTHOS ----------
+function buildPothos(size){
   const s=el("svg",{viewBox:"0 0 300 340",width:"280"});
   const P=grp("translate(150,120)"); pot(P,24); s.appendChild(P);
-  const g=grp("translate(150,120)");
+  const shrink=size===1?0.82:size===2?0.92:1;
+  const g=grp(`translate(150,120) scale(${shrink})`);
   const stems=[], leaves=[];
   const addP=(x,y,rot,sc,fill)=>{const[st,lf]=pothosLeafParts(x,y,rot,sc,fill);stems.push(st);leaves.push(lf);};
   const addV=(vx,vy,side,tilt,sc,fill)=>{const[st,lf]=vineLeafParts(vx,vy,side,tilt,sc,fill);stems.push(st);leaves.push(lf);};
-  // vine strokes (background layer)
-  stems.push(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  stems.push(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
-  stems.push(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
-  // back crown (dark)
-  [[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]].forEach(L=>addP(L[0],L[1],L[2],L[3],G.dark));
-  // left vine leaves
-  [[-31,18,-1,-8,.82,G.mid],[-35,44,1,10,.74,G.light],[-33,78,-1,-12,.66,G.mid],[-33,102,1,8,.6,G.light],[-33,128,-1,-5,.54,G.mid]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
-  // right vine leaves
-  [[31,20,1,10,.84,G.mid],[39,54,-1,-8,.76,G.light],[38,88,1,12,.68,G.mid],[36,120,-1,-9,.62,G.light],[37,152,1,8,.56,G.mid],[36,184,-1,-4,.5,G.light]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
-  // face vine leaves
-  [[3,16,1,6,.66,G.mid],[1,32,-1,-8,.58,G.light],[2,48,1,4,.5,G.mid]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
-  // front crown
-  [[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]].forEach(L=>addP(L[0],L[1],L[2],L[3],L[4]));
-  // rim drapes + crest accents
-  addV(-8,3,-1,-9,.6,G.light); addV(11,3,1,11,.55,G.mid);
-  addP(-6,-13,-8,.88,G.mid); addP(10,-10,24,.78,G.light);
-  // stems first (never overlap a leaf), then leaves back-to-front
+  const backCrown=[[-17,5,-44,.82],[-7,-5,-14,.92],[4,-2,9,.78],[14,1,48,.86],[-1,-9,-4,1.0]];
+  const frontCrown=[[-13,10,-64,.68,G.mid],[10,7,55,.79,G.light],[-4,3,-24,.95,G.light],[6,1,31,.7,G.mid],[2,12,7,.84,G.mid],[16,11,72,.5,G.light]];
+  const leftLeaves=[[-31,18,-1,-8,.82,G.mid],[-35,44,1,10,.74,G.light],[-33,78,-1,-12,.66,G.mid],[-33,102,1,8,.6,G.light],[-33,128,-1,-5,.54,G.mid]];
+  const rightLeaves=[[31,20,1,10,.84,G.mid],[39,54,-1,-8,.76,G.light],[38,88,1,12,.68,G.mid],[36,120,-1,-9,.62,G.light],[37,152,1,8,.56,G.mid],[36,184,-1,-4,.5,G.light]];
+  if(size===3){
+    stems.push(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72 C -31,96 -35,114 -33,128",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+    stems.push(el("path",{d:"M22,-6 C 36,12 41,52 37,92 C 34,128 39,158 36,184",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+    stems.push(el("path",{d:"M2,-2 C 4,14 0,28 2,44",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
+  } else if(size===2){
+    stems.push(el("path",{d:"M-22,-4 C -34,10 -37,42 -33,72",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+    stems.push(el("path",{d:"M22,-6 C 36,12 41,52 37,92",stroke:G.mid,"stroke-width":"2",fill:"none"}));
+  }
+  (size===1?[backCrown[1],backCrown[2],backCrown[4]]:backCrown).forEach(L=>addP(L[0],L[1],L[2],L[3],G.dark));
+  if(size===3){
+    leftLeaves.forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+    rightLeaves.forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+    [[3,16,1,6,.66,G.mid],[1,32,-1,-8,.58,G.light],[2,48,1,4,.5,G.mid]].forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+  } else if(size===2){
+    leftLeaves.slice(0,2).forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+    rightLeaves.slice(0,3).forEach(L=>addV(L[0],L[1],L[2],L[3],L[4],L[5]));
+  }
+  (size===1?[frontCrown[2],frontCrown[3],frontCrown[4]]:frontCrown).forEach(L=>addP(L[0],L[1],L[2],L[3],L[4]));
+  if(size>=2){ addV(-8,3,-1,-9,.6,G.light); addV(11,3,1,11,.55,G.mid); }
+  addP(-6,-13,-8,.88,G.mid);
+  if(size>=2) addP(10,-10,24,.78,G.light);
   stems.forEach(e=>g.appendChild(e)); leaves.forEach(e=>g.appendChild(e));
   s.appendChild(g); return s;
 }
 
-// ---------- SPIDER (sketch: dense fountain, tips below rim, stolons w/ pups) ----------
-function buildSpider(){
+// ---------- SPIDER ----------
+function buildSpider(size){
   const s=el("svg",{viewBox:"0 0 300 340",width:"280"});
   const P=grp("translate(150,150)"); pot(P,28); s.appendChild(P);
   const g=grp("translate(150,150)");
-  // stolons first (thin stems under foliage): two left, one right w/ two pups
-  g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
-  g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
-  g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,126 C 96,148 92,166 94,182",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
-  // blades: dense fountain, alternating sides; outer tips drop below rim level
-  // traced from Tyler's sketch: tall center pair, long left sweepers,
-  // denser + lower right cluster, short spikes between, two front drapes
-  const blades=[
+  if(size===3){
+    g.appendChild(el("path",{d:"M-8,-6 C -50,-22 -80,-6 -90,28 C -96,54 -93,76 -95,94",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
+    g.appendChild(el("path",{d:"M-4,-2 C -40,8 -62,38 -66,78 C -68,110 -64,132 -66,148",stroke:G.mid,"stroke-width":"1.7",fill:"none"}));
+    g.appendChild(el("path",{d:"M8,-6 C 52,-20 82,-2 90,34 C 96,62 93,96 95,126 C 96,148 92,166 94,182",stroke:G.mid,"stroke-width":"1.9",fill:"none"}));
+  } else if(size===2){
+    g.appendChild(el("path",{d:"M8,-6 C 44,-16 66,-2 72,26 C 76,44 74,58 75,72",stroke:G.mid,"stroke-width":"1.8",fill:"none"}));
+  }
+  const full=[
     [-3,104,-4],[6,98,7],
     [-14,92,-14],[-26,84,-30],[-40,76,-42],[-54,68,-48],[-66,56,-46],[-32,50,-16],
     [14,94,16],[24,88,28],[34,84,40],[44,78,46],[54,70,50],[64,62,48],[72,52,46],[38,48,20]
   ];
-  blades.forEach((b,i)=>g.appendChild(blade(b[0],b[1],b[2],i%3===2?G.light:i%2?G.mid:G.dark)));
-  // two straighter leaves hanging over the front rim (drawn as their own shapes)
-  [[-6,-2,-4,46,G.dark],[7,-2,5,40,G.mid]].forEach(f=>{
-    const H=f[3];
-    g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
-      el("path",{d:`M-3,0 C -2.4,${H*0.35} -1.6,${H*0.7} 0,${H} C 1.6,${H*0.7} 2.4,${H*0.35} 3,0 Z`,fill:f[4]}),
-      el("path",{d:`M-1.2,2 C -1,${H*0.35} -0.6,${H*0.6} 0,${H*0.86} C 0.6,${H*0.6} 1,${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
-    ]));
-  });
-  // pups (after blades so they read on top of stems)
-  g.appendChild(pup(-95,96,.95,false));
-  g.appendChild(pup(-66,150,.8,false));
-  g.appendChild(pup(95,126,.85,true));
-  g.appendChild(pup(94,184,.7,true));
+  const pick=size===1?[0,1,2,8,3,9]:size===2?[0,1,2,3,4,7,8,9,10,11,12,15]:full.map((_,i)=>i);
+  const Lk=size===1?0.66:size===2?0.85:1;
+  pick.forEach((idx,i)=>{const b=full[idx];g.appendChild(blade(b[0],b[1]*Lk,b[2]*Lk,i%3===2?G.light:i%2?G.mid:G.dark));});
+  if(size===3){
+    [[-6,-2,-4,46,G.dark],[7,-2,5,40,G.mid]].forEach(f=>{
+      const H=f[3];
+      g.appendChild(grp(`translate(${f[0]},${f[1]}) rotate(${f[2]})`,[
+        el("path",{d:`M-3,0 C -2.4,${H*0.35} -1.6,${H*0.7} 0,${H} C 1.6,${H*0.7} 2.4,${H*0.35} 3,0 Z`,fill:f[4]}),
+        el("path",{d:`M-1.2,2 C -1,${H*0.35} -0.6,${H*0.6} 0,${H*0.86} C 0.6,${H*0.6} 1,${H*0.35} 1.2,2 Z`,fill:G.pale,opacity:".7"})
+      ]));
+    });
+    g.appendChild(pup(-95,96,.95,false));
+    g.appendChild(pup(-66,150,.8,false));
+    g.appendChild(pup(95,126,.85,true));
+    g.appendChild(pup(94,184,.7,true));
+  } else if(size===2){
+    g.appendChild(pup(75,76,.7,true));
+  }
   s.appendChild(g); return s;
 }
 
-const row=document.getElementById("row");
-[["Monstera","leaning stems · slash fenestrations · forking air root",buildMonstera],
- ["Golden Pothos","pot buried in leaves · two long trails + face vine",buildPothos],
- ["Spider Plant","dense fountain · tips past the rim · stolons with pups",buildSpider]].forEach(([name,cap,fn])=>{
-  const c=document.createElement("div"); c.className="cell";
-  c.innerHTML=`<h3>${name}</h3><div class="cap">${cap} · Size 3 · Thriving</div>`;
-  c.appendChild(fn()); row.appendChild(c);
+const root=document.getElementById("sections");
+const SIZES=[[3,"Size 3 · Flourishing","the approved composition"],[2,"Size 2 · Established","fuller crown, short trails"],[1,"Size 1 · Seedling","a young start — no trailing growth"]];
+SIZES.forEach(([sz,name,note])=>{
+  const h=document.createElement("h2"); h.style.cssText="font-size:16px;font-weight:600;margin:22px 0 10px"; h.textContent=name+" — "+note; root.appendChild(h);
+  const row=document.createElement("div"); row.className="row";
+  [["Monstera",buildMonstera],["Golden Pothos",buildPothos],["Spider Plant",buildSpider]].forEach(([label,fn])=>{
+    const c=document.createElement("div"); c.className="cell";
+    c.innerHTML=`<h3>${label}</h3><div class="cap">${name}</div>`;
+    c.appendChild(fn(sz)); row.appendChild(c);
+  });
+  root.appendChild(row);
 });
 </script>
 </body>
