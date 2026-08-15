@@ -471,3 +471,9 @@ button.vis-dot.busy{opacity:.5}
 .gh-client{display:flex;align-items:center;gap:8px}
 .gh-plant{line-height:0;display:inline-block}
 .gh-plant.thirsty{filter:saturate(.75)}
+
+/* Drag-and-drop documents between layers */
+.doc-card[draggable]{cursor:grab}
+.doc-card[draggable]:active{cursor:grabbing}
+.layer-canvas.drag-over{outline:2px dashed #5c8f5e;outline-offset:-2px;filter:brightness(1.02)}
+.layer-edit{display:flex;gap:6px;flex-wrap:wrap;align-items:center}

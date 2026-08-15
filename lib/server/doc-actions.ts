@@ -68,3 +68,18 @@ export async function deleteDocAction(documentId: string) {
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "delete_doc", detail: documentId });
   revalidatePath("/invenstory"); revalidatePath("/search");
 }
+
+// Move a document to a different Inven(s)tory layer (drag-and-drop or drawer
+// edit). RLS-verified: caller's tenant only.
+export async function changeDocLayerAction(documentId: string, layer: "I" | "II" | "III") {
+  const session = await getSession();
+  if (!session) throw new Error("unauthorized");
+  if (!["I", "II", "III"].includes(layer)) throw new Error("invalid layer");
+  const supabase = await userClient();
+  const { data: doc } = await supabase.from("document").select("id, tenant_id, layer").eq("id", documentId).single();
+  if (!doc) throw new Error("not found");
+  if (doc.layer === layer) return;
+  await db.from("document").update({ layer, updated_at: new Date().toISOString() }).eq("id", documentId).eq("tenant_id", doc.tenant_id);
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "change_layer", detail: `${documentId}: ${doc.layer} -> ${layer}` });
+  revalidatePath("/invenstory"); revalidatePath("/search");
+}

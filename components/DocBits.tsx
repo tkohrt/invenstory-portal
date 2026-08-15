@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
-import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction } from "@/lib/server/doc-actions";
+import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 
@@ -19,7 +19,8 @@ export function StatusChip({ status }: { status: DocumentWithTags["status"] }) {
 
 export function DocCard({ d, onOpen, isAdmin }: { d: DocumentWithTags; onOpen: (id: string) => void; isAdmin?: boolean }) {
   return (
-    <div className="doc-card" onClick={() => onOpen(d.id)}>
+    <div className="doc-card" onClick={() => onOpen(d.id)} draggable
+      onDragStart={e => { e.dataTransfer.setData("text/doc-id", d.id); e.dataTransfer.effectAllowed = "move"; }}>
       <span className={`ftype ${d.doc_kind}`}>{d.doc_kind.toUpperCase()}</span>
       <h4>{d.title}</h4>
       <div className="dmeta">
@@ -46,6 +47,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(d.title);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [editingLayer, setEditingLayer] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [viewing, setViewing] = useState(false);
@@ -93,7 +95,23 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
               <button className="btn secondary" onClick={() => { setTitle(d.title); setRenaming(false); }}>Cancel</button>
             </div>
           </div>}
-      <div className="kv"><div className="k">Layer</div><div><span className="layer-dot" style={{ background: meta.color }} /> Layer {d.layer} — {meta.name}</div></div>
+      <div className="kv"><div className="k">Layer</div><div>
+        {!editingLayer
+          ? <><span className="layer-dot" style={{ background: meta.color }} /> Layer {d.layer} — {meta.name}
+              <button className="btn ghost" style={{ fontSize: 12, padding: "0 6px", marginLeft: 6 }} onClick={() => setEditingLayer(true)}>Edit</button></>
+          : <div className="layer-edit">
+              {(["I", "II", "III"] as Layer[]).map(L => (
+                <button key={L} className={`chip ${LAYER_META[L].cls} ${d.layer === L ? "active" : ""}`} disabled={busy === "layer"}
+                  onClick={async () => {
+                    if (L === d.layer) { setEditingLayer(false); return; }
+                    setBusy("layer");
+                    await changeDocLayerAction(d.id, L);
+                    setBusy(null); setEditingLayer(false); router.refresh();
+                  }}>Layer {L} — {LAYER_META[L].name}</button>
+              ))}
+              <button className="btn ghost" style={{ fontSize: 12 }} onClick={() => setEditingLayer(false)}>Cancel</button>
+            </div>}
+      </div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
       {failed && isAdmin && (
