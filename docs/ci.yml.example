@@ -1,0 +1,18 @@
+# CI template — the handoff team should copy this to .github/workflows/ci.yml.
+# (Committed here as a template because the build token lacked GitHub 'workflow' scope.)
+
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      # - run: npm test   # enable once the test suite exists (see docs/HANDOFF.md)
