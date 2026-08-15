@@ -31,7 +31,7 @@ garden state, or audit entries. Everything below serves that guarantee.
    cross tenants and never let model output trigger privileged actions.
 4. **No automated tests / CI yet** — the highest-value first suite is cross-tenant
    isolation tests (log in as A, attempt to reach B's resources by ID, assert
-   failure). CI scaffold added in `docs/ci.yml.example` (add to `.github/workflows/`).
+   failure). CI template in `docs/ci.yml.example` (add to `.github/workflows/`). A starter cross-tenant isolation suite lives in `tests/` — see `tests/README.md`.
 
 ## Before scaling
 
