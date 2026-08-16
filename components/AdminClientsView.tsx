@@ -25,12 +25,12 @@ export default function AdminClientsView({ portfolio: p, gardens }: { portfolio:
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const cut = (r: number) => money(Math.round(r * 0.10)) + "–" + money(Math.round(r * 0.15));
-  const open = async (id: string) => { await switchTenantAction(id); router.push("/dashboard"); router.refresh(); };
+  const open = async (id: string) => { await switchTenantAction(id); router.push("/account"); router.refresh(); };
 
   return (
     <div>
       <div className="page-head">
-        <div><h2>All clients</h2><p>Portfolio across every For Granted client. Select a client to open their account.</p></div>
+        <div><h2>All clients</h2><p>Portfolio across every For Granted client. Select a client to view their account as they see it.</p></div>
         <div className="spacer" />
         <button className="btn secondary" onClick={() => setAdding(true)}>＋ New client</button>
       </div>

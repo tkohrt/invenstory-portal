@@ -477,3 +477,10 @@ button.vis-dot.busy{opacity:.5}
 .doc-card[draggable]:active{cursor:grabbing}
 .layer-canvas.drag-over{outline:2px dashed #5c8f5e;outline-offset:-2px;filter:brightness(1.02)}
 .layer-edit{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+/* Account two-column: profile/security on the left, folded dashboard on the right */
+.acct-layout{display:flex;gap:20px;align-items:flex-start}
+.acct-col{flex:1;min-width:0;max-width:640px}
+.acct-col-wide{flex:1.2;max-width:none}
+.acct-dash .stat-grid.tight{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+@media(max-width:900px){.acct-layout{flex-direction:column}.acct-col,.acct-col-wide{max-width:none;width:100%}}

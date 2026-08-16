@@ -2,14 +2,18 @@
 import { useEffect, useState } from "react";
 import { browserClient } from "@/lib/supabase-browser";
 import { changePasswordAction, requestAccountClosureAction } from "@/lib/server/account-actions";
+import type { ClientStats } from "@/lib/types";
 
 interface Factor { id: string; friendly_name?: string; status: string }
 
-export default function AccountView({ fullName, email, role, orgName, website, contactName }: {
+export default function AccountView({ fullName, email, role, orgName, website, contactName, stats }: {
   fullName: string; email: string; role: "client" | "admin";
-  orgName: string | null; website: string | null; contactName: string | null;
+  orgName: string | null; website: string | null; contactName: string | null; stats: ClientStats;
 }) {
   const isClient = role === "client";
+  const adminViewing = role === "admin";
+  const money = (c: number) => "$" + Math.round(c / 100).toLocaleString();
+  const num = (n: number) => n.toLocaleString();
 
   // --- change password ---
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
@@ -68,21 +72,56 @@ export default function AccountView({ fullName, email, role, orgName, website, c
     setCloseBusy(false); setCloseDone(true); setCloseOpen(false);
   };
 
-  return (
-    <div style={{ maxWidth: 640 }}>
-      <div className="page-head"><div><h2>Account</h2><p>Manage your login and your data.</p></div></div>
+  // The folded-in dashboard (formerly its own tab), rendered as a card.
+  const DashboardCard = (
+    <section className="acct-card acct-dash">
+      <h3>{adminViewing ? `${orgName ?? "This client"} — at a glance` : "Your Inven(s)tory at a glance"}</h3>
+      <div className="section-label">Your story, captured</div>
+      <div className="stat-grid tight">
+        <div className="stat-card"><div className="stat-value">{num(stats.docs)}</div><div className="stat-label">Documents</div><div className="stat-sub">Layer I {stats.byLayer.I} · II {stats.byLayer.II} · III {stats.byLayer.III}</div></div>
+        <div className="stat-card"><div className="stat-value">{num(stats.words)}</div><div className="stat-label">Words captured</div></div>
+      </div>
+      <div className="section-label" style={{ marginTop: 18 }}>Grant outcomes</div>
+      <div className="stat-grid tight">
+        <div className="stat-card"><div className="stat-value">{num(stats.inProgress)}</div><div className="stat-label">Applications in progress</div></div>
+        <div className="stat-card"><div className="stat-value">{num(stats.applied)}</div><div className="stat-label">Applications submitted</div></div>
+        <div className="stat-card"><div className="stat-value">{num(stats.won)}</div><div className="stat-label">Grants won</div></div>
+        <div className="stat-card accent"><div className="stat-value">{money(stats.revenueWonCents)}</div><div className="stat-label">Grant revenue won</div></div>
+      </div>
+      <div className="section-label" style={{ marginTop: 18 }}>Coming soon</div>
+      <div className="stat-grid tight">
+        <div className="stat-card"><div className="stat-value">—</div><div className="stat-label">Funders matched</div><div className="stat-sub">Arrives with funder matching</div></div>
+      </div>
+    </section>
+  );
 
+  return (
+    <div>
+      <div className="page-head"><div>
+        {adminViewing && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {orgName ?? "client"} — as the client sees it</div>}
+        <h2>Account</h2><p>{adminViewing ? "This client’s account overview." : "Manage your login and your data."}</p>
+      </div></div>
+
+      <div className="acct-layout">
+        <div className="acct-col">
       <section className="acct-card">
         <h3>Profile</h3>
         <div className="kv"><div className="k">Name</div><div>{fullName}</div></div>
         <div className="kv"><div className="k">Email</div><div>{email}</div></div>
-        {isClient && orgName && <div className="kv"><div className="k">Organization</div><div>{orgName}</div></div>}
-        {isClient && contactName && <div className="kv"><div className="k">Primary contact</div><div>{contactName}</div></div>}
-        {isClient && website && <div className="kv"><div className="k">Website</div><div>{website}</div></div>}
+        {(isClient || adminViewing) && orgName && <div className="kv"><div className="k">Organization</div><div>{orgName}</div></div>}
+        {(isClient || adminViewing) && contactName && <div className="kv"><div className="k">Primary contact</div><div>{contactName}</div></div>}
+        {(isClient || adminViewing) && website && <div className="kv"><div className="k">Website</div><div>{website}</div></div>}
         {isClient && <p className="acct-note">Organization details are maintained by the For Granted team.</p>}
       </section>
 
-      <section className="acct-card">
+      {adminViewing && (
+        <section className="acct-card">
+          <h3>Login &amp; security</h3>
+          <p className="acct-note">Password, two-factor authentication, and account closure are managed by the client from their own login and aren’t shown here.</p>
+        </section>
+      )}
+
+      {isClient && <section className="acct-card">
         <h3>Change password</h3>
         <label>Current password</label>
         <input type="password" value={pw.current} onChange={e => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" />
@@ -92,9 +131,9 @@ export default function AccountView({ fullName, email, role, orgName, website, c
         <input type="password" value={pw.confirm} onChange={e => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />
         {pwMsg && <div className={pwMsg.ok ? "gap-note" : "metric-gap"} style={{ marginTop: 10 }}>{pwMsg.text}</div>}
         <button className="btn" onClick={changePw} disabled={pwBusy || !pw.current || !pw.next}>{pwBusy ? "Updating…" : "Update password"}</button>
-      </section>
+      </section>}
 
-      <section className="acct-card">
+      {isClient && <section className="acct-card">
         <h3>Two-factor authentication</h3>
         {factors.length > 0 && (
           <div>
@@ -123,7 +162,7 @@ export default function AccountView({ fullName, email, role, orgName, website, c
           </div>
         )}
         {mfaMsg && <div className="gap-note" style={{ marginTop: 10 }}>{mfaMsg}</div>}
-      </section>
+      </section>}
 
       {isClient && (
         <section className="acct-card">
@@ -151,6 +190,9 @@ export default function AccountView({ fullName, email, role, orgName, website, c
                 </div>}
         </section>
       )}
+        </div>
+        <div className="acct-col acct-col-wide">{DashboardCard}</div>
+      </div>
     </div>
   );
 }
