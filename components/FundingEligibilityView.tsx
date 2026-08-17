@@ -59,10 +59,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h3 style={{ margin: 0 }}>What&rsquo;s missing</h3>
           <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : gapsComputedAt ? "Re-analyze inventory" : "Analyze my inventory"}</button>
+          <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : gapsComputedAt ? "Re-analyze Inven(s)tory" : "Analyze my Inven(s)tory"}</button>
         </div>
         {sortedGaps.length === 0
-          ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and inventory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>
+          ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and Inven(s)tory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>
           : <div className="gap-list">{sortedGaps.map(g => (
               <div key={g.key} className={`gap-item ${g.tier}`}>
                 <span className="gap-ic">{TIER[g.tier]}</span>
