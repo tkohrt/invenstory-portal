@@ -71,3 +71,20 @@ export function profileChips(p: EligibilityProfile): string[] {
   if (p.populations[0]) chips.push(p.populations[0]);
   return chips;
 }
+
+// ---- Gap detection ----
+export type GapTier = "red" | "yellow" | "low";
+export interface Gap { tier: GapTier; key: string; label: string; fix: "profile" | "upload"; layer?: "I" | "II" | "III" }
+
+// Structural gaps come straight from the profile fields (free, always current).
+export function structuralGaps(p: EligibilityProfile): Gap[] {
+  const g: Gap[] = [];
+  if (!p.org_type)   g.push({ tier: "red", key: "org_type",   label: "Set your organization type — you can't be matched without it.", fix: "profile" });
+  if (!p.state_code) g.push({ tier: "red", key: "location",   label: "Add your primary state — funders gate hard on geography.",       fix: "profile" });
+  if (!p.tax_status) g.push({ tier: "red", key: "tax_status", label: "Set your tax status — needed to screen 501(c)(3)-only grants.",   fix: "profile" });
+  if (p.service_area.length === 0) g.push({ tier: "yellow", key: "service_area", label: "List the states you serve.",          fix: "profile" });
+  if (!p.budget_band)              g.push({ tier: "yellow", key: "budget_band",  label: "Add your annual operating budget.",   fix: "profile" });
+  if (p.populations.length === 0)  g.push({ tier: "yellow", key: "populations",  label: "Add the populations you serve.",      fix: "profile" });
+  if (p.cause_areas.length === 0)  g.push({ tier: "yellow", key: "cause_areas",  label: "Add your cause areas.",              fix: "profile" });
+  return g;
+}

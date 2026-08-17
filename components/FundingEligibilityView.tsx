@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
-import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { runGapAnalysisAction } from "@/lib/server/gap-actions";
+import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 
 function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [draft, setDraft] = useState("");
@@ -21,8 +22,8 @@ function TagField({ label, values, onChange, placeholder }: { label: string; val
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing }: {
-  profile: EligibilityProfile; orgName: string; adminViewing: boolean;
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt }: {
+  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null;
 }) {
   const router = useRouter();
   const [p, setP] = useState<EligibilityProfile>(profile);
@@ -38,6 +39,11 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing 
     setBusy(false); setMsg(`Saved — ${r.completeness}% complete.`);
     router.refresh();
   };
+  const [analyzing, setAnalyzing] = useState(false);
+  const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
+  const TIER = { red: "🔴", yellow: "🟡", low: "⚪" } as const;
+  const order = { red: 0, yellow: 1, low: 2 } as const;
+  const sortedGaps = [...gaps].sort((a, b) => order[a.tier] - order[b.tier]);
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -48,6 +54,24 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing 
       </div></div>
 
       <div className="fe-progress"><div className="fe-bar"><span style={{ width: `${completeness}%` }} /></div><b>{completeness}% complete</b></div>
+
+      <section className="acct-card">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>What&rsquo;s missing</h3>
+          <div className="spacer" style={{ flex: 1 }} />
+          <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : gapsComputedAt ? "Re-analyze inventory" : "Analyze my inventory"}</button>
+        </div>
+        {sortedGaps.length === 0
+          ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and inventory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>
+          : <div className="gap-list">{sortedGaps.map(g => (
+              <div key={g.key} className={`gap-item ${g.tier}`}>
+                <span className="gap-ic">{TIER[g.tier]}</span>
+                <span className="gap-text">{g.label}</span>
+                <a className="gap-fix" href={g.fix === "profile" ? "#top" : "/invenstory"}>{g.fix === "profile" ? "Fill in" : "Upload"} →</a>
+              </div>))}
+          </div>}
+        <p className="acct-note" style={{ marginTop: 8 }}>🔴 blocks matching · 🟡 important · ⚪ nice to have. Structural gaps update as you edit; document gaps update when you re-analyze.</p>
+      </section>
 
       <section className="acct-card">
         <h3>Identity</h3>

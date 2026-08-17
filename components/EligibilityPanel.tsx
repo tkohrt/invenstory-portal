@@ -27,6 +27,14 @@ export default function EligibilityPanel({ s }: { s: EligibilitySummary }) {
               <div className="elig-val">—</div><div className="elig-cap">Matches soon</div>
             </div>
           </div>
+          {(s.red + s.yellow + s.low) > 0 && (
+            <Link href="/funding-eligibility" className="elig-gaps">
+              {s.red > 0 && <span className="eg red">🔴 {s.red}</span>}
+              {s.yellow > 0 && <span className="eg yellow">🟡 {s.yellow}</span>}
+              {s.low > 0 && <span className="eg low">⚪ {s.low}</span>}
+              <span className="eg-label">to address</span>
+            </Link>
+          )}
           {s.chips.length > 0 && <div className="elig-chips">{s.chips.map((c, i) => <span key={i} className="elig-chip">{c}</span>)}</div>}
           {!complete && <Link href="/funding-eligibility" className="elig-finish">Finish your profile to unlock matching →</Link>}
         </>
