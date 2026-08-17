@@ -13,6 +13,7 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   { key: "answer_library", href: "/answer-library", label: "Answer Library",         icon: "◎", defaultVisible: false },
   { key: "chat",           href: "/chat",           label: "Ask your Inven(s)tory",  icon: "✦", defaultVisible: true },
   { key: "drafts",         href: "/drafts",         label: "Grants In The Works",    icon: "✎", defaultVisible: true },
+  { key: "eligibility",    href: "/funding-eligibility", label: "Funding Eligibility", icon: "◇", defaultVisible: false },
 ];
 
 export const WORKSPACE_FEATURE_MAP: Record<string, WorkspaceFeature> =

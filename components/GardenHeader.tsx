@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PlantVisual from "./PlantVisual";
 import Drawer from "./Drawer";
 import { setPlantAction } from "@/lib/server/garden-actions";
+import type { ReactNode } from "react";
 import type { GardenState, PlantSpecies } from "@/lib/types";
 
 const SPECIES: { key: PlantSpecies; name: string }[] = [
@@ -21,7 +22,7 @@ const ACH_NAMES: Record<string, string> = {
   grant_submitted: "Grant submitted", grant_won: "Grant won",
 };
 
-export default function GardenHeader({ garden, onPrompt }: { garden: GardenState; onPrompt: (layer: "I"|"II"|"III"|null) => void }) {
+export default function GardenHeader({ garden, onPrompt, rightSlot }: { garden: GardenState; onPrompt: (layer: "I"|"II"|"III"|null) => void; rightSlot?: ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -41,14 +42,17 @@ export default function GardenHeader({ garden, onPrompt }: { garden: GardenState
           {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
         </div>
       )}
-      <div className="garden-left">
-        <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
-          <PlantVisual g={g} width={230} />
-        </button>
-        <div className="garden-meta">
-          <span className={`garden-health ${g.health}`}>{healthLabel}</span>
-          <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
+      <div className="garden-row">
+        <div className="garden-left">
+          <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
+            <PlantVisual g={g} width={230} />
+          </button>
+          <div className="garden-meta">
+            <span className={`garden-health ${g.health}`}>{healthLabel}</span>
+            <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
+          </div>
         </div>
+        {rightSlot}
       </div>
 
       {open && (

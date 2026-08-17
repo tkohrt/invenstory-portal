@@ -44,6 +44,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
     { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
+    { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
   ];
   const closeNav = () => setNavOpen(false);
 
