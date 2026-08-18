@@ -552,7 +552,9 @@ button.vis-dot.busy{opacity:.5}
 .ck-row.missing .ck-mark{color:#c0492f}
 .ck-label{flex:1;color:#333}
 .ck-row.missing .ck-label{color:#8a8a8a}
-.ck-badge{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#b08a2e;background:#fdf6e3;border:1px solid #eadfc0;border-radius:8px;padding:1px 6px}
+.ck-badge{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:8px;padding:1px 6px;border:1px solid}
+.ck-badge.thin{color:#b08a2e;background:#fdf6e3;border-color:#eadfc0}
+.ck-badge.robust{color:#3a7d44;background:#f2f8f2;border-color:#cfe4cf}
 .ck-write{border:none;background:none;color:#3a7d44;font-size:12px;cursor:pointer;padding:0}
 .ck-write:hover{text-decoration:underline}
 .ck-upload{font-size:12px;color:var(--muted,#999);text-decoration:none}

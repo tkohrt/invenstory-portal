@@ -17,11 +17,12 @@ function ChecklistRow({ item, onSaved }: { item: Item; onSaved: () => void }) {
       <div className="ck-head">
         <span className="ck-mark">{mark}</span>
         <span className="ck-label">{item.label}</span>
-        {item.state === "thin" && <span className="ck-badge">thin</span>}
+        {item.state === "covered" && <span className="ck-badge robust">robust</span>}
+        {item.state === "thin" && <span className="ck-badge thin">thin</span>}
+        <button type="button" className="ck-write" onClick={() => setOpen(o => !o)}>{open ? "Close" : (item.state === "missing" ? "Write about this" : "Add more")}</button>
         {item.state !== "covered" && (
-          <button type="button" className="ck-write" onClick={() => setOpen(o => !o)}>{open ? "Close" : (item.state === "thin" ? "Add more" : "Write about this")}</button>
+          <a className="ck-upload" href="/invenstory" title={`Upload to Layer ${item.layer}`}>Upload →</a>
         )}
-        <a className="ck-upload" href="/invenstory" title={`Upload to Layer ${item.layer}`}>Upload →</a>
       </div>
       {open && (
         <div className="ck-note">
