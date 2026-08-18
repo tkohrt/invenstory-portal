@@ -571,3 +571,6 @@ button.vis-dot.busy{opacity:.5}
 .ck-cols{display:flex;gap:20px;align-items:flex-start}
 .ck-col{flex:1;min-width:0}
 @media(max-width:900px){.ck-cols{flex-direction:column;gap:10px}}
+
+/* Readiness card header: pct · title ......... analyze · legend */
+.rc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}

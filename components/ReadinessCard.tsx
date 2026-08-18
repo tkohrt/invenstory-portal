@@ -44,10 +44,12 @@ export default function ReadinessCard({ readiness, computedAt }: {
   const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
   return (
     <section className="acct-card readiness-card">
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="rc-head">
+        <b style={{ fontSize: 22, color: readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e" }}>{readiness.pct}%</b>
         <h3 style={{ margin: 0 }}>Inven(s)tory readiness</h3>
         <div style={{ flex: 1 }} />
-        <b style={{ fontSize: 18, color: readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e" }}>{readiness.pct}%</b>
+        <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
+        <span className="acct-note" style={{ margin: 0 }}>What a robust Inven(s)tory holds. ✓ covered · ◐ thin · ○ missing.</span>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%` }} /></div>
       <div className="ck-cols">
@@ -61,10 +63,6 @@ export default function ReadinessCard({ readiness, computedAt }: {
             </div>
           );
         })}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-        <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
-        <span className="acct-note" style={{ margin: 0 }}>What a robust Inven(s)tory holds. ✓ covered · ◐ thin · ○ missing.</span>
       </div>
     </section>
   );
