@@ -42,22 +42,23 @@ export default function ReadinessCard({ readiness, computedAt }: {
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
+  const pctColor = readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e";
   return (
     <section className="acct-card readiness-card">
       <div className="rc-head">
-        <b style={{ fontSize: 22, color: readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e" }}>{readiness.pct}%</b>
+        <b style={{ fontSize: 22, color: pctColor }}>{readiness.pct}%</b>
         <h3 style={{ margin: 0 }}>Inven(s)tory readiness</h3>
         <div style={{ flex: 1 }} />
         <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
         <span className="acct-note" style={{ margin: 0 }}>What a robust Inven(s)tory holds. ✓ covered · ◐ thin · ○ missing.</span>
       </div>
-      <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%` }} /></div>
+      <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
       <div className="ck-cols">
         {(["essential", "important", "enriching"] as const).map(tier => {
           const rows = readiness.items.filter(i => i.tier === tier);
-          const T = { essential: "🟠 Essential", important: "🟡 Important", enriching: "⚪ Enriching" }[tier];
+          const T = { essential: "🟠 Essential", important: "🟡 Important", enriching: "🔵 Enriching" }[tier];
           return (
-            <div key={tier} className="ck-col">
+            <div key={tier} className={`ck-col ${tier}`}>
               <div className="section-label">{T}</div>
               <div className="ck-list">{rows.map(i => <ChecklistRow key={i.key} item={i} onSaved={() => router.refresh()} />)}</div>
             </div>
