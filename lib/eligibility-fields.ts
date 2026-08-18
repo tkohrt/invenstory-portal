@@ -74,7 +74,7 @@ export function profileChips(p: EligibilityProfile): string[] {
 
 // ---- Gap detection ----
 export type GapTier = "critical" | "essential" | "important" | "enriching";
-export interface Gap { tier: GapTier; key: string; label: string; fix: "profile" | "upload"; layer?: "I" | "II" | "III" }
+export interface Gap { tier: GapTier; key: string; label: string; fix: "profile" | "upload"; layer?: "I" | "II" | "III"; weak?: boolean }
 
 // Structural gaps come straight from the profile fields (free, always current).
 export function structuralGaps(p: EligibilityProfile): Gap[] {

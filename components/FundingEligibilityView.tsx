@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
+import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 
 function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
@@ -22,9 +23,39 @@ function TagField({ label, values, onChange, placeholder }: { label: string; val
   );
 }
 
+function ChecklistRow({ item, onSaved }: { item: { key: string; label: string; layer: string; state: "covered"|"thin"|"missing" }; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mark = item.state === "covered" ? "✓" : item.state === "thin" ? "◐" : "○";
+  const save = async () => { setBusy(true); await addInvenstoryNoteAction(item.key, text); setBusy(false); setOpen(false); setText(""); onSaved(); };
+  return (
+    <div className={`ck-row ${item.state}`}>
+      <div className="ck-head">
+        <span className="ck-mark">{mark}</span>
+        <span className="ck-label">{item.label}</span>
+        {item.state === "thin" && <span className="ck-badge">thin</span>}
+        {item.state !== "covered" && (
+          <button type="button" className="ck-write" onClick={() => setOpen(o => !o)}>{open ? "Close" : (item.state === "thin" ? "Add more" : "Write about this")}</button>
+        )}
+        <a className="ck-upload" href="/invenstory" title={`Upload to Layer ${item.layer}`}>Upload →</a>
+      </div>
+      {open && (
+        <div className="ck-note">
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`Write what you know about "${item.label}". It saves into your Inven(s)tory, tagged and searchable.`} />
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button className="btn inline" onClick={save} disabled={busy || text.trim().length < 10}>{busy ? "Saving…" : "Save to Inven(s)tory"}</button>
+            <span className="acct-note" style={{ margin: 0 }}>Filed to Layer {item.layer}. Re-analyze to update readiness.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, readiness }: {
   profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null;
-  readiness: { pct: number; items: { key: string; label: string; tier: "essential"|"important"|"enriching"; layer: string; present: boolean }[] };
+  readiness: { pct: number; items: { key: string; label: string; tier: "essential"|"important"|"enriching"; layer: string; state: "covered"|"thin"|"missing" }[] };
 }) {
   const router = useRouter();
   const [p, setP] = useState<EligibilityProfile>(profile);
@@ -88,12 +119,8 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
           return (
             <div key={tier} style={{ marginBottom: 10 }}>
               <div className="section-label">{T}</div>
-              <div className="ck-grid">
-                {rows.map(i => (
-                  <div key={i.key} className={`ck-item ${i.present ? "on" : ""}`} title={`Layer ${i.layer}`}>
-                    <span className="ck-mark">{i.present ? "✓" : "○"}</span> {i.label}
-                  </div>
-                ))}
+              <div className="ck-list">
+                {rows.map(i => <ChecklistRow key={i.key} item={i} onSaved={() => router.refresh()} />)}
               </div>
             </div>
           );
