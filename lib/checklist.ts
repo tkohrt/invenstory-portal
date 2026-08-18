@@ -24,7 +24,7 @@ export const CHECKLIST: ChecklistItem[] = [
   { key: "outcomes",         label: "Outcomes & evaluation",          gap: "Add outcomes with how you measure them.",                     tier: "essential", layer: "II", audience: "all", demand: 10 },
   { key: "goals",            label: "Goals & measurable objectives",  gap: "Add goals and measurable objectives.",                        tier: "essential", layer: "II", audience: "all", demand: 18 },
   { key: "founder_voice",    label: "Founder / leader interview",     gap: "Record a founder or leader interview (living voice).",         tier: "essential", layer: "III",audience: "all" },
-  { key: "leadership",       label: "Leadership & team",              gap: "Add leadership and team backgrounds.",                        tier: "important", layer: "II", audience: "all", demand: 6 },
+  { key: "leadership",       label: "Leadership & team",              gap: "Add leadership and team backgrounds.",                        tier: "essential", layer: "II", audience: "all", demand: 6 },
   { key: "capacity",         label: "Capacity / track record",        gap: "Add evidence of your capacity and track record.",             tier: "important", layer: "II", audience: "all", demand: 12 },
   { key: "timeline",         label: "Timeline & deliverables",        gap: "Add a timeline and deliverables.",                            tier: "important", layer: "II", audience: "all", demand: 12 },
   { key: "theory_of_change", label: "Theory of change / logic model", gap: "Add a theory of change or logic model.",                      tier: "important", layer: "II", audience: "all" },
