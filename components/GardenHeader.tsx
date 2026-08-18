@@ -27,7 +27,6 @@ export default function GardenHeader({ garden, onPrompt, rightSlot }: { garden: 
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const g = garden;
-  if (g.hidden) return null;
   const set = (input: Parameters<typeof setPlantAction>[0]) => start(async () => { await setPlantAction(input); router.refresh(); });
   const healthLabel = g.health === "thriving" ? "Thriving" : g.health === "okay" ? "Doing okay" : "Thirsty";
 
@@ -36,22 +35,28 @@ export default function GardenHeader({ garden, onPrompt, rightSlot }: { garden: 
       <button className="garden-prompt" onClick={() => onPrompt(g.prompt.layer)}>
         🌱 {g.prompt.text} <span className="gp-cta">Upload →</span>
       </button>
-      {!g.species && (
+      {!g.hidden && !g.species && (
         <div className="garden-pick">
           <span>Choose your plant:</span>
           {SPECIES.map(s => <button key={s.key} className="btn ghost" disabled={pending} onClick={() => set({ species: s.key })}>{s.name}</button>)}
         </div>
       )}
       <div className="garden-row">
-        <div className="garden-left">
-          <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
-            <PlantVisual g={g} width={230} />
-          </button>
-          <div className="garden-meta">
-            <span className={`garden-health ${g.health}`}>{healthLabel}</span>
-            <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
+        {g.hidden ? (
+          <div className="garden-left garden-hidden">
+            <button className="btn ghost garden-show" disabled={pending} onClick={() => set({ hidden: false })}>🌱 Show my plant</button>
           </div>
-        </div>
+        ) : (
+          <div className="garden-left">
+            <button className="garden-plant" onClick={() => setOpen(true)} title="Open your garden">
+              <PlantVisual g={g} width={230} />
+            </button>
+            <div className="garden-meta">
+              <span className={`garden-health ${g.health}`}>{healthLabel}</span>
+              <span className="garden-size">Size {g.size} · {g.stats.docs} docs</span>
+            </div>
+          </div>
+        )}
         {rightSlot}
       </div>
 
