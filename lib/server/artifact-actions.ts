@@ -54,8 +54,12 @@ export async function editSICardAction(slug: string, cardId: string, field: stri
 
 export async function setArtifactVisibilityAction(slug: string, visible: boolean) {
   const s = await requireAdmin();
-  await db.from("artifact_set").update({ client_visible: visible })
-    .eq("tenant_id", s.tenantId).eq("type_slug", slug);
+  // Upsert (not update): tenants without a generated Story Intelligence set have
+  // no artifact_set row yet, so a bare UPDATE would silently affect zero rows and
+  // the toggle would appear to do nothing. onConflict preserves status/version.
+  await db.from("artifact_set").upsert(
+    { tenant_id: s.tenantId, type_slug: slug, client_visible: visible },
+    { onConflict: "tenant_id,type_slug" });
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "si_visibility", detail: `${slug}=${visible ? "visible" : "hidden"}` });
   revalidatePath(`/story-intelligence/${slug}`);
   revalidatePath("/invenstory");
