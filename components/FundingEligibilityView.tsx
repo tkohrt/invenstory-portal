@@ -22,8 +22,9 @@ function TagField({ label, values, onChange, placeholder }: { label: string; val
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt }: {
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, readiness }: {
   profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null;
+  readiness: { pct: number; items: { key: string; label: string; tier: "essential"|"important"|"enriching"; layer: string; present: boolean }[] };
 }) {
   const router = useRouter();
   const [p, setP] = useState<EligibilityProfile>(profile);
@@ -41,8 +42,8 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
   };
   const [analyzing, setAnalyzing] = useState(false);
   const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
-  const TIER = { red: "🔴", yellow: "🟡", low: "⚪" } as const;
-  const order = { red: 0, yellow: 1, low: 2 } as const;
+  const TIER = { critical: "🔴", essential: "🟠", important: "🟡", enriching: "⚪" } as const;
+  const order = { critical: 0, essential: 1, important: 2, enriching: 3 } as const;
   const sortedGaps = [...gaps].sort((a, b) => order[a.tier] - order[b.tier]);
 
   return (
@@ -71,6 +72,33 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
               </div>))}
           </div>}
         <p className="acct-note" style={{ marginTop: 8 }}>🔴 blocks matching · 🟡 important · ⚪ nice to have. Structural gaps update as you edit; document gaps update when you re-analyze.</p>
+      </section>
+
+      <section className="acct-card">
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Inven(s)tory readiness</h3>
+          <div style={{ flex: 1 }} />
+          <b style={{ fontSize: 18, color: readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e" }}>{readiness.pct}%</b>
+        </div>
+        <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 14px" }}><span style={{ width: `${readiness.pct}%` }} /></div>
+        {(["essential","important","enriching"] as const).map(tier => {
+          const rows = readiness.items.filter(i => i.tier === tier);
+          if (!rows.length) return null;
+          const T = { essential: "🟠 Essential", important: "🟡 Important", enriching: "⚪ Enriching" }[tier];
+          return (
+            <div key={tier} style={{ marginBottom: 10 }}>
+              <div className="section-label">{T}</div>
+              <div className="ck-grid">
+                {rows.map(i => (
+                  <div key={i.key} className={`ck-item ${i.present ? "on" : ""}`} title={`Layer ${i.layer}`}>
+                    <span className="ck-mark">{i.present ? "✓" : "○"}</span> {i.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        <p className="acct-note">A robust Inven(s)tory is what turns grant-writing from invention into assembly. Document coverage updates when you re-analyze.</p>
       </section>
 
       <section className="acct-card">

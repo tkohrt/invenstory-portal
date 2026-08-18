@@ -541,3 +541,11 @@ button.vis-dot.busy{opacity:.5}
 /* Hidden-plant state: keep a way back */
 .garden-hidden{align-items:flex-start;padding-top:4px}
 .garden-show{white-space:nowrap}
+
+/* Inven(s)tory readiness checklist */
+.ck-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 14px}
+.ck-item{font-size:12.5px;color:#8a8a8a;display:flex;gap:6px;align-items:baseline}
+.ck-item.on{color:#2f5d38}
+.ck-mark{font-weight:700;color:#c0492f}
+.ck-item.on .ck-mark{color:#3a7d44}
+.elig-gaps .eg.ess{color:#b06a2e}

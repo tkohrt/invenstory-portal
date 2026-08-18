@@ -21,6 +21,7 @@ export default async function FundingEligibilityPage() {
       adminViewing={session.role === "admin"}
       gaps={gapData.gaps}
       gapsComputedAt={gapData.computedAt}
+      readiness={gapData.readiness}
     />
   );
 }
