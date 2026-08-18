@@ -16,13 +16,17 @@ function ChecklistRow({ item, onSaved }: { item: Item; onSaved: () => void }) {
     <div className={`ck-row ${item.state}`}>
       <div className="ck-head">
         <span className="ck-mark">{mark}</span>
-        <span className="ck-label">{item.label}</span>
-        {item.state === "covered" && <span className="ck-badge robust">robust</span>}
-        {item.state === "thin" && <span className="ck-badge thin">thin</span>}
-        <button type="button" className="ck-write" onClick={() => setOpen(o => !o)}>{open ? "Close" : (item.state === "missing" ? "Write about this" : "Add more")}</button>
-        {item.state !== "covered" && (
-          <a className="ck-upload" href="/invenstory" title={`Upload to Layer ${item.layer}`}>Upload →</a>
-        )}
+        <span className="ck-label" title={item.label}>{item.label}</span>
+        <span className="ck-badge-slot">
+          {item.state === "covered" && <span className="ck-badge robust">robust</span>}
+          {item.state === "thin" && <span className="ck-badge thin">thin</span>}
+        </span>
+        <span className="ck-act-slot">
+          <button type="button" className="ck-write" onClick={() => setOpen(o => !o)}>{open ? "Close" : (item.state === "missing" ? "Write" : "Add more")}</button>
+        </span>
+        <span className="ck-up-slot">
+          {item.state !== "covered" && <a className="ck-upload" href="/invenstory" title={`Upload to Layer ${item.layer}`}>Upload →</a>}
+        </span>
       </div>
       {open && (
         <div className="ck-note">
