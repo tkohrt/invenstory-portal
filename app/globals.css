@@ -560,3 +560,8 @@ button.vis-dot.busy{opacity:.5}
 .ck-note{margin:6px 0 4px 22px}
 .ck-note textarea{width:100%;max-width:560px;min-height:70px}
 .elig-gaps .eg.ess{color:#b06a2e}
+
+/* Readiness card beside the plant + eligibility panel */
+.garden-row .readiness-card{flex:1.5;min-width:300px;margin:0;align-self:stretch}
+.elig-panel{flex:1;min-width:220px}
+@media(max-width:1100px){.garden-row{flex-wrap:wrap}}

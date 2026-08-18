@@ -3,7 +3,7 @@ import { getSession } from "@/lib/server/session";
 import { getDocumentsWithTags, getPrimaryContact, getTenant } from "@/lib/server/data";
 import InvenstoryView from "@/components/InvenstoryView";
 import { getGardenState } from "@/lib/server/garden";
-import { getEligibilitySummary } from "@/lib/server/eligibility";
+import { getEligibilitySummary, getGaps } from "@/lib/server/eligibility";
 import { getFeatureVisible } from "@/lib/server/data";
 
 export default async function InvenstoryPage() {
@@ -18,6 +18,7 @@ export default async function InvenstoryPage() {
     getFeatureVisible(session.tenantId, "eligibility"),
   ]);
   const showElig = session.role === "admin" || eligVisible;
+  const gapData = showElig ? await getGaps(session.tenantId) : null;
   if (!tenant) redirect("/");
   return (
     <InvenstoryView
@@ -29,6 +30,8 @@ export default async function InvenstoryPage() {
       docs={docs}
       garden={garden}
       eligibility={showElig ? eligSummary : undefined}
+      readiness={gapData ? gapData.readiness : undefined}
+      readinessComputedAt={gapData ? gapData.computedAt : null}
       isAdmin={session.role === "admin"}
     />
   );
