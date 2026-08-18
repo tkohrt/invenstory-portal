@@ -50,17 +50,18 @@ export default function ReadinessCard({ readiness, computedAt }: {
         <b style={{ fontSize: 18, color: readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e" }}>{readiness.pct}%</b>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%` }} /></div>
-      {(["essential", "important", "enriching"] as const).map(tier => {
-        const rows = readiness.items.filter(i => i.tier === tier);
-        if (!rows.length) return null;
-        const T = { essential: "🟠 Essential", important: "🟡 Important", enriching: "⚪ Enriching" }[tier];
-        return (
-          <div key={tier} style={{ marginBottom: 8 }}>
-            <div className="section-label">{T}</div>
-            <div className="ck-list">{rows.map(i => <ChecklistRow key={i.key} item={i} onSaved={() => router.refresh()} />)}</div>
-          </div>
-        );
-      })}
+      <div className="ck-cols">
+        {(["essential", "important", "enriching"] as const).map(tier => {
+          const rows = readiness.items.filter(i => i.tier === tier);
+          const T = { essential: "🟠 Essential", important: "🟡 Important", enriching: "⚪ Enriching" }[tier];
+          return (
+            <div key={tier} className="ck-col">
+              <div className="section-label">{T}</div>
+              <div className="ck-list">{rows.map(i => <ChecklistRow key={i.key} item={i} onSaved={() => router.refresh()} />)}</div>
+            </div>
+          );
+        })}
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
         <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
         <span className="acct-note" style={{ margin: 0 }}>What a robust Inven(s)tory holds. ✓ covered · ◐ thin · ○ missing.</span>
