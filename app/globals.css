@@ -627,7 +627,7 @@ button.vis-dot.busy{opacity:.5}
 
 
 /* Sidebar plant hover overlay */
-.sp-overlay{position:absolute;inset:0;background:#fff;border-radius:8px;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:14px 16px;text-align:center;opacity:0;pointer-events:none;transition:opacity .12s ease}
+.sp-overlay{position:absolute;inset:0;background:#f5f8f5;border-radius:8px;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:14px 16px;text-align:center;opacity:0;pointer-events:none;transition:opacity .12s ease}
 .sidebar-plant:hover .sp-overlay{opacity:1}
 .sp-overlay p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .sp-overlay .sp-cta{font-weight:600;color:#3a7d44}
