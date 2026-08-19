@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { runReadinessAuditAction } from "@/lib/server/gap-actions";
 import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
 
@@ -52,13 +52,30 @@ function ItemRow({ it }: { it: ItemTrace }) {
   );
 }
 
-export default function ReadinessAuditView({ tenantName }: { tenantName: string }) {
+export default function ReadinessAuditView({ tenantName, tenantId }: { tenantName: string; tenantId: string }) {
   const [trace, setTrace] = useState<CoverageTrace | null>(null);
+  const [ranAt, setRanAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const storeKey = `fg_readiness_audit_${tenantId}`;
+
+  // Hydrate the last run for this client from the browser on return.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storeKey);
+      if (saved) { const parsed = JSON.parse(saved); if (parsed?.trace) { setTrace(parsed.trace); setRanAt(parsed.ranAt ?? null); } }
+      else { setTrace(null); setRanAt(null); }
+    } catch { /* ignore */ }
+  }, [storeKey]);
+
   const run = async () => {
     setBusy(true); setErr(null);
-    try { setTrace(await runReadinessAuditAction()); }
+    try {
+      const t = await runReadinessAuditAction();
+      const now = Date.now();
+      setTrace(t); setRanAt(now);
+      try { localStorage.setItem(storeKey, JSON.stringify({ trace: t, ranAt: now })); } catch { /* quota */ }
+    }
     catch (e) { setErr(e instanceof Error ? e.message : "Audit failed"); }
     setBusy(false);
   };
@@ -68,7 +85,10 @@ export default function ReadinessAuditView({ tenantName }: { tenantName: string 
         <h2>Readiness Audit — {tenantName}</h2>
         <p>Re-runs the readiness check and shows, per checklist item, exactly what was retrieved and how it was graded. Admin-only diagnostic.</p>
       </div><div className="spacer" /></div>
-      <button className="btn rc-run-cta" style={{ width: "auto", margin: "0 0 14px" }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
+        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
+        {ranAt && <span className="acct-note" style={{ margin: 0 }}>Last run {new Date(ranAt).toLocaleString()} · cached in this browser</span>}
+      </div>
       {err && <div className="metric-gap">{err}</div>}
       {trace && (
         <>
