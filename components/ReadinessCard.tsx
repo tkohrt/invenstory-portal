@@ -39,7 +39,7 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
         <button className="btn inline" onClick={save} disabled={busy || text.trim().length < 10}>{busy ? "Saving…" : `Save to your Inven(s)tory (Layer ${item.layer})`}</button>
       </div>
       <button type="button" className="btn secondary ck-upbtn" onClick={() => onUpload?.(item.layer)}>Upload a document instead →</button>
-      <p className="acct-note ck-tag" style={{ marginTop: 10, marginBottom: 0 }}>Auto-tagged: {item.key.replace(/_/g, " ")}</p>
+      <p className="acct-note ck-tag" style={{ marginTop: 10, marginBottom: 0 }}>Auto-tagged: <span className="tag">{item.key.replace(/_/g, " ")}</span></p>
     </div>
   );
 }
