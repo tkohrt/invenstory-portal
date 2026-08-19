@@ -28,6 +28,9 @@ function windows(text: string, size = 10000, overlap = 500, max = 6): string[] {
 
 const EXTRACT_SYS = (list: string) =>
   "You are reading ONE document from an organization's Inven(s)tory and deciding which grant-readiness checklist items it provides REAL, substantive evidence for. " +
+  "CRITICAL: evidence must be about THE ORGANIZATION ITSELF — its own facts, results, artifacts, and history. " +
+  "Do NOT count the organization describing its product's capabilities, what it does for clients, or general commentary about its field/domain as evidence that the organization possesses that item itself. " +
+  "(Example: a company whose product 'extracts impact metrics for clients' is NOT the same as that company measuring its OWN impact; describing a problem its customers face is NOT a data-backed statement of the organization's own need.) " +
   "Judge SUBSTANCE, not topic. Only include an item if the document actually contains that item's substance and you can quote it verbatim. " +
   "Do NOT infer, and do NOT treat placeholder, hypothetical, or blank-template values as real evidence. " +
   "'covered' requires an EXPLICIT, SPECIFIC quote a funder would accept as direct proof — concrete facts, figures, names, dates, or a clear formal statement of that item. " +
