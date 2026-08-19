@@ -93,7 +93,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           </div>
         </Link>
         {!garden.hidden && garden.prompt?.text && (
-          <Link href={promptHref(garden.prompt)} onClick={closeNav} className="sidebar-prompt">🌱 {garden.prompt.text}</Link>
+          <Link href={promptHref(garden.prompt)} onClick={closeNav} className="sidebar-prompt">🌱 {garden.prompt.text} <span className="sp-prompt-cta">Add now →</span></Link>
         )}
         <div className="nav-section-label">Workspace</div>
         {workspaceNav.map(item => {
