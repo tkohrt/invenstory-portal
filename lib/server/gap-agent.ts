@@ -10,6 +10,22 @@ export type CoverState = "covered" | "thin" | "missing";
 export interface ItemCoverage { state: CoverState; sources: { id: string; title: string }[] }
 export type Coverage = Record<string, ItemCoverage>;
 
+
+// Retrieval diversification: a larger candidate pool, capped per document, so one
+// verbose transcript cannot monopolize an item's evidence and starve real matches.
+type MatchRow = { document_id: string; chunk_id?: string; tenant_id: string; title: string; text: string; similarity: number };
+function diversifyRows(rows: MatchRow[], perDocCap = 2, keep = 6): MatchRow[] {
+  const sorted = [...rows].sort((a, b) => b.similarity - a.similarity);
+  const perDoc = new Map<string, number>(); const out: MatchRow[] = [];
+  for (const r of sorted) {
+    const n = perDoc.get(r.document_id) ?? 0;
+    if (n >= perDocCap) continue;
+    perDoc.set(r.document_id, n + 1); out.push(r);
+    if (out.length >= keep) break;
+  }
+  return out;
+}
+
 interface Evidence { key: string; label: string; docs: { id: string; title: string }[]; snippets: string[]; maxSim: number }
 
 async function gatherEvidence(tenantId: string, items: ChecklistItem[]): Promise<Evidence[] | null> {
@@ -20,9 +36,8 @@ async function gatherEvidence(tenantId: string, items: ChecklistItem[]): Promise
     const v = vectors[idx];
     const ev: Evidence = { key: it.key, label: it.label, docs: [], snippets: [], maxSim: 0 };
     if (!v) return ev;
-    const { data } = await supabase.rpc("match_chunks", { p_query_embedding: JSON.stringify(v), p_match_count: 6 });
-    const rows = ((data ?? []) as { document_id: string; tenant_id: string; title: string; text: string; similarity: number }[])
-      .filter(r => r.tenant_id === tenantId).slice(0, 4);
+    const { data } = await supabase.rpc("match_chunks", { p_query_embedding: JSON.stringify(v), p_match_count: 20 });
+    const rows = diversifyRows(((data ?? []) as MatchRow[]).filter(r => r.tenant_id === tenantId), 2, 6);
     ev.maxSim = rows.reduce((m, r) => Math.max(m, r.similarity), 0);
     const seen = new Set<string>();
     for (const r of rows) { if (!seen.has(r.document_id)) { seen.add(r.document_id); ev.docs.push({ id: r.document_id, title: r.title }); } }
@@ -170,9 +185,8 @@ export async function traceContentCoverage(tenantId: string, orgType: string | n
     const v = vectors?.[idx];
     let retrieved: RetrievedChunk[] = [];
     if (v) {
-      const { data } = await supabase.rpc("match_chunks", { p_query_embedding: JSON.stringify(v), p_match_count: 6 });
-      retrieved = ((data ?? []) as { document_id: string; chunk_id?: string; tenant_id: string; title: string; text: string; similarity: number }[])
-        .filter(r => r.tenant_id === tenantId).slice(0, 4)
+      const { data } = await supabase.rpc("match_chunks", { p_query_embedding: JSON.stringify(v), p_match_count: 20 });
+      retrieved = diversifyRows(((data ?? []) as MatchRow[]).filter(r => r.tenant_id === tenantId), 2, 6)
         .map(r => ({ documentId: r.document_id, chunkId: r.chunk_id ?? null, title: r.title, similarity: r.similarity, text: r.text ?? "" }));
     }
     const maxSim = retrieved.reduce((m, r) => Math.max(m, r.similarity), 0);

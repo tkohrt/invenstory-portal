@@ -131,7 +131,7 @@ export const RETRIEVAL_QUERY: Record<string, string> = {
   annual_report: "An annual report summarizing the year's activities, accomplishments, and financials.",
   eval_reports: "An external evaluation or third-party assessment report of the organization's programs or impact.",
   pitch_deck: "A startup pitch deck presenting the company's problem, solution, market, and business model to investors.",
-  traction: "Traction and proof metrics: user or customer growth, pilots, revenue, case studies, or validated results.",
+  traction: "Traction and proof metrics: paying clients and signed contracts, monthly or recurring revenue, deal size and amounts charged, named customers, pilots, projects delivered, case studies, and validated results demonstrating demand.",
   cap_table: "A capitalization table listing shareholders, share classes, ownership percentages, and the company's fundraising round and equity structure.",
   go_to_market: "A go-to-market strategy and market sizing: target market, TAM/SAM/SOM, and customer acquisition approach.",
   competition: "A competitive landscape or analysis comparing the company to competitors and alternatives.",
