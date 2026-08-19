@@ -66,37 +66,47 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
 
-      <div className="ck-cols">
-        {(["essential", "important", "enriching"] as const).map(tier => {
-          const rows = readiness.items.filter(i => i.tier === tier);
-          const item = rows.find(i => i.key === expanded);
-          return (
-            <div key={tier} className={`ck-col ${tier}`}>
-              <div className="section-label">{TIER_LABEL[tier]}</div>
-              <div className="ck-body">
-                <div className="ck-list">
-                  {rows.map(i => (
-                    <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
-                      <span className="ck-mark">{mark(i.state)}</span>
-                      <span className="ck-label" title={i.label}>{i.label}</span>
-                      <span className="ck-badge-slot">
-                        {i.state === "covered" && <span className="ck-badge robust">robust</span>}
-                        {i.state === "thin" && <span className="ck-badge thin">thin</span>}
-                      </span>
-                      <span className="ck-expand">Expand →</span>
-                    </button>
-                  ))}
-                </div>
-                {item && (
-                  <div className="ck-overlay">
-                    <ItemDetail item={item} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
-                      onSaved={() => { setExpanded(null); router.refresh(); }} />
+      <div className="ck-cols ck-cols-4">
+        {(() => {
+          const CAP = 6;
+          const byTier = (t: "essential" | "important" | "enriching") => readiness.items.filter(i => i.tier === t);
+          const ess = byTier("essential");
+          const cols: { k: string; tier: "essential" | "important" | "enriching"; label: string; rows: ReadinessItem[] }[] = [
+            { k: "ess0", tier: "essential", label: TIER_LABEL.essential, rows: ess.slice(0, CAP) },
+            { k: "ess1", tier: "essential", label: TIER_LABEL.essential, rows: ess.slice(CAP, CAP * 2) },
+            { k: "imp",  tier: "important", label: TIER_LABEL.important, rows: byTier("important") },
+            { k: "enr",  tier: "enriching", label: TIER_LABEL.enriching, rows: byTier("enriching") },
+          ];
+          return cols.map(col => {
+            const item = col.rows.find(i => i.key === expanded);
+            return (
+              <div key={col.k} className={`ck-col ${col.tier}`}>
+                <div className="section-label">{col.label}</div>
+                <div className="ck-body">
+                  <div className="ck-list">
+                    {col.rows.map(i => (
+                      <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
+                        <span className="ck-mark">{mark(i.state)}</span>
+                        <span className="ck-label" title={i.label}>{i.label}</span>
+                        <span className="ck-badge-slot">
+                          {i.state === "covered" && <span className="ck-badge robust">robust</span>}
+                          {i.state === "thin" && <span className="ck-badge thin">thin</span>}
+                        </span>
+                        <span className="ck-expand">Expand →</span>
+                      </button>
+                    ))}
                   </div>
-                )}
+                  {item && (
+                    <div className="ck-overlay">
+                      <ItemDetail item={item} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+                        onSaved={() => { setExpanded(null); router.refresh(); }} />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
     </section>
   );

@@ -632,3 +632,6 @@ button.vis-dot.busy{opacity:.5}
 .sidebar-plant:hover .sp-overlay{opacity:1}
 .sp-overlay p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .sp-overlay .sp-cta{font-weight:600;color:#3a7d44}
+
+/* 4-column readiness layout */
+.ck-cols-4{gap:14px}
