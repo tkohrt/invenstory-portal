@@ -4,7 +4,7 @@ import { userClient } from "./supabase";
 import { embedTexts } from "./embed";
 import { chatComplete, generationConfigured } from "./llm";
 import type { Gap } from "@/lib/eligibility-fields";
-import { checklistFor, TIER_WEIGHT, BLURBS, type ChecklistItem, type ReadinessItem } from "@/lib/checklist";
+import { checklistFor, TIER_WEIGHT, BLURBS, RETRIEVAL_QUERY, type ChecklistItem, type ReadinessItem } from "@/lib/checklist";
 
 export type CoverState = "covered" | "thin" | "missing";
 export interface ItemCoverage { state: CoverState; sources: { id: string; title: string }[] }
@@ -14,7 +14,7 @@ interface Evidence { key: string; label: string; docs: { id: string; title: stri
 
 async function gatherEvidence(tenantId: string, items: ChecklistItem[]): Promise<Evidence[] | null> {
   const supabase = await userClient();
-  const vectors = await embedTexts(items.map(i => i.label));
+  const vectors = await embedTexts(items.map(i => RETRIEVAL_QUERY[i.key] ?? i.label));
   if (!vectors) return null;
   return Promise.all(items.map(async (it, idx) => {
     const v = vectors[idx];
@@ -31,20 +31,42 @@ async function gatherEvidence(tenantId: string, items: ChecklistItem[]): Promise
   }));
 }
 
-const WIDE_BERTH =
-  "You are grading whether an organization's Inven(s)tory covers each checklist item. " +
-  "For each item return one of: 'covered' (documents substantively address it), 'thin' (related but light/partial), " +
-  "or 'missing' (genuinely nothing related). CRITICAL: never mark 'missing' if the evidence contains ANYTHING related — mark 'thin'. " +
-  "When unsure between covered and thin, choose covered. A matching document title alone is enough to be at least 'thin'. " +
-  "The goal is to NEVER ask a client to add something they already have. Return STRICT JSON only mapping each key to 'covered'|'thin'|'missing'.";
+export interface Grade { state: CoverState; quote: string; source: string }
 
-async function classify(items: ChecklistItem[], evidenceText: string): Promise<Record<string, CoverState>> {
-  const out: Record<string, CoverState> = {}; items.forEach(i => out[i.key] = "missing");
-  const list = items.map(i => `${i.key}: ${i.label}`).join("\n");
-  const res = await chatComplete({ system: WIDE_BERTH + "\n\nCHECKLIST:\n" + list, user: evidenceText, maxTokens: 900, temperature: 0 });
-  if (!res) return out;
-  try { const m = res.text.match(/\{[\s\S]*\}/); if (m) { const p = JSON.parse(m[0]); items.forEach(i => { const v = p[i.key]; if (v === "covered" || v === "thin" || v === "missing") out[i.key] = v; }); } } catch { /* keep missing */ }
-  return out;
+const GROUNDED =
+  "You audit whether an organization's Inven(s)tory ACTUALLY CONTAINS each checklist item. " +
+  "You are given retrieved document passages per item. Judge SUBSTANCE, not topic or domain. " +
+  "For each item choose: 'covered' — a passage explicitly contains the item's substance and you can quote it verbatim; " +
+  "'thin' — the item is touched on only partially or in passing; " +
+  "'missing' — no passage actually contains the item's substance. " +
+  "Topical or domain similarity is NOT evidence: a consulting agreement or signature block is NOT a cap table; " +
+  "an about-us page is NOT an operating budget; a bio is NOT a track record of results. " +
+  "Do NOT mark 'covered' unless you can quote text a funder would accept as proof of that SPECIFIC item. " +
+  "If you cannot produce a real supporting quote, the answer is 'missing' (or 'thin' only if genuinely partial). " +
+  "Return STRICT JSON only: an object mapping each key to {\"state\":\"covered|thin|missing\",\"quote\":\"<verbatim supporting text or empty>\",\"source\":\"<document title the quote came from, or empty>\"}.";
+
+async function classifyGrounded(items: ChecklistItem[], evidenceText: string): Promise<{ result: Record<string, Grade>; raw: string }> {
+  const out: Record<string, Grade> = {}; items.forEach(i => out[i.key] = { state: "missing", quote: "", source: "" });
+  const list = items.map(i => `${i.key}: ${i.label} — ${RETRIEVAL_QUERY[i.key] ?? ""}`).join("\n");
+  const res = await chatComplete({ system: GROUNDED + "\n\nCHECKLIST (key: label — what a qualifying document contains):\n" + list, user: evidenceText, maxTokens: 2200, temperature: 0 });
+  if (!res) return { result: out, raw: "" };
+  try {
+    const m = res.text.match(/\{[\s\S]*\}/);
+    if (m) { const p = JSON.parse(m[0]); items.forEach(i => {
+      const c = p[i.key];
+      if (c && typeof c === "object") { const st = c.state; if (st === "covered" || st === "thin" || st === "missing")
+        out[i.key] = { state: st, quote: typeof c.quote === "string" ? c.quote : "", source: typeof c.source === "string" ? c.source : "" }; }
+    }); }
+  } catch { /* keep missing */ }
+  return { result: out, raw: res.text };
+}
+
+// Pick the shown source: prefer the doc the model actually cited; else fall back to retrieved docs.
+function pickSources(cited: string, docs: { id: string; title: string }[]): { id: string; title: string }[] {
+  if (!docs.length) return [];
+  const c = cited.trim().toLowerCase();
+  if (c.length > 3) { const hit = docs.find(d => { const t = d.title.toLowerCase(); return t.includes(c) || c.includes(t); }); if (hit) return [hit]; }
+  return docs;
 }
 
 export async function analyzeContentCoverage(tenantId: string, orgType: string | null): Promise<Coverage> {
@@ -61,8 +83,8 @@ export async function analyzeContentCoverage(tenantId: string, orgType: string |
     ]);
     const digest = "DOCUMENTS:\n" + (docs ?? []).map(d => `- [L${d.layer}] ${d.title}`).join("\n") +
       "\n\nCONTENT SAMPLE:\n" + (chunks ?? []).map(c => (c.text ?? "").slice(0, 200)).join("\n---\n").slice(0, 6000);
-    const st = await classify(items, digest);
-    items.forEach(i => cov[i.key] = { state: st[i.key], sources: [] });
+    const { result: st } = await classifyGrounded(items, digest);
+    items.forEach(i => cov[i.key] = { state: st[i.key].state, sources: [] });
     return cov;
   }
 
@@ -71,13 +93,12 @@ export async function analyzeContentCoverage(tenantId: string, orgType: string |
     const snips = e.snippets.length ? e.snippets.map(s => `• ${s}`).join("\n") : "(no related passages)";
     return `## ${e.key} — ${e.label}\n${titles}\ntopMatch=${e.maxSim.toFixed(2)}\n${snips}`;
   }).join("\n\n");
-  const st = await classify(items, "Evidence retrieved per item:\n\n" + packed);
-  const SOME = 0.40;
+  const { result: st } = await classifyGrounded(items, "Evidence retrieved per item:\n\n" + packed);
   const byEv = new Map(evidence.map(e => [e.key, e]));
   items.forEach(i => {
-    const ev = byEv.get(i.key);
-    if (ev && ev.maxSim >= SOME && st[i.key] === "missing") st[i.key] = "thin"; // floor
-    cov[i.key] = { state: st[i.key], sources: st[i.key] !== "missing" ? (ev?.docs ?? []) : [] };
+    const ev = byEv.get(i.key); const g = st[i.key];
+    // No similarity floor: a high-similarity but non-substantive match must be allowed to read "missing".
+    cov[i.key] = { state: g.state, sources: g.state !== "missing" ? pickSources(g.source, ev?.docs ?? []) : [] };
   });
   return cov;
 }
@@ -121,6 +142,7 @@ export interface ItemTrace {
   key: string; label: string; tier: string; query: string;
   retrieved: RetrievedChunk[]; maxSim: number; evidenceBlock: string;
   llmVerdict: CoverState; floorFired: boolean; finalState: CoverState;
+  llmQuote: string; citedSource: string;
   sources: { id: string; title: string }[];
 }
 export interface CoverageTrace {
@@ -136,12 +158,12 @@ export async function traceContentCoverage(tenantId: string, orgType: string | n
   const empty = (): CoverageTrace => ({
     generationConfigured: genOK, docCount: count ?? 0, usedFallback: false, similarityFloor: SOME,
     evidenceSent: "", llmRaw: "",
-    items: items.map(i => ({ key: i.key, label: i.label, tier: i.tier, query: i.label, retrieved: [], maxSim: 0, evidenceBlock: "", llmVerdict: "missing" as CoverState, floorFired: false, finalState: "missing" as CoverState, sources: [] })),
+    items: items.map(i => ({ key: i.key, label: i.label, tier: i.tier, query: RETRIEVAL_QUERY[i.key] ?? i.label, retrieved: [], maxSim: 0, evidenceBlock: "", llmVerdict: "missing" as CoverState, floorFired: false, finalState: "missing" as CoverState, llmQuote: "", citedSource: "", sources: [] })),
   });
   if (!count || !genOK) return empty();
 
   const supabase = await userClient();
-  const vectors = await embedTexts(items.map(i => i.label));
+  const vectors = await embedTexts(items.map(i => RETRIEVAL_QUERY[i.key] ?? i.label));
 
   // per-item retrieval
   const per = await Promise.all(items.map(async (it, idx) => {
@@ -165,21 +187,19 @@ export async function traceContentCoverage(tenantId: string, orgType: string | n
   const usedFallback = !vectors;
   const evidenceSent = "Evidence retrieved per item:\n\n" + per.map(p => p.evidenceBlock).join("\n\n");
 
-  // one classifier call (same prompt as the live agent)
-  const list = items.map(i => `${i.key}: ${i.label}`).join("\n");
-  const res = await chatComplete({ system: WIDE_BERTH + "\n\nCHECKLIST:\n" + list, user: evidenceSent, maxTokens: 900, temperature: 0 });
-  const llmRaw = res?.text ?? "";
-  const verdicts: Record<string, CoverState> = {}; items.forEach(i => verdicts[i.key] = "missing");
-  try { const m = llmRaw.match(/\{[\s\S]*\}/); if (m) { const pj = JSON.parse(m[0]); items.forEach(i => { const vv = pj[i.key]; if (vv === "covered" || vv === "thin" || vv === "missing") verdicts[i.key] = vv; }); } } catch { /* keep missing */ }
+  // one grounded classifier call (same prompt as the live agent) — capture quotes + cited sources
+  const { result: grades, raw: llmRaw } = await classifyGrounded(items, evidenceSent);
 
   const itemTraces: ItemTrace[] = per.map(p => {
-    const llmVerdict = verdicts[p.it.key];
-    let finalState: CoverState = llmVerdict; let floorFired = false;
-    if (p.maxSim >= SOME && llmVerdict === "missing") { finalState = "thin"; floorFired = true; }
+    const g = grades[p.it.key];
+    // No similarity floor: state is exactly what the grounded grader decided.
+    const finalState: CoverState = g.state;
     return {
-      key: p.it.key, label: p.it.label, tier: p.it.tier, query: p.it.label,
+      key: p.it.key, label: p.it.label, tier: p.it.tier, query: RETRIEVAL_QUERY[p.it.key] ?? p.it.label,
       retrieved: p.retrieved, maxSim: p.maxSim, evidenceBlock: p.evidenceBlock,
-      llmVerdict, floorFired, finalState, sources: finalState !== "missing" ? p.docs : [],
+      llmVerdict: g.state, floorFired: false, finalState,
+      llmQuote: g.quote, citedSource: g.source,
+      sources: finalState !== "missing" ? pickSources(g.source, p.docs) : [],
     };
   });
 

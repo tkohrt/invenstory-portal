@@ -13,7 +13,7 @@ function simClass(sim: number) { return sim >= 0.6 ? "ra-sim-strong" : sim >= 0.
 
 function ItemRow({ it }: { it: ItemTrace }) {
   const [open, setOpen] = useState(false);
-  const mismatch = it.finalState === "covered" && it.maxSim < 0.55;
+  const mismatch = it.finalState === "covered" && !it.llmQuote.trim();
   return (
     <div className={`ra-item${mismatch ? " ra-flag" : ""}`}>
       <button className="ra-item-head" onClick={() => setOpen(o => !o)}>
@@ -22,7 +22,7 @@ function ItemRow({ it }: { it: ItemTrace }) {
         <span className="ra-label">{it.label}</span>
         <span className="ra-tier">{it.tier}</span>
         <span className={`ra-sim ${simClass(it.maxSim)}`}>top match {it.maxSim.toFixed(2)}</span>
-        {mismatch && <span className="ra-warn">⚠ covered on a weak match</span>}
+        {mismatch && <span className="ra-warn">⚠ covered without a supporting quote</span>}
       </button>
       {open && (
         <div className="ra-item-body">
@@ -32,7 +32,8 @@ function ItemRow({ it }: { it: ItemTrace }) {
             <span>similarity floor fired: <b>{it.floorFired ? "yes → thin" : "no"}</b></span>
             <span>final: <b>{STATE_LABEL[it.finalState]}</b></span>
           </div>
-          <div className="ra-sources">sources shown to client: {it.sources.length ? it.sources.map(s => s.title).join("; ") : "(none)"}</div>
+          <div className="ra-quote">supporting quote: {it.llmQuote.trim() ? <q>{it.llmQuote}</q> : <span className="ra-none">(none — grader gave no quote)</span>}</div>
+          <div className="ra-sources">cited source: {it.citedSource.trim() || "(none)"} · shown to client: {it.sources.length ? it.sources.map(s => s.title).join("; ") : "(none)"}</div>
           <div className="ra-chunks-label">Retrieved chunks (what the grader saw):</div>
           {it.retrieved.length === 0 && <div className="ra-empty">No chunks retrieved.</div>}
           {it.retrieved.map((c, i) => (

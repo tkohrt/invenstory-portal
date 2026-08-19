@@ -104,3 +104,37 @@ export interface ReadinessItem {
   key: string; label: string; tier: ChecklistTier; layer: "I" | "II" | "III";
   state: "covered" | "thin" | "missing"; sources: { id: string; title: string }[]; blurb: string;
 }
+
+// Retrieval queries: describe WHAT A QUALIFYING DOCUMENT CONTAINS (not just the label),
+// so vector search matches the actual artifact rather than merely the topic/domain.
+export const RETRIEVAL_QUERY: Record<string, string> = {
+  public_story: "Public-facing description of the organization: website copy, about page, mission and programs visible to the world.",
+  mission: "The organization's mission statement and positioning — what it exists to do and who it serves.",
+  program: "Description of the organization's programs, services, or products: what it delivers, how it works, and to whom.",
+  need: "A statement of need describing the problem addressed, backed by data or statistics about the affected population.",
+  budget: "An operating budget or financial overview with revenue and expense figures for the fiscal year.",
+  outcomes: "How the organization measures impact: evaluation methodology, outcome metrics tracked, baselines, and results achieved.",
+  founder_voice: "A first-person interview, transcript, or Q&A capturing the founder's or a leader's own voice about the work.",
+  leadership: "Backgrounds and bios of the leadership and key team members and their relevant experience.",
+  capacity: "The organization's track record: years operating, number of people served, programs delivered, and past results.",
+  partnerships: "Named partnerships, collaborations, coalitions, or memoranda of understanding with other organizations.",
+  past_grants: "Text from previously submitted grant applications, proposals, or narrative answers written for funders.",
+  sustainability: "A plan for sustaining the work financially beyond the current grant — future funding, earned revenue, or diversification.",
+  equity: "The organization's approach to equity, diversity, and inclusion in its work, staffing, or community.",
+  other_funding: "Other current funding sources, matching funds, or leverage supporting the organization.",
+  client_story: "A specific story of a client or beneficiary served — a personal narrative or testimonial of impact.",
+  irs_990: "An IRS Form 990 tax filing with financial figures — revenue, expenses, and organizational data.",
+  determination: "An IRS 501(c)(3) tax-exempt determination letter confirming nonprofit status.",
+  board_roster: "A list of the board of directors or governance structure, with member names and roles.",
+  program_budgets: "A budget for a specific program or project, with line-item revenue and expenses for that program.",
+  funder_list: "A list of current or past funders, grants received, and grant history.",
+  annual_report: "An annual report summarizing the year's activities, accomplishments, and financials.",
+  eval_reports: "An external evaluation or third-party assessment report of the organization's programs or impact.",
+  pitch_deck: "A startup pitch deck presenting the company's problem, solution, market, and business model to investors.",
+  traction: "Traction and proof metrics: user or customer growth, pilots, revenue, case studies, or validated results.",
+  cap_table: "A capitalization table listing shareholders, share classes, ownership percentages, and the company's fundraising round and equity structure.",
+  go_to_market: "A go-to-market strategy and market sizing: target market, TAM/SAM/SOM, and customer acquisition approach.",
+  competition: "A competitive landscape or analysis comparing the company to competitors and alternatives.",
+  investor_updates: "Periodic investor updates or newsletters reporting progress to investors.",
+  financial_model: "A financial model or projections with forecasted revenue, expenses, and growth assumptions.",
+};
