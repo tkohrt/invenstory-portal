@@ -117,7 +117,7 @@ export async function extractDocumentEvidence(tenantId: string, orgType: string 
 }
 
 
-type CovVal = { state: DocState; sources: { id: string; title: string }[] };
+type CovVal = { state: DocState; sources: { id: string; title: string; quote?: string }[] };
 const RANK: Record<DocState, number> = { missing: 0, thin: 1, covered: 2 };
 
 function normalizeCoverage(raw: unknown): Record<string, CovVal> {
@@ -154,7 +154,7 @@ export async function mergeDocumentIntoCoverage(documentId: string): Promise<voi
     if (!validKeys.has(f.key)) continue;
     if (!subjectAllowed(f.key, f.subject)) continue; // quarantine competitor/third-party facts
     const cur = cov[f.key] ?? { state: "missing", sources: [] };
-    if (!cur.sources.some(sx => sx.id === documentId)) cur.sources.push({ id: documentId, title: doc.title });
+    if (!cur.sources.some(sx => sx.id === documentId)) cur.sources.push({ id: documentId, title: doc.title, quote: (f.quote || "").trim() || undefined });
     if (RANK[f.state] > RANK[cur.state]) cur.state = f.state;
     cov[f.key] = cur;
   }

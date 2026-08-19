@@ -718,3 +718,7 @@ button.vis-dot.busy{opacity:.5}
 .ra-quote{margin:4px 0 6px}
 .ra-quote q{color:#2f5d38;font-style:italic}
 .ra-none{color:var(--muted)}
+
+/* Readiness detail: supporting quote under each cited source */
+.ck-source-item{margin-bottom:8px}
+.ck-source-quote{font-size:12.5px;color:#2f5d38;font-style:italic;line-height:1.45;margin:3px 0 0 4px;padding-left:8px;border-left:2px solid #cfe3cf}

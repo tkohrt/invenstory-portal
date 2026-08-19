@@ -7,11 +7,11 @@ import { getEligibilityProfile } from "./eligibility";
 async function storeExtractionCoverage(tenantId: string, orgType: string | null): Promise<{ covered: number; thin: number; missing: number }> {
   const { extractDocumentEvidence } = await import("./doc-extract");
   const trace = await extractDocumentEvidence(tenantId, orgType);
-  const cov: Record<string, { state: string; sources: { id: string; title: string }[] }> = {};
+  const cov: Record<string, { state: string; sources: { id: string; title: string; quote?: string }[] }> = {};
   const counts = { covered: 0, thin: 0, missing: 0 } as Record<string, number>;
   for (const it of trace.items) {
-    const seen = new Set<string>(); const sources: { id: string; title: string }[] = [];
-    for (const e of it.evidence) { if (e.documentId && !seen.has(e.documentId)) { seen.add(e.documentId); sources.push({ id: e.documentId, title: e.title }); } }
+    const seen = new Set<string>(); const sources: { id: string; title: string; quote?: string }[] = [];
+    for (const e of it.evidence) { if (e.documentId && !seen.has(e.documentId)) { seen.add(e.documentId); sources.push({ id: e.documentId, title: e.title, quote: (e.quote || "").trim() || undefined }); } }
     cov[it.key] = { state: it.state, sources: it.state !== "missing" ? sources : [] };
     counts[it.state] = (counts[it.state] ?? 0) + 1;
   }

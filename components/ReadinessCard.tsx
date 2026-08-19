@@ -28,7 +28,10 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
         <div className="ck-sources">
           <div className="section-label">Found in your documents</div>
           {item.sources.map(sdoc => (
-            <button key={sdoc.id} type="button" className="ck-source" onClick={() => onOpenDoc?.(sdoc.id)}>📄 {sdoc.title}</button>
+            <div key={sdoc.id} className="ck-source-item">
+              <button type="button" className="ck-source" onClick={() => onOpenDoc?.(sdoc.id)}>📄 {sdoc.title}</button>
+              {sdoc.quote && <div className="ck-source-quote">“{sdoc.quote}”</div>}
+            </div>
           ))}
         </div>
       )}

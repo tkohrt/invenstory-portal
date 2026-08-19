@@ -7,7 +7,7 @@ import type { Gap } from "@/lib/eligibility-fields";
 import { checklistFor, TIER_WEIGHT, BLURBS, RETRIEVAL_QUERY, type ChecklistItem, type ReadinessItem } from "@/lib/checklist";
 
 export type CoverState = "covered" | "thin" | "missing";
-export interface ItemCoverage { state: CoverState; sources: { id: string; title: string }[] }
+export interface ItemCoverage { state: CoverState; sources: { id: string; title: string; quote?: string }[] }
 export type Coverage = Record<string, ItemCoverage>;
 
 

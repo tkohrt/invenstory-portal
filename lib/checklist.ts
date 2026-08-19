@@ -102,7 +102,7 @@ export const BLURBS: Record<string, string> = {
 
 export interface ReadinessItem {
   key: string; label: string; tier: ChecklistTier; layer: "I" | "II" | "III";
-  state: "covered" | "thin" | "missing"; sources: { id: string; title: string }[]; blurb: string;
+  state: "covered" | "thin" | "missing"; sources: { id: string; title: string; quote?: string }[]; blurb: string;
 }
 
 // Retrieval queries: describe WHAT A QUALIFYING DOCUMENT CONTAINS (not just the label),
