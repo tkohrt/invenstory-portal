@@ -6,6 +6,7 @@ import { updateClientProfileAction } from "@/lib/server/admin-actions";
 import { changeDocLayerAction } from "@/lib/server/doc-actions";
 import GardenHeader from "./GardenHeader";
 import ReadinessCard from "./ReadinessCard";
+import type { ReadinessItem } from "@/lib/checklist";
 import type { GardenState } from "@/lib/types";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
@@ -13,7 +14,7 @@ function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https:/
 
 export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, garden, readiness, readinessComputedAt, isAdmin }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
-  contactName: string | null; docs: DocumentWithTags[]; garden: GardenState; readiness?: { pct: number; items: { key: string; label: string; tier: "essential"|"important"|"enriching"; layer: string; state: "covered"|"thin"|"missing" }[] }; readinessComputedAt?: string | null; isAdmin: boolean;
+  contactName: string | null; docs: DocumentWithTags[]; garden: GardenState; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -66,7 +67,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         </div>
         <div className="spacer" />
       </div>
-      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} rightSlot={readiness ? <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} /> : undefined} />
+      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} rightSlot={readiness ? <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} /> : undefined} />
       <div className="layers-zone">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>

@@ -68,3 +68,45 @@ export function readinessPct(items: ChecklistItem[], present: Set<string>): numb
   const got = items.reduce((a, i) => a + (present.has(i.key) ? TIER_WEIGHT[i.tier] : 0), 0);
   return Math.round((got / total) * 100);
 }
+
+// Short "what it is + why funders care" blurb per item, for the expanded panel.
+export const BLURBS: Record<string, string> = {
+  public_story: "Your public-facing story: website, about page, press. Funders form their first impression here, so it must be clear and current.",
+  mission: "A crisp statement of who you serve and the change you seek. Nearly every application opens with it, and funders screen for mission fit first.",
+  program: "A concrete description of what you actually do. The single most requested item in grant applications: funders fund programs, not intentions.",
+  need: "The problem you address, backed by data. Funders want evidence the need is real and urgent before they commit dollars.",
+  budget: "Your operating budget and financial picture. Funders check that you can steward money responsibly and that the ask is proportional.",
+  outcomes: "The results you achieve and how you measure them. Funders increasingly require outcomes and a credible measurement method, not just activity counts.",
+  goals: "Specific, measurable objectives. Funders look for clear targets they can hold the grant accountable to.",
+  founder_voice: "The founder or leader in their own words. This living voice gives applications authenticity no document can, and captures the origin story.",
+  leadership: "Who leads and delivers the work. Funders assess whether the team has the capacity and credibility to execute.",
+  capacity: "Your track record and ability to deliver. Funders de-risk grants by backing organizations that have done it before.",
+  timeline: "When the work happens and what gets delivered when. Funders want a realistic plan, not open-ended intentions.",
+  theory_of_change: "How your activities lead to outcomes. A logic model signals rigor and is often required by larger and federal funders.",
+  partnerships: "Who you collaborate with. Partnerships show reach, leverage, and that you are not working in isolation.",
+  past_grants: "Applications you have already written. They capture your own voice and reusable answers, and show funders your grant history.",
+  sustainability: "How the work continues after the grant. Funders avoid one-time bets and want a path beyond their dollars.",
+  equity: "How your work advances equity for those you serve. Increasingly a scored dimension in applications.",
+  other_funding: "Your other funding and leverage. Funders like to see diversified support and that they are not the sole backer.",
+  client_story: "A story from someone you serve. Proof with a human face that moves reviewers.",
+  irs_990: "Your most recent IRS 990. Funders validate finances and past grants here; it is often the first document they pull.",
+  determination: "Your 501(c)(3) determination letter. Hard proof of tax-exempt status and a common eligibility gate.",
+  board_roster: "Your board and governance. Funders check for sound governance and an engaged, qualified board.",
+  program_budgets: "Budgets at the program level. Funders want to see how their dollars map to specific work.",
+  funder_list: "Your current funders and grant history. Shows momentum and helps funders see who already backs you.",
+  annual_report: "Your annual report: a polished summary of impact and finances that builds funder confidence.",
+  eval_reports: "Evaluations or third-party assessments. External validation carries more weight than self-reported claims.",
+  pitch_deck: "Your pitch deck. The fastest way for a funder or investor to understand the opportunity and the ask.",
+  traction: "Evidence it is working: pilots, metrics, case studies. Funders and investors fund proof, not promise.",
+  cap_table: "Your ownership, entity structure, and raise history. Diligence basics any capital provider will ask for.",
+  go_to_market: "How you reach customers and the market size. Shows the path to scale and impact.",
+  competition: "Who else is in the space and how you differ. Funders want to know why you win.",
+  strategic_partners: "Partners and letters of intent. External validation and distribution that de-risk the bet.",
+  investor_updates: "Your investor updates. Show discipline, momentum, and transparent communication.",
+  financial_model: "Your model and projections. Funders assess viability and how their capital extends runway or impact.",
+};
+
+export interface ReadinessItem {
+  key: string; label: string; tier: ChecklistTier; layer: "I" | "II" | "III";
+  state: "covered" | "thin" | "missing"; sources: { id: string; title: string }[]; blurb: string;
+}

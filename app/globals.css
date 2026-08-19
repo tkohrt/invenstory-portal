@@ -544,8 +544,9 @@ button.vis-dot.busy{opacity:.5}
 
 /* Inven(s)tory readiness checklist */
 .ck-list{display:flex;flex-direction:column;gap:2px}
-.ck-row{padding:5px 0;border-bottom:1px solid #f2f2f0}
-.ck-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.ck-row{display:flex;align-items:center;gap:8px;font-size:13px;width:100%;text-align:left;border:none;background:none;padding:6px 6px;border-radius:6px;cursor:pointer;border-bottom:1px solid #f2f2f0}
+.ck-row:hover{background:#f6f7f5}
+.ck-expand{flex:none;font-size:11.5px;color:#3a7d44;white-space:nowrap}
 .ck-mark{font-weight:700;width:14px;text-align:center}
 .ck-row.covered .ck-mark{color:#3a7d44}
 .ck-row.thin .ck-mark{color:#b08a2e}
@@ -573,7 +574,7 @@ button.vis-dot.busy{opacity:.5}
 
 /* Readiness card as the sole right-of-plant panel, tiers in 3 columns */
 .garden-row .readiness-card{flex:1;min-width:340px}
-.ck-cols{display:flex;gap:20px;align-items:flex-start}
+.ck-cols{display:flex;gap:20px;align-items:stretch}
 .ck-col{flex:1;min-width:0}
 @media(max-width:900px){.ck-cols{flex-direction:column;gap:10px}}
 
@@ -581,8 +582,25 @@ button.vis-dot.busy{opacity:.5}
 .rc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 
 /* Bordered tier columns, colored to their tier */
-.ck-col{border:1px solid var(--line,#e6e6e6);border-radius:12px;padding:10px 13px;background:#fff}
+.ck-col{border:1px solid var(--line,#e6e6e6);border-radius:12px;padding:10px 13px;background:#fff;position:relative}
 .ck-col.essential{border-color:#e0a869}
 .ck-col.important{border-color:#e0cf7a}
 .ck-col.enriching{border-color:#8fc4ec}
 .ck-col .section-label{margin-top:0}
+
+
+/* Expandable checklist item detail (overlays its tier card) */
+.ck-overlay{position:absolute;inset:0;background:rgba(255,255,255,.99);border:1px solid var(--line,#e6e6e6);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);overflow-y:auto;z-index:6;padding:12px 14px}
+.ck-detail-head{display:flex;align-items:center;gap:8px}
+.ck-detail-head b{font-size:14px}
+.ck-close{border:none;background:none;font-size:20px;line-height:1;cursor:pointer;color:#999;padding:0 2px}
+.ck-close:hover{color:#333}
+.ck-why{font-size:12.5px;color:#555;line-height:1.5;margin:8px 0 4px}
+.ck-sources{margin-top:8px}
+.ck-source{display:block;width:100%;text-align:left;border:1px solid var(--line,#eee);background:#fafafa;border-radius:8px;padding:5px 9px;margin-top:4px;font-size:12.5px;color:#2f5d38;cursor:pointer}
+.ck-source:hover{background:#f2f8f2;border-color:#cfe4cf}
+.ck-detail .section-label{margin-top:0}
+.ck-detail textarea{width:100%;min-height:64px;margin-top:2px}
+.ck-detail-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.ck-upbtn{margin-top:10px;width:100%}
+.ck-badge.missing{color:#c0492f;background:#fdf5f3;border-color:#e7c3ba}
