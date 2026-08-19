@@ -67,7 +67,18 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
     throw new Error("Audio transcription pending (Transcribe/Whisper integration — Phase 3b follow-up).");
   }
   if (docKind === "xlsx") {
-    throw new Error("Spreadsheet text extraction pending — stored for reference; not yet searchable.");
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buffer, { type: "buffer" });
+    const pages: PageText[] = [];
+    wb.SheetNames.forEach((name, i) => {
+      const ws = wb.Sheets[name];
+      if (!ws) return;
+      const csv = XLSX.utils.sheet_to_csv(ws, { blankrows: false }).trim();
+      if (csv) pages.push({ page: i + 1, text: `# Sheet: ${name}\n${csv}` });
+    });
+    const total = pages.reduce((n, p) => n + p.text.trim().length, 0);
+    if (total < 5) throw new Error("No extractable text in this spreadsheet — it may be empty or contain only images/charts.");
+    return pages;
   }
   throw new Error(`Unsupported doc kind: ${docKind}`);
 }
