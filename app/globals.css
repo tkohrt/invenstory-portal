@@ -615,7 +615,7 @@ button.vis-dot.busy{opacity:.5}
 .inv-readiness .readiness-card{width:100%}
 
 /* Plant in the left sidebar (links to /plant) */
-.sidebar-plant{display:block;text-align:center;text-decoration:none;padding:10px 8px 12px;margin:0 0 8px;border-bottom:1px solid #e8eae6;border-radius:8px}
+.sidebar-plant{display:block;text-align:center;text-decoration:none;padding:2px 6px 12px;margin:0 0 8px;border-bottom:1px solid #e8eae6;border-radius:8px}
 .sidebar-plant:hover{background:#f5f8f5}
 .sidebar-plant.active{background:#eef5ee}
 .sidebar-plant .sp-meta{margin-top:2px;font-size:11px;color:var(--muted)}

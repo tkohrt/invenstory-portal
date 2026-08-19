@@ -74,7 +74,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
           {garden.hidden
             ? <div className="sp-hidden">🌱 Your plant</div>
-            : <><PlantVisual g={garden} width={132} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
+            : <><PlantVisual g={garden} width={168} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
         </Link>
         {admin && (
           <div>
