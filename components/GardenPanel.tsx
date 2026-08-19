@@ -86,7 +86,7 @@ export default function GardenPanel({ garden }: { garden: GardenState }) {
         {g.unlocks.variegations.length === 0 && <span className="garden-locked">Unlock leaf styles by reviewing Answer Library answers</span>}
       </div>
 
-      <div className="section-label">Milestones ({g.achievements.length})</div>
+      <div className="section-label" style={{ marginTop: 10 }}>Milestones ({g.achievements.length})</div>
       <div className="garden-opts">
         {Object.entries(ACH_NAMES).map(([k, name]) => {
           const has = g.achievements.some(a => a.key === k);
@@ -94,9 +94,9 @@ export default function GardenPanel({ garden }: { garden: GardenState }) {
         })}
       </div>
 
-      <div className="section-label">How your plant is measured</div>
+      <div className="section-label" style={{ marginTop: 10 }}>How your plant is measured</div>
       <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
-        <b>Size</b> grows with documents, words captured, layer coverage, and milestones &mdash; it never shrinks.
+        <b>Size</b>{" "}grows with documents, words captured, layer coverage, and milestones &mdash; it never shrinks.
         <b> Health</b> reflects freshness: uploads within ~45 days keep it thriving; quiet stretches make it thirsty
         (never worse), and one new document perks it right back up. Keeping Layer III current matters most.
       </p>
