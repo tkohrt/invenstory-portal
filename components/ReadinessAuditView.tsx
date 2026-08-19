@@ -105,7 +105,7 @@ function buildDocMarkdown(t: DocExtractTrace, name: string, ranAt: number | null
   for (const it of t.items) {
     L.push(`## ${STATE_LABEL[it.state] ?? it.state} — ${it.label} (${it.tier})`);
     if (!it.evidence.length) L.push("- (no supporting document)");
-    it.evidence.forEach(e => { L.push(`- ${e.title}: "${(e.quote || "").trim()}"`); });
+    it.evidence.forEach(e => { L.push(`- ${e.title}${e.subject && e.subject !== "organization" ? ` [${e.subject}]` : ""}: "${(e.quote || "").trim()}"`); });
     L.push("");
   }
   L.push("---"); L.push("## Documents scanned");
@@ -131,7 +131,7 @@ function DocItemRow({ it }: { it: DocItemFinding }) {
           {it.evidence.length === 0 && <div className="ra-empty">No document supported this item.</div>}
           {it.evidence.map((e, i) => (
             <div key={i} className="ra-chunk">
-              <div className="ra-chunk-head"><span className="ra-chunk-title">{e.title}</span></div>
+              <div className="ra-chunk-head"><span className="ra-chunk-title">{e.title}</span>{e.subject && e.subject !== "organization" && <span className="ra-warn">subject: {e.subject}</span>}</div>
               <div className="ra-quote"><q>{e.quote}</q></div>
             </div>
           ))}

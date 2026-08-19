@@ -8,11 +8,22 @@ import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor, RETRIEVAL_QUERY } from "@/lib/checklist";
 
 export type DocState = "covered" | "thin" | "missing";
-export interface DocItemFinding { key: string; label: string; tier: string; state: DocState; evidence: { documentId: string; title: string; quote: string }[] }
-export interface DocScan { documentId: string; title: string; boilerplate: boolean; skipped: boolean; chars: number; found: { key: string; state: DocState; quote: string }[] }
+export type Subject = "organization" | "competitor" | "third_party";
+export interface DocItemFinding { key: string; label: string; tier: string; state: DocState; evidence: { documentId: string; title: string; quote: string; subject: Subject }[] }
+export interface DocScan { documentId: string; title: string; boilerplate: boolean; skipped: boolean; chars: number; found: { key: string; state: DocState; quote: string; subject: Subject }[] }
 export interface DocExtractTrace {
   generationConfigured: boolean; docCount: number; scanned: number; skipped: number;
   items: DocItemFinding[]; documents: DocScan[];
+}
+
+
+// Attribution guard: competitor / third-party facts must never satisfy the client's OWN
+// checklist items. Only "competition" may use competitor evidence; only relationship items
+// may use third-party evidence. Everything else requires the subject to be the organization.
+function subjectAllowed(itemKey: string, subject: Subject): boolean {
+  if (itemKey === "competition") return subject === "organization" || subject === "competitor";
+  if (itemKey === "partnerships" || itemKey === "client_story") return subject === "organization" || subject === "third_party";
+  return subject === "organization";
 }
 
 function isBoilerplate(title: string): boolean {
@@ -38,15 +49,20 @@ const EXTRACT_SYS = (list: string) =>
   "For items that require data (e.g. a data-backed statement of need, impact measurement), 'covered' requires actual numbers or statistics; a narrative without data is 'thin'. " +
   "For track record or traction, 'covered' requires specific results, amounts, or named clients; general aspiration is 'thin'. " +
   "When in doubt between covered and thin, choose 'thin'. Omit items the document does not genuinely support. " +
-  "Return STRICT JSON only: an array of objects {\"key\":\"<checklist key>\",\"state\":\"covered|thin\",\"quote\":\"<verbatim supporting text>\"}.\n\n" +
+  "For every finding also include \"subject\": who the quoted text is actually ABOUT — \"organization\" (this organization itself), \"competitor\" (a competing company or product), or \"third_party\" (a client, partner, funder, or other outside entity). " +
+  "Competitor and third-party facts describe SOMEONE ELSE, not this organization — for example a competitor's funding, customers, or metrics are NOT this organization's. " +
+  "Return STRICT JSON only: an array of objects {\"key\":\"<checklist key>\",\"state\":\"covered|thin\",\"quote\":\"<verbatim supporting text>\",\"subject\":\"organization|competitor|third_party\"}.\n\n" +
   "CHECKLIST (key: label — what a qualifying document contains):\n" + list;
 
-async function scanWindow(title: string, itemsList: string, text: string): Promise<{ key: string; state: DocState; quote: string }[]> {
-  const res = await chatComplete({ system: EXTRACT_SYS(itemsList), user: `DOCUMENT TITLE: ${title}\n\nDOCUMENT TEXT:\n${text}`, maxTokens: 1600, temperature: 0 });
-  const out: { key: string; state: DocState; quote: string }[] = [];
+async function scanWindow(title: string, itemsList: string, text: string): Promise<{ key: string; state: DocState; quote: string; subject: Subject }[]> {
+  const res = await chatComplete({ system: EXTRACT_SYS(itemsList), user: `DOCUMENT TITLE: ${title}\n\nDOCUMENT TEXT:\n${text}`, maxTokens: 1800, temperature: 0 });
+  const out: { key: string; state: DocState; quote: string; subject: Subject }[] = [];
   if (!res) return out;
   try { const m = res.text.match(/\[[\s\S]*\]/); if (m) { const arr = JSON.parse(m[0]);
-    if (Array.isArray(arr)) for (const o of arr) { if (o && typeof o.key === "string" && (o.state === "covered" || o.state === "thin")) out.push({ key: o.key, state: o.state, quote: typeof o.quote === "string" ? o.quote : "" }); }
+    if (Array.isArray(arr)) for (const o of arr) { if (o && typeof o.key === "string" && (o.state === "covered" || o.state === "thin")) {
+      const subj: Subject = (o.subject === "competitor" || o.subject === "third_party") ? o.subject : "organization";
+      out.push({ key: o.key, state: o.state, quote: typeof o.quote === "string" ? o.quote : "", subject: subj });
+    } }
   } } catch { /* ignore */ }
   return out;
 }
@@ -55,7 +71,7 @@ async function scanDoc(doc: { id: string; title: string }, itemsList: string, te
   const boilerplate = isBoilerplate(doc.title);
   if (boilerplate || !text.trim()) return { documentId: doc.id, title: doc.title, boilerplate, skipped: boilerplate, chars: text.length, found: [] };
   const results = await Promise.all(windows(text).map(w => scanWindow(doc.title, itemsList, w)));
-  const merged = new Map<string, { key: string; state: DocState; quote: string }>();
+  const merged = new Map<string, { key: string; state: DocState; quote: string; subject: Subject }>();
   for (const arr of results) for (const f of arr) {
     const cur = merged.get(f.key);
     if (!cur || (f.state === "covered" && cur.state !== "covered")) merged.set(f.key, f);
@@ -86,8 +102,9 @@ export async function extractDocumentEvidence(tenantId: string, orgType: string 
     if (sc.skipped) continue;
     for (const f of sc.found) {
       if (!validKeys.has(f.key) || !byKey.has(f.key)) continue;
+      if (!subjectAllowed(f.key, f.subject)) continue; // quarantine competitor/third-party facts
       const cur = agg.get(f.key)!;
-      cur.evidence.push({ documentId: sc.documentId, title: sc.title, quote: f.quote });
+      cur.evidence.push({ documentId: sc.documentId, title: sc.title, quote: f.quote, subject: f.subject });
       if (f.state === "covered") cur.state = "covered";
       else if (cur.state !== "covered") cur.state = "thin";
     }
@@ -135,6 +152,7 @@ export async function mergeDocumentIntoCoverage(documentId: string): Promise<voi
   const cov = normalizeCoverage(row?.content_gaps);
   for (const f of scan.found) {
     if (!validKeys.has(f.key)) continue;
+    if (!subjectAllowed(f.key, f.subject)) continue; // quarantine competitor/third-party facts
     const cur = cov[f.key] ?? { state: "missing", sources: [] };
     if (!cur.sources.some(sx => sx.id === documentId)) cur.sources.push({ id: documentId, title: doc.title });
     if (RANK[f.state] > RANK[cur.state]) cur.state = f.state;
