@@ -63,7 +63,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
         <h3 style={{ margin: 0 }}>Inven(s)tory Readiness Checklist</h3>
         <span className="acct-note" style={{ margin: 0 }}>✓ covered · ◐ thin · ○ missing.</span>
         <div style={{ flex: 1 }} />
-        <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
+        <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Running Readiness Check…" : computedAt ? "Re-Run Readiness Check" : "Run Readiness Check"}</button>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
 
