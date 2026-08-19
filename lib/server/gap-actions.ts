@@ -24,3 +24,11 @@ export async function runReadinessAuditAction() {
   const { traceContentCoverage } = await import("./gap-agent");
   return traceContentCoverage(s.tenantId, profile.org_type);
 }
+
+export async function runDocExtractionAuditAction() {
+  const s = await getSession();
+  if (!s || s.role !== "admin") throw new Error("unauthorized");
+  const profile = await getEligibilityProfile(s.tenantId);
+  const { extractDocumentEvidence } = await import("./doc-extract");
+  return extractDocumentEvidence(s.tenantId, profile.org_type);
+}

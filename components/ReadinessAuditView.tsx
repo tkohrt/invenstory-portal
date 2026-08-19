@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { runReadinessAuditAction } from "@/lib/server/gap-actions";
+import { runReadinessAuditAction, runDocExtractionAuditAction } from "@/lib/server/gap-actions";
 import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
+import type { DocExtractTrace, DocItemFinding } from "@/lib/server/doc-extract";
 
 const STATE_LABEL: Record<string, string> = { covered: "ROBUST", thin: "THIN", missing: "MISSING" };
 
@@ -95,6 +96,96 @@ function ItemRow({ it }: { it: ItemTrace }) {
   );
 }
 
+function buildDocMarkdown(t: DocExtractTrace, name: string, ranAt: number | null): string {
+  const L: string[] = [];
+  L.push(`# Readiness Audit (Document-level extraction) — ${name}`);
+  if (ranAt) L.push(`Run: ${new Date(ranAt).toLocaleString()}`);
+  L.push(`${t.docCount} documents · ${t.scanned} scanned · ${t.skipped} skipped as boilerplate`);
+  L.push("");
+  for (const it of t.items) {
+    L.push(`## ${STATE_LABEL[it.state] ?? it.state} — ${it.label} (${it.tier})`);
+    if (!it.evidence.length) L.push("- (no supporting document)");
+    it.evidence.forEach(e => { L.push(`- ${e.title}: "${(e.quote || "").trim()}"`); });
+    L.push("");
+  }
+  L.push("---"); L.push("## Documents scanned");
+  for (const d of t.documents) {
+    L.push(`- ${d.title}${d.skipped ? " — SKIPPED (boilerplate)" : ` — supports: ${d.found.map(f => f.key).join(", ") || "(none)"}`}`);
+  }
+  return L.join("\n");
+}
+
+function DocItemRow({ it }: { it: DocItemFinding }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ra-item">
+      <button className="ra-item-head" onClick={() => setOpen(o => !o)}>
+        <span className="ra-caret">{open ? "▾" : "▸"}</span>
+        <StateBadge s={it.state} />
+        <span className="ra-label">{it.label}</span>
+        <span className="ra-tier">{it.tier}</span>
+        <span className="ra-sim ra-sim-mid">{it.evidence.length} doc{it.evidence.length === 1 ? "" : "s"}</span>
+      </button>
+      {open && (
+        <div className="ra-item-body">
+          {it.evidence.length === 0 && <div className="ra-empty">No document supported this item.</div>}
+          {it.evidence.map((e, i) => (
+            <div key={i} className="ra-chunk">
+              <div className="ra-chunk-head"><span className="ra-chunk-title">{e.title}</span></div>
+              <div className="ra-quote"><q>{e.quote}</q></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DocExtractPanel({ tenantName, tenantId }: { tenantName: string; tenantId: string }) {
+  const [trace, setTrace] = useState<DocExtractTrace | null>(null);
+  const [ranAt, setRanAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const key = `fg_doc_extract_${tenantId}`;
+  useEffect(() => {
+    try { const sv = localStorage.getItem(key); if (sv) { const p = JSON.parse(sv); if (p?.trace) { setTrace(p.trace); setRanAt(p.ranAt ?? null); } } else { setTrace(null); setRanAt(null); } } catch { /* ignore */ }
+  }, [key]);
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try { const t = await runDocExtractionAuditAction(); const now = Date.now(); setTrace(t); setRanAt(now); try { localStorage.setItem(key, JSON.stringify({ trace: t, ranAt: now })); } catch { /* quota */ } }
+    catch (e) { setErr(e instanceof Error ? e.message : "Extraction failed"); }
+    setBusy(false);
+  };
+  const slug = tenantName.replace(/[^\w]+/g, "-").toLowerCase();
+  const stamp = new Date(ranAt ?? Date.now()).toISOString().slice(0, 10);
+  const exMd = () => { if (trace) triggerDownload(`doc-extract-${slug}-${stamp}.md`, buildDocMarkdown(trace, tenantName, ranAt), "text/markdown"); };
+  const exJson = () => { if (trace) triggerDownload(`doc-extract-${slug}-${stamp}.json`, JSON.stringify(trace, null, 2), "application/json"); };
+  return (
+    <div style={{ marginTop: 28, borderTop: "2px solid var(--line)", paddingTop: 18 }}>
+      <h3 style={{ margin: "0 0 4px" }}>Document-level extraction (beta)</h3>
+      <p className="acct-note" style={{ marginTop: 0 }}>Reads each document once and asks which items it supports — the parallel path to compare against retrieval above.</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
+        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Reading documents…" : trace ? "Re-run extraction" : "Run document extraction"}</button>
+        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exMd}>⬇ Export Markdown</button>}
+        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exJson}>⬇ Export JSON</button>}
+        {ranAt && <span className="acct-note" style={{ margin: 0 }}>Last run {new Date(ranAt).toLocaleString()} · cached in this browser</span>}
+      </div>
+      {err && <div className="metric-gap">{err}</div>}
+      {trace && (
+        <>
+          <div className="ra-summary">{trace.docCount} documents · {trace.scanned} scanned · {trace.skipped} skipped as boilerplate</div>
+          <div className="ra-list">{trace.items.map(it => <DocItemRow key={it.key} it={it} />)}</div>
+          <details className="ra-raw"><summary>Documents scanned</summary>
+            <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+              {trace.documents.map(d => <li key={d.documentId}>{d.title}{d.skipped ? " — skipped (boilerplate)" : ` — supports: ${d.found.map(f => f.key).join(", ") || "(none)"}`}</li>)}
+            </ul>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function ReadinessAuditView({ tenantName, tenantId }: { tenantName: string; tenantId: string }) {
   const [trace, setTrace] = useState<CoverageTrace | null>(null);
   const [ranAt, setRanAt] = useState<number | null>(null);
@@ -150,6 +241,7 @@ export default function ReadinessAuditView({ tenantName, tenantId }: { tenantNam
           <details className="ra-raw"><summary>Full evidence sent to the grader</summary><pre>{trace.evidenceSent || "(none)"}</pre></details>
         </>
       )}
+      <DocExtractPanel tenantName={tenantName} tenantId={tenantId} />
     </div>
   );
 }
