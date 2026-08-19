@@ -674,8 +674,10 @@ button.vis-dot.busy{opacity:.5}
 .filters .chip.l3.active{background:#1f4d2e;border-color:#1f4d2e;color:#fff}
 
 /* First-run readiness CTA: dark forest green + gentle pulse (only before it's ever been run) */
-.rc-run-cta{background:#1f4d2e;border-color:#1f4d2e;color:#fff;margin:0;width:auto;animation:rcPulse 1.8s ease-in-out infinite}
+.rc-run-cta{background:#1f4d2e;border-color:#1f4d2e;color:#fff;margin:0;width:auto}
+.rc-run-pulse{animation:rcPulse 1.8s ease-in-out infinite}
+.rc-run-pulse:disabled{animation:none}
 .rc-run-cta:hover{background:#173a23;border-color:#173a23}
 .rc-run-cta:disabled{animation:none}
 @keyframes rcPulse{0%{box-shadow:0 0 0 0 rgba(31,77,46,.45)}70%{box-shadow:0 0 0 8px rgba(31,77,46,0)}100%{box-shadow:0 0 0 0 rgba(31,77,46,0)}}
-@media (prefers-reduced-motion: reduce){.rc-run-cta{animation:none}}
+@media (prefers-reduced-motion: reduce){.rc-run-pulse{animation:none}}
