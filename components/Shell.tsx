@@ -146,6 +146,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               <span className="ic">✦</span> Story Intelligence reviews
               {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
             </Link>
+            <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>
           </div>
         )}
       </div>

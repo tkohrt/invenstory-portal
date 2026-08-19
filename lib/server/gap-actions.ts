@@ -16,3 +16,11 @@ export async function runGapAnalysisAction() {
   revalidatePath("/funding-eligibility"); revalidatePath("/invenstory");
   return { ok: true };
 }
+
+export async function runReadinessAuditAction() {
+  const s = await getSession();
+  if (!s || s.role !== "admin") throw new Error("unauthorized");
+  const profile = await getEligibilityProfile(s.tenantId);
+  const { traceContentCoverage } = await import("./gap-agent");
+  return traceContentCoverage(s.tenantId, profile.org_type);
+}

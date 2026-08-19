@@ -112,3 +112,76 @@ export function readiness(orgType: string | null, cov: Coverage): { pct: number;
     items: items.map(i => ({ key: i.key, label: i.label, tier: i.tier, layer: i.layer, state: cov[i.key]?.state ?? "missing", sources: cov[i.key]?.sources ?? [], blurb: BLURBS[i.key] ?? "" })),
   };
 }
+
+// ---- Readiness audit: a traceable re-run of the coverage assessment ----
+// Mirrors analyzeContentCoverage but captures every intermediate so admins can see
+// exactly why each item was graded covered / thin / missing.
+export interface RetrievedChunk { documentId: string; chunkId: string | null; title: string; similarity: number; text: string }
+export interface ItemTrace {
+  key: string; label: string; tier: string; query: string;
+  retrieved: RetrievedChunk[]; maxSim: number; evidenceBlock: string;
+  llmVerdict: CoverState; floorFired: boolean; finalState: CoverState;
+  sources: { id: string; title: string }[];
+}
+export interface CoverageTrace {
+  generationConfigured: boolean; docCount: number; usedFallback: boolean;
+  similarityFloor: number; evidenceSent: string; llmRaw: string; items: ItemTrace[];
+}
+
+export async function traceContentCoverage(tenantId: string, orgType: string | null): Promise<CoverageTrace> {
+  const items = checklistFor(orgType);
+  const SOME = 0.40;
+  const genOK = generationConfigured();
+  const { count } = await db.from("document").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("status", "ready");
+  const empty = (): CoverageTrace => ({
+    generationConfigured: genOK, docCount: count ?? 0, usedFallback: false, similarityFloor: SOME,
+    evidenceSent: "", llmRaw: "",
+    items: items.map(i => ({ key: i.key, label: i.label, tier: i.tier, query: i.label, retrieved: [], maxSim: 0, evidenceBlock: "", llmVerdict: "missing" as CoverState, floorFired: false, finalState: "missing" as CoverState, sources: [] })),
+  });
+  if (!count || !genOK) return empty();
+
+  const supabase = await userClient();
+  const vectors = await embedTexts(items.map(i => i.label));
+
+  // per-item retrieval
+  const per = await Promise.all(items.map(async (it, idx) => {
+    const v = vectors?.[idx];
+    let retrieved: RetrievedChunk[] = [];
+    if (v) {
+      const { data } = await supabase.rpc("match_chunks", { p_query_embedding: JSON.stringify(v), p_match_count: 6 });
+      retrieved = ((data ?? []) as { document_id: string; chunk_id?: string; tenant_id: string; title: string; text: string; similarity: number }[])
+        .filter(r => r.tenant_id === tenantId).slice(0, 4)
+        .map(r => ({ documentId: r.document_id, chunkId: r.chunk_id ?? null, title: r.title, similarity: r.similarity, text: r.text ?? "" }));
+    }
+    const maxSim = retrieved.reduce((m, r) => Math.max(m, r.similarity), 0);
+    const seen = new Set<string>(); const docs: { id: string; title: string }[] = [];
+    for (const r of retrieved) { if (!seen.has(r.documentId)) { seen.add(r.documentId); docs.push({ id: r.documentId, title: r.title }); } }
+    const titles = docs.length ? `TITLES: ${docs.map(d => d.title).join("; ")}` : "TITLES: (none matched)";
+    const snips = retrieved.length ? retrieved.map(r => `• ${(r.text ?? "").slice(0, 180)}`).join("\n") : "(no related passages)";
+    const evidenceBlock = `## ${it.key} — ${it.label}\n${titles}\ntopMatch=${maxSim.toFixed(2)}\n${snips}`;
+    return { it, retrieved, maxSim, docs, evidenceBlock };
+  }));
+
+  const usedFallback = !vectors;
+  const evidenceSent = "Evidence retrieved per item:\n\n" + per.map(p => p.evidenceBlock).join("\n\n");
+
+  // one classifier call (same prompt as the live agent)
+  const list = items.map(i => `${i.key}: ${i.label}`).join("\n");
+  const res = await chatComplete({ system: WIDE_BERTH + "\n\nCHECKLIST:\n" + list, user: evidenceSent, maxTokens: 900, temperature: 0 });
+  const llmRaw = res?.text ?? "";
+  const verdicts: Record<string, CoverState> = {}; items.forEach(i => verdicts[i.key] = "missing");
+  try { const m = llmRaw.match(/\{[\s\S]*\}/); if (m) { const pj = JSON.parse(m[0]); items.forEach(i => { const vv = pj[i.key]; if (vv === "covered" || vv === "thin" || vv === "missing") verdicts[i.key] = vv; }); } } catch { /* keep missing */ }
+
+  const itemTraces: ItemTrace[] = per.map(p => {
+    const llmVerdict = verdicts[p.it.key];
+    let finalState: CoverState = llmVerdict; let floorFired = false;
+    if (p.maxSim >= SOME && llmVerdict === "missing") { finalState = "thin"; floorFired = true; }
+    return {
+      key: p.it.key, label: p.it.label, tier: p.it.tier, query: p.it.label,
+      retrieved: p.retrieved, maxSim: p.maxSim, evidenceBlock: p.evidenceBlock,
+      llmVerdict, floorFired, finalState, sources: finalState !== "missing" ? p.docs : [],
+    };
+  });
+
+  return { generationConfigured: genOK, docCount: count, usedFallback, similarityFloor: SOME, evidenceSent, llmRaw, items: itemTraces };
+}
