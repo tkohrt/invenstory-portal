@@ -607,3 +607,9 @@ button.vis-dot.busy{opacity:.5}
 /* Tier label stays above; overlay covers only the list area */
 .ck-body{position:relative;flex:1}
 .ck-col{display:flex;flex-direction:column}
+
+/* Plant row: plant left, org profile right; readiness card full width below */
+.inv-profile{flex:1;min-width:0;padding-top:4px}
+.inv-profile h2{margin:0 0 2px}
+.inv-readiness{margin-top:4px}
+.inv-readiness .readiness-card{width:100%}

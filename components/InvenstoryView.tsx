@@ -33,8 +33,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
   return (
     <div style={{ position: "relative" }}>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {tenantName}</div>}
-      <div className="page-head">
-        <div>
+      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} rightSlot={
+        <div className="inv-profile">
           <h2>{tenantName}</h2>
           <p>The complete Inven(s)tory — {docs.length} documents across three layers.</p>
           {!editingProfile && (
@@ -65,9 +65,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
             </div>
           )}
         </div>
-        <div className="spacer" />
-      </div>
-      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} rightSlot={readiness ? <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} /> : undefined} />
+      } />
+      {readiness && <div className="inv-readiness"><ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} /></div>}
       <div className="layers-zone">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
