@@ -641,3 +641,7 @@ button.vis-dot.busy{opacity:.5}
 .ck-group .section-label{margin-top:0}
 .ck-group-cols{display:flex;gap:14px;flex:1;align-items:stretch}
 .ck-group-cols .ck-body{flex:1;min-width:0}
+
+/* Full-width detail panel: spans the whole readiness card, below the tier labels */
+.ck-cols{position:relative}
+.ck-overlay-full{inset:auto;left:0;right:0;top:44px;bottom:0}

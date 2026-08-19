@@ -71,32 +71,24 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
           const CAP = 6;
           const byTier = (t: "essential" | "important" | "enriching") => readiness.items.filter(i => i.tier === t);
           const ess = byTier("essential");
-          const renderBody = (rows: ReadinessItem[]) => {
-            const item = rows.find(i => i.key === expanded);
-            return (
-              <div className="ck-body">
-                <div className="ck-list">
-                  {rows.map(i => (
-                    <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
-                      <span className="ck-mark">{mark(i.state)}</span>
-                      <span className="ck-label" title={i.label}>{i.label}</span>
-                      <span className="ck-badge-slot">
-                        {i.state === "covered" && <span className="ck-badge robust">robust</span>}
-                        {i.state === "thin" && <span className="ck-badge thin">thin</span>}
-                      </span>
-                      <span className="ck-expand">Expand →</span>
-                    </button>
-                  ))}
-                </div>
-                {item && (
-                  <div className="ck-overlay">
-                    <ItemDetail item={item} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
-                      onSaved={() => { setExpanded(null); router.refresh(); }} />
-                  </div>
-                )}
+          const renderBody = (rows: ReadinessItem[]) => (
+            <div className="ck-body">
+              <div className="ck-list">
+                {rows.map(i => (
+                  <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
+                    <span className="ck-mark">{mark(i.state)}</span>
+                    <span className="ck-label" title={i.label}>{i.label}</span>
+                    <span className="ck-badge-slot">
+                      {i.state === "covered" && <span className="ck-badge robust">robust</span>}
+                      {i.state === "thin" && <span className="ck-badge thin">thin</span>}
+                    </span>
+                    <span className="ck-expand">Expand →</span>
+                  </button>
+                ))}
               </div>
-            );
-          };
+            </div>
+          );
+          const expandedItem = readiness.items.find(i => i.key === expanded);
           return (
             <>
               <div className="ck-group essential">
@@ -114,6 +106,12 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
                 <div className="section-label">{TIER_LABEL.enriching}</div>
                 {renderBody(byTier("enriching"))}
               </div>
+              {expandedItem && (
+                <div className="ck-overlay ck-overlay-full">
+                  <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+                    onSaved={() => { setExpanded(null); router.refresh(); }} />
+                </div>
+              )}
             </>
           );
         })()}
