@@ -125,6 +125,55 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   const speciesName: Record<PlantSpecies, string> = { pothos: "Pothos", monstera: "Monstera", spider: "Spider Plant" };
   const sp = (plant?.species as PlantSpecies) ?? "pothos";
   let prompt: GardenState["prompt"];
+  if (analyzed && R) {
+    // Retargeted prompts: point at the actual Readiness gaps + eligibility, highest-value first.
+    const itemPrompt = (i: { key: string; label: string }, variants: string[]): GardenState["prompt"] =>
+      ({ text: pick(variants).replace("{item}", i.label), layer: null, itemKey: i.key, target: "invenstory" });
+    const findItem = (tier: string, state: string) => R.items.find(i => i.tier === tier && i.state === state);
+    if (!orgType) {
+      prompt = { text: pick([
+        "You can't be matched to funders yet — set your organization type to unlock eligibility.",
+        "One field stands between you and funder matches: set your organization type.",
+        "Funders are filtered by organization type. Add it and your matches light up."]), layer: null, target: "eligibility" };
+    } else {
+      const missEss = findItem("essential", "missing");
+      const thinEss = findItem("essential", "thin");
+      const missImp = findItem("important", "missing");
+      const enr = findItem("enriching", "missing") ?? findItem("enriching", "thin");
+      if (missEss) prompt = itemPrompt(missEss, [
+        "Your Inven(s)tory is missing its {item} — an Essential funders almost always ask for.",
+        "Add your {item} to reach a robust Inven(s)tory.",
+        "Grow your roots: {item} is a funder Essential you don't have yet."]);
+      else if (thinEss) prompt = itemPrompt(thinEss, [
+        "Your {item} is thin — a few more specifics would make it fundable.",
+        "Strengthen your {item}: funders reward detail over presence.",
+        "Almost there on {item} — add a bit more and it turns robust."]);
+      else if (missImp) prompt = itemPrompt(missImp, [
+        "Deepen your story — add your {item} to strengthen your Inven(s)tory.",
+        "{item} isn't required, but it's what sets strong applications apart.",
+        "Add your {item} to round out a strong Inven(s)tory."]);
+      else if (eligibilityPct < GARDEN_TUNING.eligibilityCompleteBar) prompt = { text: pick([
+        `Your eligibility profile is ${Math.round(eligibilityPct)}% complete — finish it to sharpen your funder matches.`,
+        "A few more eligibility fields and you're ready to be matched.",
+        "Complete your eligibility profile to unlock sharper funder matches."]), layer: null, target: "eligibility" };
+      else if (daysSince !== null && daysSince > 60) prompt = { text: pick([
+        `Your ${speciesName[sp]} looks thirsty — a recent upload keeps your Inven(s)tory current.`,
+        `Time to water: nothing new in ${daysSince} days. A quick upload perks your ${speciesName[sp]} right up.`,
+        "Freshness fading — add a recent document to keep your Inven(s)tory robust."]), layer: null, target: "invenstory" };
+      else if (newestL3 !== null && (Date.now() - newestL3) / DAY > 90) prompt = itemPrompt({ key: "founder_voice", label: "living voice" }, [
+        "Keep the living voice living — add a fresh Layer III note to stay robust.",
+        "Your Layer III is quieting down. A monthly update keeps it green.",
+        "Feed the soul layer: add a recent transcript or update."]);
+      else if (enr) prompt = itemPrompt(enr, [
+        "Everything essential is in. Add your {item} to make the story shine.",
+        "Your Inven(s)tory is strong — {item} would make it stand out.",
+        "Add your {item} to deepen an already-robust Inven(s)tory."]);
+      else prompt = { text: pick([
+        "Your Inven(s)tory is robust and fundable — keep it fresh as things change.",
+        "Beautiful garden. Add this quarter's updates to keep it thriving.",
+        "Everything's green. New documents keep the story compounding."]), layer: null, target: "invenstory" };
+    }
+  } else {
   const missing: ("I" | "II" | "III")[] = (["I", "II", "III"] as const).filter(L => !layers.has(L));
   const nextDocMilestone = [5, 10, 20, 50].find(n => D.length < n);
   if (missing.length) {
@@ -162,6 +211,7 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
       "Your Inven(s)tory is flourishing — keep it fresh with your latest updates.",
       "Beautiful garden. Add this quarter's updates to keep it thriving.",
       "Everything's green. New documents keep the story compounding."]), layer: null };
+  }
   }
 
   return {

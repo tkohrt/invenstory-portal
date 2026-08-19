@@ -5,7 +5,8 @@ import InvenstoryView from "@/components/InvenstoryView";
 import { getGaps } from "@/lib/server/eligibility";
 import { getFeatureVisible } from "@/lib/server/data";
 
-export default async function InvenstoryPage() {
+export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string }> }) {
+  const sp = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
   const [tenant, docs, contact, eligVisible] = await Promise.all([
@@ -28,6 +29,7 @@ export default async function InvenstoryPage() {
       readiness={gapData ? gapData.readiness : undefined}
       readinessComputedAt={gapData ? gapData.computedAt : null}
       isAdmin={session.role === "admin"}
+      openItem={sp.item ?? null}
     />
   );
 }

@@ -6,6 +6,7 @@ import { signOutAction, switchTenantAction } from "@/lib/server/actions";
 import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/server/artifact-actions";
 import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
 import PlantVisual from "./PlantVisual";
+import { promptHref } from "@/lib/garden-prompt";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
@@ -91,6 +92,9 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <p className="sp-cta">Click here for more details.</p>
           </div>
         </Link>
+        {!garden.hidden && garden.prompt?.text && (
+          <Link href={promptHref(garden.prompt)} onClick={closeNav} className="sidebar-prompt">🌱 {garden.prompt.text}</Link>
+        )}
         <div className="nav-section-label">Workspace</div>
         {workspaceNav.map(item => {
           const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
@@ -44,13 +44,14 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
   );
 }
 
-export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenDoc }: {
+export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenDoc, openKey }: {
   readiness: { pct: number; items: ReadinessItem[] }; computedAt: string | null;
-  onUpload?: (layer: "I" | "II" | "III") => void; onOpenDoc?: (id: string) => void;
+  onUpload?: (layer: "I" | "II" | "III") => void; onOpenDoc?: (id: string) => void; openKey?: string | null;
 }) {
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(openKey ?? null);
+  useEffect(() => { if (openKey) setExpanded(openKey); }, [openKey]);
   const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
   const pctColor = readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e";
   const mark = (s: string) => s === "covered" ? "✓" : s === "thin" ? "◐" : "○";

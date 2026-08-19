@@ -3,6 +3,8 @@
 // to live in the right-side drawer. Opened from /plant (click the sidebar plant).
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { promptHref } from "@/lib/garden-prompt";
 import PlantVisual from "./PlantVisual";
 import { setPlantAction } from "@/lib/server/garden-actions";
 import type { GardenState, PlantSpecies } from "@/lib/types";
@@ -40,6 +42,9 @@ export default function GardenPanel({ garden }: { garden: GardenState }) {
 
   return (
     <div className="garden-panel">
+      {g.prompt?.text && (
+        <Link href={promptHref(g.prompt)} className="garden-prompt-banner">🌱 {g.prompt.text} <span className="gp-cta">Fix it →</span></Link>
+      )}
       <div className="gp-plant-hero">
         <PlantVisual g={g} width={230} />
         <div className="garden-meta" style={{ justifyContent: "center", marginTop: 8 }}>

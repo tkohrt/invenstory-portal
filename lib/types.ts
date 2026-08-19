@@ -212,6 +212,6 @@ export interface GardenState {
   achievements: { key: string; unlocked_at: string }[];
   newAchievements: string[];         // unlocked during this computation
   unlocks: { pots: string[]; trinkets: string[]; variegations: string[] };
-  prompt: { text: string; layer: "I" | "II" | "III" | null };
+  prompt: { text: string; layer: "I" | "II" | "III" | null; itemKey?: string; target?: "invenstory" | "eligibility" };
   stats: { docs: number; words: number; layersCovered: number; daysSinceUpload: number | null };
 }
