@@ -4,15 +4,26 @@ import "server-only";
 // Score/size/health are computed on read; only achievements + plant_state persist.
 import { db } from "./db";
 import type { GardenState, PlantHealth, PlantSpecies } from "@/lib/types";
+import { getContentCoverage, readiness } from "./gap-agent";
 
 const DAY = 86400000;
+
+// Tie the plant to the Funding Eligibility + Inven(s)tory Readiness metrics.
+// One place to tune the thresholds and weights.
+const GARDEN_TUNING = {
+  readinessThriveBar: 60,       // min Inven(s)tory Readiness % to allow a "thriving" plant
+  eligibilityCompleteBar: 80,   // min eligibility-profile completeness % to allow "thriving"
+  sizeReadinessWeight: 0.25,    // readiness % -> size points (0..25 at 100%)
+  sizeEligibilityWeight: 0.05,  // eligibility % -> size points (0..5 at 100%)
+  sizeVolumeCap: 6,             // small raw-volume floor so pre-analysis uploads still grow the plant
+};
 
 const POT_UNLOCKS: Record<string, string> = { docs_5: "glazed", docs_10: "mosaic", docs_20: "talavera", docs_50: "porcelain", age_1yr: "jade", grant_won: "raku" };
 const TRINKET_UNLOCKS: Record<string, string> = { all_layers: "fg_flag", age_6mo: "gnome", docs_10: "mushroom", docs_20: "crane", grant_won: "funded_flag" };
 const VARIEGATION_UNLOCKS: Record<string, string> = { answers_reviewed_5: "variegated", grant_won: "golden" };
 
 export async function getGardenState(tenantId: string): Promise<GardenState> {
-  const [{ data: docs }, { data: wc }, { data: plant }, { data: ach }, { data: drafts }, { data: answers }, { data: tenant }] = await Promise.all([
+  const [{ data: docs }, { data: wc }, { data: plant }, { data: ach }, { data: drafts }, { data: answers }, { data: tenant }, covData, { data: elig }] = await Promise.all([
     db.from("document").select("layer, created_at").eq("tenant_id", tenantId).eq("status", "ready"),
     db.rpc("tenant_word_count", { p_tenant: tenantId }),
     db.from("plant_state").select("*").eq("tenant_id", tenantId).maybeSingle(),
@@ -20,6 +31,8 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
     db.from("grant_draft").select("status, updated_at").eq("tenant_id", tenantId),
     db.from("answer").select("source, status").eq("tenant_id", tenantId),
     db.from("tenant").select("created_at").eq("id", tenantId).single(),
+    getContentCoverage(tenantId),
+    db.from("eligibility_profile").select("completeness, org_type").eq("tenant_id", tenantId).maybeSingle(),
   ]);
   const D = docs ?? [];
   const words = Number(wc ?? 0);
@@ -47,9 +60,25 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   check("grant_submitted", dr.some(d => ["submitted", "won", "lost"].includes(d.status)));
   check("grant_won", dr.some(d => d.status === "won"));
 
-  // ---- growth points -> size (size_2/size_3 achievements depend on this) ----
-  const growthPoints = D.length + words / 2000 + 2 * layersCovered + (have.size + earned.length);
-  const size: 1 | 2 | 3 = growthPoints >= 25 ? 3 : growthPoints >= 10 ? 2 : 1;
+  // ---- readiness + eligibility signals (read from cache; cheap, no agent re-run) ----
+  const orgType = (elig?.org_type as string | null) ?? null;
+  const analyzed = covData.computedAt != null;
+  const R = analyzed ? readiness(orgType, covData.cov) : null;
+  const readinessPct = R?.pct ?? 0;
+  const essentialAllCovered = R ? R.items.filter(i => i.tier === "essential").every(i => i.state === "covered") : false;
+  const eligibilityPct = Number(elig?.completeness ?? 0);
+
+  // ---- growth points -> size (readiness-weighted; ratcheted so it never shrinks) ----
+  // A robust, fundable Inven(s)tory drives size; raw uploads only float the pre-analysis floor.
+  const growthPoints =
+    readinessPct * GARDEN_TUNING.sizeReadinessWeight +
+    eligibilityPct * GARDEN_TUNING.sizeEligibilityWeight +
+    2 * layersCovered +
+    Math.min(GARDEN_TUNING.sizeVolumeCap, D.length) +
+    0.5 * (have.size + earned.length);
+  const candidateSize: 1 | 2 | 3 = growthPoints >= 25 ? 3 : growthPoints >= 10 ? 2 : 1;
+  const sizeFloor: 1 | 2 | 3 = have.has("size_3") ? 3 : have.has("size_2") ? 2 : 1; // high-water mark via persisted achievements
+  const size: 1 | 2 | 3 = (Math.max(candidateSize, sizeFloor) as 1 | 2 | 3);
   check("size_2", size >= 2); check("size_3", size >= 3);
 
   if (earned.length) {
@@ -62,6 +91,15 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   const l3Stale = newestL3 === null || (Date.now() - newestL3) / DAY > 180;
   if (l3Stale && health === "thriving") health = "okay";
   else if (l3Stale && health === "okay") health = "thirsty";
+
+  // ---- substance cap: "thriving" also requires a robust, fundable Inven(s)tory ----
+  // Only applies once analyzed, so an un-analyzed tenant keeps today's freshness-only behavior
+  // (never demoted for a metric that hasn't been computed yet). Floors at "okay" — never "thirsty".
+  if (analyzed && health === "thriving") {
+    const substanceOK = essentialAllCovered || readinessPct >= GARDEN_TUNING.readinessThriveBar;
+    const eligibilityOK = eligibilityPct >= GARDEN_TUNING.eligibilityCompleteBar;
+    if (!(substanceOK && eligibilityOK)) health = "okay";
+  }
 
   // ---- score ----
   const coverage = layersCovered * 10;
