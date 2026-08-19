@@ -5,6 +5,49 @@ import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
 
 const STATE_LABEL: Record<string, string> = { covered: "ROBUST", thin: "THIN", missing: "MISSING" };
 
+function triggerDownload(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildAuditMarkdown(t: CoverageTrace, name: string, ranAt: number | null): string {
+  const L: string[] = [];
+  L.push(`# Readiness Audit — ${name}`);
+  if (ranAt) L.push(`Run: ${new Date(ranAt).toLocaleString()}`);
+  L.push(`${t.docCount} ready documents · generation ${t.generationConfigured ? "on" : "off"} · similarity floor ${t.similarityFloor}${t.usedFallback ? " · used whole-inventory fallback (no per-item retrieval)" : ""}`);
+  L.push("");
+  const counts = { covered: 0, thin: 0, missing: 0 } as Record<string, number>;
+  t.items.forEach(i => { counts[i.finalState] = (counts[i.finalState] ?? 0) + 1; });
+  L.push(`Summary: ROBUST ${counts.covered} · THIN ${counts.thin} · MISSING ${counts.missing}`);
+  L.push("");
+  for (const it of t.items) {
+    L.push(`## ${STATE_LABEL[it.finalState] ?? it.finalState} — ${it.label} (${it.tier})`);
+    L.push(`- query: ${it.query}`);
+    L.push(`- top match similarity: ${it.maxSim.toFixed(3)}`);
+    L.push(`- LLM verdict: ${STATE_LABEL[it.llmVerdict] ?? it.llmVerdict}`);
+    L.push(`- supporting quote: ${it.llmQuote && it.llmQuote.trim() ? `"${it.llmQuote.trim()}"` : "(none)"}`);
+    L.push(`- cited source: ${it.citedSource && it.citedSource.trim() ? it.citedSource.trim() : "(none)"}`);
+    L.push(`- sources shown to client: ${it.sources.length ? it.sources.map(x => x.title).join("; ") : "(none)"}`);
+    L.push(`### Retrieved chunks (what the grader saw)`);
+    if (!it.retrieved.length) L.push("(none retrieved)");
+    it.retrieved.forEach((c, i) => {
+      L.push(`${i + 1}. [sim ${c.similarity.toFixed(3)}] ${c.title}${c.chunkId ? ` (chunk ${c.chunkId.slice(0, 8)})` : ""}`);
+      L.push("```");
+      L.push((c.text || "(empty)").slice(0, 1500));
+      L.push("```");
+    });
+    L.push("");
+  }
+  L.push("---");
+  L.push("## Raw model output");
+  L.push("```json"); L.push(t.llmRaw || "(none)"); L.push("```");
+  L.push("## Full evidence sent to the grader");
+  L.push("```"); L.push(t.evidenceSent || "(none)"); L.push("```");
+  return L.join("\n");
+}
+
 function StateBadge({ s }: { s: string }) {
   return <span className={`ra-badge ra-${s}`}>{STATE_LABEL[s] ?? s}</span>;
 }
@@ -79,6 +122,10 @@ export default function ReadinessAuditView({ tenantName, tenantId }: { tenantNam
     catch (e) { setErr(e instanceof Error ? e.message : "Audit failed"); }
     setBusy(false);
   };
+  const slug = tenantName.replace(/[^\w]+/g, "-").toLowerCase();
+  const stamp = new Date(ranAt ?? Date.now()).toISOString().slice(0, 10);
+  const exportMd = () => { if (trace) triggerDownload(`readiness-audit-${slug}-${stamp}.md`, buildAuditMarkdown(trace, tenantName, ranAt), "text/markdown"); };
+  const exportJson = () => { if (trace) triggerDownload(`readiness-audit-${slug}-${stamp}.json`, JSON.stringify(trace, null, 2), "application/json"); };
   return (
     <div>
       <div className="page-head"><div>
@@ -87,6 +134,8 @@ export default function ReadinessAuditView({ tenantName, tenantId }: { tenantNam
       </div><div className="spacer" /></div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
         <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
+        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exportMd}>⬇ Export Markdown</button>}
+        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exportJson}>⬇ Export JSON</button>}
         {ranAt && <span className="acct-note" style={{ margin: 0 }}>Last run {new Date(ranAt).toLocaleString()} · cached in this browser</span>}
       </div>
       {err && <div className="metric-gap">{err}</div>}
