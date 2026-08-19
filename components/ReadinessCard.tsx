@@ -34,12 +34,12 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
       )}
 
       <div className="section-label" style={{ marginTop: 12 }}>Add more</div>
-      <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`Write what you know about "${item.label}". It saves into your Inven(s)tory, tagged and searchable.`} />
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`Manually add more context regarding: ${item.label}. It saves to your Inven(s)tory, tagged and searchable.`} />
       <div className="ck-detail-actions">
         <button className="btn inline" onClick={save} disabled={busy || text.trim().length < 10}>{busy ? "Saving…" : `Save to your Inven(s)tory (Layer ${item.layer})`}</button>
+        <button type="button" className="btn secondary" onClick={() => onUpload?.(item.layer)}>Upload a document instead →</button>
+        <p className="acct-note ck-tag" style={{ margin: 0 }}>Auto-tagged: <span className="tag">{item.key.replace(/_/g, " ")}</span></p>
       </div>
-      <button type="button" className="btn secondary ck-upbtn" onClick={() => onUpload?.(item.layer)}>Upload a document instead →</button>
-      <p className="acct-note ck-tag" style={{ marginTop: 10, marginBottom: 0 }}>Auto-tagged: <span className="tag">{item.key.replace(/_/g, " ")}</span></p>
     </div>
   );
 }
