@@ -107,9 +107,11 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
                 {renderBody(byTier("enriching"))}
               </div>
               {expandedItem && (
-                <div className="ck-overlay ck-overlay-full">
-                  <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
-                    onSaved={() => { setExpanded(null); router.refresh(); }} />
+                <div className="ck-modal-backdrop" onClick={() => setExpanded(null)}>
+                  <div className="ck-modal" onClick={e => e.stopPropagation()}>
+                    <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+                      onSaved={() => { setExpanded(null); router.refresh(); }} />
+                  </div>
                 </div>
               )}
             </>
