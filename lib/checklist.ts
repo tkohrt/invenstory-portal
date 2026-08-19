@@ -19,7 +19,7 @@ export const CHECKLIST: ChecklistItem[] = [
   { key: "public_story",     label: "Public story / website capture", gap: "Add your website or public-story capture.",                 tier: "essential", layer: "I",  audience: "all" },
   { key: "mission",          label: "Mission & positioning",          gap: "Capture your mission and positioning.",                       tier: "essential", layer: "I",  audience: "all", demand: 18 },
   { key: "program",          label: "Program / product description(s)", gap: "Add a clear description of your program(s) or product(s).",   tier: "essential", layer: "II", audience: "all", demand: 50 },
-  { key: "need",             label: "Statement of need (data-backed)",gap: "Add a data-backed statement of need.",                        tier: "essential", layer: "II", audience: "all", demand: 20 },
+  { key: "need",             label: "Need / Problem Statement (data-backed)",gap: "Add a data-backed statement of need.",                        tier: "essential", layer: "II", audience: "all", demand: 20 },
   { key: "budget",           label: "Operating budget / financials",  gap: "Add your operating budget or a financial overview.",          tier: "essential", layer: "II", audience: "all", demand: 28 },
   { key: "outcomes",         label: "Impact measurement",             gap: "Add how you measure impact — methodology, metrics, and baselines.", tier: "essential", layer: "II", audience: "all", demand: 10 },
   { key: "founder_voice",    label: "Founder / leader interview",     gap: "Record a founder or leader interview (living voice).",         tier: "essential", layer: "III",audience: "all" },
