@@ -71,15 +71,6 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         </div>
       </div>
       <div className={`sidebar${navOpen ? " open" : ""}`}>
-        <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
-          {garden.hidden
-            ? <div className="sp-hidden">🌱 Your plant</div>
-            : <><PlantVisual g={garden} width={168} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
-          <div className="sp-overlay">
-            <p>This is your plant — it represents the health and completeness of your Inven(s)tory / account.</p>
-            <p className="sp-cta">Click here for more details.</p>
-          </div>
-        </Link>
         {admin && (
           <div>
             <div className="admin-flag">ADMIN VIEW</div>
@@ -91,6 +82,15 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             </div>
           </div>
         )}
+        <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
+          {garden.hidden
+            ? <div className="sp-hidden">🌱 Your plant</div>
+            : <><PlantVisual g={garden} width={168} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
+          <div className="sp-overlay">
+            <p>This is your plant — it represents the health and completeness of your Inven(s)tory / account.</p>
+            <p className="sp-cta">Click here for more details.</p>
+          </div>
+        </Link>
         <div className="nav-section-label">Workspace</div>
         {workspaceNav.map(item => {
           const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;
