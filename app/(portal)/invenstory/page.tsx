@@ -3,20 +3,17 @@ import { getSession } from "@/lib/server/session";
 import { getDocumentsWithTags, getPrimaryContact, getTenant } from "@/lib/server/data";
 import InvenstoryView from "@/components/InvenstoryView";
 import { getGaps } from "@/lib/server/eligibility";
-import { getFeatureVisible } from "@/lib/server/data";
 
 export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string }> }) {
   const sp = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
-  const [tenant, docs, contact, eligVisible] = await Promise.all([
+  const [tenant, docs, contact, gapData] = await Promise.all([
     getTenant(session.tenantId),
     getDocumentsWithTags(session.tenantId, session.role !== "admin"),
     getPrimaryContact(session.tenantId),
-    getFeatureVisible(session.tenantId, "eligibility"),
+    getGaps(session.tenantId),
   ]);
-  const showElig = session.role === "admin" || eligVisible;
-  const gapData = showElig ? await getGaps(session.tenantId) : null;
   if (!tenant) redirect("/");
   return (
     <InvenstoryView
