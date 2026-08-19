@@ -635,3 +635,9 @@ button.vis-dot.busy{opacity:.5}
 
 /* 4-column readiness layout */
 .ck-cols-4{gap:14px}
+
+/* Essential group: one bordered box (single label) wrapping two sub-columns */
+.ck-group{flex:2;min-width:0;border:1px solid #e0a869;border-radius:12px;padding:10px 13px;background:#fff;position:relative;display:flex;flex-direction:column}
+.ck-group .section-label{margin-top:0}
+.ck-group-cols{display:flex;gap:14px;flex:1;align-items:stretch}
+.ck-group-cols .ck-body{flex:1;min-width:0}
