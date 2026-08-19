@@ -663,3 +663,11 @@ button.vis-dot.busy{opacity:.5}
 .garden-panel .garden-opts .chip{border-color:#2f5d38;color:#1f4d2e}
 .garden-panel .garden-opts .chip:hover{background:#eef5ee}
 .garden-panel .garden-opts .chip.active{background:#1f4d2e;border-color:#1f4d2e;color:#fff}
+
+/* Inven(s)tory layer filter buttons in the same dark forest green as the plant page */
+.filters .chip{border-color:#2f5d38;color:#1f4d2e}
+.filters .chip:hover{background:#eef5ee}
+.filters .chip.active,
+.filters .chip.l1.active,
+.filters .chip.l2.active,
+.filters .chip.l3.active{background:#1f4d2e;border-color:#1f4d2e;color:#fff}
