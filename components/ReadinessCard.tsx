@@ -60,10 +60,10 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
     <section className="acct-card readiness-card">
       <div className="rc-head">
         <b style={{ fontSize: 22, color: pctColor }}>{readiness.pct}%</b>
-        <h3 style={{ margin: 0 }}>Inven(s)tory readiness</h3>
+        <h3 style={{ margin: 0 }}>Inven(s)tory Readiness Checklist</h3>
+        <span className="acct-note" style={{ margin: 0 }}>Your checklist for growing a robust Inven(s)tory. ✓ covered · ◐ thin · ○ missing.</span>
         <div style={{ flex: 1 }} />
         <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : computedAt ? "Re-analyze" : "Analyze my Inven(s)tory"}</button>
-        <span className="acct-note" style={{ margin: 0 }}>What a robust Inven(s)tory holds. ✓ covered · ◐ thin · ○ missing.</span>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
 
