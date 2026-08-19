@@ -33,7 +33,7 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
         </div>
       )}
 
-      <div className="section-label" style={{ marginTop: 12 }}>Add more</div>
+      <div className="section-label" style={{ marginTop: 12 }}>Add more context manually:</div>
       <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`Manually add more context regarding: ${item.label}. It saves to your Inven(s)tory, tagged and searchable.`} />
       <div className="ck-detail-actions">
         <button className="btn inline" onClick={save} disabled={busy || text.trim().length < 10}>{busy ? "Saving…" : `Save to your Inven(s)tory (Layer ${item.layer})`}</button>
