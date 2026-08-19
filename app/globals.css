@@ -604,3 +604,6 @@ button.vis-dot.busy{opacity:.5}
 .ck-detail-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .ck-upbtn{margin-top:10px;width:100%}
 .ck-badge.missing{color:#c0492f;background:#fdf5f3;border-color:#e7c3ba}
+/* Tier label stays above; overlay covers only the list area */
+.ck-body{position:relative;flex:1}
+.ck-col{display:flex;flex-direction:column}

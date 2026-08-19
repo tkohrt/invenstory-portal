@@ -39,7 +39,7 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
         <button className="btn inline" onClick={save} disabled={busy || text.trim().length < 10}>{busy ? "Saving…" : `Save to your Inven(s)tory (Layer ${item.layer})`}</button>
         <span className="acct-note" style={{ margin: 0 }}>Auto-tagged: {item.key.replace(/_/g, " ")}</span>
       </div>
-      <button type="button" className="btn secondary ck-upbtn" onClick={() => onUpload?.(item.layer)}>Upload to your Inven(s)tory →</button>
+      <button type="button" className="btn secondary ck-upbtn" onClick={() => onUpload?.(item.layer)}>Upload a document instead →</button>
     </div>
   );
 }
@@ -73,25 +73,27 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
           return (
             <div key={tier} className={`ck-col ${tier}`}>
               <div className="section-label">{TIER_LABEL[tier]}</div>
-              <div className="ck-list">
-                {rows.map(i => (
-                  <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
-                    <span className="ck-mark">{mark(i.state)}</span>
-                    <span className="ck-label" title={i.label}>{i.label}</span>
-                    <span className="ck-badge-slot">
-                      {i.state === "covered" && <span className="ck-badge robust">robust</span>}
-                      {i.state === "thin" && <span className="ck-badge thin">thin</span>}
-                    </span>
-                    <span className="ck-expand">Expand →</span>
-                  </button>
-                ))}
-              </div>
-              {item && (
-                <div className="ck-overlay">
-                  <ItemDetail item={item} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
-                    onSaved={() => { setExpanded(null); router.refresh(); }} />
+              <div className="ck-body">
+                <div className="ck-list">
+                  {rows.map(i => (
+                    <button key={i.key} type="button" className={`ck-row ${i.state}`} onClick={() => setExpanded(i.key)}>
+                      <span className="ck-mark">{mark(i.state)}</span>
+                      <span className="ck-label" title={i.label}>{i.label}</span>
+                      <span className="ck-badge-slot">
+                        {i.state === "covered" && <span className="ck-badge robust">robust</span>}
+                        {i.state === "thin" && <span className="ck-badge thin">thin</span>}
+                      </span>
+                      <span className="ck-expand">Expand →</span>
+                    </button>
+                  ))}
                 </div>
-              )}
+                {item && (
+                  <div className="ck-overlay">
+                    <ItemDetail item={item} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+                      onSaved={() => { setExpanded(null); router.refresh(); }} />
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
