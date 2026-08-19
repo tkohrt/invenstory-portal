@@ -41,6 +41,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   };
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
+  const plantHealthLabel = garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty";
+  const plantOwner = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "’" : "’s"}` : "Your";
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
   const invLabel = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory";
   const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
@@ -86,7 +88,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
           {garden.hidden
             ? <div className="sp-hidden">🌱 Your plant</div>
-            : <><PlantVisual g={garden} width={168} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
+            : <><div className="sp-title">{plantOwner} Plant — {plantHealthLabel}</div><PlantVisual g={garden} width={168} /></>}
           <div className="sp-overlay">
             <p>This is your plant — it represents the health and completeness of your Inven(s)tory / account.</p>
             <p className="sp-cta">Click here for more details.</p>
