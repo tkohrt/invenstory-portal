@@ -12,6 +12,22 @@ export const LAYER_META: Record<Layer, { name: string; desc: string; color: stri
   III: { name: "Living Voice", desc: "The human voice from interviews", color: "var(--l3)", cls: "l3" },
 };
 
+
+const FILE_TYPE_MIME: Record<string, string> = {
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word (.docx)",
+  "application/msword": "Word (.doc)",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel (.xlsx)",
+  "application/vnd.ms-excel": "Excel (.xls)",
+  "text/plain": "Text (.txt)", "text/markdown": "Markdown (.md)", "text/html": "Web page (.html)",
+  "audio/mpeg": "Audio (.mp3)", "audio/mp4": "Audio (.m4a)", "audio/x-m4a": "Audio (.m4a)",
+  "audio/wav": "Audio (.wav)", "audio/x-wav": "Audio (.wav)",
+};
+const FILE_TYPE_KIND: Record<string, string> = { pdf: "PDF", docx: "Word (.docx)", xlsx: "Excel (.xlsx)", note: "Written note", web: "Web page", audio: "Audio" };
+function fileTypeLabel(d: DocumentWithTags): string {
+  return (d.mime_type && FILE_TYPE_MIME[d.mime_type]) || (d.doc_kind && FILE_TYPE_KIND[d.doc_kind]) || (d.doc_kind ? String(d.doc_kind).toUpperCase() : "Unknown");
+}
+
 export function StatusChip({ status }: { status: DocumentWithTags["status"] }) {
   if (status === "ready") return null;
   return <span className={`status-chip ${status}`}>{status === "failed" ? "needs attention" : status}</span>;
@@ -112,6 +128,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
               <button className="btn ghost" style={{ fontSize: 12 }} onClick={() => setEditingLayer(false)}>Cancel</button>
             </div>}
       </div></div>
+      <div className="kv"><div className="k">File type</div><div>{fileTypeLabel(d)}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
       {failed && isAdmin && (
