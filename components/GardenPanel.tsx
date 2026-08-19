@@ -96,9 +96,11 @@ export default function GardenPanel({ garden }: { garden: GardenState }) {
 
       <div className="section-label" style={{ marginTop: 10 }}>How your plant is measured</div>
       <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
-        <b>Size</b>{" "}grows with documents, words captured, layer coverage, and milestones &mdash; it never shrinks.
-        <b> Health</b> reflects freshness: uploads within ~45 days keep it thriving; quiet stretches make it thirsty
-        (never worse), and one new document perks it right back up. Keeping Layer III current matters most.
+        <b>Size</b>{" "}reflects how complete and fundable your Inven(s)tory is &mdash; mostly your Readiness score and how
+        filled-in your eligibility profile is, plus layer coverage and milestones. It never shrinks.
+        <b> Health</b> reflects freshness <i>and</i> substance: a recent upload (within ~45 days) keeps it fresh, but
+        &ldquo;thriving&rdquo; also needs a robust Inven(s)tory (your Essentials covered) and a complete eligibility
+        profile. Quiet stretches make it thirsty (never worse), and it recovers the moment you add something new.
       </p>
 
       <button className="btn ghost" style={{ marginTop: 8 }} disabled={pending} onClick={() => set({ hidden: true })}>Hide my plant</button>
