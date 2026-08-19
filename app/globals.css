@@ -580,6 +580,7 @@ button.vis-dot.busy{opacity:.5}
 
 /* Readiness card header: pct · title ......... analyze · legend */
 .rc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.readiness-card{padding-top:8px}
 
 /* Bordered tier columns, colored to their tier */
 .ck-col{border:1px solid var(--line,#e6e6e6);border-radius:12px;padding:10px 13px;background:#fff;position:relative}
