@@ -613,3 +613,14 @@ button.vis-dot.busy{opacity:.5}
 .inv-profile h2{margin:0 0 2px}
 .inv-readiness{margin-top:4px}
 .inv-readiness .readiness-card{width:100%}
+
+/* Plant in the left sidebar (links to /plant) */
+.sidebar-plant{display:block;text-align:center;text-decoration:none;padding:10px 8px 12px;margin:0 0 8px;border-bottom:1px solid #e8eae6;border-radius:8px}
+.sidebar-plant:hover{background:#f5f8f5}
+.sidebar-plant.active{background:#eef5ee}
+.sidebar-plant .sp-meta{margin-top:2px;font-size:11px;color:var(--muted)}
+.sidebar-plant .sp-hidden{font-size:13px;color:var(--muted);padding:8px 0}
+
+/* /plant page panel */
+.garden-panel{max-width:720px}
+.gp-plant-hero{text-align:center;padding:12px 0 4px}

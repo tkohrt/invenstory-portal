@@ -4,16 +4,18 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOutAction, switchTenantAction } from "@/lib/server/actions";
 import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/server/artifact-actions";
-import type { AppUser, NavArtifact, Tenant } from "@/lib/types";
+import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
+import PlantVisual from "./PlantVisual";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
   tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number;
   workspaceVis: Record<string, boolean>;
+  garden: GardenState;
   children?: React.ReactNode;
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, workspaceVis, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, workspaceVis, garden, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -69,6 +71,11 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         </div>
       </div>
       <div className={`sidebar${navOpen ? " open" : ""}`}>
+        <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
+          {garden.hidden
+            ? <div className="sp-hidden">🌱 Your plant</div>
+            : <><PlantVisual g={garden} width={132} /><div className="sp-meta">{garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty"} · Size {garden.size}</div></>}
+        </Link>
         {admin && (
           <div>
             <div className="admin-flag">ADMIN VIEW</div>

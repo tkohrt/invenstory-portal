@@ -4,17 +4,15 @@ import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import { updateClientProfileAction } from "@/lib/server/admin-actions";
 import { changeDocLayerAction } from "@/lib/server/doc-actions";
-import GardenHeader from "./GardenHeader";
 import ReadinessCard from "./ReadinessCard";
 import type { ReadinessItem } from "@/lib/checklist";
-import type { GardenState } from "@/lib/types";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, garden, readiness, readinessComputedAt, isAdmin }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
-  contactName: string | null; docs: DocumentWithTags[]; garden: GardenState; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean;
+  contactName: string | null; docs: DocumentWithTags[]; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -33,8 +31,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
   return (
     <div style={{ position: "relative" }}>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · viewing {tenantName}</div>}
-      <GardenHeader garden={garden} onPrompt={(layer) => { setUploadLayer(layer); setUploading(true); }} rightSlot={
-        <div className="inv-profile">
+      <div className="page-head">
+        <div>
           <h2>{tenantName}</h2>
           <p>The complete Inven(s)tory — {docs.length} documents across three layers.</p>
           {!editingProfile && (
@@ -65,8 +63,9 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
             </div>
           )}
         </div>
-      } />
-      {readiness && <div className="inv-readiness"><ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} /></div>}
+        <div className="spacer" />
+      </div>
+      {readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} />}
       <div className="layers-zone">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
