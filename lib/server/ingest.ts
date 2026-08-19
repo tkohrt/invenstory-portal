@@ -143,6 +143,9 @@ export async function processDocument(documentId: string): Promise<void> {
       status: "ready", snippet,
       error_detail: embedFailure ? `semantic index pending: ${embedFailure}` : null,
     }).eq("id", documentId);
+    // Best-effort: fold this new document's evidence into the tenant's readiness coverage
+    // so the Readiness Checklist updates on upload (full recompute still available via the button).
+    try { const { mergeDocumentIntoCoverage } = await import("./doc-extract"); await mergeDocumentIntoCoverage(documentId); } catch { /* non-fatal */ }
   } catch (e) {
     await db.from("document").update({
       status: "failed", error_detail: e instanceof Error ? e.message.slice(0, 300) : "unknown error",
