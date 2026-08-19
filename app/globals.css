@@ -658,3 +658,8 @@ button.vis-dot.busy{opacity:.5}
 .garden-prompt-banner{display:flex;align-items:center;gap:8px;justify-content:space-between;margin:0 0 14px;padding:12px 16px;border-radius:10px;background:#eef5ee;border:1px solid #cfe3cf;color:#2f5d38;text-decoration:none;font-size:14px}
 .garden-prompt-banner:hover{background:#e4efe4}
 .garden-prompt-banner .gp-cta{font-weight:600;white-space:nowrap}
+
+/* /plant page: species/pot/trinket/leaves buttons in dark forest green */
+.garden-panel .garden-opts .chip{border-color:#2f5d38;color:#1f4d2e}
+.garden-panel .garden-opts .chip:hover{background:#eef5ee}
+.garden-panel .garden-opts .chip.active{background:#1f4d2e;border-color:#1f4d2e;color:#fff}
