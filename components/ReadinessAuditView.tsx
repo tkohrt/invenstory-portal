@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { runReadinessAuditAction, runDocExtractionAuditAction } from "@/lib/server/gap-actions";
+import { runReadinessAuditAction, runDocExtractionAuditAction, refreshAllReadinessAction, type RefreshResult } from "@/lib/server/gap-actions";
 import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
 import type { DocExtractTrace, DocItemFinding } from "@/lib/server/doc-extract";
 
@@ -141,6 +141,34 @@ function DocItemRow({ it }: { it: DocItemFinding }) {
   );
 }
 
+function RefreshAllCards() {
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<RefreshResult[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await refreshAllReadinessAction(); setResults(r.results); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Refresh failed"); }
+    setBusy(false);
+  };
+  return (
+    <div className="acct-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Refreshing all clients…" : "Refresh all client cards (document extraction)"}</button>
+        <span className="acct-note" style={{ margin: 0 }}>Recomputes every client's Readiness card with the current engine.</span>
+      </div>
+      {err && <div className="metric-gap" style={{ marginTop: 10 }}>{err}</div>}
+      {results && (
+        <div className="ra-summary" style={{ marginTop: 12 }}>
+          {results.map((r, i) => (
+            <div key={i}>{r.ok ? "✓" : "✗"} {r.tenant}{r.ok ? ` — ${r.covered} robust · ${r.thin} thin · ${r.missing} missing` : ` — ${r.error}`}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocExtractPanel({ tenantName, tenantId }: { tenantName: string; tenantId: string }) {
   const [trace, setTrace] = useState<DocExtractTrace | null>(null);
   const [ranAt, setRanAt] = useState<number | null>(null);
@@ -223,6 +251,7 @@ export default function ReadinessAuditView({ tenantName, tenantId }: { tenantNam
         <h2>Readiness Audit — {tenantName}</h2>
         <p>Re-runs the readiness check and shows, per checklist item, exactly what was retrieved and how it was graded. Admin-only diagnostic.</p>
       </div><div className="spacer" /></div>
+      <RefreshAllCards />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
         <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
         {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exportMd}>⬇ Export Markdown</button>}
