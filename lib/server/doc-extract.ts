@@ -136,12 +136,12 @@ function normalizeCoverage(raw: unknown): Record<string, CovVal> {
 // A full recompute ("Run Readiness Check") still corrects downgrades/removals.
 export async function mergeDocumentIntoCoverage(documentId: string): Promise<void> {
   if (!generationConfigured()) return;
-  const { data: doc } = await db.from("document").select("id, tenant_id, title, status").eq("id", documentId).maybeSingle();
+  const { data: doc } = await db.from("document").select("id, tenant_id, title, status").eq("id", documentId).maybeSingle();  // tenant-safe: resolves the document + its tenant_id; later writes scoped to doc.tenant_id
   if (!doc || doc.status !== "ready" || isBoilerplate(doc.title)) return;
   const { data: prof } = await db.from("eligibility_profile").select("org_type").eq("tenant_id", doc.tenant_id).maybeSingle();
   const items = checklistFor((prof?.org_type as string | null) ?? null);
   const validKeys = new Set(items.map(i => i.key));
-  const { data: chunks } = await db.from("document_chunk").select("text").eq("document_id", documentId);
+  const { data: chunks } = await db.from("document_chunk").select("text").eq("document_id", documentId).eq("tenant_id", doc.tenant_id);
   const text = (chunks ?? []).map(c => c.text ?? "").join("\n");
   if (!text.trim()) return;
   const itemsList = items.map(i => `${i.key}: ${i.label} — ${RETRIEVAL_QUERY[i.key] ?? ""}`).join("\n");

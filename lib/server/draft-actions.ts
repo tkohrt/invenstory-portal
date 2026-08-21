@@ -27,7 +27,7 @@ export async function saveDraftAction(input: {
   if (draftId) {
     await db.from("grant_draft").update(row).eq("id", draftId).eq("tenant_id", s.tenantId);
   } else {
-    const { data } = await db.from("grant_draft").insert(row).select("id").single();
+    const { data } = await db.from("grant_draft").insert(row).select("id").single();  // tenant-safe: payload row includes tenant_id
     draftId = data?.id;
   }
   if (!draftId) throw new Error("save failed");
@@ -39,10 +39,10 @@ export async function saveDraftAction(input: {
   const toInsert = labels.filter(l => !have.has(l)).map((label, i) => ({
     draft_id: draftId, tenant_id: s.tenantId, label, sort_order: i,
   }));
-  if (toInsert.length) await db.from("draft_bracket").insert(toInsert);
+  if (toInsert.length) await db.from("draft_bracket").insert(toInsert);  // tenant-safe: payload includes tenant_id
   // remove brackets no longer present AND unanswered
   const gone = (existing ?? []).filter(b => !labels.includes(b.label));
-  for (const g of gone) await db.from("draft_bracket").delete().eq("id", g.id).is("answer", null);
+  for (const g of gone) await db.from("draft_bracket").delete().eq("id", g.id).is("answer", null);  // tenant-safe: rows from tenant-scoped query above
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "draft_save", detail: input.title });
   revalidatePath("/drafts");
   return { id: draftId };
@@ -86,7 +86,7 @@ export async function answerBracketAction(draftId: string, bracketId: string, an
   try { await processDocument(docId); } catch { /* failed status recorded; still linked */ }
   await markStaleOnUpload(s.tenantId); // new material -> SI stale
 
-  await db.from("draft_bracket").update({
+  await db.from("draft_bracket").update({  // tenant-safe: bracketId verified tenant-scoped above
     answer, answered_by: s.user.id, answered_at: new Date().toISOString(), filed_document_id: docId,
   }).eq("id", bracketId);
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "bracket_answer", detail: bracket.label });

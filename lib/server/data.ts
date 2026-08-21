@@ -154,8 +154,8 @@ export async function getClientStats(tenantId: string): Promise<import("@/lib/ty
 
 export async function getPortfolioStats(): Promise<import("@/lib/types").PortfolioStats> {
   const { data: tenants } = await db.from("tenant").select("id, name").order("name");
-  const { data: docs } = await db.from("document").select("tenant_id");
-  const { data: drafts } = await db.from("grant_draft").select("tenant_id, status, amount_cents");
+  const { data: docs } = await db.from("document").select("tenant_id");  // tenant-safe: admin portfolio cross-tenant aggregate
+  const { data: drafts } = await db.from("grant_draft").select("tenant_id, status, amount_cents");  // tenant-safe: admin portfolio cross-tenant aggregate
   const dr = (drafts ?? []) as { tenant_id: string; status: string; amount_cents: number | null }[];
   let totalWords = 0;
   const perClient = await Promise.all((tenants ?? []).map(async (t: { id: string; name: string }) => {

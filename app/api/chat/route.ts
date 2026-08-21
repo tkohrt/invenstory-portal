@@ -11,7 +11,7 @@ export const maxDuration = 60;
 const RATE_MAX = 12;
 async function overRateLimit(userId: string): Promise<boolean> {
   const since = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await db.from("chat_message")
+  const { count } = await db.from("chat_message")  // tenant-safe: rate limit scoped to the authenticated user's own messages
     .select("id", { count: "exact", head: true })
     .eq("author_user_id", userId).eq("role", "user").gte("created_at", since);
   return (count ?? 0) >= RATE_MAX;

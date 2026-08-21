@@ -118,9 +118,9 @@ export async function embed(text: string): Promise<number[]> {
 }
 
 export async function processDocument(documentId: string): Promise<void> {
-  const { data: doc } = await db.from("document").select("*").eq("id", documentId).single();
+  const { data: doc } = await db.from("document").select("*").eq("id", documentId).single();  // tenant-safe: ingestion worker: single document resolved by id
   if (!doc) throw new Error("document not found");
-  await db.from("document").update({ status: "processing", error_detail: null }).eq("id", documentId);
+  await db.from("document").update({ status: "processing", error_detail: null }).eq("id", documentId);  // tenant-safe: ingestion worker: same document by id
   try {
     const { data: blob, error: dlErr } = await db.storage.from("documents").download(doc.storage_key);
     if (dlErr || !blob) throw new Error(`storage download failed: ${dlErr?.message}`);
@@ -131,7 +131,7 @@ export async function processDocument(documentId: string): Promise<void> {
     const chunks = chunkPages(pages);
     if (chunks.length === 0) throw new Error("extraction produced no text");
     // replace any prior chunks (reprocess-safe)
-    await db.from("document_chunk").delete().eq("document_id", documentId);
+    await db.from("document_chunk").delete().eq("document_id", documentId);  // tenant-safe: ingestion worker: chunks of the document being processed
     let embedFailure: string | null = null;
     for (const c of chunks) {
       const { data: row, error } = await db.from("document_chunk").insert({
@@ -150,7 +150,7 @@ export async function processDocument(documentId: string): Promise<void> {
       }
     }
     const snippet = chunks[0].text.slice(0, 220);
-    await db.from("document").update({
+    await db.from("document").update({  // tenant-safe: ingestion worker: same document by id
       status: "ready", snippet,
       error_detail: embedFailure ? `semantic index pending: ${embedFailure}` : null,
     }).eq("id", documentId);
@@ -158,7 +158,7 @@ export async function processDocument(documentId: string): Promise<void> {
     // so the Readiness Checklist updates on upload (full recompute still available via the button).
     try { const { mergeDocumentIntoCoverage } = await import("./doc-extract"); await mergeDocumentIntoCoverage(documentId); } catch { /* non-fatal */ }
   } catch (e) {
-    await db.from("document").update({
+    await db.from("document").update({  // tenant-safe: ingestion worker: same document by id
       status: "failed", error_detail: e instanceof Error ? e.message.slice(0, 300) : "unknown error",
     }).eq("id", documentId);
     throw e;

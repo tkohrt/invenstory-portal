@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-tenant-scoping.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:isolation": "vitest run tests/isolation"
+    "test:isolation": "vitest run tests/isolation",
+    "check:tenancy": "node scripts/check-tenant-scoping.mjs"
   },
   "dependencies": {
     "@anthropic-ai/vertex-sdk": "^0.19.1",

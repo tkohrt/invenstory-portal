@@ -32,7 +32,7 @@ export async function approveSIAction(slug: string) {
   const { data: set } = await db.from("artifact_set").select("id")
     .eq("tenant_id", s.tenantId).eq("type_slug", slug).single();
   if (!set) throw new Error("no set");
-  await db.from("artifact_set").update({ status: "approved", reviewed_by: s.user.id, generated_at: new Date().toISOString() }).eq("id", set.id);
+  await db.from("artifact_set").update({ status: "approved", reviewed_by: s.user.id, generated_at: new Date().toISOString() }).eq("id", set.id);  // tenant-safe: admin review action; set fetched by id above
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "si_approve", detail: slug });
   revalidatePath(`/story-intelligence/${slug}`);
   revalidatePath("/admin/reviews");
@@ -48,7 +48,7 @@ export async function editSICardAction(slug: string, cardId: string, field: stri
   const s = await requireAdmin();
   const { data: card } = await db.from("artifact_card").select("payload").eq("id", cardId).eq("tenant_id", s.tenantId).single();
   if (!card) return;
-  await db.from("artifact_card").update({ payload: { ...card.payload, [field]: value } }).eq("id", cardId);
+  await db.from("artifact_card").update({ payload: { ...card.payload, [field]: value } }).eq("id", cardId);  // tenant-safe: admin action; card verified tenant-scoped on the line above
   revalidatePath(`/story-intelligence/${slug}`);
 }
 

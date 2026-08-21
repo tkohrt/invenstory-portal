@@ -229,9 +229,9 @@ export interface GardenSummary { tenantId: string; species: PlantSpecies; size: 
 export async function getGardenSummaries(): Promise<Record<string, GardenSummary>> {
   const [{ data: tenants }, { data: docs }, { data: plants }, { data: achs }] = await Promise.all([
     db.from("tenant").select("id"),
-    db.from("document").select("tenant_id, layer, created_at").eq("status", "ready"),
-    db.from("plant_state").select("*"),
-    db.from("achievement").select("tenant_id"),
+    db.from("document").select("tenant_id, layer, created_at").eq("status", "ready"),  // tenant-safe: admin greenhouse cross-tenant aggregate
+    db.from("plant_state").select("*"),  // tenant-safe: admin greenhouse cross-tenant aggregate
+    db.from("achievement").select("tenant_id"),  // tenant-safe: admin greenhouse cross-tenant aggregate
   ]);
   const out: Record<string, GardenSummary> = {};
   for (const t of tenants ?? []) {

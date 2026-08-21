@@ -27,7 +27,7 @@ export async function createClientAction(input: {
   if (!["nonprofit", "startup"].includes(input.orgType)) return { ok: false, error: "Choose an organization type." };
 
   // guard against duplicates
-  const { data: dupUser } = await db.from("app_user").select("id").eq("email", email).maybeSingle();
+  const { data: dupUser } = await db.from("app_user").select("id").eq("email", email).maybeSingle();  // tenant-safe: admin-only action; global email-uniqueness check
   if (dupUser) return { ok: false, error: "A user with that email already exists." };
   const { data: dupTenant } = await db.from("tenant").select("id").eq("name", orgName).maybeSingle();
   if (dupTenant) return { ok: false, error: "A client with that name already exists." };
@@ -65,7 +65,7 @@ export async function updateClientProfileAction(input: {
   await db.from("tenant").update({ website: input.website.trim() || null, org_type: input.orgType }).eq("id", input.tenantId);
   const { data: u } = await db.from("app_user").select("id")
     .eq("tenant_id", input.tenantId).eq("role", "client").order("created_at").limit(1).maybeSingle();
-  if (u && input.contactName.trim()) await db.from("app_user").update({ full_name: input.contactName.trim() }).eq("id", u.id);
+  if (u && input.contactName.trim()) await db.from("app_user").update({ full_name: input.contactName.trim() }).eq("id", u.id);  // tenant-safe: admin-only; user row resolved via tenant-scoped lookup above
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: input.tenantId, action: "edit_client_profile", detail: `${input.orgType} / ${input.website}` });
   return { ok: true };
 }

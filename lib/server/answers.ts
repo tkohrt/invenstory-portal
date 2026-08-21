@@ -83,7 +83,7 @@ export async function generateAnswers(tenantId: string, orgType: "nonprofit" | "
     }, { onConflict: "tenant_id,question_id" }).select("id").single();
 
     if (row) {
-      await db.from("answer_citation").delete().eq("answer_id", row.id);
+      await db.from("answer_citation").delete().eq("answer_id", row.id);  // tenant-safe: child of answer row already tenant-scoped (upsert on tenant_id,question_id)
       if (citeDocs.length) {
         await db.from("answer_citation").insert(citeDocs.map(d => ({
           answer_id: row.id, tenant_id: tenantId, document_id: d,

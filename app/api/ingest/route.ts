@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { documentId } = await req.json();
-  const { data: doc } = await db.from("document").select("id, tenant_id").eq("id", documentId).single();
+  const { data: doc } = await db.from("document").select("id, tenant_id").eq("id", documentId).single();  // tenant-safe: resolves doc + tenant; route then checks doc.tenant_id === session.tenantId or admin
   if (!doc) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (session.role !== "admin" && doc.tenant_id !== session.tenantId)
     return NextResponse.json({ error: "forbidden" }, { status: 403 });

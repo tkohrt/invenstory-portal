@@ -57,15 +57,15 @@ export async function generateArtifact(tenantId: string, slug: string): Promise<
       reviewed_by: null, model_used: model, gap_note: type.gapNote(docs) }, { onConflict: "tenant_id,type_slug" })
     .select("id, version").single();
   if (!set) throw new Error("set upsert failed");
-  await db.from("artifact_set").update({ version: (set.version ?? 0) + 1 }).eq("id", set.id);
-  await db.from("artifact_card").delete().eq("set_id", set.id);
+  await db.from("artifact_set").update({ version: (set.version ?? 0) + 1 }).eq("id", set.id);  // tenant-safe: set resolved via tenant-scoped upsert above
+  await db.from("artifact_card").delete().eq("set_id", set.id);  // tenant-safe: child of the tenant-scoped set above
 
   const rows = cards.map((c, i) => ({
     set_id: set.id, tenant_id: tenantId, title: c.title, payload: c.payload,
     citations: c.citation_titles.map(t => titleToId.get(t)).filter(Boolean) as string[],
     sort_order: i + 1,
   }));
-  await db.from("artifact_card").insert(rows);
+  await db.from("artifact_card").insert(rows);  // tenant-safe: payload rows include tenant_id
   await db.from("audit_log").insert({ tenant_id: tenantId, action: "si_generate", detail: `${slug} model=${model} cards=${rows.length}` });
   await postToSlack(tenantId, slug, rows.length, model);
   return { setId: set.id, cardCount: rows.length, model };
