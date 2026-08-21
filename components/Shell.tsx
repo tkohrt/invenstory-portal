@@ -88,14 +88,17 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
           {garden.hidden
             ? <div className="sp-hidden">🌱 Your plant</div>
-            : <><div className="sp-title">{plantOwner} Plant — {plantHealthLabel}</div><PlantVisual g={garden} width={168} /></>}
-          <div className="sp-overlay">
-            <div className="sp-title">{plantOwner} Plant — {plantHealthLabel}</div>
-            <div className="sp-overlay-body">
-              <p>This is your plant — it represents the health and completeness of your Inven(s)tory / account.</p>
-              <p className="sp-cta">Click here for more details.</p>
-            </div>
-          </div>
+            : <>
+                <div className="sp-title">{plantOwner} Plant — {plantHealthLabel}</div>
+                <PlantVisual g={garden} width={168} />
+                <div className="sp-overlay">
+                  <div className="sp-title">{plantOwner} Plant — {plantHealthLabel}</div>
+                  <div className="sp-overlay-body">
+                    <p>This is your plant — it represents the health and completeness of your Inven(s)tory / account.</p>
+                    <p className="sp-cta">Click here for more details.</p>
+                  </div>
+                </div>
+              </>}
         </Link>
         {!garden.hidden && garden.prompt?.text && (
           <Link href={promptHref(garden.prompt)} onClick={closeNav} className="sidebar-prompt">🌱 {garden.prompt.text} <span className="sp-prompt-cta">Add now →</span></Link>
