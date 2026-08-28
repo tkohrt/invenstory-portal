@@ -10,13 +10,13 @@ import { promptHref } from "@/lib/garden-prompt";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
-  tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number;
+  tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number; overlayPendingCount: number;
   workspaceVis: Record<string, boolean>;
   garden: GardenState;
   children?: React.ReactNode;
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, workspaceVis, garden, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, workspaceVis, garden, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -148,6 +148,10 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
               <span className="ic">✦</span> Story Intelligence reviews
               {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
+            </Link>
+            <Link onClick={closeNav} className={nav("/admin/ledger-overlay")} href="/admin/ledger-overlay">
+              <span className="ic">◈</span> Funder Ledger review
+              {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
             </Link>
             <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>
           </div>

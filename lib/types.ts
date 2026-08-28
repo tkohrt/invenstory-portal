@@ -215,3 +215,62 @@ export interface GardenState {
   prompt: { text: string; layer: "I" | "II" | "III" | null; itemKey?: string; target?: "invenstory" | "eligibility" };
   stats: { docs: number; words: number; layersCovered: number; daysSinceUpload: number | null };
 }
+
+// ---- Funder Ledger: the living overlay ----
+// The Ledger base is a frozen June 2026 snapshot served by a separate read-only
+// service. The overlay is For Granted's writable curation layer on top of it:
+// verified corrections and brand-new records, merged over the base at query
+// time (overlay wins). Admin-only; clients never see it.
+export type OverlayKind = "funder" | "grant";
+export type OverlayProvenance = "client_surfaced" | "scout_bot" | "manual";
+export type OverlayStatus = "proposed" | "in_review" | "approved" | "rejected" | "superseded";
+export type OverlayConfidence = "high" | "medium" | "low";
+
+export interface LedgerOverlayRow {
+  id: string;
+  kind: OverlayKind;
+  base_id: string | null;            // the base record this corrects; null = brand-new
+  ein: string | null;
+  opportunity_number: string | null;
+  title: string | null;
+  fields: Record<string, unknown>;   // curated values
+  source_url: string;
+  provenance: OverlayProvenance;
+  surfaced_for_tenant: string | null;
+  status: OverlayStatus;
+  confidence: OverlayConfidence | null;
+  proposed_by: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// A queue row carries the client it came from and who proposed it. The
+// proposer matters: provenance alone can't tell a reviewer whether a row came
+// from the bot or from a signed-in client session.
+export interface OverlayQueueRow extends LedgerOverlayRow {
+  tenant_name: string | null;
+  proposed_by_name: string | null;
+  proposed_by_role: "client" | "admin" | null;
+}
+
+export interface LedgerScoutRun {
+  id: string; ran_at: string; scope: string | null;
+  checked: number; found_new: number; proposed: number; summary: string | null;
+}
+
+// What proposeOverlayAction accepts. Everything else is derived server-side.
+export interface OverlayProposal {
+  kind: OverlayKind;
+  base_id?: string | null;
+  ein?: string | null;
+  opportunity_number?: string | null;
+  title?: string | null;
+  fields: Record<string, unknown>;
+  source_url: string;
+  provenance?: OverlayProvenance;
+  surfaced_for_tenant?: string | null;
+  confidence?: OverlayConfidence | null;
+}
