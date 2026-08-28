@@ -14,6 +14,10 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   { key: "chat",           href: "/chat",           label: "Ask your Inven(s)tory",  icon: "✦", defaultVisible: true },
   { key: "drafts",         href: "/drafts",         label: "Grants In The Works",    icon: "✎", defaultVisible: true },
   { key: "eligibility",    href: "/funding-eligibility", label: "Funding Eligibility", icon: "◇", defaultVisible: true },
+  // Funder matching against the Ledger. defaultVisible:false = hidden from
+  // every client account until an admin turns it on for that client. For
+  // Granted runs matches on the client's behalf in the meantime.
+  { key: "funder_matches", href: "/funder-matches", label: "Funder Matches",   icon: "◈", defaultVisible: false },
 ];
 
 export const WORKSPACE_FEATURE_MAP: Record<string, WorkspaceFeature> =
