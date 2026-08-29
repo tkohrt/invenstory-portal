@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   approveOverlayAction, rejectOverlayAction, claimOverlayAction,
 } from "@/lib/server/overlay-actions";
-import type { OverlayQueueRow, LedgerScoutRun, OverlayKind, OverlayProvenance } from "@/lib/types";
+import OverlayEntryForm from "./OverlayEntryForm";
+import type { OverlayQueueRow, LedgerScoutRun, OverlayKind, OverlayProvenance, Tenant } from "@/lib/types";
 
 const PROVENANCE_LABEL: Record<OverlayProvenance, string> = {
   client_surfaced: "Found working a client",
@@ -142,11 +143,12 @@ function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknow
 }
 
 export default function AdminLedgerOverlayView({
-  queue, decided, lastRun, base = {},
+  queue, decided, lastRun, tenants, base = {},
 }: {
   queue: OverlayQueueRow[]; decided: OverlayQueueRow[]; lastRun: LedgerScoutRun | null;
-  base?: Record<string, Record<string, unknown>>;
+  tenants: Tenant[]; base?: Record<string, Record<string, unknown>>;
 }) {
+  const [adding, setAdding] = useState(false);
   const groups: { key: string; label: string; rows: OverlayQueueRow[] }[] = [];
   for (const kind of ["grant", "funder"] as OverlayKind[]) {
     for (const prov of ["client_surfaced", "scout_bot", "manual"] as OverlayProvenance[]) {
@@ -167,7 +169,13 @@ export default function AdminLedgerOverlayView({
             someone checks it at the source.
           </p>
         </div>
+        <span className="ov-spacer" />
+        {!adding && (
+          <button className="btn" onClick={() => setAdding(true)}>Record a verification</button>
+        )}
       </div>
+
+      {adding && <OverlayEntryForm tenants={tenants} onDone={() => setAdding(false)} />}
 
       {lastRun && (
         <div className="ov-runbar">

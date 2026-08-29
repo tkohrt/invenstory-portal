@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { getOverlayQueue, getOverlayDecided, getLastScoutRun } from "@/lib/server/ledger-overlay";
+import { getTenants } from "@/lib/server/data";
 import AdminLedgerOverlayView from "@/components/AdminLedgerOverlayView";
 
 export default async function LedgerOverlayPage() {
@@ -8,12 +9,12 @@ export default async function LedgerOverlayPage() {
   if (!session) redirect("/");
   if (session.role !== "admin") redirect("/invenstory");
 
-  const [queue, decided, lastRun] = await Promise.all([
-    getOverlayQueue(), getOverlayDecided(), getLastScoutRun(),
+  const [queue, decided, lastRun, tenants] = await Promise.all([
+    getOverlayQueue(), getOverlayDecided(), getLastScoutRun(), getTenants(),
   ]);
 
   // `base` stays empty until the Ledger service client lands (step 2 of the
   // build order: lib/server/ledger.ts + GET /funder|/grant). Corrections then
   // render as a real side-by-side diff instead of proposed values alone.
-  return <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} base={{}} />;
+  return <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={tenants} base={{}} />;
 }

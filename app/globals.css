@@ -768,3 +768,6 @@ button.vis-dot.busy{opacity:.5}
 .ov-tag.fm-eligible{border-color:#1f4d2e;color:#1f4d2e}
 .ov-tag.fm-likely{border-color:#6b7f52;color:#54663f}
 .ov-tag.fm-check{border-color:#c8b273;color:#7a6320}
+.oe-form{margin-bottom:16px}
+.oe-lede{margin:0 0 10px;font-size:12px;color:var(--muted,#666);line-height:1.5}
+.oe-req{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#b45a4b;margin-left:6px}

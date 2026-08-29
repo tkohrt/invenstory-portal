@@ -6,7 +6,8 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import type { OverlayProposal, OverlayConfidence } from "@/lib/types";
+import type { OverlayProposal, OverlayConfidence, OverlayManualEntry } from "@/lib/types";
+import { buildOverlayEntry } from "@/lib/overlay-entry";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -180,4 +181,38 @@ export async function rejectOverlayAction(id: string, note: string) {
     detail: `${row?.kind ?? "?"}:${row?.title ?? row?.base_id ?? id} — ${note.trim().slice(0, 140)}`,
   });
   revalidatePath("/admin/ledger-overlay");
+}
+
+/**
+ * Manual intake: an admin recording what they just verified on a funder's site.
+ *
+ * This is the human half of the living overlay. For Granted already has to
+ * verify at source before anything reaches a client; this is what turns that
+ * work into permanent data instead of letting it evaporate into a doc.
+ *
+ * Lands as `proposed` like every other feed. Even a hand-entered record goes
+ * through review, so approving is always a deliberate second look.
+ */
+export async function addOverlayRecordAction(e: OverlayManualEntry) {
+  const s = await requireAdmin();
+  assertHttpUrl(e.source_url);
+  if (e.kind !== "funder" && e.kind !== "grant") throw new Error("kind must be funder or grant");
+
+  const built = buildOverlayEntry(e);
+
+  const tenant = e.surfaced_for_tenant || null;
+  return proposeOverlayAction({
+    kind: e.kind,
+    base_id: built.base_id,
+    ein: built.ein,
+    opportunity_number: built.opportunity_number,
+    title: built.title,
+    fields: built.fields,
+    source_url: e.source_url.trim(),
+    // "Found while working a client" when a client is named; otherwise a
+    // standalone hand entry. The distinction drives the queue's grouping.
+    provenance: tenant ? "client_surfaced" : "manual",
+    surfaced_for_tenant: tenant,
+    confidence: e.confidence ?? null,
+  });
 }

@@ -261,6 +261,34 @@ export interface LedgerScoutRun {
   checked: number; found_new: number; proposed: number; summary: string | null;
 }
 
+// What the admin "record a verification" form submits. Deliberately typed
+// rather than raw JSON: the person filling this in has just come back from a
+// funder's website, not from a code editor. Keys match the Ledger's own card
+// shape so the merge overwrites the right fields on the base record.
+export interface OverlayManualEntry {
+  kind: OverlayKind;
+  base_id?: string;                  // the Ledger record being corrected; blank = new record
+  source_url: string;                // required: where you verified it
+  surfaced_for_tenant?: string | null;  // which engagement turned this up
+  confidence?: OverlayConfidence | null;
+  title?: string;
+  ein?: string;                      // funders
+  opportunity_number?: string;       // grants
+  // Curated values. Every one optional: leave blank to leave the base alone.
+  name?: string;
+  website?: string;
+  location?: string;
+  focus?: string;
+  typical_grant_range?: string;
+  agency?: string;
+  close_date?: string;               // YYYY-MM-DD
+  min_award?: string;
+  max_award?: string;
+  eligibility?: string;
+  caveat?: string;                   // e.g. donor-advised fund; relayed verbatim
+  notes?: string;                    // anything that doesn't fit a field
+}
+
 // What proposeOverlayAction accepts. Everything else is derived server-side.
 export interface OverlayProposal {
   kind: OverlayKind;
