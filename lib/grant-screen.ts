@@ -53,22 +53,66 @@ export type Verdict = "eligible" | "likely" | "check";
 export interface ScreenedGrant {
   grant_id: string; title: string; verdict: Verdict; reason: string;
   close_date: string | null; award_ceiling: number | null;
+  funder?: string;              // who is distributing the money
   website?: string; eligibility?: string; caveat?: string;
+  rationale?: string;           // grounded "why this client fits", filled in later
   from_overlay?: boolean;
 }
 
-/** Plain-English description of the org, used as the Ledger's query text. */
-export function needText(p: EligibilityProfile, orgName: string): string {
-  const orgType = ORG_TYPES.find(t => t.v === p.org_type)?.l ?? "organization";
-  const bits = [
-    `${orgName}, a ${orgType.toLowerCase()}`,
-    p.state_code ? `based in ${p.state_code}` : null,
-    p.cause_areas.length ? `working on ${p.cause_areas.join(", ")}` : null,
-    p.populations.length ? `serving ${p.populations.join(", ")}` : null,
-    p.service_area.length ? `across ${p.service_area.join(", ")}` : null,
-  ].filter(Boolean);
-  return bits.join(" ");
+/**
+ * The query text the Ledger ranks against.
+ *
+ * Two different questions, so two different texts:
+ *   - GRANTS: what does this organization need funded? Describing *who they
+ *     serve* here is what pulled back patient-assistance funds and scholarships
+ *     for a healthtech company — the search faithfully found money for the
+ *     beneficiaries rather than for the org.
+ *   - FUNDERS: who a funder backs genuinely does depend on the population and
+ *     cause, so beneficiaries belong in that one.
+ */
+export function needText(
+  p: EligibilityProfile, orgName: string, purpose: "grants" | "funders" = "funders",
+): string {
+  const cause = p.cause_areas.length ? p.cause_areas.join(" and ") : "its mission";
+  const geo = p.state_code ? ` based in ${p.state_code}` : "";
+
+  if (purpose === "funders") {
+    const orgType = ORG_TYPES.find(t => t.v === p.org_type)?.l ?? "organization";
+    return [
+      `${orgName}, a ${orgType.toLowerCase()}${geo}`,
+      `working on ${cause}`,
+      p.populations.length ? `serving ${p.populations.join(", ")}` : null,
+      p.service_area.length ? `across ${p.service_area.join(", ")}` : null,
+    ].filter(Boolean).join(" ");
+  }
+
+  // Grants: lead with the organization and the stage of funding it can use.
+  const stage = STAGE_BY_BAND[p.budget_band ?? ""] ?? "";
+  switch (p.org_type) {
+    case "for_profit":
+      return `${stage}${stage ? " " : ""}${cause} technology company${geo} `
+        + `commercializing its product, seeking research, pilot, demonstration and `
+        + `commercialization funding such as SBIR/STTR, innovation and translational awards`;
+    case "government":
+    case "tribal":
+      return `a public agency${geo} seeking programme, capacity and infrastructure funding for ${cause}`;
+    case "school":
+      return `an educational institution${geo} seeking research, programme and capacity funding for ${cause}`;
+    default:
+      return `${stage}${stage ? " " : ""}nonprofit organization${geo} `
+        + `seeking programme, operating, capacity-building and general support funding for its work on ${cause}`;
+  }
 }
+
+/** How a funder would describe the organization's size, from the budget band. */
+const STAGE_BY_BAND: Record<string, string> = {
+  lt_100k: "an early-stage",
+  "100k_500k": "a small",
+  "500k_1m": "a growing",
+  "1m_5m": "an established",
+  "5m_10m": "a large",
+  gt_10m: "a major",
+};
 
 /** Rough dollar figure to aim funder search at, from the budget band. */
 export function typicalGrantSize(band: string | null): number | undefined {
@@ -83,7 +127,10 @@ export function typicalGrantSize(band: string | null): number | undefined {
   }
 }
 
-const FEDERAL_HINT = /\b(federal|grants\.gov|NOFO|CFDA|assistance listing|HHS|SAMHSA|HRSA|NIH|DOJ|DOL|USDA|EPA)\b/i;
+// "federal" alone is a false-positive machine: "federal poverty level" appears
+// in almost every assistance program's eligibility text, and flagged two Ohio
+// family foundations as federal opportunities. Require a real federal marker.
+const FEDERAL_HINT = /\b(grants\.gov|NOFO|CFDA|assistance listing|SAM\.gov|federal (grant|award|funding|agency|assistance)|HHS|SAMHSA|HRSA|NIH|NSF|DOJ|DOL|USDA|EPA|ARPA-H)\b/i;
 const NONPROFIT_ONLY = /501\s*\(?c\)?\s*\(?3\)?|nonprofit organizations? only|tax-exempt organizations? only/i;
 // Cost-share language varies a lot in real NOFOs: "25% cost match",
 // "matching funds required", "non-federal share". Catch the common shapes.
@@ -140,7 +187,7 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   return {
     grant_id: id, title, verdict, reason: reasons.join("; "),
     close_date: g.close_date ?? null, award_ceiling: ceiling,
-    website: g.website, eligibility: elig || undefined, caveat: g.caveat,
+    funder: g.agency, website: g.website, eligibility: elig || undefined, caveat: g.caveat,
   };
 }
 

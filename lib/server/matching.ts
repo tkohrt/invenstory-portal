@@ -14,6 +14,7 @@ import "server-only";
 import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
 import { getApprovedOverlay, mergeOverlay } from "./ledger-overlay";
+import { buildDossier, addRationales } from "./match-rationale";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
 } from "./ledger";
@@ -48,14 +49,18 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     throw new Error("Fill in at least the organization type and one cause area before matching.");
   }
 
-  const need = needText(p, orgName);
+  // Two questions, two query texts. Asking the grants index "who do they serve"
+  // returns money for the beneficiaries, not for the organization.
+  const grantNeed = needText(p, orgName, "grants");
+  const funderNeed = needText(p, orgName, "funders");
   const size = typicalGrantSize(p.budget_band);
 
-  const [grantsEnv, fundersEnv, evidenceEnv, overlay] = await Promise.all([
-    findGrants({ need }),
-    findFunders({ need, location: p.state_code ?? undefined, grant_size: size }),
-    fundersLikeMine({ org_description: need, location: p.state_code ?? undefined }),
+  const [grantsEnv, fundersEnv, evidenceEnv, overlay, dossier] = await Promise.all([
+    findGrants({ need: grantNeed }),
+    findFunders({ need: funderNeed, location: p.state_code ?? undefined, grant_size: size }),
+    fundersLikeMine({ org_description: funderNeed, location: p.state_code ?? undefined }),
     getApprovedOverlay("grant"),
+    buildDossier(tenantId, orgName, p),
   ]);
 
   // The service's response shape differs from the published spec (prose in
@@ -86,6 +91,14 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     rank[a.verdict] - rank[b.verdict] ||
     (a.close_date ?? "9999").localeCompare(b.close_date ?? "9999"));
 
+  // Explain each surviving match against the profile and the Inven(s)tory.
+  // Best-effort: a rationale failure must not lose the match itself.
+  try {
+    await addRationales(screened, dossier, p, orgName);
+  } catch (e) {
+    console.error("rationale generation failed", e);
+  }
+
   const ranAt = new Date().toISOString();
 
   if (screened.length) {
@@ -94,6 +107,10 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
         tenant_id: tenantId, grant_id: s.grant_id.slice(0, 400), verdict: s.verdict,
         reason: s.reason.slice(0, 500), close_date: s.close_date,
         award_ceiling: s.award_ceiling, matched_at: ranAt,
+        title: s.title?.slice(0, 400) ?? null,
+        funder: s.funder?.slice(0, 200) ?? null,
+        url: s.website?.slice(0, 500) ?? null,
+        rationale: s.rationale?.slice(0, 2000) ?? null,
       })),
       { onConflict: "tenant_id,grant_id" });
     // Never report a successful run over a rejected write. The first version of
@@ -115,6 +132,7 @@ export async function getCachedMatches(tenantId: string) {
   return (data ?? []) as {
     grant_id: string; verdict: Verdict; reason: string | null;
     close_date: string | null; award_ceiling: number | null; matched_at: string;
+    title: string | null; funder: string | null; url: string | null; rationale: string | null;
   }[];
 }
 

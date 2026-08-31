@@ -48,6 +48,17 @@ describe("screenGrant", () => {
     expect(r?.reason).toMatch(/SAM\.gov/);
   });
 
+  test("'federal poverty level' in an assistance program is not a federal opportunity", () => {
+    const g = grant({ agency: "kfohio.org", eligibility: "Applicants must be at or below 200% of the federal poverty level." });
+    const r = screenGrant(g, nonprofit, TODAY);
+    expect(r?.reason).not.toMatch(/SAM\.gov/);
+  });
+
+  test("a real federal marker still flags", () => {
+    const g = grant({ agency: "grants.gov", eligibility: "See the NOFO." });
+    expect(screenGrant(g, nonprofit, TODAY)?.reason).toMatch(/SAM\.gov/);
+  });
+
   test("federal money with SAM/UEI active is not flagged for registration", () => {
     const p = { ...nonprofit, federal_registration: "sam_uei_active" };
     const r = screenGrant(grant({ agency: "SAMHSA", eligibility: "See grants.gov" }), p, TODAY);

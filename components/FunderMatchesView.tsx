@@ -10,6 +10,7 @@ import type { Verdict } from "@/lib/server/matching";
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
   close_date: string | null; award_ceiling: number | null; matched_at: string;
+  title: string | null; funder: string | null; url: string | null; rationale: string | null;
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -101,18 +102,31 @@ export default function FunderMatchesView({
             {matches.length} opportunities · last matched{" "}
             {new Date(matches[0].matched_at).toLocaleString()} · Ledger data as of June 2026
           </div>
-          <table className="aq-table">
+          <table className="aq-table fm-table">
             <thead>
-              <tr><th>Opportunity</th><th>Verdict</th><th>Deadline</th><th>Ceiling</th><th>Why</th></tr>
+              <tr>
+                <th>Opportunity</th><th>Funder</th><th>Verdict</th>
+                <th>Deadline</th><th>Ceiling</th><th>Why this client</th>
+              </tr>
             </thead>
             <tbody>
               {matches.map(m => (
                 <tr key={m.grant_id}>
-                  <td>{m.grant_id}</td>
+                  <td className="fm-name">
+                    {m.url
+                      ? <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title || m.grant_id}</a>
+                      : (m.title || m.grant_id)}
+                  </td>
+                  <td>{m.funder || "—"}</td>
                   <td><span className={`ov-tag fm-${m.verdict}`}>{VERDICT_LABEL[m.verdict]}</span></td>
-                  <td>{deadline(m.close_date)}</td>
-                  <td>{money(m.award_ceiling)}</td>
-                  <td className="ov-muted">{m.reason ?? "—"}</td>
+                  <td className="fm-nowrap">{deadline(m.close_date)}</td>
+                  <td className="fm-nowrap">{money(m.award_ceiling)}</td>
+                  <td className="fm-why">
+                    {m.rationale || <span className="ov-muted">{m.reason ?? "—"}</span>}
+                    {m.rationale && m.reason && (
+                      <div className="fm-screen">Screen: {m.reason}</div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
