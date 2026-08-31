@@ -91,3 +91,63 @@ describe("needText", () => {
     expect(t).toContain("OH");
   });
 });
+
+/**
+ * The verdict column was dead on arrival: "likely" was never assigned and
+ * "eligible" had one narrow path, so a real run put 12 of 12 on "needs a
+ * check". These pin the ladder down.
+ */
+describe("verdict ladder", () => {
+  const ohioNonprofit: EligibilityProfile = {
+    ...EMPTY_PROFILE, org_type: "nonprofit_501c3", tax_status: "501c3", state_code: "OH",
+    cause_areas: ["addiction recovery"], federal_registration: "sam_uei_active",
+  };
+  const startupOH: EligibilityProfile = {
+    ...EMPTY_PROFILE, org_type: "for_profit", state_code: "OH",
+    cause_areas: ["care coordination"], federal_registration: "sam_uei_active",
+  };
+
+  test("eligible when the eligibility text names the org type and nothing blocks", () => {
+    const g = grant({ eligibility: "Open to nonprofit organizations working in recovery." });
+    expect(screenGrant(g, ohioNonprofit, TODAY)?.verdict).toBe("eligible");
+  });
+
+  test("a for-profit is invited by SBIR language", () => {
+    const g = grant({ eligibility: "SBIR Phase I applicants must be small businesses." });
+    expect(screenGrant(g, startupOH, TODAY)?.verdict).toBe("eligible");
+  });
+
+  test("likely on a real positive signal without an explicit invitation", () => {
+    const g = grant({ title: "Ohio addiction recovery capacity fund", eligibility: "Applications reviewed quarterly." });
+    const r = screenGrant(g, ohioNonprofit, TODAY);
+    expect(r?.verdict).toBe("likely");
+    expect(r?.reason).toMatch(/cause overlap|names OH/);
+  });
+
+  test("a blocker outranks every positive signal", () => {
+    const g = grant({
+      agency: "grants.gov",
+      eligibility: "Open to nonprofit organizations in OH for addiction recovery. See the NOFO.",
+    });
+    const noSam = { ...ohioNonprofit, federal_registration: "none" };
+    const r = screenGrant(g, noSam, TODAY);
+    expect(r?.verdict).toBe("check");
+    expect(r?.reason).toMatch(/SAM\.gov/);
+  });
+
+  test("check when there is nothing to go on but topical similarity", () => {
+    const g = grant({ title: "General operating support", eligibility: "Applications reviewed quarterly." });
+    const r = screenGrant(g, ohioNonprofit, TODAY);
+    expect(r?.verdict).toBe("check");
+    expect(r?.reason).toMatch(/topical alignment only/);
+  });
+
+  test("the ladder produces genuine spread, not one value", () => {
+    const verdicts = [
+      screenGrant(grant({ eligibility: "Open to nonprofit organizations." }), ohioNonprofit, TODAY)?.verdict,
+      screenGrant(grant({ title: "OH recovery fund", eligibility: "Reviewed quarterly." }), ohioNonprofit, TODAY)?.verdict,
+      screenGrant(grant({ title: "General fund", eligibility: "Reviewed quarterly." }), ohioNonprofit, TODAY)?.verdict,
+    ];
+    expect(new Set(verdicts).size).toBe(3);
+  });
+});

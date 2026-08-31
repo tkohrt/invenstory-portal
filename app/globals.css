@@ -779,3 +779,4 @@ button.vis-dot.busy{opacity:.5}
 .fm-nowrap{white-space:nowrap}
 .fm-why{max-width:420px;line-height:1.5}
 .fm-screen{margin-top:5px;font-size:11px;color:var(--muted,#999)}
+.fm-verdict{cursor:help;border-bottom:1px dotted currentColor}

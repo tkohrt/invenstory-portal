@@ -135,6 +135,18 @@ const NONPROFIT_ONLY = /501\s*\(?c\)?\s*\(?3\)?|nonprofit organizations? only|ta
 // Cost-share language varies a lot in real NOFOs: "25% cost match",
 // "matching funds required", "non-federal share". Catch the common shapes.
 const MATCH_REQUIRED = /\b(cost[ -]?(match|share)|match(ing)?[ -](funds?|requirement|share)|\d+\s*%\s*(cost[ -]?)?match|non-?federal\s+(match|share))\b/i;
+// Language that affirmatively invites this kind of applicant. Distinct from the
+// *_ONLY patterns above, which exclude: these are the phrases that let a match
+// earn something better than "needs a check".
+const INVITES: Record<string, RegExp> = {
+  nonprofit_501c3: /\b(501\s*\(?c\)?\s*\(?3\)?|nonprofit organi[sz]ations?|not-for-profit|tax-exempt organi[sz]ations?|community-based organi[sz]ations?|faith-based)\b/i,
+  for_profit: /\b(small business(es)?|for-profit|SBIR|STTR|start-?ups?|private compan(y|ies)|commercial entit(y|ies))\b/i,
+  government: /\b(units? of local government|state agencies|governmental entities|municipalit(y|ies)|count(y|ies))\b/i,
+  tribal: /\b(tribal (governments?|organi[sz]ations?|entities)|Alaska Native|Native Hawaiian)\b/i,
+  school: /\b(institutions? of higher education|universit(y|ies)|colleges?|school districts?|local educational agenc)/i,
+  fiscally_sponsored: /\bfiscal(ly)? sponsor/i,
+};
+
 const GOV_ONLY = /\b(units? of local government|state agencies only|governmental entities only|tribal governments only)\b/i;
 
 /**
@@ -156,12 +168,14 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
     if (!isNaN(d.getTime()) && d < today) return null;
   }
 
-  const reasons: string[] = [];
-  let verdict: Verdict = "check";
+  // Two separate ledgers: what stops this being actionable, and what makes it
+  // look genuinely aligned. A blocker always wins.
+  const blockers: string[] = [];
+  const positives: string[] = [];
 
   const isNonprofit = p.org_type === "nonprofit_501c3" || p.tax_status === "501c3";
   if (NONPROFIT_ONLY.test(elig)) {
-    if (isNonprofit) { verdict = "eligible"; reasons.push("restricted to 501(c)(3)s, which you are"); }
+    if (isNonprofit) positives.push("restricted to 501(c)(3)s, which you are");
     else return null;                       // structurally impossible, not a "check"
   }
   if (GOV_ONLY.test(elig) && p.org_type !== "government" && p.org_type !== "tribal") return null;
@@ -170,19 +184,39 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   // that should be visible before anyone starts writing.
   const looksFederal = FEDERAL_HINT.test(elig) || FEDERAL_HINT.test(g.agency ?? "");
   if (looksFederal && p.federal_registration !== "sam_uei_active") {
-    verdict = "check";
-    reasons.push("federal opportunity and SAM.gov/UEI is not marked active");
+    blockers.push("federal opportunity and SAM.gov/UEI is not marked active");
   }
 
   // A match requirement the org cannot meet is worth surfacing early.
   if (p.match_capacity_pct === 0 && MATCH_REQUIRED.test(elig)) {
-    verdict = "check";
-    reasons.push("appears to require a cost match; profile says none available");
+    blockers.push("appears to require a cost match; profile says none available");
   }
 
-  if (!reasons.length) {
-    reasons.push(g.match_reason ?? "aligned on cause and profile; eligibility text needs a human read");
+  // Affirmative signals. Each is weak alone; together they distinguish a lead
+  // worth an hour from one worth a glance.
+  const haystack = `${title} ${elig}`;
+  const invite = p.org_type ? INVITES[p.org_type] : undefined;
+  const invited = !!invite && invite.test(elig);
+  if (invited) positives.push("eligibility text names your organization type");
+
+  if (p.state_code && new RegExp(`\\b${p.state_code}\\b`).test(haystack)) {
+    positives.push(`names ${p.state_code}`);
   }
+  const cause = p.cause_areas.find(c => c.length > 3 && haystack.toLowerCase().includes(c.toLowerCase()));
+  if (cause) positives.push(`cause overlap on ${cause}`);
+  if (g.confidence === "strong") positives.push("strong alignment score from the Ledger");
+
+  // eligible  = invited by name, with nothing blocking
+  // likely    = nothing blocking and at least one real positive signal
+  // check     = anything blocked, or nothing to go on but topical similarity
+  let verdict: Verdict;
+  if (blockers.length) verdict = "check";
+  else if (invited) verdict = "eligible";
+  else if (positives.length) verdict = "likely";
+  else verdict = "check";
+
+  const reasons = [...blockers, ...positives];
+  if (!reasons.length) reasons.push("topical alignment only; eligibility text needs a human read");
 
   return {
     grant_id: id, title, verdict, reason: reasons.join("; "),

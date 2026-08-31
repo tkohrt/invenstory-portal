@@ -17,6 +17,21 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   eligible: "Eligible", likely: "Likely", check: "Needs a check",
 };
 
+// What each rung of the ladder actually means, shown on hover. Every one ends
+// at the same place on purpose: the Ledger is a June 2026 snapshot, so none of
+// these verdicts is a substitute for reading the funder's own page.
+const VERDICT_HELP: Record<Verdict, string> = {
+  eligible:
+    "The eligibility text names your organization type, and nothing is blocking. "
+    + "The strongest signal available from a June 2026 snapshot. Still verify at the source.",
+  likely:
+    "Nothing is blocking, and there is at least one real alignment signal: your state, "
+    + "a cause-area overlap, or a strong score from the Ledger. Worth an hour. Verify at the source.",
+  check:
+    "Either something is blocking (federal money without SAM.gov, a cost match you cannot meet), "
+    + "or there is nothing to go on but topical similarity. Read the eligibility text before spending time on it.",
+};
+
 function money(n: number | null) {
   if (n == null) return "—";
   return n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -118,7 +133,11 @@ export default function FunderMatchesView({
                       : (m.title || m.grant_id)}
                   </td>
                   <td>{m.funder || "—"}</td>
-                  <td><span className={`ov-tag fm-${m.verdict}`}>{VERDICT_LABEL[m.verdict]}</span></td>
+                  <td>
+                    <span className={`ov-tag fm-${m.verdict} fm-verdict`} title={VERDICT_HELP[m.verdict]}>
+                      {VERDICT_LABEL[m.verdict]}
+                    </span>
+                  </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
                   <td className="fm-nowrap">{money(m.award_ceiling)}</td>
                   <td className="fm-why">
