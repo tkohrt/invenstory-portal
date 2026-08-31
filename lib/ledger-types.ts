@@ -13,6 +13,28 @@ export interface FunderCard {
   evidence_grantees?: { name: string; amount_usd?: number; years?: number[] }[];
 }
 
+/**
+ * What find_grants ACTUALLY returns, which differs from MCP_TOOLS.md:
+ *   - `eligibility_ai_extracted`, not `eligibility`
+ *   - `link`, not `website`;  `source`, not `agency`
+ *   - `award_ceiling` is a display string ("$500,000"), not a number
+ *   - `close_date` may be prose ("no deadline listed"), not a date
+ *   - no `opportunity_number`, no `match_reason`
+ * normalizeGrant() in lib/grant-screen.ts converts this into GrantCard.
+ */
+export interface RawGrantResult {
+  title?: string;
+  source?: string;
+  status?: string;
+  award_floor?: string | number | null;
+  award_ceiling?: string | number | null;
+  close_date?: string | null;
+  eligibility_ai_extracted?: string;
+  link?: string;
+  confidence?: string;
+  caveat?: string;
+}
+
 export interface GrantCard {
   title?: string; name?: string; opportunity_number?: string;
   agency?: string; eligibility?: string; close_date?: string;

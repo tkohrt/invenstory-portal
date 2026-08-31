@@ -5,7 +5,48 @@
 // an organization never sees, so it has to be unit-testable without a network
 // or a database. The orchestration lives in lib/server/matching.ts.
 import { ORG_TYPES, type EligibilityProfile } from "@/lib/eligibility-fields";
-import type { GrantCard } from "@/lib/ledger-types";
+import type { GrantCard, RawGrantResult } from "@/lib/ledger-types";
+
+/** "$500,000" -> 500000. Anything unparseable -> null, never NaN. */
+export function parseMoney(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? Math.round(v) : null;
+  const digits = v.replace(/[^0-9.]/g, "");
+  if (!digits) return null;
+  const n = Number(digits);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+/**
+ * The Ledger puts prose in close_date ("no deadline listed", "rolling"). A
+ * `date` column rejects that, which is how a whole match run silently failed
+ * to save. Anything that isn't a real date becomes null, i.e. rolling.
+ */
+export function parseCloseDate(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const t = v.trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(t)) return null;
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : t.slice(0, 10);
+}
+
+/** Map the service's actual response onto the shape the screener expects. */
+export function normalizeGrant(r: RawGrantResult): GrantCard {
+  return {
+    title: r.title,
+    // The source link is the most stable identifier available; fall back to the
+    // title so a card without a link still gets a usable key.
+    opportunity_number: r.link || undefined,
+    agency: r.source,
+    eligibility: r.eligibility_ai_extracted,
+    close_date: parseCloseDate(r.close_date) ?? undefined,
+    max_award: parseMoney(r.award_ceiling) ?? undefined,
+    min_award: parseMoney(r.award_floor) ?? undefined,
+    website: r.link,
+    confidence: r.confidence as GrantCard["confidence"],
+    caveat: r.caveat,
+  };
+}
 
 export type Verdict = "eligible" | "likely" | "check";
 

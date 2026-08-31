@@ -17,9 +17,9 @@ import { getApprovedOverlay, mergeOverlay } from "./ledger-overlay";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
 } from "./ledger";
-import type { GrantCard, FunderCard } from "@/lib/ledger-types";
+import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 // Signal 1 is pure and lives outside server-only so it can be unit tested.
-import { screenGrant, needText, typicalGrantSize } from "@/lib/grant-screen";
+import { screenGrant, needText, typicalGrantSize, normalizeGrant } from "@/lib/grant-screen";
 import type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 export { screenGrant, needText } from "@/lib/grant-screen";
 export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
@@ -58,9 +58,15 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     getApprovedOverlay("grant"),
   ]);
 
+  // The service's response shape differs from the published spec (prose in
+  // close_date, "$500,000" strings for amounts, eligibility under a different
+  // key). Normalize first, or the screener reads nothing and the DB rejects
+  // the write.
+  const normalized = (grantsEnv.results as unknown as RawGrantResult[]).map(normalizeGrant);
+
   // Merge FG corrections over the frozen base before anything is judged.
-  const withIds = grantsEnv.results.map(g => ({
-    ...g, id: g.opportunity_number ?? g.title ?? g.name ?? Math.random().toString(36).slice(2),
+  const withIds = normalized.map(g => ({
+    ...g, id: g.opportunity_number ?? g.title ?? Math.random().toString(36).slice(2),
   }));
   const merged = mergeOverlay(withIds, overlay);
 
@@ -83,13 +89,17 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   const ranAt = new Date().toISOString();
 
   if (screened.length) {
-    await db.from("eligible_grant").upsert(
+    const { error } = await db.from("eligible_grant").upsert(
       screened.map(s => ({
-        tenant_id: tenantId, grant_id: s.grant_id, verdict: s.verdict,
+        tenant_id: tenantId, grant_id: s.grant_id.slice(0, 400), verdict: s.verdict,
         reason: s.reason.slice(0, 500), close_date: s.close_date,
         award_ceiling: s.award_ceiling, matched_at: ranAt,
       })),
       { onConflict: "tenant_id,grant_id" });
+    // Never report a successful run over a rejected write. The first version of
+    // this swallowed the error and cheerfully claimed "15 opportunities kept"
+    // while the table stayed empty.
+    if (error) throw new Error(`Matching ran but could not be saved: ${error.message}`);
   }
 
   return {
