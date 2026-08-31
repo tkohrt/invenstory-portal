@@ -10,7 +10,8 @@ import type { Verdict } from "@/lib/server/matching";
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
   close_date: string | null; award_ceiling: number | null; matched_at: string;
-  title: string | null; funder: string | null; url: string | null; rationale: string | null;
+  title: string | null; funder: string | null; url: string | null;
+  rationale: string | null; source_site: string | null;
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -132,7 +133,10 @@ export default function FunderMatchesView({
                       ? <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title || m.grant_id}</a>
                       : (m.title || m.grant_id)}
                   </td>
-                  <td>{m.funder || "—"}</td>
+                  <td className="fm-funder">
+                    {m.funder || <span className="ov-muted" title="The dataset does not carry a funder name for this record. Resolved once the opportunity page is fetched.">Unknown</span>}
+                    {m.source_site && <div className="fm-listed">listed on {m.source_site.replace(/^https?:\/\//i, "").toLowerCase()}</div>}
+                  </td>
                   <td>
                     <span className={`ov-tag fm-${m.verdict} fm-verdict`} title={VERDICT_HELP[m.verdict]}>
                       {VERDICT_LABEL[m.verdict]}

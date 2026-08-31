@@ -30,6 +30,33 @@ export function parseCloseDate(v: string | null | undefined): string | null {
   return isNaN(d.getTime()) ? null : t.slice(0, 10);
 }
 
+/**
+ * Federal programmes name their agency in the title, which is the only place a
+ * real funder name reliably appears in a grant record. Everything else needs
+ * the opportunity page fetched (see the enrichment stage in the fidelity spec).
+ */
+const AGENCY_IN_TITLE: [RegExp, string][] = [
+  [/\bNHLBI\b/i, "NHLBI (NIH)"], [/\bNCI\b/i, "NCI (NIH)"], [/\bNIMH\b/i, "NIMH (NIH)"],
+  [/\bNIDA\b/i, "NIDA (NIH)"], [/\bNIAAA\b/i, "NIAAA (NIH)"], [/\bNINDS\b/i, "NINDS (NIH)"],
+  [/\bNIA\b/i, "NIA (NIH)"], [/\bNICHD\b/i, "NICHD (NIH)"], [/\bAHRQ\b/i, "AHRQ"],
+  [/\bSAMHSA\b/i, "SAMHSA"], [/\bHRSA\b/i, "HRSA"], [/\bCDC\b/i, "CDC"],
+  [/\bARPA-?H\b/i, "ARPA-H"], [/\bNSF\b|America'?s Seed Fund/i, "NSF"],
+  [/\bNIH\b|\bR44\b|\bR43\b|\bR01\b|\bR18\b/i, "NIH"],
+  [/\bDOE\b/i, "US Dept of Energy"], [/\bUSDA\b/i, "USDA"], [/\bEPA\b/i, "EPA"],
+];
+
+function funderFromTitle(title?: string): string | undefined {
+  if (!title) return undefined;
+  for (const [re, name] of AGENCY_IN_TITLE) if (re.test(title)) return name;
+  return undefined;
+}
+
+/** Does this look like a scrape origin rather than an organisation's name? */
+function looksLikeSite(v?: string): boolean {
+  if (!v) return false;
+  return /^https?:\/\//i.test(v) || /^www\./i.test(v) || /\.(org|com|gov|net|edu)\b/i.test(v);
+}
+
 /** Map the service's actual response onto the shape the screener expects. */
 export function normalizeGrant(r: RawGrantResult): GrantCard {
   return {
@@ -37,7 +64,13 @@ export function normalizeGrant(r: RawGrantResult): GrantCard {
     // The source link is the most stable identifier available; fall back to the
     // title so a card without a link still gets a usable key.
     opportunity_number: r.link || undefined,
-    agency: r.source,
+    // r.source is the site the record was scraped from ("WWW.UAB.EDU/EYEDOC"),
+    // not the funder. Showing it as the funder is worse than showing nothing:
+    // "America's Seed Fund - NSF SBIR" is not funded by uab.edu. Resolve a real
+    // agency from the title where we can, otherwise leave the funder unknown
+    // until the opportunity page is fetched.
+    agency: funderFromTitle(r.title) ?? (looksLikeSite(r.source) ? undefined : r.source),
+    source_site: r.source,
     eligibility: r.eligibility_ai_extracted,
     close_date: parseCloseDate(r.close_date) ?? undefined,
     max_award: parseMoney(r.award_ceiling) ?? undefined,
@@ -53,7 +86,8 @@ export type Verdict = "eligible" | "likely" | "check";
 export interface ScreenedGrant {
   grant_id: string; title: string; verdict: Verdict; reason: string;
   close_date: string | null; award_ceiling: number | null;
-  funder?: string;              // who is distributing the money
+  funder?: string;              // who is distributing the money, when resolvable
+  source_site?: string;         // where the record was listed. NOT the funder.
   website?: string; eligibility?: string; caveat?: string;
   rationale?: string;           // grounded "why this client fits", filled in later
   from_overlay?: boolean;
@@ -221,7 +255,8 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   return {
     grant_id: id, title, verdict, reason: reasons.join("; "),
     close_date: g.close_date ?? null, award_ceiling: ceiling,
-    funder: g.agency, website: g.website, eligibility: elig || undefined, caveat: g.caveat,
+    funder: g.agency, source_site: g.source_site,
+    website: g.website, eligibility: elig || undefined, caveat: g.caveat,
   };
 }
 

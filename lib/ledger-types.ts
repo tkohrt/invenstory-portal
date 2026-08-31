@@ -37,7 +37,9 @@ export interface RawGrantResult {
 
 export interface GrantCard {
   title?: string; name?: string; opportunity_number?: string;
-  agency?: string; eligibility?: string; close_date?: string;
+  agency?: string;              // the distributing entity, when resolvable
+  source_site?: string;         // where the record was listed. NOT the funder.
+  eligibility?: string; close_date?: string;
   min_award?: number; max_award?: number; award_ceiling?: number;
   website?: string; match_reason?: string;
   confidence?: "strong" | "moderate" | "worth_a_look"; caveat?: string;

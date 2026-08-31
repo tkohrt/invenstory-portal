@@ -86,6 +86,11 @@ export async function addRationales(
 ): Promise<void> {
   if (!grants.length) return;
   if (!generationConfigured()) {
+    // Worth being loud about. A run where every explanation is the fallback
+    // looks like a weak model rather than an unconfigured one, and that
+    // misdiagnosis costs more than the log line.
+    console.warn("[match] no generation provider configured — every rationale will be rule-based. "
+      + "Check LLM credentials are scoped to this environment, not Production only.");
     grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); });
     return;
   }
@@ -116,7 +121,11 @@ OPPORTUNITIES
 ${opportunities}`;
 
   const res = await chatComplete({ system: SYSTEM, user, maxTokens: 2400, temperature: 0.2 });
-  if (!res?.text) { grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); }); return; }
+  if (!res?.text) {
+    console.warn("[match] generation returned nothing; falling back to rule-based rationales");
+    grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); });
+    return;
+  }
 
   let parsed: { i: number; why: string }[] = [];
   try {

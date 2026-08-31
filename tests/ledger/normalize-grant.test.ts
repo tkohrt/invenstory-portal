@@ -54,7 +54,10 @@ describe("normalizeGrant", () => {
     const g = normalizeGrant(raw);
     expect(g.eligibility).toContain("Eligible Applicants");   // was eligibility_ai_extracted
     expect(g.website).toBe(raw.link);                          // was link
-    expect(g.agency).toBe("grants.gov");                       // was source
+    // Was `source`, which is the scrape origin. The R18 activity code resolves
+    // this to NIH; grants.gov is where it was listed, kept separately.
+    expect(g.agency).toBe("NIH");
+    expect(g.source_site).toBe("grants.gov");
     expect(g.max_award).toBe(500000);                          // was "$500,000"
     expect(g.close_date).toBe("2027-05-25");
   });
@@ -74,5 +77,34 @@ describe("normalizeGrant", () => {
   test("eligibility text now actually reaches the screener", () => {
     const g = normalizeGrant({ ...raw, eligibility_ai_extracted: "Open to 501(c)(3) organizations only." });
     expect(screenGrant(g, startup, new Date("2026-08-31"))).toBeNull();   // startup is filtered out
+  });
+});
+
+/**
+ * `source` is where a record was scraped from, not who funds it. A live run put
+ * "WWW.UAB.EDU/EYEDOC" in the funder column for America's Seed Fund, which is
+ * an NSF programme. Showing a plausible-looking wrong funder is worse than
+ * showing nothing.
+ */
+describe("funder resolution", () => {
+  test("a scrape origin never becomes the funder", () => {
+    const g = normalizeGrant({ title: "America's Seed Fund - NSF SBIR/STTR", source: "WWW.UAB.EDU/EYEDOC" });
+    expect(g.agency).not.toMatch(/uab/i);
+  });
+
+  test("a federal agency named in the title is resolved", () => {
+    expect(normalizeGrant({ title: "America's Seed Fund - NSF SBIR/STTR", source: "WWW.UAB.EDU/EYEDOC" }).agency).toBe("NSF");
+    expect(normalizeGrant({ title: "NHLBI SBIR Phase IIB Bridge Awards", source: "grants.gov" }).agency).toBe("NHLBI (NIH)");
+    expect(normalizeGrant({ title: "Systems-Based Approaches (R01 Clinical Trial Optional)", source: "grants.gov" }).agency).toBe("NIH");
+  });
+
+  test("the scrape origin is kept, separately, for display as 'listed on'", () => {
+    const g = normalizeGrant({ title: "Emerging Tech Fund", source: "https://WWW.RIGHTPLACE.ORG" });
+    expect(g.source_site).toBe("https://WWW.RIGHTPLACE.ORG");
+    expect(g.agency).toBeUndefined();
+  });
+
+  test("a real organisation name in source is kept as the funder", () => {
+    expect(normalizeGrant({ title: "Community Fund", source: "Cleveland Foundation" }).agency).toBe("Cleveland Foundation");
   });
 });

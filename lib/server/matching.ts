@@ -113,6 +113,7 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
         award_ceiling: s.award_ceiling, matched_at: ranAt,
         title: s.title?.slice(0, 400) ?? null,
         funder: s.funder?.slice(0, 200) ?? null,
+        source_site: s.source_site?.slice(0, 200) ?? null,
         url: s.website?.slice(0, 500) ?? null,
         rationale: s.rationale?.slice(0, 2000) ?? null,
       })),
@@ -121,6 +122,18 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     // this swallowed the error and cheerfully claimed "15 opportunities kept"
     // while the table stayed empty.
     if (error) throw new Error(`Matching ran but could not be saved: ${error.message}`);
+
+    // A run is a snapshot, not an accumulation. Anything this run did not
+    // return is stale by definition, and leaving it behind blends runs together
+    // (which is how rows with no title survived a schema change and sat in the
+    // results table looking like current matches).
+    const { error: sweepError } = await db.from("eligible_grant")
+      .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    if (sweepError) console.error("could not clear stale matches", sweepError);
+  } else {
+    // No survivors: clear the table rather than leaving the last run's results
+    // standing as though they were current.
+    await db.from("eligible_grant").delete().eq("tenant_id", tenantId);
   }
 
   return {
@@ -136,7 +149,8 @@ export async function getCachedMatches(tenantId: string) {
   return (data ?? []) as {
     grant_id: string; verdict: Verdict; reason: string | null;
     close_date: string | null; award_ceiling: number | null; matched_at: string;
-    title: string | null; funder: string | null; url: string | null; rationale: string | null;
+    title: string | null; funder: string | null; url: string | null;
+    rationale: string | null; source_site: string | null;
   }[];
 }
 
