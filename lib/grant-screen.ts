@@ -225,3 +225,43 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   };
 }
 
+
+
+/**
+ * Make grant_id unique within one run.
+ *
+ * grant_id is the source link, because links are stable across runs in a way
+ * that titles are not. But several distinct programmes often live on one
+ * landing page, so a single run can produce the same link twice. Postgres
+ * rejects a whole upsert batch that touches the same key twice ("ON CONFLICT
+ * DO UPDATE command cannot affect row a second time"), which lost every match
+ * in the run, not just the duplicate.
+ *
+ * So: drop rows that are genuinely the same opportunity (same link AND same
+ * title), and keep the rest by qualifying the id with a slug of the title.
+ * Two real programmes sharing a page both survive.
+ */
+export function dedupeScreened(list: ScreenedGrant[]): ScreenedGrant[] {
+  const seenExact = new Set<string>();
+  const usedIds = new Set<string>();
+  const out: ScreenedGrant[] = [];
+
+  for (const g of list) {
+    const exact = `${g.grant_id}\u0000${g.title}`;
+    if (seenExact.has(exact)) continue;          // same link, same title: one opportunity
+    seenExact.add(exact);
+
+    let id = g.grant_id;
+    if (usedIds.has(id)) {
+      const slug = g.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+      id = `${g.grant_id}#${slug || usedIds.size}`;
+      // Pathological case: same link, same slug, different title. Fall back to
+      // a counter so the run still saves rather than failing outright.
+      let n = 2;
+      while (usedIds.has(id)) id = `${g.grant_id}#${slug}-${n++}`;
+    }
+    usedIds.add(id);
+    out.push(id === g.grant_id ? g : { ...g, grant_id: id });
+  }
+  return out;
+}

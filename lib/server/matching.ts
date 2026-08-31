@@ -20,7 +20,7 @@ import {
 } from "./ledger";
 import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 // Signal 1 is pure and lives outside server-only so it can be unit tested.
-import { screenGrant, needText, typicalGrantSize, normalizeGrant } from "@/lib/grant-screen";
+import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened } from "@/lib/grant-screen";
 import type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 export { screenGrant, needText } from "@/lib/grant-screen";
 export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
@@ -75,14 +75,18 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   }));
   const merged = mergeOverlay(withIds, overlay);
 
-  const screened: ScreenedGrant[] = [];
+  const collected: ScreenedGrant[] = [];
   let dropped = 0;
   for (const rec of merged) {
     const s = screenGrant(rec as unknown as GrantCard, p);
     if (!s) { dropped += 1; continue; }
     if (rec._overlay) s.from_overlay = true;
-    screened.push(s);
+    collected.push(s);
   }
+
+  // Several programmes can share one landing page, so ids must be made unique
+  // before they reach a single upsert batch.
+  const screened = dedupeScreened(collected);
 
   // Sort by how confidently we can act: eligible, then likely, then check;
   // soonest deadline first inside each band, rolling last.
