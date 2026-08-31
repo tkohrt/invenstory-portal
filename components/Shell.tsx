@@ -45,11 +45,17 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const plantOwner = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "’" : "’s"}` : "Your";
   const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
   const invLabel = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory";
+  // NOTE: this list is what actually renders in the sidebar, and it is NOT
+  // derived from WORKSPACE_FEATURES in lib/workspace.ts. That registry drives
+  // visibility defaults and route gating; this one drives the nav. A feature
+  // added to the registry but not here is reachable by URL and invisible in the
+  // sidebar. Add to both.
   const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
     { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
+    { key: "funder_matches", href: "/funder-matches",  ic: "◈", label: "Funder Matches",        toggle: true },
   ];
   const closeNav = () => setNavOpen(false);
 

@@ -4,6 +4,11 @@
 //
 // NOTE: the Inven(s)tory (/invenstory) and Account (/account) are intentionally
 // NOT listed — they are always visible to every client and cannot be toggled.
+//
+// NOTE: adding an entry here does NOT put it in the sidebar. The rendered nav is
+// a separate hardcoded list (`workspaceNav` in components/Shell.tsx). Registering
+// here without adding there gives a feature that gates correctly and is reachable
+// by URL but has no link. Add to both.
 export interface WorkspaceFeature {
   key: string; href: string; label: string; icon: string; defaultVisible: boolean;
 }
