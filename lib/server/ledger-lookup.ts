@@ -8,6 +8,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { lookupFunder, getFunder, LedgerUnavailable } from "./ledger";
 import { resolveGroundTruthStatus, type GroundTruthStatus, type StatusRow } from "@/lib/ledger-status";
+import { funderProfileFromPayload } from "@/lib/ledger-envelope";
 import type { FunderCandidate } from "./ledger";
 
 async function requireAdmin() {
@@ -74,19 +75,8 @@ export interface FunderPrefill {
 export async function getLedgerFunderAction(ein: string): Promise<FunderPrefill> {
   await requireAdmin();
   try {
-    const f = (await getFunder(ein)).results[0] as unknown as Record<string, unknown> | undefined;
-    const p = (f?.profile ?? f ?? {}) as Record<string, unknown>;
-    const str = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : undefined);
-    const city = str("city"); const state = str("state_code");
-    return {
-      ein,
-      name: str("organization_name") ?? str("name"),
-      website: str("website"),
-      location: [city, state].filter(Boolean).join(", ") || str("location"),
-      focus: str("ntee_description") ?? str("focus"),
-      typical_grant_range: str("typical_grant_range"),
-      mission: str("mission"),
-    };
+    // get_funder answers with one object, not a list, so read the raw payload.
+    return funderProfileFromPayload(ein, (await getFunder(ein)).raw);
   } catch (e) {
     return { ein, unavailable: e instanceof Error ? e.message : "Could not load this profile." };
   }

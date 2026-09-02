@@ -47,4 +47,10 @@ export interface GrantCard {
 
 export interface LedgerEnvelope<T> {
   results: T[]; as_of?: string; verify?: string; note?: string; suggestions?: string[];
+  /**
+   * The undecoded payload. get_funder answers with a single object rather than
+   * a list, so callers that need it must read the payload directly instead of
+   * pretending there is a results[0].
+   */
+  raw?: unknown;
 }

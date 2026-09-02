@@ -13,6 +13,7 @@ import "server-only";
 //   FUNDER_LEDGER_KEY  the shared secret; sent as the x-ledger-key header
 
 import type { FunderCard, GrantCard, LedgerEnvelope } from "@/lib/ledger-types";
+import { unwrapLedgerList } from "@/lib/ledger-envelope";
 export { LEDGER_AS_OF } from "@/lib/ledger-types";
 export type { FunderCard, GrantCard, LedgerEnvelope } from "@/lib/ledger-types";
 
@@ -61,18 +62,9 @@ async function callTool<T>(tool: LedgerTool, args: Record<string, unknown>): Pro
   const body = await res.json().catch(() => null) as { ok?: boolean; data?: unknown; error?: string } | null;
   if (!body || body.ok === false) throw new LedgerUnavailable(body?.error || "The Ledger returned an unusable response.");
 
-  const data = body.data;
-  // The tools return either a bare array or an envelope with `results`.
-  if (Array.isArray(data)) return { results: data as T[] };
-  const env = (data ?? {}) as Record<string, unknown>;
-  const results = (env.results ?? env.funders ?? env.grants ?? []) as T[];
-  return {
-    results: Array.isArray(results) ? results : [],
-    as_of: env.as_of as string | undefined,
-    verify: env.verify as string | undefined,
-    note: env.note as string | undefined,
-    suggestions: env.suggestions as string[] | undefined,
-  };
+  // Every tool wraps its payload differently and the docs do not always agree
+  // with the wire, so decoding lives in one tested place.
+  return unwrapLedgerList<T>(body.data);
 }
 
 export function findGrants(args: {
