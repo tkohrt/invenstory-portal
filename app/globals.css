@@ -783,3 +783,28 @@ button.vis-dot.busy{opacity:.5}
 .fm-funder{max-width:180px}
 .fm-listed{margin-top:3px;font-size:11px;color:var(--muted,#999);word-break:break-all}
 .fm-verified{color:#1f4d2e;font-size:12px;cursor:help;border-bottom:1px dotted currentColor}
+
+/* ---- Attach a verification to a record ---- */
+.fp label{display:block;font-size:12px;color:var(--muted,#666)}
+.fp label input{width:100%;font:inherit;font-size:13px;padding:8px;margin-top:5px;
+  border:1px solid var(--border,#ddd);border-radius:8px}
+.fp-results{list-style:none;margin:10px 0 0;padding:0;border:1px solid var(--border,#e6e6e6);
+  border-radius:10px;overflow:hidden;max-height:340px;overflow-y:auto}
+.fp-results li+li{border-top:1px solid var(--border,#eee)}
+.fp-row{display:block;width:100%;text-align:left;background:none;border:0;cursor:pointer;
+  padding:10px 12px;font:inherit}
+.fp-row:hover{background:var(--panel,#f7f7f5)}
+.fp-name{font-weight:600;font-size:13px;margin-right:8px}
+.fp-meta{display:block;margin-top:3px;font-size:12px;color:var(--muted,#888)}
+.fp-warn{color:#b45a4b}
+.ov-tag.gt-base{border-color:var(--border,#ddd);color:var(--muted,#777)}
+.ov-tag.gt-verified{border-color:#1f4d2e;color:#1f4d2e}
+.ov-tag.gt-pending{border-color:#c8b273;color:#7a6320}
+.fp-confirm{border:1px solid var(--accent,#1f4d2e);border-radius:10px;padding:14px;margin-bottom:12px}
+.fp-confirm-head{display:flex;align-items:center;gap:9px;font-size:14px;margin-bottom:4px}
+.fp-profile{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:12px 0 0;font-size:12px}
+.fp-profile dt{color:var(--muted,#888)}
+.fp-profile dd{margin:0}
+.fp-mission{line-height:1.5;max-height:120px;overflow-y:auto}
+.fp-attached{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13px;
+  background:#f3f6f3;border:1px solid #dfe7df;border-radius:8px;padding:9px 12px;margin-bottom:12px}

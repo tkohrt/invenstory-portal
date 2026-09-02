@@ -92,6 +92,19 @@ export function fundersLikeMine(args: {
 
 export function getFunder(ein: string) { return callTool<FunderCard>("get_funder", { ein }); }
 
+export interface FunderCandidate {
+  name: string; ein: string; funder_type?: string;
+  location?: string; has_grant_history?: boolean;
+}
+
+/**
+ * Resolve a funder by name. This is the only true lookup the service offers:
+ * find_grants is semantic search, so there is no equivalent for the grant side.
+ */
+export function lookupFunder(name: string) {
+  return callTool<FunderCandidate>("lookup_funder", { name });
+}
+
 /** Liveness probe for the admin panel. Cheap and safe to call on page load. */
 export async function ledgerHealth(): Promise<{ ok: boolean; detail: string }> {
   const base = process.env.FUNDER_LEDGER_URL;

@@ -8,6 +8,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addOverlayRecordAction } from "@/lib/server/overlay-actions";
+import FunderPicker from "./FunderPicker";
+import type { PickerResult, FunderPrefill } from "@/lib/server/ledger-lookup";
 import type { OverlayManualEntry, OverlayKind, OverlayConfidence } from "@/lib/types";
 import type { Tenant } from "@/lib/types";
 
@@ -21,10 +23,34 @@ const BLANK: OverlayManualEntry = {
 export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[]; onDone: () => void }) {
   const router = useRouter();
   const [f, setF] = useState<OverlayManualEntry>(BLANK);
+  // The picker is the default path for funders. `manual` is the escape hatch for
+  // a service outage or a genuinely new funder, and keeps the original
+  // free-text id field available rather than blocking the entry entirely.
+  const [manual, setManual] = useState(false);
+  const [attached, setAttached] = useState<PickerResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const set = (patch: Partial<OverlayManualEntry>) => setF({ ...f, ...patch });
   const isGrant = f.kind === "grant";
+  // Grants have no name lookup (find_grants is semantic search, not resolution),
+  // so the picker is funder-only until the grant-side path lands.
+  const showPicker = !isGrant && !manual && !attached;
+
+  /** Attach to a real record and prefill, so the reviewer edits what changed. */
+  const attach = (r: PickerResult, p: FunderPrefill) => {
+    setAttached(r);
+    setF({
+      ...f,
+      base_id: r.ein,               // consistent, correct, and never guessed
+      ein: r.ein,
+      title: r.name ?? f.title,
+      name: p.name ?? r.name ?? "",
+      website: p.website ?? "",
+      location: p.location ?? r.location ?? "",
+      focus: p.focus ?? "",
+      typical_grant_range: p.typical_grant_range ?? "",
+    });
+  };
 
   const submit = () => start(async () => {
     setErr(null);
@@ -46,7 +72,24 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
         Leave a field blank to leave the base record&apos;s value alone.
       </p>
 
-      <div className="aq-grid">
+      {showPicker && (
+        <FunderPicker
+          onAttach={attach}
+          onManual={() => { setManual(true); setF({ ...f, base_id: "" }); }}
+        />
+      )}
+
+      {attached && (
+        <div className="fp-attached">
+          Recording a verification for <strong>{attached.name}</strong>
+          <span className="ov-muted"> · EIN {attached.ein}</span>
+          <button type="button" className="btn ghost" onClick={() => { setAttached(null); setF(BLANK); }}>
+            Change funder
+          </button>
+        </div>
+      )}
+
+      <div className="aq-grid" style={showPicker ? { display: "none" } : undefined}>
         <label>Record type
           <select value={f.kind} onChange={e => set({ kind: e.target.value as OverlayKind })}>
             <option value="funder">Funder</option>
@@ -66,12 +109,16 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
             <option value="low">Low — worth a second look</option>
           </select>
         </label>
-        <label>Ledger record ID
-          <input value={f.base_id} onChange={e => set({ base_id: e.target.value })}
-                 placeholder="blank = brand-new record" />
-        </label>
+        {(isGrant || manual) && (
+          <label>Record id
+            <input value={f.base_id} onChange={e => set({ base_id: e.target.value })}
+                   placeholder={isGrant ? "the opportunity's source URL, or blank if new"
+                                        : "EIN, or blank for a funder not in the base"} />
+          </label>
+        )}
       </div>
 
+      {!showPicker && <>
       <label>Source URL <span className="oe-req">required</span>
         <input value={f.source_url} onChange={e => set({ source_url: e.target.value })}
                placeholder="https://funder.org/grants — where you verified this" />
@@ -140,6 +187,7 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
       </label>
 
       {err && <div className="ov-err">{err}</div>}
+      </>}
 
       <div className="al-actions">
         <button className="btn" onClick={submit} disabled={pending || !f.source_url.trim()}>
