@@ -782,3 +782,4 @@ button.vis-dot.busy{opacity:.5}
 .fm-verdict{cursor:help;border-bottom:1px dotted currentColor}
 .fm-funder{max-width:180px}
 .fm-listed{margin-top:3px;font-size:11px;color:var(--muted,#999);word-break:break-all}
+.fm-verified{color:#1f4d2e;font-size:12px;cursor:help;border-bottom:1px dotted currentColor}

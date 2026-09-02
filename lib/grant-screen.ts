@@ -91,6 +91,7 @@ export interface ScreenedGrant {
   website?: string; eligibility?: string; caveat?: string;
   rationale?: string;           // grounded "why this client fits", filled in later
   from_overlay?: boolean;
+  verified_at?: string | null;  // when For Granted last confirmed this at the source
 }
 
 /**

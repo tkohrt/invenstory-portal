@@ -11,23 +11,45 @@ interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
   close_date: string | null; award_ceiling: number | null; matched_at: string;
   title: string | null; funder: string | null; url: string | null;
-  rationale: string | null; source_site: string | null;
+  rationale: string | null; source_site: string | null; verified_at: string | null;
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
   eligible: "Eligible", likely: "Likely", check: "Needs a check",
 };
 
-// What each rung of the ladder actually means, shown on hover. Every one ends
-// at the same place on purpose: the Ledger is a June 2026 snapshot, so none of
-// these verdicts is a substitute for reading the funder's own page.
+// What each rung of the ladder actually means, shown on hover.
+//
+// NAMING RULE (client-visible surface): clients see "Ground Truth" and nothing
+// else. Never the Funder Ledger, never the vendor dataset, never the service.
+// This mirrors the existing brand rule that external writing says "For Granted's
+// funder discovery process" rather than naming the source. Everything a client
+// reads here is For Granted's work; how it is assembled is not their concern.
+//
+// Every rung still ends in the same place on purpose: nothing here substitutes
+// for reading the funder's own page.
+/** Freshness in For Granted's own terms, never the source dataset's. */
+function verified(m: { verified_at: string | null }): { label: string; help: string } {
+  if (!m.verified_at) {
+    return {
+      label: "Not independently verified",
+      help: "For Granted has not yet confirmed this record at the funder's own site. Treat the details as a starting point.",
+    };
+  }
+  const d = new Date(m.verified_at);
+  return {
+    label: `Verified ${d.toLocaleDateString()}`,
+    help: `A member of the For Granted team confirmed these details at the funder's own site on ${d.toLocaleDateString()}. Deadlines and priorities can still change.`,
+  };
+}
+
 const VERDICT_HELP: Record<Verdict, string> = {
   eligible:
     "The eligibility text names your organization type, and nothing is blocking. "
     + "The strongest signal available from a June 2026 snapshot. Still verify at the source.",
   likely:
     "Nothing is blocking, and there is at least one real alignment signal: your state, "
-    + "a cause-area overlap, or a strong score from the Ledger. Worth an hour. Verify at the source.",
+    + "a cause-area overlap, or a strong alignment score. Worth an hour. Verify at the source.",
   check:
     "Either something is blocking (federal money without SAM.gov, a cost match you cannot meet), "
     + "or there is nothing to go on but topical similarity. Read the eligibility text before spending time on it.",
@@ -59,7 +81,7 @@ export default function FunderMatchesView({
   const [pending, start] = useTransition();
 
   const run = () => start(async () => {
-    setErr(null); setMsg("Searching the Ledger. A cold start can take up to a minute.");
+    setErr(null); setMsg("Searching Ground Truth. This can take up to a minute.");
     try {
       const r = await runMatchAction();
       setMsg(`${r.kept} opportunities kept, ${r.dropped} filtered out as closed or ineligible. ${r.funders} funder matches, ${r.evidence} with funding evidence.`);
@@ -96,13 +118,15 @@ export default function FunderMatchesView({
 
       {!configured && (
         <div className="ov-note">
-          The Ledger service isn&apos;t connected yet. Set <code>FUNDER_LEDGER_URL</code> and{" "}
-          <code>FUNDER_LEDGER_KEY</code> in the portal environment and this page goes live.
-          Nothing else needs to change.
+          {isAdmin
+            ? <>Ground Truth is not connected in this environment. Set <code>FUNDER_LEDGER_URL</code>{" "}
+              and <code>FUNDER_LEDGER_KEY</code> and this page goes live.</>
+            : <>Ground Truth is being prepared for {orgName}. Your For Granted team will be in touch
+              once matches are ready.</>}
         </div>
       )}
       {configured && !health.ok && (
-        <div className="ov-note">Ledger status: {health.detail}</div>
+        <div className="ov-note">{isAdmin ? `Ground Truth status: ${health.detail}` : "Matches are being refreshed."}</div>
       )}
 
       {msg && <div className="fm-msg">{msg}</div>}
@@ -115,14 +139,15 @@ export default function FunderMatchesView({
       ) : (
         <>
           <div className="ov-runbar">
-            {matches.length} opportunities · last matched{" "}
-            {new Date(matches[0].matched_at).toLocaleString()} · Ledger data as of June 2026
+            {matches.length} opportunities · compiled{" "}
+            {new Date(matches[0].matched_at).toLocaleDateString()} · every match is a lead to
+            confirm with the funder before applying
           </div>
           <table className="aq-table fm-table">
             <thead>
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
-                <th>Deadline</th><th>Ceiling</th><th>Why this client</th>
+                <th>Deadline</th><th>Ceiling</th><th>Verified</th><th>Why this client</th>
               </tr>
             </thead>
             <tbody>
@@ -144,6 +169,11 @@ export default function FunderMatchesView({
                   </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
                   <td className="fm-nowrap">{money(m.award_ceiling)}</td>
+                  <td className="fm-nowrap">
+                    <span className={m.verified_at ? "fm-verified" : "ov-muted"} title={verified(m).help}>
+                      {verified(m).label}
+                    </span>
+                  </td>
                   <td className="fm-why">
                     {m.rationale || <span className="ov-muted">{m.reason ?? "—"}</span>}
                     {m.rationale && m.reason && (

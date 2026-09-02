@@ -80,7 +80,12 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   for (const rec of merged) {
     const s = screenGrant(rec as unknown as GrantCard, p);
     if (!s) { dropped += 1; continue; }
-    if (rec._overlay) s.from_overlay = true;
+    if (rec._overlay) {
+      s.from_overlay = true;
+      // Freshness a client can actually act on: when a person confirmed this,
+      // not when the source dataset was snapshotted.
+      s.verified_at = rec._overlay.reviewed_at ?? null;
+    }
     collected.push(s);
   }
 
@@ -116,6 +121,7 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
         source_site: s.source_site?.slice(0, 200) ?? null,
         url: s.website?.slice(0, 500) ?? null,
         rationale: s.rationale?.slice(0, 2000) ?? null,
+        verified_at: s.verified_at ?? null,
       })),
       { onConflict: "tenant_id,grant_id" });
     // Never report a successful run over a rejected write. The first version of
@@ -150,7 +156,7 @@ export async function getCachedMatches(tenantId: string) {
     grant_id: string; verdict: Verdict; reason: string | null;
     close_date: string | null; award_ceiling: number | null; matched_at: string;
     title: string | null; funder: string | null; url: string | null;
-    rationale: string | null; source_site: string | null;
+    rationale: string | null; source_site: string | null; verified_at: string | null;
   }[];
 }
 
