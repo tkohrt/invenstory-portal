@@ -808,3 +808,20 @@ button.vis-dot.busy{opacity:.5}
 .fp-mission{line-height:1.5;max-height:120px;overflow-y:auto}
 .fp-attached{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13px;
   background:#f3f6f3;border:1px solid #dfe7df;border-radius:8px;padding:9px 12px;margin-bottom:12px}
+.fp-url{margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)}
+.fp-url .btn{margin-top:9px}
+.fp-hint{margin:6px 0 0;font-size:11px}
+.oe-kind{display:block;font-size:12px;color:var(--muted,#666);margin-bottom:12px}
+.oe-kind select{display:block;width:100%;font:inherit;font-size:13px;padding:8px;margin-top:5px;
+  border:1px solid var(--border,#ddd);border-radius:8px}
+.fp select{width:100%;font:inherit;font-size:13px;padding:8px;margin-top:5px;
+  border:1px solid var(--border,#ddd);border-radius:8px}
+.ov-filters{display:flex;flex-wrap:wrap;gap:8px 22px;margin:4px 0 18px}
+.ov-filterrow{display:flex;gap:6px}
+.ov-tab{font:inherit;font-size:12px;padding:5px 11px;cursor:pointer;border-radius:999px;
+  border:1px solid var(--border,#ddd);background:none;color:var(--muted,#666)}
+.ov-tab:hover{background:var(--panel,#f7f7f5)}
+.ov-tab.on{border-color:#1f4d2e;color:#1f4d2e;background:#f3f6f3;font-weight:600}
+.ov-tab .badge-count{margin-left:5px}
+.fp-unknown{border:1px solid #c8b273;background:#fdfaf0;border-radius:10px;padding:12px 14px;margin-top:12px}
+.fp-unknown strong{font-size:13px}

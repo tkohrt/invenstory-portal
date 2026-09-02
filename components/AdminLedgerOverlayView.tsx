@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/overlay-actions";
 import OverlayEntryForm from "./OverlayEntryForm";
 import type { OverlayQueueRow, LedgerScoutRun, OverlayKind, OverlayProvenance, Tenant } from "@/lib/types";
+import { filterQueue, queueCounts, type KindFilter, type TypeFilter } from "@/lib/overlay-queue";
 
 const PROVENANCE_LABEL: Record<OverlayProvenance, string> = {
   client_surfaced: "Found working a client",
@@ -142,6 +143,17 @@ function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknow
   );
 }
 
+function Tab({ on, onClick, label, n, hint }: {
+  on: boolean; onClick: () => void; label: string; n: number; hint?: string;
+}) {
+  return (
+    <button type="button" onClick={onClick} title={hint}
+            aria-pressed={on} className={`ov-tab${on ? " on" : ""}`}>
+      {label} <span className="badge-count">{n}</span>
+    </button>
+  );
+}
+
 export default function AdminLedgerOverlayView({
   queue, decided, lastRun, tenants, base = {},
 }: {
@@ -149,10 +161,20 @@ export default function AdminLedgerOverlayView({
   tenants: Tenant[]; base?: Record<string, Record<string, unknown>>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [kindF, setKindF] = useState<KindFilter>("all");
+  const [typeF, setTypeF] = useState<TypeFilter>("all");
+
+  const counts = queueCounts(queue, kindF, typeF);
+  const visible = filterQueue(queue, kindF, typeF);
+
+  // Provenance stays a grouping inside the filtered list rather than a third
+  // filter. Where a record came from tells a reviewer how much to trust it; it
+  // does not change the decision they are making, so it earns a label and not
+  // a tab.
   const groups: { key: string; label: string; rows: OverlayQueueRow[] }[] = [];
   for (const kind of ["grant", "funder"] as OverlayKind[]) {
     for (const prov of ["client_surfaced", "scout_bot", "manual"] as OverlayProvenance[]) {
-      const rows = queue.filter(r => r.kind === kind && r.provenance === prov);
+      const rows = visible.filter(r => r.kind === kind && r.provenance === prov);
       if (rows.length) groups.push({ key: `${kind}:${prov}`, label: `${kind === "grant" ? "Grants" : "Funders"} · ${PROVENANCE_LABEL[prov]}`, rows });
     }
   }
@@ -186,6 +208,27 @@ export default function AdminLedgerOverlayView({
       )}
 
       {queue.length === 0 && <div className="empty">Nothing awaiting review. The queue fills as FG verifies grants for clients and as the discovery bot runs.</div>}
+
+      {queue.length > 0 && (
+        <div className="ov-filters">
+          <div className="ov-filterrow" role="group" aria-label="Filter by record kind">
+            <Tab on={kindF === "all"} onClick={() => setKindF("all")} label="Everything" n={counts.anyKind} />
+            <Tab on={kindF === "funder"} onClick={() => setKindF("funder")} label="Funders" n={counts.funder} />
+            <Tab on={kindF === "grant"} onClick={() => setKindF("grant")} label="Grants" n={counts.grant} />
+          </div>
+          <div className="ov-filterrow" role="group" aria-label="Filter by proposal type">
+            <Tab on={typeF === "all"} onClick={() => setTypeF("all")} label="Both" n={counts.anyType} />
+            <Tab on={typeF === "correction"} onClick={() => setTypeF("correction")} label="Corrections" n={counts.correction}
+                 hint="A change to a record that already exists. You are comparing it against what the base says." />
+            <Tab on={typeF === "new"} onClick={() => setTypeF("new")} label="New records" n={counts.new}
+                 hint="A record the base does not have. You are judging that it is real, and not already present under another name." />
+          </div>
+        </div>
+      )}
+
+      {queue.length > 0 && visible.length === 0 && (
+        <div className="empty">Nothing in the queue matches this filter.</div>
+      )}
 
       {groups.map(g => (
         <section key={g.key} className="ov-group">

@@ -14,13 +14,14 @@ import "server-only";
 import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
 import { getApprovedOverlay, mergeOverlay } from "./ledger-overlay";
+import { applyFunderOverlay, type LedgerRecord } from "@/lib/ledger-merge";
 import { buildDossier, addRationales } from "./match-rationale";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
 } from "./ledger";
 import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 // Signal 1 is pure and lives outside server-only so it can be unit tested.
-import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened } from "@/lib/grant-screen";
+import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
 import type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 export { screenGrant, needText } from "@/lib/grant-screen";
 export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
@@ -55,11 +56,12 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   const funderNeed = needText(p, orgName, "funders");
   const size = typicalGrantSize(p.budget_band);
 
-  const [grantsEnv, fundersEnv, evidenceEnv, overlay, dossier] = await Promise.all([
+  const [grantsEnv, fundersEnv, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
     findGrants({ need: grantNeed }),
     findFunders({ need: funderNeed, location: p.state_code ?? undefined, grant_size: size }),
     fundersLikeMine({ org_description: funderNeed, location: p.state_code ?? undefined }),
     getApprovedOverlay("grant"),
+    getApprovedOverlay("funder"),
     buildDossier(tenantId, orgName, p),
   ]);
 
@@ -70,10 +72,37 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   const normalized = (grantsEnv.results as unknown as RawGrantResult[]).map(normalizeGrant);
 
   // Merge FG corrections over the frozen base before anything is judged.
-  const withIds = normalized.map(g => ({
-    ...g, id: g.opportunity_number ?? g.title ?? Math.random().toString(36).slice(2),
-  }));
-  const merged = mergeOverlay(withIds, overlay);
+  //
+  // Ids are assigned here, once, and carried unchanged through screening and
+  // into eligible_grant. Anything that recomputes a record's identity later
+  // breaks the review loop silently: a correction filed against the cached id
+  // matches no base record, is neither applied nor appended, and vanishes.
+  const withIds = qualifyGrantIds(normalized) as unknown as LedgerRecord[];
+  const unmatched: string[] = [];
+  const merged = mergeOverlay(withIds, overlay, {
+    onUnmatched: row => unmatched.push(row.base_id ?? row.id),
+  });
+  if (unmatched.length) {
+    // Not an error: a correction for an opportunity this run did not return is
+    // normal. Logged because a correction that NEVER matches on any run is a
+    // broken loop, and silence is how the last one went unnoticed for weeks.
+    console.warn(`ground truth: ${unmatched.length} grant correction(s) matched no record this run`, unmatched.slice(0, 10));
+  }
+
+  // The funder side gets the same treatment, and until now did not: funder
+  // results were returned raw, so an approved funder correction sat in the
+  // overlay marked approved and reached no view at all. Every verification
+  // recorded through the picker was write-only.
+  //
+  // Funders key on EIN, which is what the picker writes into base_id, so a
+  // correction lands on the record it was attached to. Both lists are merged:
+  // the same funder can arrive through search and through the graph, and a
+  // correction that applied to one but not the other would be worse than none.
+  const mergedFunders = applyFunderOverlay(fundersEnv.results, funderOverlay);
+  // Evidence takes corrections but not additions: this list means "funders the
+  // graph shows already backing organizations like this one", and an
+  // FG-discovered funder with no graph history is not that.
+  const mergedEvidence = applyFunderOverlay(evidenceEnv.results, funderOverlay, { additions: false });
 
   const collected: ScreenedGrant[] = [];
   let dropped = 0;
@@ -113,7 +142,7 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   if (screened.length) {
     const { error } = await db.from("eligible_grant").upsert(
       screened.map(s => ({
-        tenant_id: tenantId, grant_id: s.grant_id.slice(0, 400), verdict: s.verdict,
+        tenant_id: tenantId, grant_id: s.grant_id.slice(0, GRANT_ID_MAX), verdict: s.verdict,
         reason: s.reason.slice(0, 500), close_date: s.close_date,
         award_ceiling: s.award_ceiling, matched_at: ranAt,
         title: s.title?.slice(0, 400) ?? null,
@@ -143,7 +172,7 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   }
 
   return {
-    grants: screened, funders: fundersEnv.results, evidence: evidenceEnv.results,
+    grants: screened, funders: mergedFunders, evidence: mergedEvidence,
     dropped, note: grantsEnv.note, ranAt,
   };
 }

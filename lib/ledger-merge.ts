@@ -30,6 +30,9 @@ export interface MergeOptions {
 
 export const OVERLAY_ID_PREFIX = "overlay:";
 
+/** Local id for a funder card with no EIN. Never equal to any real base_id. */
+const UNIDENTIFIED_PREFIX = "unidentified:";
+
 function stamp(row: LedgerOverlayRow, kind: "correction" | "new", reveal: boolean) {
   return {
     id: row.id, kind, reviewed_at: row.reviewed_at,
@@ -61,6 +64,24 @@ function dedupeKey(rec: Record<string, unknown>): string | null {
  *  - An addition that duplicates a base record by EIN or opportunity number is
  *    folded into it rather than rendered twice.
  */
+/**
+ * Field keys that are For Granted's working notes, not facts about the record.
+ *
+ * `reveal:false` was stripping source_url and provenance from the _overlay
+ * stamp, but `fields` is spread wholesale onto the record, and `notes` lives
+ * there — the form asks for "who you spoke to, what changed, why it matters".
+ * That is internal by construction and must never ride onto a client-visible
+ * card.
+ */
+const INTERNAL_FIELDS = ["notes", "review_note"] as const;
+
+function publicFields(fields: Record<string, unknown>, reveal: boolean): Record<string, unknown> {
+  if (reveal) return fields;
+  const out = { ...fields };
+  for (const k of INTERNAL_FIELDS) delete out[k];
+  return out;
+}
+
 export function mergeOverlay(
   base: LedgerRecord[], overlay: LedgerOverlayRow[], opts: MergeOptions = {},
 ): MergedRecord[] {
@@ -104,16 +125,16 @@ export function mergeOverlay(
     const fix = corrections.get(id);
     if (fix) {
       used.add(id);
-      return { ...rec, ...fix.fields, id: rec.id, _overlay: stamp(fix, "correction", reveal) };
+      return { ...rec, ...publicFields(fix.fields, reveal), id: rec.id, _overlay: stamp(fix, "correction", reveal) };
     }
     const folded = foldIn.get(id);
-    if (folded) return { ...rec, ...folded.fields, id: rec.id, _overlay: stamp(folded.row, "correction", reveal) };
+    if (folded) return { ...rec, ...publicFields(folded.fields, reveal), id: rec.id, _overlay: stamp(folded.row, "correction", reveal) };
     return { ...rec, _overlay: null };
   });
 
   for (const p of standalone) {
     merged.push({
-      ...p.fields,
+      ...publicFields(p.fields, reveal),
       id: `${OVERLAY_ID_PREFIX}${p.add.id}`,   // namespaced so it can't collide with a base id
       _overlay: stamp(p.applied ?? p.add, "new", reveal),
     });
@@ -123,4 +144,42 @@ export function mergeOverlay(
     for (const [baseId, row] of corrections) if (!used.has(baseId)) opts.onUnmatched(row);
   }
   return merged;
+}
+
+/**
+ * Merge approved funder corrections over a list of funder cards.
+ *
+ * mergeOverlay matches corrections by the record's `id`, and a funder's
+ * identity is its EIN — that is what FunderPicker writes into base_id. A card
+ * with no EIN cannot be corrected and passes through untouched rather than
+ * being dropped.
+ *
+ * reveal stays false: this output reaches client views, and FG sourcing
+ * (source_url, provenance) is internal.
+ */
+export function applyFunderOverlay<T extends { ein?: string }>(
+  funders: T[], overlay: LedgerOverlayRow[], opts: { additions?: boolean } = {},
+): T[] {
+  // Only an empty overlay is a no-op. An empty funder list still matters when
+  // additions are wanted: an approved NEW funder should appear even on a run
+  // where the base search came back with nothing.
+  if (!overlay.length) return funders;
+
+  // A funder's identity is its EIN — that is what FunderPicker writes into
+  // base_id. Cards without one cannot be corrected, and must NOT all be handed
+  // the same empty id: mergeOverlay's whole contract is that an id names one
+  // record, and a shared "" would let one correction or fold-in splice itself
+  // onto every anonymous trust in the list. They get a unique local id that no
+  // base_id can ever equal, so they pass through untouched.
+  const withIds = funders.map((f, i) => ({
+    ...f, id: f.ein?.trim() || `${UNIDENTIFIED_PREFIX}${i}`,
+  }));
+
+  // Additions are opt-in. Appending FG-discovered funders to the graph-evidence
+  // list would inflate "N funders already backing organizations like yours"
+  // with funders the graph says nothing about — a false claim about the one
+  // thing that signal exists to assert.
+  const rows = opts.additions === false ? overlay.filter(r => r.base_id) : overlay;
+
+  return mergeOverlay(withIds, rows) as unknown as T[];
 }

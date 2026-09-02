@@ -185,6 +185,69 @@ const INVITES: Record<string, RegExp> = {
 const GOV_ONLY = /\b(units? of local government|state agencies only|governmental entities only|tribal governments only)\b/i;
 
 /**
+ * The one identifier a grant has, assigned once and used everywhere.
+ *
+ * Three things must agree or Ground Truth silently stops working: the key
+ * mergeOverlay matches a correction against, the `grant_id` cached in
+ * eligible_grant, and the `base_id` the review picker writes. They did not.
+ * The merge keyed on the raw link while the cached row held a link qualified
+ * by title slug and truncated to 400 characters, so a correction filed against
+ * a real opportunity matched nothing, was neither applied nor appended, and
+ * disappeared without an error.
+ *
+ * So ids are assigned here, before the merge, and carried through screening
+ * and storage unchanged.
+ *
+ * The link is the base, because links are stable across runs in a way titles
+ * are not. Truncation happens HERE rather than at the database, so the id that
+ * is stored is byte-for-byte the id that was merged against.
+ */
+export const GRANT_ID_MAX = 400;
+
+export function baseGrantId(g: { opportunity_number?: string; title?: string; name?: string }): string {
+  const raw = g.opportunity_number || g.title || g.name || "untitled-opportunity";
+  return raw.slice(0, GRANT_ID_MAX);
+}
+
+/**
+ * Make ids unique within one run.
+ *
+ * Several distinct programmes often live on one landing page. Postgres rejects
+ * a whole upsert batch that touches the same key twice, which once lost every
+ * match in a run rather than just the duplicate — and a shared id would also
+ * mean a correction to one programme silently editing its neighbour.
+ *
+ * Rows that are genuinely the same opportunity (same link AND same title) are
+ * dropped; the rest are qualified with a slug of the title.
+ */
+export function qualifyGrantIds<T extends { opportunity_number?: string; title?: string; name?: string }>(
+  list: T[],
+): (T & { id: string })[] {
+  const seenExact = new Set<string>();
+  const usedIds = new Set<string>();
+  const out: (T & { id: string })[] = [];
+
+  for (const g of list) {
+    const base = baseGrantId(g);
+    const title = g.title ?? g.name ?? "";
+    const exact = `${base}\u0000${title}`;
+    if (seenExact.has(exact)) continue;
+    seenExact.add(exact);
+
+    let id = base;
+    if (usedIds.has(id)) {
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+      id = `${base}#${slug || usedIds.size}`.slice(0, GRANT_ID_MAX);
+      let n = 2;
+      while (usedIds.has(id)) id = `${base}#${slug}-${n++}`.slice(0, GRANT_ID_MAX);
+    }
+    usedIds.add(id);
+    out.push({ ...g, id });
+  }
+  return out;
+}
+
+/**
  * Signal 1. What the rules can actually decide, and nothing more.
  *
  * Returns null to DROP the opportunity outright (closed, or structurally
@@ -193,7 +256,10 @@ const GOV_ONLY = /\b(units? of local government|state agencies only|governmental
  */
 export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Date()): ScreenedGrant | null {
   const title = g.title ?? g.name ?? g.opportunity_number ?? "Untitled opportunity";
-  const id = g.opportunity_number ?? `${title}`.slice(0, 120);
+  // The id is assigned once by qualifyGrantIds, before the merge, and must not
+  // be recomputed here — a second opinion about a record's identity is exactly
+  // how the merge key and the stored key drifted apart.
+  const id = (g as { id?: string }).id ?? baseGrantId(g);
   const elig = g.eligibility ?? "";
   const ceiling = g.max_award ?? g.award_ceiling ?? null;
 
@@ -264,40 +330,22 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
 
 
 /**
- * Make grant_id unique within one run.
+ * Drop rows that are the same opportunity twice.
  *
- * grant_id is the source link, because links are stable across runs in a way
- * that titles are not. But several distinct programmes often live on one
- * landing page, so a single run can produce the same link twice. Postgres
- * rejects a whole upsert batch that touches the same key twice ("ON CONFLICT
- * DO UPDATE command cannot affect row a second time"), which lost every match
- * in the run, not just the duplicate.
- *
- * So: drop rows that are genuinely the same opportunity (same link AND same
- * title), and keep the rest by qualifying the id with a slug of the title.
- * Two real programmes sharing a page both survive.
+ * Ids are already unique by the time screening runs — qualifyGrantIds assigns
+ * them before the merge so the merge key, the cached grant_id and the picker's
+ * base_id are the same string. This is the safety net for the one case ids
+ * alone cannot catch, and it no longer re-keys anything: re-keying here was
+ * what put the stored id out of step with the key corrections were filed
+ * against.
  */
 export function dedupeScreened(list: ScreenedGrant[]): ScreenedGrant[] {
-  const seenExact = new Set<string>();
-  const usedIds = new Set<string>();
+  const seen = new Set<string>();
   const out: ScreenedGrant[] = [];
-
   for (const g of list) {
-    const exact = `${g.grant_id}\u0000${g.title}`;
-    if (seenExact.has(exact)) continue;          // same link, same title: one opportunity
-    seenExact.add(exact);
-
-    let id = g.grant_id;
-    if (usedIds.has(id)) {
-      const slug = g.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-      id = `${g.grant_id}#${slug || usedIds.size}`;
-      // Pathological case: same link, same slug, different title. Fall back to
-      // a counter so the run still saves rather than failing outright.
-      let n = 2;
-      while (usedIds.has(id)) id = `${g.grant_id}#${slug}-${n++}`;
-    }
-    usedIds.add(id);
-    out.push(id === g.grant_id ? g : { ...g, grant_id: id });
+    if (seen.has(g.grant_id)) continue;
+    seen.add(g.grant_id);
+    out.push(g);
   }
   return out;
 }

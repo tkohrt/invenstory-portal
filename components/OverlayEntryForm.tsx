@@ -9,7 +9,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addOverlayRecordAction } from "@/lib/server/overlay-actions";
 import FunderPicker from "./FunderPicker";
+import GrantPicker from "./GrantPicker";
 import type { PickerResult, FunderPrefill } from "@/lib/server/ledger-lookup";
+import type { GrantPickerResult } from "@/lib/server/grant-lookup";
 import type { OverlayManualEntry, OverlayKind, OverlayConfidence } from "@/lib/types";
 import type { Tenant } from "@/lib/types";
 
@@ -28,13 +30,23 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
   // free-text id field available rather than blocking the entry entirely.
   const [manual, setManual] = useState(false);
   const [attached, setAttached] = useState<PickerResult | null>(null);
+  const [attachedGrant, setAttachedGrant] = useState<GrantPickerResult | null>(null);
+  // Whose match list the grant picker is browsing. Deliberately separate from
+  // f.surfaced_for_tenant: that field decides provenance ("found while working
+  // a client"), and an admin who opens a client's list to look around, then
+  // pastes an unrelated URL, must not have the proposal permanently attributed
+  // to that client.
+  const [browseTenant, setBrowseTenant] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const set = (patch: Partial<OverlayManualEntry>) => setF({ ...f, ...patch });
   const isGrant = f.kind === "grant";
-  // Grants have no name lookup (find_grants is semantic search, not resolution),
-  // so the picker is funder-only until the grant-side path lands.
-  const showPicker = !isGrant && !manual && !attached;
+  // Each kind gets the picker that can actually resolve an id for it: name
+  // search for funders, recent matches or a source URL for grants. `manual` is
+  // the escape hatch on both sides.
+  const showFunderPicker = !isGrant && !manual && !attached;
+  const showGrantPicker = isGrant && !manual && !attachedGrant;
+  const showPicker = showFunderPicker || showGrantPicker;
 
   /** Attach to a real record and prefill, so the reviewer edits what changed. */
   const attach = (r: PickerResult, p: FunderPrefill) => {
@@ -50,6 +62,56 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
       focus: p.focus ?? "",
       typical_grant_range: p.typical_grant_range ?? "",
     });
+  };
+
+  /**
+   * Attach to a grant. base_id is the id qualifyGrantIds assigned before the
+   * merge and cached verbatim as eligible_grant.grant_id — the one string the
+   * merge, the cache and this form all have to agree on.
+   *
+   * Rebuilt from BLANK rather than spread over `f`: a form that was a funder a
+   * moment ago still holds name, location, focus and typical_grant_range, and
+   * every non-empty field is written into `fields` and merged wholesale onto
+   * the target record. The grant inputs are not even rendered for those keys,
+   * so the reviewer could neither see nor clear them.
+   *
+   * source_url is deliberately NOT prefilled from the cached row. It is the
+   * required field precisely because it records where a HUMAN verified this;
+   * filling it from a database nobody checked would satisfy the submit gate
+   * while answering the wrong question.
+   */
+  const attachGrant = (r: GrantPickerResult, fromList: boolean) => {
+    setAttachedGrant(r);
+    setF({
+      ...BLANK,
+      kind: "grant",
+      // Picking a grant OUT of a client's list is a real signal that it came up
+      // working for them; merely browsing is not, which is why this is set here
+      // and not when the browse selector changes.
+      surfaced_for_tenant: fromList ? browseTenant : f.surfaced_for_tenant,
+      confidence: f.confidence,
+      base_id: r.base_id,
+      opportunity_number: r.base_id,
+      title: r.title ?? "",
+      agency: r.funder ?? "",
+      website: r.url ?? "",
+      close_date: r.close_date ?? "",
+    });
+  };
+
+  /**
+   * Changing kind starts the entry over.
+   *
+   * An id from one side is meaningless on the other, but so is every other
+   * value: carrying a funder's name, location and grant range into a grant
+   * proposal writes them into `fields`, and on approval they merge onto the
+   * grant record for every tenant. Only the two answers that are true
+   * regardless of kind survive — which client this came up for, and how sure
+   * the person is.
+   */
+  const setKind = (kind: OverlayKind) => {
+    setAttached(null); setAttachedGrant(null); setManual(false);
+    setF({ ...BLANK, kind, surfaced_for_tenant: f.surfaced_for_tenant, confidence: f.confidence });
   };
 
   const submit = () => start(async () => {
@@ -73,8 +135,27 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
       </p>
 
       {showPicker && (
+        <label className="oe-kind">Record type
+          <select value={f.kind} onChange={e => setKind(e.target.value as OverlayKind)}>
+            <option value="funder">Funder</option>
+            <option value="grant">Grant / opportunity</option>
+          </select>
+        </label>
+      )}
+
+      {showFunderPicker && (
         <FunderPicker
           onAttach={attach}
+          onManual={() => { setManual(true); setF({ ...f, base_id: "" }); }}
+        />
+      )}
+
+      {showGrantPicker && (
+        <GrantPicker
+          tenants={tenants}
+          tenantId={browseTenant}
+          onTenant={setBrowseTenant}
+          onAttach={attachGrant}
           onManual={() => { setManual(true); setF({ ...f, base_id: "" }); }}
         />
       )}
@@ -89,9 +170,20 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
         </div>
       )}
 
+      {attachedGrant && (
+        <div className="fp-attached">
+          Recording a verification for <strong>{attachedGrant.title || attachedGrant.base_id}</strong>
+          {attachedGrant.funder && <span className="ov-muted"> · {attachedGrant.funder}</span>}
+          <button type="button" className="btn ghost"
+                  onClick={() => { setAttachedGrant(null); setF({ ...BLANK, kind: "grant" }); }}>
+            Change opportunity
+          </button>
+        </div>
+      )}
+
       <div className="aq-grid" style={showPicker ? { display: "none" } : undefined}>
         <label>Record type
-          <select value={f.kind} onChange={e => set({ kind: e.target.value as OverlayKind })}>
+          <select value={f.kind} onChange={e => setKind(e.target.value as OverlayKind)}>
             <option value="funder">Funder</option>
             <option value="grant">Grant / opportunity</option>
           </select>
@@ -109,7 +201,7 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
             <option value="low">Low — worth a second look</option>
           </select>
         </label>
-        {(isGrant || manual) && (
+        {manual && (
           <label>Record id
             <input value={f.base_id} onChange={e => set({ base_id: e.target.value })}
                    placeholder={isGrant ? "the opportunity's source URL, or blank if new"

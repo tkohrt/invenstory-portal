@@ -19,6 +19,8 @@ export interface GroundTruthStatus {
 export interface StatusRow {
   base_id: string | null;
   ein: string | null;
+  /** Grants are identified by their source URL, which is what this column holds. */
+  opportunity_number?: string | null;
   status: string;
   reviewed_at: string | null;
   id: string;
@@ -42,9 +44,10 @@ export function resolveGroundTruthStatus(
   for (const k of keys) out[k] = { ...BASE };
 
   for (const r of rows) {
-    // A funder overlay may be keyed by base_id or by EIN depending on how it
-    // was filed; match on either so a correction is never invisible.
-    for (const key of [r.base_id, r.ein]) {
+    // A row may be keyed by base_id, by EIN (funders) or by opportunity number
+    // (grants) depending on how it was filed; match on any of them so a
+    // correction is never invisible in the picker that should surface it.
+    for (const key of [r.base_id, r.ein, r.opportunity_number]) {
       if (!key || !(key in out)) continue;
       const cur = out[key];
 
