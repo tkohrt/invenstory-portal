@@ -8,6 +8,8 @@ import { runMatchAction, clearMatchesAction } from "@/lib/server/match-actions";
 import type { Verdict } from "@/lib/server/matching";
 import type { FunderRow } from "@/lib/funder-rows";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
+import { primaryContact, freshness, ROLE_LABEL, type ContactRecord } from "@/lib/funder-contact";
+import { screenFunders, hiddenByScreen } from "@/lib/funder-screen";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -109,15 +111,22 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 }
 
 export default function FunderMatchesView({
-  matches, funders, orgName, configured, health, isAdmin,
+  matches, funders, orgName, configured, health, isAdmin, contacts,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   health: { ok: boolean; detail: string }; isAdmin: boolean;
+  /** For Granted internal, admin sessions only. Empty for a client. */
+  contacts: Record<string, ContactRecord[]>;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Rows the source records as making no grants to anyone. Set aside rather
+  // than dropped, and one click from view, so a wrong screen is visible.
+  const [showNoHistory, setShowNoHistory] = useState(false);
+  const screened = screenFunders(funders);
+  const visibleFunders = showNoHistory ? [...screened.shown, ...screened.hidden] : screened.shown;
 
   const run = () => start(async () => {
     setErr(null); setMsg("Searching Ground Truth. This can take up to a minute.");
@@ -171,7 +180,7 @@ export default function FunderMatchesView({
       {msg && <div className="fm-msg">{msg}</div>}
       {err && <div className="ov-err">{err}</div>}
 
-      {matches.length === 0 && funders.length === 0 ? (
+      {matches.length === 0 && visibleFunders.length === 0 && !screened.hidden.length ? (
         <div className="empty">
           No matches cached yet.{isAdmin && configured ? " Run matching to build the list." : ""}
         </div>
@@ -231,7 +240,10 @@ export default function FunderMatchesView({
         </>
       )}
 
-      {funders.length > 0 && (
+      {/* Gated on hidden too. Otherwise a run where every funder is screened
+          out hides the toggle inside the block the toggle would have to open,
+          and the rows become unreachable rather than one click away. */}
+      {(visibleFunders.length > 0 || screened.hidden.length > 0) && (
         <>
           <h3 className="fm-h3">Funders worth approaching</h3>
           <p className="fm-sub">
@@ -246,21 +258,29 @@ export default function FunderMatchesView({
             funder will not read a cold proposal however well it fits, and &ldquo;likely&rdquo;
             there means we inferred it rather than checked.
           </p>
+          {visibleFunders.length > 0 && (
           <table className="aq-table fm-table">
             <thead>
               <tr>
                 <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
-                <th>Evidence</th><th>Verified</th><th>Why this client</th>
+                <th>Evidence</th>{isAdmin && <th>Who reads it</th>}
+                <th>Verified</th><th>Why this client</th>
               </tr>
             </thead>
             <tbody>
-              {funders.map(f => (
+              {visibleFunders.map(f => (
                 <tr key={f.funder_id}>
                   <td className="fm-name">
                     {f.website
                       ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>
                       : f.name}
                     {f.location && <div className="fm-listed">{f.location}</div>}
+                    {hiddenByScreen(f) && (
+                      <div className="fm-nohistory"
+                           title="No outgoing grants on file for this organization. Often an operating charity that delivers services itself rather than funding others, which semantic search cannot tell apart from a funder. Worth a look only if you have another reason.">
+                        No grants on record
+                      </div>
+                    )}
                     {/* Relayed verbatim. A donor-advised fund is not an approachable
                         foundation, and softening that wastes a client's time. */}
                     {f.caveat && <div className="fm-caveat">{f.caveat}</div>}
@@ -295,6 +315,30 @@ export default function FunderMatchesView({
                       ? <span title="Organizations this funder has actually granted to, from the giving history on record.">{evidenceText(f)}</span>
                       : <span className="ov-muted">No giving history on record</span>}
                   </td>
+                  {isAdmin && (
+                    <td className="fc-cell">
+                      {(() => {
+                        const c = primaryContact(contacts[f.ein ?? ""] ?? []);
+                        if (!c) return <span className="ov-muted">—</span>;
+                        const fr = freshness(c.last_verified_at);
+                        return (
+                          <>
+                            <div>{c.name}</div>
+                            <div className="ov-muted">
+                              {c.title || ROLE_LABEL[c.role]}
+                              {c.portfolio ? ` · ${c.portfolio}` : ""}
+                            </div>
+                            <div className={fr.stale ? "fc-stale" : "ov-muted"}
+                                 title={fr.stale
+                                   ? "Nobody has confirmed this in over a year. People move; check before writing."
+                                   : "Recently confirmed."}>
+                              {fr.label}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </td>
+                  )}
                   <td className="fm-nowrap">
                     <span className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
                       {verified(f).label}
@@ -316,6 +360,24 @@ export default function FunderMatchesView({
               ))}
             </tbody>
           </table>
+          )}
+
+          {visibleFunders.length === 0 && (
+            <div className="empty">
+              Every funder this run returned is recorded as making no grants to
+              anyone, which usually means they are operating charities rather
+              than funders. They are below if you want to look.
+            </div>
+          )}
+
+          {screened.hidden.length > 0 && (
+            <button type="button" className="fm-toggle"
+                    onClick={() => setShowNoHistory(v => !v)}>
+              {showNoHistory
+                ? `Hide the ${screened.hidden.length} with no grants on record`
+                : `Show ${screened.hidden.length} more with no grants on record`}
+            </button>
+          )}
         </>
       )}
 

@@ -198,6 +198,7 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
         access_mode: f.access_mode,
         access_note: f.access_note?.slice(0, 800) ?? null,
         access_verified: f.access_verified,
+        has_grant_history: f.has_grant_history,
         verified_at: f.verified_at,
         matched_at: ranAt,
       })),

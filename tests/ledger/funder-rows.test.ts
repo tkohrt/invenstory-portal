@@ -194,3 +194,22 @@ describe("funderRowsFrom", () => {
     expect(funderRowsFrom([], [])).toEqual([]);
   });
 });
+
+describe("has_grant_history through the merge", () => {
+  test("an absent flag stays null rather than becoming false", () => {
+    expect(funderRowsFrom([f({})], [])[0].has_grant_history).toBeNull();
+  });
+
+  test("a yes from either list wins", () => {
+    const rows = funderRowsFrom(
+      [f({ has_grant_history: false })],
+      [f({ has_grant_history: true, evidence_grantees: [{ name: "Peer" }] })],
+    );
+    expect(rows[0].has_grant_history).toBe(true);
+  });
+
+  test("a recorded flag beats an absent one", () => {
+    const rows = funderRowsFrom([f({ has_grant_history: false })], [f({})]);
+    expect(rows[0].has_grant_history).toBe(false);
+  });
+});

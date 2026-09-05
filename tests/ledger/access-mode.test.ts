@@ -24,15 +24,28 @@ describe("inferAccessMode", () => {
     expect(a?.note).toBe(caveat);   // relayed verbatim, never paraphrased
   });
 
-  test("'does not accept unsolicited proposals' is invitation only", () => {
+  test("'does not accept unsolicited proposals' is preselected, NOT invitation only", () => {
+    // The distinction is the point. This phrase says a cold approach fails. It
+    // does not say an introduction would work, and for a foundation that exists
+    // to fund one hospital, nothing works. Promising a route in that may not
+    // exist sends somebody hunting for an introduction for a week.
     expect(inferAccessMode("The Foundation does not accept unsolicited proposals.")?.mode)
-      .toBe("invitation_only");
+      .toBe("preselected_only");
+  });
+
+  test("'by invitation only' does promise a route in, and keeps it", () => {
+    expect(inferAccessMode("Grants are made by invitation only.")?.mode).toBe("invitation_only");
   });
 
   test("being told you cannot apply outranks being told it is donor-advised", () => {
     // A caveat can say both. The half that changes what you do comes first.
     expect(inferAccessMode("Donor-advised fund; does not accept unsolicited requests.")?.mode)
-      .toBe("invitation_only");
+      .toBe("preselected_only");
+  });
+
+  test("'preselected' on its own is enough", () => {
+    expect(inferAccessMode("Contributions go only to preselected organizations.")?.mode)
+      .toBe("preselected_only");
   });
 
   test("an RFP cycle is recognised", () => {
@@ -51,7 +64,7 @@ describe("inferAccessMode", () => {
   });
 
   test("no inference is ever marked verified", () => {
-    for (const c of ["donor-advised", "no unsolicited", "RFP", "not accepting"]) {
+    for (const c of ["donor-advised", "no unsolicited", "RFP", "not accepting", "by invitation only"]) {
       expect(inferAccessMode(c)?.verified).toBe(false);
     }
   });

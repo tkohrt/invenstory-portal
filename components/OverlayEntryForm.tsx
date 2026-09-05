@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { addOverlayRecordAction } from "@/lib/server/overlay-actions";
 import FunderPicker from "./FunderPicker";
 import GrantPicker from "./GrantPicker";
+import FunderContacts from "./FunderContacts";
 import type { PickerResult, FunderPrefill } from "@/lib/server/ledger-lookup";
 import type { GrantPickerResult } from "@/lib/server/grant-lookup";
 import type { OverlayManualEntry, OverlayKind, OverlayConfidence } from "@/lib/types";
@@ -173,6 +174,17 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
             Change funder
           </button>
         </div>
+      )}
+
+      {/* Contacts hang off the funder, so they appear once one is attached.
+          This is the moment the fact arrives: somebody has just read the team
+          page or come off a call. */}
+      {attached && (
+        <FunderContacts
+          ein={normalizeEin(attached.ein)}
+          funderName={attached.name}
+          sourceUrl={f.source_url}
+        />
       )}
 
       {attachedGrant && (

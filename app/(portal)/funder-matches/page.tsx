@@ -4,6 +4,7 @@ import { gateFeature } from "@/lib/server/gate";
 import { getTenant } from "@/lib/server/data";
 import { getCachedMatches, getCachedFunders } from "@/lib/server/matching";
 import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
+import { getContactsForEins } from "@/lib/server/funder-contacts";
 import FunderMatchesView from "@/components/FunderMatchesView";
 
 export default async function FunderMatchesPage() {
@@ -21,6 +22,14 @@ export default async function FunderMatchesPage() {
     configured ? ledgerHealth() : Promise.resolve({ ok: false, detail: "Not configured." }),
   ]);
 
+  // Contacts are For Granted's own working knowledge and never reach a client
+  // screen, so they are fetched only for an admin session. A client's page does
+  // not merely hide them; it never loads them.
+  const isAdmin = session.role === "admin";
+  const contacts = isAdmin
+    ? await getContactsForEins(funders.map(f => f.ein ?? "").filter(Boolean))
+    : {};
+
   return (
     <FunderMatchesView
       matches={matches}
@@ -28,7 +37,8 @@ export default async function FunderMatchesPage() {
       orgName={tenant?.name ?? "this organization"}
       configured={configured}
       health={health}
-      isAdmin={session.role === "admin"}
+      contacts={contacts}
+      isAdmin={isAdmin}
     />
   );
 }

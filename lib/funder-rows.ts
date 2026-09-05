@@ -37,6 +37,14 @@ export interface FunderRow {
   access_mode: AccessMode;
   access_note: string | null;
   access_verified: boolean;
+  /**
+   * Does the source record show this organization granting money to anyone?
+   *
+   * null means the field was absent, which is NOT the same as false. A funder
+   * For Granted added by hand carries no such flag and must never be screened
+   * out on it.
+   */
+  has_grant_history: boolean | null;
   verified_at: string | null;
 }
 
@@ -121,6 +129,7 @@ function row(f: MergedFunder, fromGraph: boolean, index = 0): FunderRow {
     access_mode: access.mode,
     access_note: access.note,
     access_verified: access.verified,
+    has_grant_history: typeof f.has_grant_history === "boolean" ? f.has_grant_history : null,
     // Freshness in For Granted's terms: when a person confirmed this, not when
     // the source dataset was snapshotted.
     verified_at: f._overlay?.reviewed_at ?? null,
@@ -175,6 +184,12 @@ export function funderRowsFrom(funders: FunderCard[], evidence: FunderCard[]): F
       evidence: prev.evidence.length ? prev.evidence : r.evidence,
       evidence_count: prev.evidence.length ? prev.evidence_count : r.evidence_count,
       from_graph: prev.from_graph || r.from_graph,
+      // A yes from either list wins, and an absent flag never overrides a
+      // recorded one. Two lists disagreeing about whether a funder grants is
+      // a reason to keep it, not to hide it.
+      has_grant_history: prev.has_grant_history === true || r.has_grant_history === true
+        ? true
+        : prev.has_grant_history ?? r.has_grant_history,
       from_overlay: prev.from_overlay || r.from_overlay,
     });
   });
