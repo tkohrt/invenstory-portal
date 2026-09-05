@@ -15,6 +15,7 @@ import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
 import { getApprovedOverlay, mergeOverlay } from "./ledger-overlay";
 import { applyFunderOverlay, type LedgerRecord } from "@/lib/ledger-merge";
+import { funderRowsFrom, type FunderRow } from "@/lib/funder-rows";
 import { buildDossier, addRationales } from "./match-rationale";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
@@ -28,7 +29,7 @@ export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 
 export interface MatchRun {
   grants: ScreenedGrant[];
-  funders: FunderCard[];
+  funders: FunderRow[];
   evidence: FunderCard[];
   dropped: number;
   note?: string;
@@ -171,8 +172,55 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     await db.from("eligible_grant").delete().eq("tenant_id", tenantId);
   }
 
+  // The funder side, stored under the same rule: a run is a snapshot, not an
+  // accumulation. Until now these were computed and discarded, which is why an
+  // approved funder correction reached no view — there was no view.
+  const funderRows = funderRowsFrom(mergedFunders, mergedEvidence);
+  if (funderRows.length) {
+    const { error } = await db.from("matched_funder").upsert(
+      funderRows.map(f => ({
+        tenant_id: tenantId,
+        funder_id: f.funder_id.slice(0, 200),
+        ein: f.ein, name: f.name.slice(0, 300),
+        website: f.website?.slice(0, 500) ?? null,
+        location: f.location?.slice(0, 200) ?? null,
+        focus: f.focus?.slice(0, 500) ?? null,
+        mission: f.mission?.slice(0, 4000) ?? null,
+        typical_grant_range: f.typical_grant_range?.slice(0, 120) ?? null,
+        match_reason: f.match_reason?.slice(0, 800) ?? null,
+        confidence: f.confidence, caveat: f.caveat?.slice(0, 800) ?? null,
+        evidence: f.evidence.slice(0, 12),
+        // The full count, not the truncated one: "and 40 more" is the honest
+        // reading of a funder with fifty grantees, and it is what the list is
+        // ordered by.
+        evidence_count: f.evidence_count,
+        from_graph: f.from_graph, from_overlay: f.from_overlay,
+        access_mode: f.access_mode,
+        access_note: f.access_note?.slice(0, 800) ?? null,
+        access_verified: f.access_verified,
+        verified_at: f.verified_at,
+        matched_at: ranAt,
+      })),
+      { onConflict: "tenant_id,funder_id" },
+    );
+    // Loud, like the grant write: a discarded error is how a run once reported
+    // success over an empty table.
+    if (error) throw new Error(`Funder matches could not be saved: ${error.message}`);
+
+    const { error: sweep } = await db.from("matched_funder")
+      .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    if (sweep) console.error("could not clear stale funder matches", sweep);
+  } else {
+    // Also bounded by ranAt. An unguarded delete here would wipe the rows a
+    // concurrent run had just written — two admin tabs is enough, since a run
+    // can take well over a minute.
+    const { error: clear } = await db.from("matched_funder")
+      .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    if (clear) console.error("could not clear funder matches", clear);
+  }
+
   return {
-    grants: screened, funders: mergedFunders, evidence: mergedEvidence,
+    grants: screened, funders: funderRows, evidence: mergedEvidence,
     dropped, note: grantsEnv.note, ranAt,
   };
 }
@@ -189,3 +237,20 @@ export async function getCachedMatches(tenantId: string) {
   }[];
 }
 
+/** Cached funder matches from the last run. */
+export async function getCachedFunders(tenantId: string): Promise<FunderRow[]> {
+  const { data, error } = await db.from("matched_funder")
+    .select("*").eq("tenant_id", tenantId)
+    // The same ranking funderRowsFrom computes. Ordering by evidence_count is
+    // why that column exists: PostgREST cannot sort on jsonb array length, so
+    // without it a funder with one peer grantee outranked one with twelve
+    // whenever its name sorted earlier, and the tested ordering never reached
+    // the page.
+    .order("from_graph", { ascending: false })
+    .order("evidence_count", { ascending: false })
+    .order("name", { ascending: true });
+  // A failed read must not render as "nothing found". An empty list is a claim
+  // about this client's prospects, and it should only be made when it is true.
+  if (error) throw new Error(`Funder matches could not be read: ${error.message}`);
+  return (data ?? []) as unknown as FunderRow[];
+}

@@ -119,3 +119,24 @@ describe("applyFunderOverlay", () => {
     expect(applyFunderOverlay([funder({})], overlay)).toHaveLength(2);
   });
 });
+
+describe("EIN spelling never loses a correction", () => {
+  test("a correction filed with a dashed EIN still reaches the record", () => {
+    // The picker writes base_id from whatever the lookup returned, and
+    // mergeOverlay compares ids as raw strings. A dash was enough to lose an
+    // approved verification silently.
+    const out = applyFunderOverlay(
+      [funder({ ein: "340714588", website: "https://old.example" })],
+      [row({ base_id: "34-0714588", fields: { website: "https://new.example" } })],
+    );
+    expect(out[0].website).toBe("https://new.example");
+  });
+
+  test("…and the reverse spelling too", () => {
+    const out = applyFunderOverlay(
+      [funder({ ein: "34-0714588", website: "https://old.example" })],
+      [row({ base_id: "340714588", fields: { website: "https://new.example" } })],
+    );
+    expect(out[0].website).toBe("https://new.example");
+  });
+});

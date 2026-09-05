@@ -4,6 +4,7 @@
 // client actually sees, so it must be unit-testable without a database. The
 // server-side reads live in lib/server/ledger-overlay.ts.
 import type { LedgerOverlayRow } from "@/lib/types";
+import { normalizeEin } from "@/lib/ein";
 
 export interface LedgerRecord { id: string; [k: string]: unknown }
 
@@ -172,14 +173,18 @@ export function applyFunderOverlay<T extends { ein?: string }>(
   // onto every anonymous trust in the list. They get a unique local id that no
   // base_id can ever equal, so they pass through untouched.
   const withIds = funders.map((f, i) => ({
-    ...f, id: f.ein?.trim() || `${UNIDENTIFIED_PREFIX}${i}`,
+    ...f, id: normalizeEin(f.ein) || `${UNIDENTIFIED_PREFIX}${i}`,
   }));
 
   // Additions are opt-in. Appending FG-discovered funders to the graph-evidence
   // list would inflate "N funders already backing organizations like yours"
   // with funders the graph says nothing about — a false claim about the one
   // thing that signal exists to assert.
-  const rows = opts.additions === false ? overlay.filter(r => r.base_id) : overlay;
+  const rows = (opts.additions === false ? overlay.filter(r => r.base_id) : overlay)
+    // The picker writes base_id from whatever the lookup returned, which may
+    // carry a dash. mergeOverlay compares ids as raw strings, so a correction
+    // filed against "34-0714588" would never find record "340714588".
+    .map(r => (r.base_id ? { ...r, base_id: normalizeEin(r.base_id) || r.base_id } : r));
 
   return mergeOverlay(withIds, rows) as unknown as T[];
 }

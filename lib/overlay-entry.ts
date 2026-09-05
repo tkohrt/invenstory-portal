@@ -5,6 +5,7 @@
 // "overwrite it with empty". Getting that backwards would let a half-filled
 // form silently erase good data for every client.
 import type { OverlayManualEntry } from "@/lib/types";
+import { ACCESS_MODES } from "@/lib/access-mode";
 
 export interface BuiltEntry {
   fields: Record<string, unknown>;
@@ -22,6 +23,19 @@ export function buildOverlayEntry(e: OverlayManualEntry): BuiltEntry {
   };
   put("name", e.name); put("website", e.website); put("location", e.location);
   put("focus", e.focus); put("typical_grant_range", e.typical_grant_range);
+  // Access mode is the highest-value thing a person can record here: the base
+  // dataset has no field for it, and it is the difference between a funder
+  // worth an afternoon and one that will never read a cold proposal.
+  if (e.access_mode && e.access_mode !== "unknown") {
+    if (!(ACCESS_MODES as readonly string[]).includes(e.access_mode)) {
+      throw new Error("Pick an access mode from the list.");
+    }
+    fields.access_mode = e.access_mode;
+    // Recorded, so it counts as verified. The distinction from an inference is
+    // load-bearing: resolveAccess marks anything it guesses as unverified, and
+    // the page says so.
+    put("access_note", e.access_note);
+  }
   put("agency", e.agency); put("eligibility", e.eligibility);
   put("caveat", e.caveat); put("notes", e.notes);
 

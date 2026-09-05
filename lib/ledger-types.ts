@@ -10,7 +10,18 @@ export interface FunderCard {
   has_grant_history?: boolean; grants_on_record?: number; total_granted_usd?: number;
   match_reason?: string; confidence?: "strong" | "moderate" | "worth_a_look";
   caveat?: string;                       // pass-through vehicles (DAFs); relay verbatim
-  evidence_grantees?: { name: string; amount_usd?: number; years?: number[] }[];
+  // Ground Truth only. The base dataset has no access field at all; these
+  // arrive by merging an approved correction over the frozen record.
+  access_mode?: string;
+  access_note?: string;
+  /**
+   * Peer grantees from the who-funds-whom graph. The field names are the
+   * WIRE's, not the doc's: it sends `total_usd` and `latest_year` (a string),
+   * where MCP_TOOLS.md implies `amount_usd` and a `years` array. We declared
+   * the documented shape and silently read undefined for every amount — the
+   * third time this service's real output has diverged from its documentation.
+   */
+  evidence_grantees?: { name: string; total_usd?: number; latest_year?: string }[];
 }
 
 /**

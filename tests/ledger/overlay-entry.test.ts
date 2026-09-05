@@ -65,3 +65,29 @@ describe("buildOverlayEntry", () => {
     expect(b.fields.caveat).toBe("Donor-advised fund, no open application.");
   });
 });
+
+describe("access mode on a verification", () => {
+  const base = { kind: "funder" as const, source_url: "https://f.org/grants", base_id: "340714588" };
+
+  test("a recorded access mode reaches fields", () => {
+    const b = buildOverlayEntry({ ...base, title: "A Fund", access_mode: "invitation_only",
+      access_note: '"We do not accept unsolicited proposals" — Grants page' });
+    expect(b.fields.access_mode).toBe("invitation_only");
+    expect(b.fields.access_note).toContain("unsolicited");
+  });
+
+  test("leaving it blank leaves the base record alone, like every other field", () => {
+    const b = buildOverlayEntry({ ...base, title: "A Fund", name: "A Fund", access_mode: "" });
+    expect("access_mode" in b.fields).toBe(false);
+  });
+
+  test("'unknown' records nothing rather than overwriting a known answer with a shrug", () => {
+    const b = buildOverlayEntry({ ...base, title: "A Fund", name: "A Fund", access_mode: "unknown" });
+    expect("access_mode" in b.fields).toBe(false);
+  });
+
+  test("a value not in the vocabulary is rejected, not stored", () => {
+    expect(() => buildOverlayEntry({ ...base, title: "A", access_mode: "probably_fine" }))
+      .toThrow(/access mode/i);
+  });
+});

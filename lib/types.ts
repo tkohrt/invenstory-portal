@@ -280,6 +280,9 @@ export interface OverlayManualEntry {
   location?: string;
   focus?: string;
   typical_grant_range?: string;
+  /** Funders only: how they take requests, and the line that says so. */
+  access_mode?: string;
+  access_note?: string;
   agency?: string;
   close_date?: string;               // YYYY-MM-DD
   min_award?: string;

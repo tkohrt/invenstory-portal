@@ -14,11 +14,14 @@ import type { PickerResult, FunderPrefill } from "@/lib/server/ledger-lookup";
 import type { GrantPickerResult } from "@/lib/server/grant-lookup";
 import type { OverlayManualEntry, OverlayKind, OverlayConfidence } from "@/lib/types";
 import type { Tenant } from "@/lib/types";
+import { normalizeEin } from "@/lib/ein";
+import { ACCESS_OPTIONS, ACCESS_HELP } from "@/lib/access-mode";
 
 const BLANK: OverlayManualEntry = {
   kind: "funder", base_id: "", source_url: "", surfaced_for_tenant: "", confidence: "high",
   title: "", ein: "", opportunity_number: "", name: "", website: "", location: "",
-  focus: "", typical_grant_range: "", agency: "", close_date: "",
+  focus: "", typical_grant_range: "", access_mode: "", access_note: "",
+  agency: "", close_date: "",
   min_award: "", max_award: "", eligibility: "", caveat: "", notes: "",
 };
 
@@ -53,7 +56,9 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
     setAttached(r);
     setF({
       ...f,
-      base_id: r.ein,               // consistent, correct, and never guessed
+      // Digits only, so it matches the record id the merge computes the same
+      // way. A dash here loses the correction silently.
+      base_id: normalizeEin(r.ein) || r.ein,
       ein: r.ein,
       title: r.name ?? f.title,
       name: p.name ?? r.name ?? "",
@@ -251,6 +256,12 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
             <label>Typical grant range
               <input value={f.typical_grant_range} onChange={e => set({ typical_grant_range: e.target.value })} placeholder="$10,000–$50,000" />
             </label>
+            <label>How do they take requests?
+              <select value={f.access_mode ?? ""} onChange={e => set({ access_mode: e.target.value })}>
+                <option value="">Leave as-is</option>
+                {ACCESS_OPTIONS.map(o => <option key={o.v} value={o.v} title={ACCESS_HELP[o.v]}>{o.l}</option>)}
+              </select>
+            </label>
           </>
         )}
         <label>Website
@@ -262,6 +273,13 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
           </label>
         )}
       </div>
+
+      {!isGrant && f.access_mode && (
+        <label>What made you sure? <span className="oe-req">quote them</span>
+          <input value={f.access_note ?? ""} onChange={e => set({ access_note: e.target.value })}
+                 placeholder={'e.g. "We do not accept unsolicited proposals" — from their Grants page'} />
+        </label>
+      )}
 
       <label>Eligibility, in their words
         <textarea rows={2} value={f.eligibility} onChange={e => set({ eligibility: e.target.value })}

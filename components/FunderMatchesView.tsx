@@ -6,6 +6,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { runMatchAction, clearMatchesAction } from "@/lib/server/match-actions";
 import type { Verdict } from "@/lib/server/matching";
+import type { FunderRow } from "@/lib/funder-rows";
+import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -69,10 +71,47 @@ function deadline(d: string | null) {
   return label;
 }
 
+/** Peer grantees, phrased as evidence for an approach rather than a promise. */
+function evidenceText(f: FunderRow): string {
+  // Amounts and years included: "Goodwill of NW Ohio ($1.0M, 2023)" is a
+  // reason to write the letter, where a bare name is only a hint.
+  const shown = f.evidence.slice(0, 3).filter(e => e.name).map(e => {
+    const bits = [e.total_usd ? money(e.total_usd) : null, e.latest_year].filter(Boolean);
+    return bits.length ? `${e.name} (${bits.join(", ")})` : e.name;
+  });
+  if (!shown.length) return "";
+  // Counted against the true total, not the twelve rows we store: a funder with
+  // fifty grantees should read "and 47 more", not "and 9 more".
+  const more = Math.max(0, (f.evidence_count || f.evidence.length) - shown.length);
+  return more > 0 ? `${shown.join(", ")} and ${more} more` : shown.join(", ");
+}
+
+/**
+ * What a row is actually claiming.
+ *
+ * Three different things end up in this table and only one of them is a match
+ * against this client. Saying so is the difference between a shortlist someone
+ * can trust and a list that quietly overstates its own evidence.
+ */
+function signal(f: FunderRow): { label: string; cls: string; help: string } {
+  if (f.from_graph) return {
+    label: "Already funds peers", cls: "fm-eligible",
+    help: "On the giving history on record, this funder has made grants to organizations like this one. The strongest signal on this page — and still a June 2026 record, so confirm it before acting.",
+  };
+  if (f.from_overlay) return {
+    label: "For Granted record", cls: "",
+    help: "A funder For Granted added or verified directly. It has not been assessed against this organization specifically — it is here because the team thought it worth knowing about.",
+  };
+  return {
+    label: "Focus aligns", cls: "",
+    help: "Their stated focus lines up with this organization's work. Weaker than a giving history: read their guidelines before investing time.",
+  };
+}
+
 export default function FunderMatchesView({
-  matches, orgName, configured, health, isAdmin,
+  matches, funders, orgName, configured, health, isAdmin,
 }: {
-  matches: Cached[]; orgName: string; configured: boolean;
+  matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   health: { ok: boolean; detail: string }; isAdmin: boolean;
 }) {
   const router = useRouter();
@@ -132,9 +171,14 @@ export default function FunderMatchesView({
       {msg && <div className="fm-msg">{msg}</div>}
       {err && <div className="ov-err">{err}</div>}
 
-      {matches.length === 0 ? (
+      {matches.length === 0 && funders.length === 0 ? (
         <div className="empty">
           No matches cached yet.{isAdmin && configured ? " Run matching to build the list." : ""}
+        </div>
+      ) : matches.length === 0 ? (
+        <div className="empty">
+          No open solicitations survived screening this run. The funders below are still worth
+          approaching — most foundation money never appears as a public call.
         </div>
       ) : (
         <>
@@ -184,12 +228,101 @@ export default function FunderMatchesView({
               ))}
             </tbody>
           </table>
-          {isAdmin && (
-            <div className="ov-actions">
-              <button className="btn ghost" onClick={clear} disabled={pending}>Clear cached matches</button>
-            </div>
-          )}
         </>
+      )}
+
+      {funders.length > 0 && (
+        <>
+          <h3 className="fm-h3">Funders worth approaching</h3>
+          <p className="fm-sub">
+            Not open calls. These are organizations whose giving lines up with {orgName}&apos;s
+            work, and the ones marked <strong>already funds peers</strong> have a record of
+            granting to organizations like this one — the strongest reason on this page to
+            spend an afternoon on an approach. Like everything here it reads a{" "}
+            <strong>June 2026 snapshot</strong>: a funder&apos;s priorities and the people who
+            run their programmes both move. A funder with no open solicitation is normally
+            reached by a letter of inquiry, so treat this as a shortlist to research, not a
+            list to apply to. Read the <strong>Access</strong> column first: an invitation-only
+            funder will not read a cold proposal however well it fits, and &ldquo;likely&rdquo;
+            there means we inferred it rather than checked.
+          </p>
+          <table className="aq-table fm-table">
+            <thead>
+              <tr>
+                <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
+                <th>Evidence</th><th>Verified</th><th>Why this client</th>
+              </tr>
+            </thead>
+            <tbody>
+              {funders.map(f => (
+                <tr key={f.funder_id}>
+                  <td className="fm-name">
+                    {f.website
+                      ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>
+                      : f.name}
+                    {f.location && <div className="fm-listed">{f.location}</div>}
+                    {/* Relayed verbatim. A donor-advised fund is not an approachable
+                        foundation, and softening that wastes a client's time. */}
+                    {f.caveat && <div className="fm-caveat">{f.caveat}</div>}
+                  </td>
+                  <td className="fm-access">
+                    {/* The distinction between checked and guessed is the whole
+                        point of Ground Truth, so it is visible, not buried in a
+                        tooltip: an inferred answer is styled differently and
+                        says "likely". */}
+                    <span className={`ov-tag fm-acc-${f.access_mode}${f.access_verified ? "" : " fm-acc-guess"}`}
+                          title={`${ACCESS_HELP[f.access_mode]}${f.access_note ? `\n\n${f.access_note}` : ""}${
+                            f.access_verified
+                              ? "\n\nFor Granted confirmed this at the funder's own materials."
+                              : f.access_mode === "unknown"
+                                ? ""
+                                : "\n\nInferred from the record, not confirmed by anyone. Check before acting on it."}`}>
+                      {f.access_verified || f.access_mode === "unknown"
+                        ? ACCESS_LABEL[f.access_mode]
+                        : `Likely ${ACCESS_LABEL[f.access_mode].toLowerCase()}`}
+                    </span>
+                  </td>
+                  <td className="fm-nowrap">
+                    <span className={`ov-tag ${signal(f).cls} fm-verdict`} title={signal(f).help}>
+                      {signal(f).label}
+                    </span>
+                  </td>
+                  <td className="fm-nowrap">
+                    {f.typical_grant_range || <span className="ov-muted">—</span>}
+                  </td>
+                  <td className="fm-why">
+                    {f.evidence.length
+                      ? <span title="Organizations this funder has actually granted to, from the giving history on record.">{evidenceText(f)}</span>
+                      : <span className="ov-muted">No giving history on record</span>}
+                  </td>
+                  <td className="fm-nowrap">
+                    <span className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
+                      {verified(f).label}
+                    </span>
+                  </td>
+                  <td className="fm-why">
+                    {f.match_reason
+                      ? f.match_reason
+                      : f.from_overlay
+                        // Not a reason. This funder was never assessed against
+                        // this client, and the column header promises that it
+                        // was, so say the true thing instead.
+                        ? <span className="ov-muted">Not assessed against {orgName}</span>
+                        : f.focus
+                          ? <span className="ov-muted" title="The funder's own stated focus, not a match explanation.">{f.focus}</span>
+                          : <span className="ov-muted">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {isAdmin && (matches.length > 0 || funders.length > 0) && (
+        <div className="ov-actions">
+          <button className="btn ghost" onClick={clear} disabled={pending}>Clear cached matches</button>
+        </div>
       )}
     </div>
   );

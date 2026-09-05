@@ -17,7 +17,7 @@ export async function runMatchAction() {
 
   await db.from("audit_log").insert({
     actor_user_id: s.user.id, tenant_id: s.tenantId, action: "ledger_match",
-    detail: `${result.grants.length} kept, ${result.dropped} dropped`,
+    detail: `${result.grants.length} kept, ${result.dropped} dropped, ${result.funders.length} funders`,
   });
   revalidatePath("/funder-matches");
   return {
@@ -30,6 +30,9 @@ export async function runMatchAction() {
 export async function clearMatchesAction() {
   const s = await getSession();
   if (!s || s.role !== "admin") throw new Error("admin required");
+  // Both halves of a run, or "Clear" would leave the funder list standing as
+  // though it were current while the grants vanished.
   await db.from("eligible_grant").delete().eq("tenant_id", s.tenantId);
+  await db.from("matched_funder").delete().eq("tenant_id", s.tenantId);
   revalidatePath("/funder-matches");
 }
