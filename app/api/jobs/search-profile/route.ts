@@ -1,56 +1,74 @@
-// Rebuild the Search Profile, without holding the browser open for it.
+// Build the Search Profile, one invocation's worth at a time.
 //
-// A model call per document window, four documents at a time. On a client with
-// a lot of Layer III transcripts that is minutes, which no request should be
-// asked to survive.
+// RE-Assist's Inven(s)tory is 15 documents and about 37 model windows, two to
+// three minutes of reading. No function budget survives that, and the old
+// all-or-nothing build threw away everything it had read each time it died.
+//
+// So each call reads what fits in its budget, keeps it, and REPORTS WHAT IS
+// LEFT. The work happens inside the request rather than in `after`, because the
+// caller has to be told the truth to decide whether to come back: a response
+// that returns before the work is done can only guess. The budget is 42
+// seconds against a 60-second limit, so this always answers.
+//
+// Safe to repeat and safe to interrupt. A document already read is not read
+// again, and one whose text has changed since is.
 import { NextResponse } from "next/server";
-import { after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
-import { rebuildSearchProfile } from "@/lib/server/search-profile-extract";
-import { createJob, updateJob, finishJob, failJob } from "@/lib/server/jobs";
+import {
+  continueProfileBuild, clearProfileDocs, profileBuildProgress,
+} from "@/lib/server/search-profile-extract";
+import { createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob } from "@/lib/server/jobs";
 
-// The plan's ceiling, not a wish. This Vercel team is on Hobby, which caps a
-// function at 60 seconds, so a larger number here is silently ignored rather
-// than granted, and pretending otherwise is how a run gets killed mid-write
-// with the code believing it had five minutes.
-//
-// 60 seconds is genuinely tight for this work: the Ledger sleeps when idle and
-// one cold call can eat most of the budget. That is why the job row exists.
-// Work that runs out of time leaves a row that stops heartbeating and reads as
-// stalled, which is recoverable and legible, rather than a dead spinner over
-// half-written data. Raising this to 300 is a one-line change the day the plan
-// allows it.
 export const maxDuration = 60;
 
-export async function POST() {
+export async function POST(req: Request) {
   const session = await getSession();
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "admin required" }, { status: 403 });
   }
+  const body = await req.json().catch(() => ({}));
   const tenantId = session.tenantId;
+
+  // Continue the chain rather than starting a second one beside it. Even on a
+  // restart: reusing the row keeps the lease meaningful, which is what stops
+  // two tabs reading the same documents for the same money.
+  const existing = await latestJob(tenantId, "search_profile");
   const tenant = await getTenant(tenantId);
-  const jobId = await createJob(
+  const jobId = existing?.id ?? await createJob(
     tenantId, "search_profile",
     `Reading ${tenant?.name ?? "this client"}'s Inven(s)tory`, session.user.id);
 
-  after(async () => {
-    try {
-      const r = await rebuildSearchProfile(tenantId, session.user.id, {
-        onProgress: p => { void updateJob(tenantId, jobId, p); },
-      });
-      await finishJob(tenantId, jobId, {
-        facts: r.profile.facts.length, scanned: r.scanned, skipped: r.skipped,
-        silent: r.silent, usable: r.usable,
-      }, `${r.profile.facts.length} facts from ${r.scanned} document(s)`
-        + (r.skipped ? `, ${r.skipped} skipped` : "")
-        + (r.silent ? `, ${r.silent} said nothing useful` : "")
-        + `. ${r.note}`);
-    } catch (e) {
-      await failJob(tenantId, jobId,
-        e instanceof Error ? e.message : "Could not finish reading the Inven(s)tory.");
-    }
-  });
+  if (!await claimJob(tenantId, jobId)) {
+    const p = await profileBuildProgress(tenantId);
+    return NextResponse.json({ jobId, busy: true, complete: false, ...p });
+  }
 
-  return NextResponse.json({ jobId });
+  // Clearing happens under the lease, so a concurrent invocation cannot be
+  // assembling a profile from rows this is deleting.
+  if (body?.restart) await clearProfileDocs(tenantId);
+
+  try {
+    const r = await continueProfileBuild(tenantId, session.user.id, {
+      onProgress: p => { void updateJob(tenantId, jobId, p); },
+    });
+    const progress = await profileBuildProgress(tenantId);
+
+    if (r.complete) {
+      await releaseJob(tenantId, jobId);
+      await finishJob(tenantId, jobId,
+        { facts: r.profile?.facts.length ?? 0, documents: r.profile?.documentCount ?? 0, usable: r.usable },
+        `${r.profile?.facts.length ?? 0} facts from ${r.profile?.documentCount ?? 0} document(s). ${r.note ?? ""}`.trim());
+    } else {
+      // Not a failure. Out of budget with work left, which is the design.
+      await updateJob(tenantId, jobId, { detail: `${progress.done} of ${progress.total} documents read` });
+      await releaseJob(tenantId, jobId);
+    }
+    return NextResponse.json({ jobId, complete: r.complete, read: r.read, ...progress });
+  } catch (e) {
+    await releaseJob(tenantId, jobId);
+    const message = e instanceof Error ? e.message : "Could not finish reading the Inven(s)tory.";
+    await failJob(tenantId, jobId, message);
+    return NextResponse.json({ jobId, error: message }, { status: 500 });
+  }
 }

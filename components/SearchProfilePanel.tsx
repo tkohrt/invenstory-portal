@@ -9,7 +9,7 @@
 //
 // Admin only. It shows document titles and quotes, which is For Granted's
 // working view of a client's Inven(s)tory rather than a client-facing one.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
@@ -32,13 +32,80 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { job, start: startJob, starting, running, error, gaveUp } = useJob(initialJob);
+  const { job, setJob, starting, running, error, gaveUp } = useJob(initialJob);
   const [dismissed, setDismissed] = useState(false);
+  const [chain, setChain] = useState<{ done: number; total: number } | null>(null);
+  const [chainError, setChainError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   const finished = job?.status;
   useEffect(() => { if (finished === "done") router.refresh(); }, [finished, router]);
 
-  const rebuild = () => { setDismissed(false); void startJob("/api/jobs/search-profile", "search_profile"); };
+  /**
+   * Read the whole Inven(s)tory, however many invocations that takes.
+   *
+   * A large one is minutes of model time and no single request gets that long,
+   * so this is a loop: each call reads what fits, keeps it, and says what is
+   * left. The decision to come back is made from the RESPONSE, not from a
+   * string in a progress field that other writers own.
+   *
+   * Everything read is saved, so closing the tab pauses this rather than losing
+   * it, and Continue picks it up.
+   */
+  const runChain = useCallback(async (restart: boolean) => {
+    setDismissed(false); setChainError(null); setPaused(false); setWorking(true);
+    let lastDone = -1;
+    let stuck = 0;
+
+    try {
+      // Bounded. A loop that cannot terminate is worse than one that stops
+      // early and says so.
+      for (let pass = 0; pass < 40; pass++) {
+        const res = await fetch("/api/jobs/search-profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ restart: restart && pass === 0 }),
+        });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(r.error ?? "Reading failed.");
+
+        setChain({ done: r.done ?? 0, total: r.total ?? 0 });
+        if (r.jobId) {
+          const j = await fetch(`/api/jobs/${r.jobId}`, { cache: "no-store" }).then(x => x.ok ? x.json() : null).catch(() => null);
+          if (j?.job) setJob(j.job);
+        }
+
+        if (r.complete) { router.refresh(); return; }
+
+        // Another tab holds the lease. Wait rather than racing it.
+        if (r.busy) { await new Promise(f => setTimeout(f, 3000)); continue; }
+
+        // Two passes with nothing read means something is wrong that another
+        // pass will not fix: a document that always overruns, or setup that
+        // eats the whole budget. Stop and say so rather than spending forever.
+        if ((r.done ?? 0) === lastDone) {
+          if (++stuck >= 2) {
+            setPaused(true);
+            setChainError(`Stopped after reading ${r.done} of ${r.total} documents: two passes in a row made no progress. `
+              + "What has been read is saved. Continue tries again from here.");
+            return;
+          }
+        } else { stuck = 0; }
+        lastDone = r.done ?? 0;
+      }
+      setPaused(true);
+      setChainError("Stopped after many passes without finishing. What has been read is saved.");
+    } catch (e) {
+      setPaused(true);
+      setChainError(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
+    } finally {
+      setWorking(false);
+    }
+  }, [router, setJob]);
+
+  const rebuild = () => void runChain(true);
+  const carryOn = () => void runChain(false);
 
   // Only facts that may describe the client. Competitor and partner lines are
   // kept in the data and deliberately not shown as if they were ours.
@@ -57,8 +124,18 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
             {open ? "hide" : "show"}
           </button>
         )}
-        <button type="button" className="btn ghost" onClick={rebuild} disabled={starting || running}>
-          {running ? "Reading…" : starting ? "Starting…" : profile ? "Rebuild" : "Build it"}
+        {/* Continue is the recovery path, and it must exist. Without it the
+            only button destroys every document already read, which on a large
+            Inven(s)tory is minutes of model spend. */}
+        {paused && (
+          <button type="button" className="btn" onClick={carryOn} disabled={working}>
+            Continue
+          </button>
+        )}
+        <button type="button" className="btn ghost" onClick={rebuild}
+                disabled={working || starting || running}
+                title={profile ? "Forgets what was read and starts over." : undefined}>
+          {working ? "Reading…" : profile ? "Rebuild" : "Build it"}
         </button>
       </div>
 
@@ -86,7 +163,14 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
       )}
 
       <JobProgress job={dismissed ? null : job} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
-      {error && <div className="ov-err">{error}</div>}
+      {chain && chain.total > 0 && (working || paused) && (
+        <p className="ov-note sp-chain">
+          {chain.done} of {chain.total} documents read. A large Inven(s)tory takes
+          longer than one request is allowed, so this runs in stages. Everything
+          read is saved: closing this page pauses it, and Continue picks it up.
+        </p>
+      )}
+      {(error || chainError) && <div className="ov-err">{error ?? chainError}</div>}
 
       {open && profile && (
         <>

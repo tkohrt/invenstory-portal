@@ -68,24 +68,76 @@ async function scanWindow(title: string, text: string, src: { documentId: string
 }
 
 export interface ProfileBuildResult {
-  profile: SearchProfile;
-  note: string;
-  usable: boolean;
-  /** Documents read, skipped as boilerplate, and how many produced nothing. */
-  scanned: number; skipped: number; silent: number;
+  /** Documents read in THIS invocation. */
+  read: number;
+  /** Documents still to read after it. */
+  remaining: number;
+  /** True when every document is read and the profile has been assembled. */
+  complete: boolean;
+  /** Only set once complete. */
+  profile?: SearchProfile;
+  note?: string;
+  usable?: boolean;
+}
+
+/** Leave enough of the function's budget to write results and answer. */
+const WORK_BUDGET_MS = 42_000;
+
+interface DocRow { id: string; title: string; layer: string | null; }
+
+/**
+ * A cheap fingerprint of a document's text.
+ *
+ * Documents are re-processed in place: same id, chunks deleted and rewritten.
+ * Without this, a re-uploaded document keeps the facts and the verbatim quotes
+ * extracted from content that no longer exists, and the profile reports itself
+ * as current. For a system whose whole discipline is "no quote, no fact",
+ * stored quotes that are no longer in the document are the worst failure
+ * available.
+ */
+function contentHash(text: string): string {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return `${text.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** Read one document and store its facts. Idempotent: re-reading replaces. */
+async function extractOne(tenantId: string, d: DocRow, text: string): Promise<number> {
+  const layer = (["I", "II", "III"].includes(d.layer ?? "") ? d.layer : null) as Layer;
+  const src = { documentId: d.id, documentTitle: d.title, layer };
+  const w = windows(text);
+  const parts = await Promise.all(w.map(win => scanWindow(d.title, win, src)));
+  const facts = parts.flat();
+
+  const { error } = await db.from("search_profile_doc").upsert({
+    tenant_id: tenantId, document_id: d.id, facts,
+    chars: text.length, windows: w.length,
+    content_hash: contentHash(text),
+    extracted_at: new Date().toISOString(),
+  }, { onConflict: "tenant_id,document_id" });
+  // Loud: a document silently failing to save would be re-read on every
+  // continuation, and the chain would never finish.
+  if (error) throw new Error(`Could not save what was read from "${d.title}": ${error.message}`);
+  return facts.length;
 }
 
 /**
- * Rebuild one tenant's Search Profile from every ready document.
+ * Do as much of the build as fits in one invocation, then stop.
  *
- * Admin-gated: it is an LLM pass over the whole Inven(s)tory, and a client
- * clicking it repeatedly would be an expensive way to change nothing.
+ * The unit of work is one document, because that is the unit that is
+ * independent: reading document 4 does not depend on document 3, and there is
+ * no sweep for a partial pass to corrupt. Whatever is read is kept, and the
+ * next call picks up the documents that are still missing.
+ *
+ * Returns complete:false when the budget ran out with work left. That is a
+ * normal outcome, not a failure, and the caller is expected to come back.
  */
-export async function rebuildSearchProfile(
+export async function continueProfileBuild(
   tenantId: string, userId: string,
   opts: { onProgress?: (p: { done: number; total: number; detail: string }) => void } = {},
 ): Promise<ProfileBuildResult> {
   if (!generationConfigured()) throw new Error("No generation model is configured in this environment.");
+  const started = Date.now();
   const step = (done: number, total: number, detail: string) => {
     try { opts.onProgress?.({ done, total, detail }); } catch { /* never fatal */ }
   };
@@ -93,70 +145,149 @@ export async function rebuildSearchProfile(
   const { data: docs, error } = await db.from("document")
     .select("id, title, layer").eq("tenant_id", tenantId).eq("status", "ready");
   if (error) throw new Error(`document read failed: ${error.message}`);
-  const docList = (docs ?? []) as { id: string; title: string; layer: string | null }[];
+  const docList = (docs ?? []) as DocRow[];
 
-  const { data: chunks } = await db.from("document_chunk")
+  const { data: doneRows } = await db.from("search_profile_doc")
+    .select("document_id, content_hash").eq("tenant_id", tenantId);
+  const done = new Map(((doneRows ?? []) as { document_id: string; content_hash: string | null }[])
+    .map(r => [r.document_id, r.content_hash]));
+
+  // Current text length per document, cheap, so a document that was
+  // re-processed in place is re-read rather than trusted forever. The full
+  // hash is compared inside extractOne's stored value; this is the pre-filter.
+  const { data: sizes } = await db.from("document_chunk")
     .select("document_id, text").eq("tenant_id", tenantId);
-  const textByDoc = new Map<string, string>();
-  for (const c of (chunks ?? []) as { document_id: string; text: string | null }[]) {
-    textByDoc.set(c.document_id, (textByDoc.get(c.document_id) ?? "") + "\n" + (c.text ?? ""));
+  const lenByDoc = new Map<string, number>();
+  for (const c of ((sizes ?? []) as { document_id: string; text: string | null }[])) {
+    lenByDoc.set(c.document_id, (lenByDoc.get(c.document_id) ?? 0) + (c.text?.length ?? 0));
   }
 
-  // Bounded fan-out. Unlimited Promise.all over every document times up to six
-  // windows is hundreds of simultaneous model calls on a large Inven(s)tory,
-  // and chatComplete returns null rather than throwing when throttled, so the
-  // failure would arrive as documents that "said nothing useful" and a thin
-  // profile that quietly falls back to the eligibility form.
-  const CONCURRENCY = 4;
-  let skipped = 0, silent = 0;
-
-  const runDoc = async (d: { id: string; title: string; layer: string | null }) => {
-    const text = textByDoc.get(d.id) ?? "";
-    if (isBoilerplate(d.title) || !text.trim()) { skipped += 1; return [] as ProfileFact[]; }
-    const layer = (["I", "II", "III"].includes(d.layer ?? "") ? d.layer : null) as Layer;
-    const src = { documentId: d.id, documentTitle: d.title, layer };
-    const parts = await Promise.all(windows(text).map(w => scanWindow(d.title, w, src)));
-    const facts = parts.flat();
-    if (!facts.length) silent += 1;
-    return facts;
+  const stale = (d: DocRow) => {
+    if (!done.has(d.id)) return true;
+    const h = done.get(d.id);
+    if (!h || h === "boilerplate" || h === "empty") return false;   // deliberate skips stay skipped
+    const len = lenByDoc.get(d.id) ?? 0;
+    return !h.startsWith(`${len}:`);                                 // length changed, so content did
   };
 
-  const perDoc: ProfileFact[][] = [];
-  for (let i = 0; i < docList.length; i += CONCURRENCY) {
-    const batch = docList.slice(i, i + CONCURRENCY);
-    step(i, docList.length, batch.length === 1
-      ? `reading ${batch[0].title}`
-      : `reading ${batch.length} documents including ${batch[0].title}`);
-    perDoc.push(...await Promise.all(batch.map(runDoc)));
-  }
-  step(docList.length, docList.length, "working out what to search on");
+  const todo = docList.filter(stale);
+  const total = docList.length;
+  const already = new Set(docList.filter(d => !stale(d)).map(d => d.id));
 
-  const facts = mergeFacts(perDoc.flat());
+  let read = 0;
+  for (const d of todo) {
+    if (Date.now() - started > WORK_BUDGET_MS) break;
+    step(already.size + read, total, `reading ${d.title}`);
+
+    if (isBoilerplate(d.title)) {
+      // Recorded as read, and loudly. A skip that fails to save is re-tried on
+      // every continuation and the chain never finishes.
+      const { error: skipErr } = await db.from("search_profile_doc").upsert({
+        tenant_id: tenantId, document_id: d.id, facts: [], chars: 0, windows: 0,
+        content_hash: "boilerplate",
+      }, { onConflict: "tenant_id,document_id" });
+      if (skipErr) throw new Error(`Could not record skipping "${d.title}": ${skipErr.message}`);
+      read += 1;
+      continue;
+    }
+
+    const { data: chunks } = await db.from("document_chunk")
+      .select("text").eq("tenant_id", tenantId).eq("document_id", d.id);
+    const text = ((chunks ?? []) as { text: string | null }[]).map(c => c.text ?? "").join("\n");
+    if (!text.trim()) {
+      // No chunks yet, or an extraction that produced nothing. Recording it
+      // avoids a model call on empty input every time the chain comes round.
+      const { error: emptyErr } = await db.from("search_profile_doc").upsert({
+        tenant_id: tenantId, document_id: d.id, facts: [], chars: 0, windows: 0,
+        content_hash: "empty",
+      }, { onConflict: "tenant_id,document_id" });
+      if (emptyErr) throw new Error(`Could not record "${d.title}" as empty: ${emptyErr.message}`);
+      read += 1;
+      continue;
+    }
+    await extractOne(tenantId, d, text);
+    read += 1;
+  }
+
+  const remaining = todo.length - read;
+  if (remaining > 0) return { read, remaining, complete: false };
+
+  step(total, total, "working out what to search on");
+  const assembled = await assembleProfile(tenantId, userId, docList);
+  return { read, remaining: 0, complete: true, ...assembled };
+}
+
+/**
+ * Merge every document's facts into the profile the search actually uses.
+ *
+ * Cheap and pure once the reading is done, which is the other half of why the
+ * split is worth it: adding one document costs one document of model time and
+ * then this, rather than a full rebuild.
+ */
+export async function assembleProfile(
+  tenantId: string, userId: string, docList?: { id: string }[],
+): Promise<{ profile: SearchProfile; note: string; usable: boolean }> {
+  // Joined to document, so a row for something no longer ready (re-processing,
+  // archived, a failed re-ingest) does not keep contributing facts to a profile
+  // that claims to describe the current Inven(s)tory.
+  const { data: rows } = await db.from("search_profile_doc")
+    .select("facts, chars, document:document_id!inner(status)")
+    .eq("tenant_id", tenantId).eq("document.status", "ready");
+  const all = ((rows ?? []) as unknown as { facts: ProfileFact[]; chars: number }[]);
+
+  const facts = mergeFacts(all.flatMap(r => (r.facts ?? []) as ProfileFact[]));
   const layers = [...new Set(facts.map(f => f.layer).filter(Boolean))] as ("I" | "II" | "III")[];
-  const scanned = docList.length - skipped;
+
+  const docs = docList ?? (((await db.from("document")
+    .select("id").eq("tenant_id", tenantId).eq("status", "ready")).data ?? []) as { id: string }[]);
 
   const profile: SearchProfile = {
     facts,
     generatedAt: new Date().toISOString(),
-    documentCount: scanned,
+    // Documents that actually contributed text, not the raw count: a profile
+    // built from twelve documents and three empty ones was built from twelve.
+    documentCount: all.filter(r => r.chars > 0).length,
     layers,
   };
   const health = assessProfile(profile);
 
-  const { error: writeErr } = await db.from("search_profile").upsert({
+  const { error } = await db.from("search_profile").upsert({
     tenant_id: tenantId,
     facts: profile.facts,
     document_count: profile.documentCount,
     layers: profile.layers,
-    doc_fingerprint: documentFingerprint(docList),
+    doc_fingerprint: documentFingerprint(docs),
     note: health.note,
     generated_at: profile.generatedAt,
     generated_by: userId,
   }, { onConflict: "tenant_id" });
-  // Loud, like every other write in this system. A profile that silently failed
-  // to save would send the next run back to the eligibility profile with no
-  // sign that anything was wrong.
-  if (writeErr) throw new Error(`Search Profile could not be saved: ${writeErr.message}`);
+  if (error) throw new Error(`Search Profile could not be saved: ${error.message}`);
 
-  return { profile, note: health.note, usable: health.usable, scanned, skipped, silent };
+  return { profile, note: health.note, usable: health.usable };
 }
+
+/**
+ * Forget what was read, so the next build starts clean.
+ *
+ * Used by an explicit rebuild. An ordinary continuation must never do this, or
+ * the chain would restart itself forever.
+ */
+export async function clearProfileDocs(tenantId: string): Promise<void> {
+  const { error } = await db.from("search_profile_doc").delete().eq("tenant_id", tenantId);
+  if (error) throw new Error(`could not clear the previous read: ${error.message}`);
+}
+
+/** Documents read, and documents there are, for the panel and the chain. */
+export async function profileBuildProgress(tenantId: string): Promise<{ done: number; total: number }> {
+  const [{ count: done }, { count: total }] = await Promise.all([
+    // Counted the same way as the assembly, or the panel can be handed a
+    // "done" larger than its "total".
+    db.from("search_profile_doc")
+      .select("document_id, document:document_id!inner(status)", { count: "exact", head: true })
+      .eq("tenant_id", tenantId).eq("document.status", "ready"),
+    db.from("document").select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId).eq("status", "ready"),
+  ]);
+  return { done: Math.min(done ?? 0, total ?? 0), total: total ?? 0 };
+}
+

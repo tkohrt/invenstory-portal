@@ -178,17 +178,21 @@ export default function FunderMatchesView({
   // off by the function limit. They are also the only part that is safe to
   // resume, so the page keeps asking until nothing is owed.
   const { job: rJob, start: startRationales, running: rRunning, gaveUp: rGaveUp } = useJob(null);
-  const [owed, setOwed] = useState(pendingRationales);
-  useEffect(() => { setOwed(pendingRationales); }, [pendingRationales]);
+
+  // Derived, not mirrored. The prop is the truth after any refresh; a finished
+  // pass reports what it left behind, and that reading wins until the next one.
+  const lastPass = rJob?.status === "done"
+    ? Number((rJob.result as { remaining?: number } | null)?.remaining ?? 0)
+    : null;
+  const owed = lastPass ?? pendingRationales;
 
   const rFinished = rJob?.status;
   useEffect(() => {
     if (rFinished !== "done") return;
-    const remaining = Number((rJob?.result as { remaining?: number } | null)?.remaining ?? 0);
-    setOwed(remaining);
     router.refresh();
     // Still owed after a pass means the budget ran out, not that it failed.
     // Another pass picks up where this one stopped.
+    const remaining = Number((rJob?.result as { remaining?: number } | null)?.remaining ?? 0);
     if (remaining > 0) void startRationales("/api/jobs/rationales", "rationales");
   }, [rFinished, rJob, router, startRationales]);
 

@@ -98,7 +98,9 @@ export function useJob(initial: Job | null) {
   }, []);
 
   const running = !!job && !gaveUp && describeJob(job).poll;
-  return { job, start, starting, running, error, setError, gaveUp };
+  // setJob is exported so a caller driving its own chain can show real progress
+  // between invocations rather than waiting for the next poll.
+  return { job, setJob, start, starting, running, error, setError, gaveUp };
 }
 
 export default function JobProgress({ job, onDismiss, lostContact }: {

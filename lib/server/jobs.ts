@@ -115,3 +115,35 @@ export async function latestJob(tenantId: string, kind: JobKind): Promise<Job | 
   if (error) throw new Error(`job read failed: ${error.message}`);
   return data ? toJob(data as Row) : null;
 }
+
+/**
+ * Take the lease on a job, or fail to.
+ *
+ * A chained build is continued by whichever tab is polling, and two tabs would
+ * otherwise read the same documents twice: same cost, same time, no benefit.
+ * The claim is conditional, so exactly one continuation proceeds.
+ *
+ * The lease expires on its own. An invocation killed at the function limit
+ * cannot release its claim, and a job that could never be continued again would
+ * be worse than a little duplicated work.
+ */
+const LEASE_MS = 90_000;
+
+export async function claimJob(tenantId: string, id: string): Promise<boolean> {
+  const now = new Date();
+  const expiry = new Date(now.getTime() - LEASE_MS).toISOString();
+  const { data, error } = await db.from("job")
+    .update({ claimed_at: now.toISOString(), updated_at: now.toISOString() })
+    .eq("tenant_id", tenantId).eq("id", id).eq("status", "running")
+    .or(`claimed_at.is.null,claimed_at.lt.${expiry}`)
+    .select("id");
+  if (error) { console.error("[job] claim failed", error); return false; }
+  return (data ?? []).length > 0;
+}
+
+export async function releaseJob(tenantId: string, id: string): Promise<void> {
+  const { error } = await db.from("job")
+    .update({ claimed_at: null, updated_at: new Date().toISOString() })
+    .eq("tenant_id", tenantId).eq("id", id);
+  if (error) console.error("[job] release failed", error);
+}

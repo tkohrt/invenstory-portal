@@ -903,3 +903,4 @@ button.vis-dot.busy{opacity:.5}
 @keyframes skel-shim{0%{background-position:200% 0}100%{background-position:-200% 0}}
 @media (prefers-reduced-motion: reduce){.skel-cell{animation:none;background:#eee}}
 .fm-owed{border-left:3px solid #c8b273;padding-left:11px;margin:0 0 14px}
+.sp-chain{border-left:3px solid #c9d6cc;padding-left:11px;margin:0 0 12px}
