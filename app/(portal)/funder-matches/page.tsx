@@ -5,6 +5,7 @@ import { getTenant } from "@/lib/server/data";
 import { getCachedMatches, getCachedFunders } from "@/lib/server/matching";
 import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
+import { getEligibilityProfile } from "@/lib/server/eligibility";
 import FunderMatchesView from "@/components/FunderMatchesView";
 
 export default async function FunderMatchesPage() {
@@ -15,10 +16,11 @@ export default async function FunderMatchesPage() {
   await gateFeature(session.role, session.tenantId, "funder_matches");
 
   const configured = ledgerConfigured();
-  const [tenant, matches, funders, health] = await Promise.all([
+  const [tenant, matches, funders, eligibility, health] = await Promise.all([
     getTenant(session.tenantId),
     getCachedMatches(session.tenantId),
     getCachedFunders(session.tenantId),
+    getEligibilityProfile(session.tenantId).catch(() => null),
     configured ? ledgerHealth() : Promise.resolve({ ok: false, detail: "Not configured." }),
   ]);
 
@@ -38,6 +40,7 @@ export default async function FunderMatchesPage() {
       configured={configured}
       health={health}
       contacts={contacts}
+      eligibility={eligibility}
       isAdmin={isAdmin}
     />
   );

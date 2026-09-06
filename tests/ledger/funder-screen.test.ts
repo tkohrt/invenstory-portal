@@ -28,6 +28,7 @@ describe("screenFunders", () => {
     const { shown, hidden } = screenFunders([row({ has_grant_history: false })]);
     expect(shown).toHaveLength(0);
     expect(hidden).toHaveLength(1);
+    expect(hidden[0].reason).toBe("no grants on record");
   });
 
   test("nothing is ever deleted", () => {

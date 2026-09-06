@@ -10,6 +10,7 @@ import type { FunderRow } from "@/lib/funder-rows";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { primaryContact, freshness, ROLE_LABEL, type ContactRecord } from "@/lib/funder-contact";
 import { screenFunders, hiddenByScreen } from "@/lib/funder-screen";
+import type { EligibilityProfile } from "@/lib/eligibility-fields";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -111,12 +112,14 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 }
 
 export default function FunderMatchesView({
-  matches, funders, orgName, configured, health, isAdmin, contacts,
+  matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   health: { ok: boolean; detail: string }; isAdmin: boolean;
   /** For Granted internal, admin sessions only. Empty for a client. */
   contacts: Record<string, ContactRecord[]>;
+  /** Drives the eligibility screen. Null means run the data-quality screen only. */
+  eligibility: EligibilityProfile | null;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
@@ -125,8 +128,12 @@ export default function FunderMatchesView({
   // Rows the source records as making no grants to anyone. Set aside rather
   // than dropped, and one click from view, so a wrong screen is visible.
   const [showNoHistory, setShowNoHistory] = useState(false);
-  const screened = screenFunders(funders);
-  const visibleFunders = showNoHistory ? [...screened.shown, ...screened.hidden] : screened.shown;
+  const screened = screenFunders(funders, eligibility);
+  const visibleFunders = showNoHistory
+    ? [...screened.shown, ...screened.hidden.map(h => h.row)]
+    : screened.shown;
+  // Why rows were set aside, so the toggle names a reason rather than a number.
+  const hiddenReasons = [...new Set(screened.hidden.map(h => h.reason))];
 
   const run = () => start(async () => {
     setErr(null); setMsg("Searching Ground Truth. This can take up to a minute.");
@@ -364,9 +371,8 @@ export default function FunderMatchesView({
 
           {visibleFunders.length === 0 && (
             <div className="empty">
-              Every funder this run returned is recorded as making no grants to
-              anyone, which usually means they are operating charities rather
-              than funders. They are below if you want to look.
+              Every funder this run returned was set aside: {hiddenReasons.join("; ")}.
+              They are below if you want to look.
             </div>
           )}
 
@@ -374,8 +380,8 @@ export default function FunderMatchesView({
             <button type="button" className="fm-toggle"
                     onClick={() => setShowNoHistory(v => !v)}>
               {showNoHistory
-                ? `Hide the ${screened.hidden.length} with no grants on record`
-                : `Show ${screened.hidden.length} more with no grants on record`}
+                ? `Hide the ${screened.hidden.length} set aside`
+                : `Show ${screened.hidden.length} set aside (${hiddenReasons.join("; ")})`}
             </button>
           )}
         </>

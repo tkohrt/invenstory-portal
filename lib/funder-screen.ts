@@ -13,12 +13,20 @@
 //
 // Pure and free of `server-only` so it is unit testable.
 import type { FunderRow } from "@/lib/funder-rows";
+import type { EligibilityProfile } from "@/lib/eligibility-fields";
+import { funderBlock } from "@/lib/funder-eligibility";
+
+export interface HiddenFunder {
+  row: FunderRow;
+  /** Why it was set aside, so the count is explainable rather than a mystery. */
+  reason: string;
+}
 
 export interface ScreenedFunders {
   shown: FunderRow[];
   /** Kept and countable, never deleted: a screen nobody can see through is a
    *  screen nobody can tell is wrong. */
-  hidden: FunderRow[];
+  hidden: HiddenFunder[];
 }
 
 /**
@@ -48,9 +56,28 @@ export function hiddenByScreen(r: FunderRow): boolean {
   return !(r.from_graph || r.evidence_count > 0 || r.from_overlay || !!r.verified_at);
 }
 
-export function screenFunders(rows: FunderRow[]): ScreenedFunders {
+/**
+ * Partition the shortlist.
+ *
+ * Two reasons a funder is set aside, and they are different in kind. One is a
+ * data-quality guess: the source says this organization grants to nobody, so it
+ * is probably an operating charity. The other is a fact the funder stated:
+ * their own guidelines preclude this client. Both are shown as a count with a
+ * reason and neither is deleted, but conflating them would hide a real
+ * eligibility rule behind a noise filter.
+ *
+ * The eligibility profile is optional. Without it, only the data-quality screen
+ * runs, which is the honest behaviour: no profile means nothing to be
+ * ineligible against.
+ */
+export function screenFunders(rows: FunderRow[], p?: EligibilityProfile | null): ScreenedFunders {
   const shown: FunderRow[] = [];
-  const hidden: FunderRow[] = [];
-  for (const r of rows) (hiddenByScreen(r) ? hidden : shown).push(r);
+  const hidden: HiddenFunder[] = [];
+  for (const r of rows) {
+    const block = p ? funderBlock(r, p) : null;
+    if (block) { hidden.push({ row: r, reason: block.reason }); continue; }
+    if (hiddenByScreen(r)) { hidden.push({ row: r, reason: "no grants on record" }); continue; }
+    shown.push(r);
+  }
   return { shown, hidden };
 }
