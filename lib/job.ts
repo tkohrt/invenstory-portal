@@ -11,6 +11,54 @@
 export type JobKind = "match" | "search_profile" | "readiness" | "rationales";
 export type JobStatus = "running" | "done" | "failed";
 
+/**
+ * How a line in a job's log should read.
+ *
+ * The kind is the shape, never the wording. The words live in the code that
+ * does the work, where they can be improved without a migration, and the
+ * interface styles on this.
+ */
+export type JobEventKind =
+  | "phase"      // a stage beginning
+  | "progress"   // one unit of work finished
+  | "skip"       // deliberately not done, with the reason
+  | "pause"      // a stage stopped short, normally the function's time limit
+  | "warn"       // survivable, but somebody should know
+  | "error"      // the run stopped here
+  | "done";      // the run finished
+
+export interface JobEvent {
+  id: number;
+  kind: JobEventKind;
+  text: string;
+  done: number | null;
+  total: number | null;
+  at: string;
+}
+
+/**
+ * Most lines a single read returns.
+ *
+ * A build reads one document per line, so a run is tens of lines, not
+ * thousands. The cap exists so a pathological loop cannot turn a two-second
+ * poll into a large download.
+ */
+export const MAX_EVENTS = 300;
+
+/**
+ * "3 of 15 (20%)", or just the count when the total is not known yet.
+ *
+ * Shared so the log, the bar and the collapsed summary cannot disagree about
+ * the same run, which they already did once: a bar reading 27% under a line
+ * reading "5 of 15 documents read".
+ */
+export function countPhrase(done: number | null, total: number | null): string | null {
+  if (done == null) return null;
+  if (!total || total <= 0) return `${done}`;
+  const capped = Math.min(done, total);
+  return `${capped} of ${total} (${Math.round((capped / total) * 100)}%)`;
+}
+
 export interface Job {
   id: string;
   kind: JobKind;

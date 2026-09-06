@@ -4,7 +4,10 @@ import "server-only";
 // A plain server module rather than a "use server" one: these take a tenantId
 // and must only be called from code that has already decided who is asking.
 import { db } from "./db";
-import { STALL_AFTER_MS, type Job, type JobKind, type JobStatus } from "@/lib/job";
+import {
+  STALL_AFTER_MS, MAX_EVENTS,
+  type Job, type JobEvent, type JobEventKind, type JobKind, type JobStatus,
+} from "@/lib/job";
 
 interface Row {
   id: string; kind: JobKind; status: JobStatus; label: string | null;
@@ -21,6 +24,47 @@ function toJob(r: Row): Job {
     result: r.result, error: r.error,
     startedAt: r.started_at, updatedAt: r.updated_at, finishedAt: r.finished_at,
   };
+}
+
+/**
+ * Add a line to a job's log.
+ *
+ * Append-only, and best-effort in exactly the way updateJob is: narration must
+ * never be the reason real work fails. A line that does not land is logged and
+ * the run carries on.
+ *
+ * Not awaited by the loops that call it, which is why the ordering key is the
+ * table's own sequence rather than a counter this would have to read first.
+ */
+export async function recordEvent(
+  tenantId: string, jobId: string,
+  e: { kind: JobEventKind; text: string; done?: number; total?: number },
+): Promise<void> {
+  const { error } = await db.from("job_event").insert({
+    tenant_id: tenantId, job_id: jobId,
+    kind: e.kind, text: e.text.slice(0, 500),
+    done: e.done ?? null, total: e.total ?? null,
+  });
+  if (error) console.error("[job] event write failed", error);
+}
+
+/**
+ * A job's log, oldest first, optionally only what is new.
+ *
+ * `after` is the id of the last line the caller already has, so a page polling
+ * every two seconds fetches the two lines it is missing rather than the whole
+ * run every time.
+ */
+export async function jobEvents(
+  tenantId: string, jobId: string, after = 0,
+): Promise<JobEvent[]> {
+  const { data, error } = await db.from("job_event")
+    .select("id, kind, text, done, total, at")
+    .eq("tenant_id", tenantId).eq("job_id", jobId).gt("id", after)
+    .order("id").limit(MAX_EVENTS);
+  if (error) throw new Error(`job log read failed: ${error.message}`);
+  return ((data ?? []) as { id: number; kind: JobEventKind; text: string; done: number | null; total: number | null; at: string }[])
+    .map(r => ({ id: r.id, kind: r.kind, text: r.text, done: r.done, total: r.total, at: r.at }));
 }
 
 export async function createJob(
@@ -69,6 +113,9 @@ export async function finishJob(
     })
     .eq("tenant_id", tenantId).eq("id", id);
   if (error) console.error("[job] finish failed", error);
+  // The closing line is written here rather than by each caller, because a run
+  // whose log simply stops is indistinguishable from one that was killed.
+  await recordEvent(tenantId, id, { kind: "done", text: detail ?? "Finished." });
 }
 
 /**
@@ -86,6 +133,7 @@ export async function failJob(tenantId: string, id: string, message: string): Pr
     })
     .eq("tenant_id", tenantId).eq("id", id);
   if (error) console.error("[job] fail-mark failed", error);
+  await recordEvent(tenantId, id, { kind: "error", text: message.slice(0, 500) });
 }
 
 /** One job, scoped to the tenant asking, so an id from elsewhere reads as absent. */

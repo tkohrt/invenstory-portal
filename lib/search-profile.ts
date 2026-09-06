@@ -379,3 +379,16 @@ export function documentFingerprint(docs: { id: string }[]): string {
 export function chunkText(rows: { text: string | null }[]): string {
   return rows.map(c => c.text ?? "").join("\n");
 }
+
+/**
+ * What the profile is, in one paragraph, at the top of every build.
+ *
+ * Written to be read by whoever is watching rather than stored per run: a
+ * constant, not an event row. It is the only place the product explains why it
+ * is about to spend three minutes reading.
+ */
+export const PROFILE_INTRO =
+  "A Funder Matching Profile is the short, evidenced description of this client that For Granted "
+  + "searches on. It is built by reading their Inven(s)tory one document at a time and keeping only "
+  + "facts backed by a direct quote, tagged by whether they describe the client, a competitor or a "
+  + "partner. Competitor and partner lines are kept and deliberately never searched on.";

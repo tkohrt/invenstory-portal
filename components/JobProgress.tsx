@@ -9,7 +9,10 @@
 // It also survives a reload. The work runs on the server against a row, not in
 // this tab, so someone can close the page, come back, and rejoin it.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { describeJob, type Job, type JobKind } from "@/lib/job";
+import {
+  countPhrase, describeJob, MAX_EVENTS,
+  type Job, type JobEvent, type JobKind,
+} from "@/lib/job";
 
 const POLL_MS = 2000;
 /**
@@ -26,10 +29,37 @@ const MAX_POLL_FAILURES = 5;
 
 export function useJob(initial: Job | null) {
   const [job, setJob] = useState<Job | null>(initial);
+  const [events, setEvents] = useState<JobEvent[]>([]);
   const [gaveUp, setGaveUp] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The id of the last line we hold. Every read asks for what comes after it,
+  // so a two-second poll fetches the two new lines rather than the whole run.
+  const afterRef = useRef(0);
+
+  /**
+   * Read a job and whatever is new in its log.
+   *
+   * One function for the poll and for a caller driving its own chain, so the
+   * log cannot end up with a hole in it because two code paths fetched the
+   * same job different ways.
+   *
+   * The endpoint returns no events at all to a client session, and that is not
+   * an error: the log stays empty and everything else behaves as before.
+   */
+  const syncJob = useCallback(async (id: string): Promise<Job | null | "gone"> => {
+    const res = await fetch(`/api/jobs/${id}?after=${afterRef.current}`, { cache: "no-store" });
+    if (res.status === 401 || res.status === 404) return "gone";
+    if (!res.ok) throw new Error("poll failed");
+    const body = await res.json() as { job: Job; events?: JobEvent[] };
+    if (body.events?.length) {
+      afterRef.current = body.events[body.events.length - 1].id;
+      setEvents(prev => [...prev, ...body.events!].slice(-MAX_EVENTS));
+    }
+    if (body.job) setJob(body.job);
+    return body.job ?? null;
+  }, []);
 
   // Poll while the job is moving. describeJob decides when to stop, so the
   // stall rule and the polling rule can never disagree.
@@ -39,21 +69,15 @@ export function useJob(initial: Job | null) {
     let failures = 0;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/jobs/${job.id}`, { cache: "no-store" });
+        const r = await syncJob(job.id);
         if (!live) return;
-        if (res.status === 401 || res.status === 404) {
+        if (r === "gone") {
           // Not a transient failure. Signing out or switching client makes this
           // job unreachable for good, so stop rather than retry forever.
           setGaveUp(true);
           return;
         }
-        if (res.ok) {
-          failures = 0;
-          const { job: next } = await res.json();
-          setJob(next as Job);
-        } else {
-          failures += 1;
-        }
+        failures = 0;
       } catch {
         // A dropped poll is not a failed job, but an endless run of them is.
         failures += 1;
@@ -64,7 +88,7 @@ export function useJob(initial: Job | null) {
     };
     timer.current = setTimeout(tick, POLL_MS);
     return () => { live = false; if (timer.current) clearTimeout(timer.current); };
-  }, [job]);
+  }, [job, syncJob]);
 
   const start = useCallback(async (url: string, kind: JobKind, body?: unknown) => {
     setError(null); setStarting(true); setGaveUp(false);
@@ -80,6 +104,9 @@ export function useJob(initial: Job | null) {
       }
       const { jobId } = await res.json();
       const now = new Date().toISOString();
+      // A new run gets a clean log rather than continuing the last one's.
+      afterRef.current = 0;
+      setEvents([]);
       // Optimistic row so the panel appears immediately rather than after the
       // first poll two seconds later.
       setJob({
@@ -98,13 +125,61 @@ export function useJob(initial: Job | null) {
   }, []);
 
   const running = !!job && !gaveUp && describeJob(job).poll;
+  const resetEvents = useCallback(() => { afterRef.current = 0; setEvents([]); }, []);
   // setJob is exported so a caller driving its own chain can show real progress
   // between invocations rather than waiting for the next poll.
-  return { job, setJob, start, starting, running, error, setError, gaveUp };
+  return { job, setJob, events, syncJob, resetEvents, start, starting, running, error, setError, gaveUp };
 }
 
-export default function JobProgress({ job, onDismiss, lostContact }: {
-  job: Job | null; onDismiss?: () => void;
+/**
+ * What happened, in order.
+ *
+ * Replaces a stack of boxes that each said one transient thing and then
+ * vanished. The reason it is a list rather than a better single line: the
+ * questions people actually have about a long run are sequential ones. Where is
+ * it now, what has it already finished, what did it skip and why, and where did
+ * it stop. A field that gets overwritten can answer at most the first.
+ *
+ * Admin-only, enforced at the endpoint rather than here: a client session is
+ * simply served no events, so this renders nothing and the panel above it is
+ * unchanged.
+ */
+function JobLog({ events }: { events: JobEvent[] }) {
+  const box = useRef<HTMLOListElement | null>(null);
+  const last = events.length ? events[events.length - 1].id : 0;
+
+  // Follow the newest line, but only while the reader is already at the bottom.
+  // Yanking the view back down while somebody is reading an earlier line is
+  // worse than not scrolling at all.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  }, [last]);
+
+  if (!events.length) return null;
+  return (
+    <ol className="jl" ref={box}>
+      {events.map(e => {
+        const count = e.kind === "progress" ? countPhrase(e.done, e.total) : null;
+        return (
+          <li key={e.id} className={`jl-${e.kind}`}>
+            <span className="jl-mark" aria-hidden="true" />
+            <span className="jl-text">{e.text}</span>
+            {count && <span className="jl-count">{count}</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export default function JobProgress({ job, events = [], onDismiss, lostContact }: {
+  job: Job | null;
+  /** The run's log, oldest first. Empty for a client session, which is fine. */
+  events?: JobEvent[];
+  onDismiss?: () => void;
   /** Polling gave up. The work may still be running; we just cannot see it. */
   lostContact?: boolean;
 }) {
@@ -141,10 +216,13 @@ export default function JobProgress({ job, onDismiss, lostContact }: {
           <button type="button" className="fc-link jp-dismiss" onClick={onDismiss}>dismiss</button>
         )}
       </div>
-      {v.detail && <div className="jp-detail">{v.detail}</div>}
+      {/* The one-line detail is the collapsed view of the same run. With a log
+          on screen it repeats the newest line, so it steps aside. */}
+      {v.detail && !events.length && <div className="jp-detail">{v.detail}</div>}
       {v.percent !== null && (
         <div className="jp-bar"><div className="jp-fill" style={{ width: `${v.percent}%` }} /></div>
       )}
+      <JobLog events={events} />
     </div>
   );
 }

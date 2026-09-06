@@ -18,6 +18,7 @@ import {
   parseFacts, mergeFacts, assessProfile, documentFingerprint, chunkText,
   type ProfileFact, type SearchProfile,
 } from "@/lib/search-profile";
+import type { JobEventKind } from "@/lib/job";
 
 type Layer = "I" | "II" | "III" | null;
 
@@ -170,12 +171,19 @@ async function extractOne(tenantId: string, d: DocRow, text: string): Promise<nu
  */
 export async function continueProfileBuild(
   tenantId: string, userId: string,
-  opts: { onProgress?: (p: { done: number; total: number; detail: string }) => void } = {},
+  opts: {
+    onProgress?: (p: { done: number; total: number; detail: string }) => void;
+    /** A line for the run's log. Narration, never load-bearing. */
+    onEvent?: (e: { kind: JobEventKind; text: string; done?: number; total?: number }) => void;
+  } = {},
 ): Promise<ProfileBuildResult> {
   if (!generationConfigured()) throw new Error("No generation model is configured in this environment.");
   const started = Date.now();
   const step = (done: number, total: number, detail: string) => {
     try { opts.onProgress?.({ done, total, detail }); } catch { /* never fatal */ }
+  };
+  const say = (kind: JobEventKind, text: string, done?: number, total?: number) => {
+    try { opts.onEvent?.({ kind, text, done, total }); } catch { /* never fatal */ }
   };
 
   const { data: docs, error } = await db.from("document")
@@ -219,6 +227,13 @@ export async function continueProfileBuild(
   const total = docList.length;
   const already = new Set(docList.filter(d => !stale(d)).map(d => d.id));
 
+  if (already.size) {
+    say("phase", `Carrying forward ${already.size} document(s) already read. `
+      + `${todo.length} still to read.`, already.size, total);
+  } else {
+    say("phase", `Reading ${total} document(s).`, 0, total);
+  }
+
   let read = 0;
   for (const d of todo) {
     // A pass ALWAYS reads at least one document. The budget decides whether to
@@ -239,6 +254,8 @@ export async function continueProfileBuild(
       }, { onConflict: "tenant_id,document_id" });
       if (skipErr) throw new Error(`Could not record skipping "${d.title}": ${skipErr.message}`);
       read += 1;
+      say("skip", `Skipped ${d.title}: the title marks it as a template or draft, `
+        + "so it describes nobody in particular.", already.size + read, total);
       continue;
     }
 
@@ -255,18 +272,30 @@ export async function continueProfileBuild(
       }, { onConflict: "tenant_id,document_id" });
       if (emptyErr) throw new Error(`Could not record "${d.title}" as empty: ${emptyErr.message}`);
       read += 1;
+      say("skip", `Skipped ${d.title}: no readable text was extracted from it.`,
+        already.size + read, total);
       continue;
     }
-    await extractOne(tenantId, d, text);
+    const found = await extractOne(tenantId, d, text);
     read += 1;
+    say("progress", `Read and stored ${d.title}: ${found} fact(s).`, already.size + read, total);
     // After, not only before. Reporting only before leaves the count one behind
     // the words: a bar at 27% under a line reading "5 of 15 documents read".
     step(already.size + read, total, `read ${d.title}`);
   }
 
   const remaining = todo.length - read;
-  if (remaining > 0) return { read, remaining, complete: false };
+  if (remaining > 0) {
+    // Named, not counted. "Still to read: three documents" tells nobody whether
+    // the one that matters is among them.
+    const left = todo.slice(read).map(d => d.title);
+    say("pause", `Time limit for this stage reached with ${remaining} document(s) still to read: `
+      + `${left.slice(0, 6).join(", ")}${left.length > 6 ? `, and ${left.length - 6} more` : ""}. `
+      + "Everything read is saved; the next stage starts here.", already.size + read, total);
+    return { read, remaining, complete: false };
+  }
 
+  say("phase", "Every document is read. Working out what to search on.", total, total);
   step(total, total, "working out what to search on");
   const assembled = await assembleProfile(tenantId, userId, docList);
   return { read, remaining: 0, complete: true, ...assembled };

@@ -116,7 +116,7 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
-  profile, lastQueries, matchJob, profileJob, pendingRationales,
+  profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   /** Matches still owed a real explanation, because a run was cut short. */
@@ -132,6 +132,8 @@ export default function FunderMatchesView({
   /** Work already in flight when the page loaded, so a reload rejoins it. */
   matchJob: Job | null;
   profileJob: Job | null;
+  /** Documents already read and kept for this client, from the server. */
+  profileStored: { done: number; total: number };
 }) {
   const router = useRouter();
   const [err, setErr] = useState<string | null>(null);
@@ -139,7 +141,7 @@ export default function FunderMatchesView({
 
   // The run happens on the server against a job row, not in this tab, so the
   // page can be closed and come back to it.
-  const { job, start: startJob, starting, running, error: jobError, gaveUp } = useJob(matchJob);
+  const { job, events, start: startJob, starting, running, error: jobError, gaveUp } = useJob(matchJob);
   const [dismissed, setDismissed] = useState(false);
   const shownJob = dismissed ? null : job;
 
@@ -177,7 +179,7 @@ export default function FunderMatchesView({
   // Explanations are the long tail of a run and the part most likely to be cut
   // off by the function limit. They are also the only part that is safe to
   // resume, so the page keeps asking until nothing is owed.
-  const { job: rJob, start: startRationales, running: rRunning, gaveUp: rGaveUp } = useJob(null);
+  const { job: rJob, events: rEvents, start: startRationales, running: rRunning, gaveUp: rGaveUp } = useJob(null);
 
   // Derived, not mirrored. The prop is the truth after any refresh; a finished
   // pass reports what it left behind, and that reading wins until the next one.
@@ -238,11 +240,12 @@ export default function FunderMatchesView({
 
       {isAdmin && (
         <SearchProfilePanel
-          profile={profile} lastQueries={lastQueries} orgName={orgName} job={profileJob} />
+          profile={profile} lastQueries={lastQueries} orgName={orgName}
+          job={profileJob} stored={profileStored} />
       )}
 
-      <JobProgress job={shownJob} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
-      <JobProgress job={rJob} lostContact={rGaveUp} />
+      <JobProgress job={shownJob} events={events} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+      <JobProgress job={rJob} events={rEvents} lostContact={rGaveUp} />
 
       {isAdmin && owed > 0 && !rRunning && (
         <div className="ov-note fm-owed">

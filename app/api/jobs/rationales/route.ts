@@ -13,7 +13,7 @@ import { after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { fillPendingRationales, pendingRationaleCount } from "@/lib/server/matching";
-import { createJob, updateJob, finishJob, failJob } from "@/lib/server/jobs";
+import { createJob, updateJob, finishJob, failJob, recordEvent } from "@/lib/server/jobs";
 
 export const maxDuration = 60;
 
@@ -33,8 +33,22 @@ export async function POST() {
 
   after(async () => {
     try {
+      // Consecutive identical steps are one line in the log, not two.
+      let lastSaid: string | null = null;
       const r = await fillPendingRationales(tenantId, orgName, {
-        onProgress: p => { void updateJob(tenantId, jobId, p); },
+        // The detail strings were already written to be read by a person, so
+        // the log reuses them rather than inventing a second vocabulary. The
+        // guard is for repeats: a step that reports the same words twice is one
+        // line, not two.
+        onProgress: p => {
+          void updateJob(tenantId, jobId, p);
+          if (p.detail && p.detail !== lastSaid) {
+            lastSaid = p.detail;
+            void recordEvent(tenantId, jobId, {
+              kind: "progress", text: p.detail, done: p.done, total: p.total,
+            });
+          }
+        },
       });
       await finishJob(tenantId, jobId, { filled: r.filled, remaining: r.remaining },
         r.remaining

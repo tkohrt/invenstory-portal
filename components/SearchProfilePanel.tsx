@@ -30,21 +30,32 @@ function possessive(name: string) {
   return /s$/i.test(n) ? `${n}’` : `${n}’s`;
 }
 
-export default function SearchProfilePanel({ profile, lastQueries, orgName, job: initialJob }: {
+export default function SearchProfilePanel({
+  profile, lastQueries, orgName, job: initialJob, stored,
+}: {
   profile: PanelProfile | null;
   lastQueries: { track: string; text: string; ok?: boolean; results?: number }[];
   orgName: string;
   /** A rebuild already in flight when the page loaded. */
   job: Job | null;
+  /**
+   * Documents already read and kept, from the server rather than this tab.
+   *
+   * Without it "Continue" existed only in the browser's memory: a reload left
+   * partial work in the database with no way to reach it, and the only button
+   * on screen was one that deleted it.
+   */
+  stored: { done: number; total: number };
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { job, setJob, starting, running, error, gaveUp } = useJob(initialJob);
+  const { job, setJob, events, syncJob, resetEvents, starting, running, error, gaveUp } = useJob(initialJob);
   const [dismissed, setDismissed] = useState(false);
-  const [chain, setChain] = useState<{ done: number; total: number } | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
-  const [paused, setPaused] = useState(false);
+  // Partial work exists and no profile was assembled from it. Server truth on
+  // load, updated by the chain as it goes.
+  const [partial, setPartial] = useState(!profile && stored.done > 0);
 
   const finished = job?.status;
   useEffect(() => { if (finished === "done") router.refresh(); }, [finished, router]);
@@ -61,25 +72,24 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
    * it, and Continue picks it up.
    */
   const runChain = useCallback(async (restart: boolean) => {
-    setDismissed(false); setChainError(null); setPaused(false); setWorking(true);
+    setDismissed(false); setChainError(null); setWorking(true);
+    if (restart) resetEvents();
     let jobRef: string | null = null;
 
     // Tell the row it ended. Without this the browser stops and the row still
     // says "running", so the progress panel spins over work that is over.
+    //
+    // The row is also where the reason gets written, so it reaches the log and
+    // survives a reload rather than living in this tab.
     const stop = async (reason: string) => {
-      setPaused(true);
       setChainError(reason);
       try {
-        const res = await fetch("/api/jobs/search-profile", {
+        await fetch("/api/jobs/search-profile", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ stop: true, reason }),
         });
-        if (jobRef && res.ok) {
-          const j = await fetch(`/api/jobs/${jobRef}`, { cache: "no-store" })
-            .then(x => x.ok ? x.json() : null).catch(() => null);
-          if (j?.job) setJob(j.job);
-        }
+        if (jobRef) await syncJob(jobRef);
       } catch { /* the message on screen is the part that matters */ }
     };
 
@@ -95,14 +105,12 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
         const r = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(r.error ?? "Reading failed.");
 
-        setChain({ done: r.done ?? 0, total: r.total ?? 0 });
-        if (r.jobId) jobRef = r.jobId;
-        if (r.jobId) {
-          const j = await fetch(`/api/jobs/${r.jobId}`, { cache: "no-store" }).then(x => x.ok ? x.json() : null).catch(() => null);
-          if (j?.job) setJob(j.job);
-        }
+        // Server truth about what is kept, so the buttons stay right even if
+        // this tab is closed and reopened mid-build.
+        setPartial(!r.complete && (r.done ?? 0) > 0);
+        if (r.jobId) { jobRef = r.jobId; await syncJob(r.jobId).catch(() => null); }
 
-        if (r.complete) { router.refresh(); return; }
+        if (r.complete) { setPartial(false); router.refresh(); return; }
 
         // Another tab holds the lease. Wait rather than racing it.
         if (r.busy) { await new Promise(f => setTimeout(f, 3000)); continue; }
@@ -127,10 +135,27 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
     } finally {
       setWorking(false);
     }
-  }, [router, setJob]);
+  }, [router, syncJob, resetEvents]);
 
   const rebuild = () => void runChain(true);
   const carryOn = () => void runChain(false);
+  const busy = working || starting || running;
+
+  /**
+   * Three states, from what the SERVER has, not from what this tab remembers.
+   *
+   * The old rule had two, keyed only on a finished profile, so a page reload
+   * during a staged build offered "Build it" as the only action while five
+   * documents sat unused in the database. Pressing it deleted them.
+   */
+  const cta = profile
+    ? { label: "Rebuild", hint: "Forgets what was read and starts over." }
+    : partial
+      ? {
+          label: "Continue",
+          hint: `Picks up from the ${stored.done} document(s) already read rather than starting again.`,
+        }
+      : { label: "Build it", hint: "Reads this Inven(s)tory and builds the profile the search runs on." };
 
   // Only facts that may describe the client. Competitor and partner lines are
   // kept in the data and deliberately not shown as if they were ours.
@@ -160,31 +185,40 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
             {open ? "hide" : "show"}
           </button>
         )}
-        {/* Continue is the recovery path, and it must exist. Without it the
-            only button destroys every document already read, which on a large
-            Inven(s)tory is minutes of model spend. */}
-        {paused && (
-          <button type="button" className="btn" onClick={carryOn} disabled={working}>
-            Continue
+        {/* Start over is deliberately the QUIET button whenever there is
+            partial work, and deliberately separate from the loud one. The loud
+            button must never be the one that deletes minutes of model spend. */}
+        {partial && !profile && (
+          <button type="button" className="btn ghost" onClick={rebuild} disabled={busy}
+                  title="Forgets the documents already read and starts from the first one.">
+            Start over
           </button>
         )}
-        {/* Same rule as the readiness CTA: loud until it has been done once,
-            quiet forever after. A Rebuild that pulses is asking to be pressed,
-            and pressing it throws away every document already read. */}
+        {/* Loud until the profile exists, quiet forever after. A Rebuild that
+            pulses is asking to be pressed, and pressing it throws away every
+            document already read. */}
         <button type="button"
-                className={profile ? "btn ghost" : `btn sp-build${working || starting || running ? "" : " sp-build-pulse"}`}
-                onClick={rebuild}
-                disabled={working || starting || running}
-                title={profile ? "Forgets what was read and starts over." : "Reads this Inven(s)tory and builds the profile the search runs on."}>
-          {working ? "Reading…" : profile ? "Rebuild" : "Build it"}
+                className={profile ? "btn ghost" : `btn sp-build${busy ? "" : " sp-build-pulse"}`}
+                onClick={profile ? rebuild : partial ? carryOn : rebuild}
+                disabled={busy}
+                title={cta.hint}>
+          {working ? "Reading…" : cta.label}
         </button>
       </div>
 
-      {!profile && (
+      {!profile && !partial && (
         <p className="ov-note">
           Nothing built yet. Matching is falling back to the eligibility form,
           which knows the organization type and cause areas and nothing about
           what makes this client fundable.
+        </p>
+      )}
+
+      {!profile && partial && (
+        <p className="ov-note">
+          Part-built: {stored.done} of {stored.total} document(s) read and saved,
+          nothing assembled yet. Matching still falls back to the eligibility
+          form until the reading finishes. Continue picks up where it stopped.
         </p>
       )}
 
@@ -203,15 +237,17 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
         </p>
       )}
 
-      <JobProgress job={dismissed ? null : job} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
-      {chain && chain.total > 0 && (working || paused) && (
-        <p className="ov-note sp-chain">
-          {chain.done} of {chain.total} documents read. A large Inven(s)tory takes
-          longer than one request is allowed, so this runs in stages. Everything
-          read is saved: closing this page pauses it, and Continue picks it up.
-        </p>
+      {/* One box now. The staging note and the transient error text used to sit
+          beside it saying overlapping things; both are lines in the log. */}
+      <JobProgress job={dismissed ? null : job} events={events}
+                   onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+
+      {/* Kept for the case the log cannot cover: a failure to START, and a stop
+          whose write to the row did not land. Anything the row knows about is
+          already on screen above. */}
+      {(error || (chainError && job?.status !== "failed")) && (
+        <div className="ov-err">{error ?? chainError}</div>
       )}
-      {(error || chainError) && <div className="ov-err">{error ?? chainError}</div>}
 
       {open && profile && (
         <>

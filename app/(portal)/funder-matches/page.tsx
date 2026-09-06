@@ -7,6 +7,7 @@ import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
 import { getEligibilityProfile } from "@/lib/server/eligibility";
 import { getSearchProfile } from "@/lib/server/search-profile-read";
+import { profileBuildProgress } from "@/lib/server/search-profile-extract";
 import { getLastRunQueries, pendingRationaleCount } from "@/lib/server/matching";
 import { latestJob } from "@/lib/server/jobs";
 import FunderMatchesView from "@/components/FunderMatchesView";
@@ -33,7 +34,7 @@ export default async function FunderMatchesPage() {
   const isAdmin = session.role === "admin";
   // The Search Profile and the query text are For Granted's working view. A
   // client session never loads them rather than loading and hiding them.
-  const [contacts, profile, lastQueries, matchJob, profileJob, pendingRationales] = isAdmin
+  const [contacts, profile, lastQueries, matchJob, profileJob, pendingRationales, profileStored] = isAdmin
     ? await Promise.all([
         getContactsForEins(funders.map(f => f.ein ?? "").filter(Boolean)),
         getSearchProfile(session.tenantId).catch(() => null),
@@ -42,8 +43,11 @@ export default async function FunderMatchesPage() {
         latestJob(session.tenantId, "match").catch(() => null),
         latestJob(session.tenantId, "search_profile").catch(() => null),
         pendingRationaleCount(session.tenantId).catch(() => 0),
+        // So a reload offers Continue rather than a button that deletes the
+        // documents already read.
+        profileBuildProgress(session.tenantId).catch(() => ({ done: 0, total: 0 })),
       ])
-    : [{}, null, [], null, null, 0];
+    : [{}, null, [], null, null, 0, { done: 0, total: 0 }];
 
   return (
     <FunderMatchesView
@@ -58,6 +62,7 @@ export default async function FunderMatchesPage() {
       lastQueries={lastQueries}
       matchJob={matchJob}
       profileJob={profileJob}
+      profileStored={profileStored}
       pendingRationales={pendingRationales}
       isAdmin={isAdmin}
     />

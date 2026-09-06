@@ -18,7 +18,10 @@ import { getTenant } from "@/lib/server/data";
 import {
   continueProfileBuild, clearProfileDocs, profileBuildProgress,
 } from "@/lib/server/search-profile-extract";
-import { createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob } from "@/lib/server/jobs";
+import {
+  createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob, recordEvent,
+} from "@/lib/server/jobs";
+import { PROFILE_INTRO } from "@/lib/search-profile";
 
 export const maxDuration = 60;
 
@@ -61,9 +64,20 @@ export async function POST(req: Request) {
   // assembling a profile from rows this is deleting.
   if (body?.restart) await clearProfileDocs(tenantId);
 
+  // The opening of the log, written once per run rather than once per stage.
+  // A build is several invocations and only the first one is a beginning.
+  if (!existing || body?.restart) {
+    await recordEvent(tenantId, jobId, {
+      kind: "phase",
+      text: `Starting the Funder Matching Profile build for ${tenant?.name ?? "this client"}.`,
+    });
+    await recordEvent(tenantId, jobId, { kind: "phase", text: PROFILE_INTRO });
+  }
+
   try {
     const r = await continueProfileBuild(tenantId, session.user.id, {
       onProgress: p => { void updateJob(tenantId, jobId, p); },
+      onEvent: e => { void recordEvent(tenantId, jobId, e); },
     });
     const progress = await profileBuildProgress(tenantId);
 
