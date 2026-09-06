@@ -131,3 +131,39 @@ describe("a correction attached to a cached id reaches its record", () => {
     expect(unmatched).toEqual(["https://f.org/gone"]);
   });
 });
+
+describe("id assignment survives multi-query unions", () => {
+  test("a very long link still terminates and stays unique", () => {
+    // Truncation could make the qualified id identical to the base, which used
+    // to spin forever. Three queries unioned make long duplicate links likelier.
+    const long = "https://grants.gov/view?" + "x".repeat(600);
+    const out = qualifyGrantIds([
+      { opportunity_number: long, title: "Fund A" },
+      { opportunity_number: long, title: "Fund B" },
+      { opportunity_number: long, title: "Fund C" },
+    ]);
+    expect(out).toHaveLength(3);
+    expect(new Set(out.map(o => o.id)).size).toBe(3);
+    for (const o of out) expect(o.id.length).toBeLessThanOrEqual(GRANT_ID_MAX);
+  });
+
+  test("sorting before qualification makes ids independent of arrival order", () => {
+    // The union concatenates query 1's results, then 2's, then 3's, and which
+    // query surfaces a record changes as the index reranks. Without a stable
+    // order, a correction filed against the bare id moves between programmes
+    // on the same landing page between runs.
+    const recs = [
+      { opportunity_number: "https://f.org/apply", title: "Program A" },
+      { opportunity_number: "https://f.org/apply", title: "Program B" },
+    ];
+    const sortIt = (rs: typeof recs) => [...rs].sort((a, b) =>
+      a.opportunity_number.localeCompare(b.opportunity_number) || a.title.localeCompare(b.title));
+
+    const first = qualifyGrantIds(sortIt(recs));
+    const reversed = qualifyGrantIds(sortIt([...recs].reverse()));
+    const idFor = (out: typeof first, title: string) => out.find(o => o.title === title)?.id;
+
+    expect(idFor(first, "Program A")).toBe(idFor(reversed, "Program A"));
+    expect(idFor(first, "Program B")).toBe(idFor(reversed, "Program B"));
+  });
+});

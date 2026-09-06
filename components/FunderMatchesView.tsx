@@ -10,6 +10,7 @@ import type { FunderRow } from "@/lib/funder-rows";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { primaryContact, freshness, ROLE_LABEL, type ContactRecord } from "@/lib/funder-contact";
 import { screenFunders, hiddenByScreen } from "@/lib/funder-screen";
+import SearchProfilePanel, { type PanelProfile } from "./SearchProfilePanel";
 import type { EligibilityProfile } from "@/lib/eligibility-fields";
 
 interface Cached {
@@ -113,6 +114,7 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
+  profile, lastQueries,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   health: { ok: boolean; detail: string }; isAdmin: boolean;
@@ -120,6 +122,9 @@ export default function FunderMatchesView({
   contacts: Record<string, ContactRecord[]>;
   /** Drives the eligibility screen. Null means run the data-quality screen only. */
   eligibility: EligibilityProfile | null;
+  /** For Granted's working view of what the search is built from. Admin only. */
+  profile: PanelProfile | null;
+  lastQueries: { track: string; text: string }[];
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
@@ -139,7 +144,11 @@ export default function FunderMatchesView({
     setErr(null); setMsg("Searching Ground Truth. This can take up to a minute.");
     try {
       const r = await runMatchAction();
-      setMsg(`${r.kept} opportunities kept, ${r.dropped} filtered out as closed or ineligible. ${r.funders} funder matches, ${r.evidence} with funding evidence.`);
+      setMsg(`${r.kept} opportunities kept, ${r.dropped} filtered out as closed or ineligible. `
+        + `${r.funders} funder matches, ${r.evidence} with funding evidence. `
+        + (r.usedProfile
+            ? `Searched on the Inven(s)tory (${r.queries.length} queries).`
+            : "Searched on the eligibility form only, because there is no usable Search Profile yet."));
       router.refresh();
     } catch (e) {
       setMsg(null);
@@ -182,6 +191,10 @@ export default function FunderMatchesView({
       )}
       {configured && !health.ok && (
         <div className="ov-note">{isAdmin ? `Ground Truth status: ${health.detail}` : "Matches are being refreshed."}</div>
+      )}
+
+      {isAdmin && (
+        <SearchProfilePanel profile={profile} lastQueries={lastQueries} orgName={orgName} />
       )}
 
       {msg && <div className="fm-msg">{msg}</div>}

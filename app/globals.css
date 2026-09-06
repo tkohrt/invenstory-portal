@@ -857,3 +857,23 @@ button.vis-dot.busy{opacity:.5}
   border-bottom:1px dotted currentColor;display:inline-block}
 .fm-toggle{margin-top:11px;font:inherit;font-size:12px;background:none;border:0;
   padding:0;color:#1f4d2e;cursor:pointer;text-decoration:underline}
+.sp{border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:13px 15px;margin:0 0 18px}
+.sp-head{display:flex;align-items:center;gap:9px;font-size:13px;margin-bottom:4px}
+.sp-head .btn{margin-left:8px}
+.sp-stale{color:#7a6320}
+.sp-facets{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:12px 0 0;font-size:12px}
+.sp-facets dt{color:var(--muted,#888);white-space:nowrap}
+.sp-facets dd{margin:0}
+.sp-list{list-style:none;margin:0;padding:0}
+.sp-list li{margin-bottom:3px;line-height:1.5}
+.sp-src{margin-left:7px;font-size:11px;color:var(--muted,#999);cursor:help;
+  border-bottom:1px dotted currentColor}
+.sp-quarantine{margin-top:11px}
+.sp-queries{margin-top:12px;font-size:12px}
+.sp-queries summary{cursor:pointer;color:#1f4d2e}
+.sp-queries ol{margin:8px 0 0;padding-left:20px;line-height:1.55}
+.sp-queries li{margin-bottom:5px}
+.sp-track{display:inline-block;min-width:52px;font-size:10px;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--muted,#999)}
+.sp-failed{margin-left:8px;font-size:11px;color:#b45a4b;cursor:help}
+.sp-count{margin-left:8px;font-size:11px;color:var(--muted,#999)}

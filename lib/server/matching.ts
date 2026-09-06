@@ -16,6 +16,8 @@ import { getEligibilityProfile } from "./eligibility";
 import { getApprovedOverlay, mergeOverlay } from "./ledger-overlay";
 import { applyFunderOverlay, type LedgerRecord } from "@/lib/ledger-merge";
 import { funderRowsFrom, type FunderRow } from "@/lib/funder-rows";
+import { grantQueries, funderQueries, assessProfile } from "@/lib/search-profile";
+import { getSearchProfile } from "./search-profile-read";
 import { buildDossier, addRationales } from "./match-rationale";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
@@ -34,6 +36,11 @@ export interface MatchRun {
   dropped: number;
   note?: string;
   ranAt: string;
+  /** Exactly what was sent to each index, whether it answered, and how much. */
+  queries: { track: "grants" | "funders"; text: string; ok: boolean; results: number }[];
+  /** False means this fell back to the eligibility form. */
+  usedProfile: boolean;
+  profileNote: string | null;
 }
 
 /**
@@ -43,7 +50,10 @@ export interface MatchRun {
  * correction (a moved deadline, a fixed eligibility line) drives the verdict
  * rather than the stale June 2026 record.
  */
-export async function runMatch(tenantId: string, orgName: string): Promise<MatchRun> {
+export async function runMatch(
+  tenantId: string, orgName: string,
+  opts: { multiQuery?: boolean; ranBy?: string } = {},
+): Promise<MatchRun> {
   if (!ledgerConfigured()) throw new LedgerUnavailable("The Funder Ledger service is not configured yet.");
 
   const p = await getEligibilityProfile(tenantId);
@@ -51,20 +61,77 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     throw new Error("Fill in at least the organization type and one cause area before matching.");
   }
 
-  // Two questions, two query texts. Asking the grants index "who do they serve"
-  // returns money for the beneficiaries, not for the organization.
-  const grantNeed = needText(p, orgName, "grants");
-  const funderNeed = needText(p, orgName, "funders");
+  const multiQuery = opts.multiQuery ?? true;
+  const ranBy = opts.ranBy;
+
+  // The Inven(s)tory drives the search when there is one worth searching on.
+  //
+  // This is the change the whole feature was for. Until now the query was built
+  // from a dozen eligibility fields while the Inven(s)tory, the actual product,
+  // was used only to explain matches after the fact. The eligibility profile is
+  // still authoritative for screening; it just no longer has to carry the
+  // description on its own.
+  const stored = await getSearchProfile(tenantId).catch(() => null);
+  const health = stored ? assessProfile(stored) : null;
+  const useProfile = !!stored && !!health?.usable;
+
+  // Several angles per track rather than one blended paragraph. One long query
+  // averages into mush; three sharper ones each retrieve a different
+  // neighbourhood. Single-query stays reachable so two runs can be compared and
+  // the Inven(s)tory's contribution can actually be attributed.
+  const grantTexts = useProfile
+    ? grantQueries(stored, p, orgName)
+    : [needText(p, orgName, "grants")];
+  const funderTexts = useProfile
+    ? funderQueries(stored, p, orgName)
+    : [needText(p, orgName, "funders")];
+
+  const grantQs = multiQuery ? grantTexts : grantTexts.slice(0, 1);
+  const funderQs = multiQuery ? funderTexts : funderTexts.slice(0, 1);
   const size = typicalGrantSize(p.budget_band);
 
-  const [grantsEnv, fundersEnv, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
-    findGrants({ need: grantNeed }),
-    findFunders({ need: funderNeed, location: p.state_code ?? undefined, grant_size: size }),
-    fundersLikeMine({ org_description: funderNeed, location: p.state_code ?? undefined }),
+  // Each angle is its own call. A failure on one must not lose the others: a
+  // partial shortlist beats an empty one, and the alternative is that a single
+  // slow query takes down a whole run.
+  // Each angle is its own call, and each records whether it actually ran. A
+  // partial failure must not look like a small result set: the service naps,
+  // and "zero grants" and "the service was asleep" have opposite consequences
+  // one screen later, where an empty run sweeps the cache.
+  type Ran<T> = { ok: boolean; results: T[]; note?: string };
+  const attempt = async <T,>(label: string, fn: () => Promise<{ results: T[]; note?: string }>): Promise<Ran<T>> => {
+    try { const r = await fn(); return { ok: true, results: r.results, note: r.note }; }
+    catch (e) { console.error(`[match] ${label} failed`, e); return { ok: false, results: [] }; }
+  };
+
+  const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
+    Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
+    Promise.all(funderQs.map(need => attempt(`funder query "${need.slice(0, 60)}"`, () =>
+      findFunders({ need, location: p.state_code ?? undefined, grant_size: size })))),
+    attempt("graph query", () => fundersLikeMine({
+      org_description: funderQs[0] ?? needText(p, orgName, "funders"),
+      location: p.state_code ?? undefined,
+    })),
     getApprovedOverlay("grant"),
     getApprovedOverlay("funder"),
     buildDossier(tenantId, orgName, p),
   ]);
+
+  // Every grant query failing is an outage, not an empty shortlist. Throwing
+  // here is what protects the cache: the zero-result path below deletes, and a
+  // sleeping service must never be the reason a client's matches disappear.
+  if (grantEnvs.length && grantEnvs.every(e => !e.ok) && funderEnvs.every(e => !e.ok)) {
+    throw new LedgerUnavailable(
+      "Ground Truth did not answer any query. Nothing has been changed. It may have been asleep: try again in a minute.");
+  }
+  const failedQueries = [...grantEnvs, ...funderEnvs].filter(e => !e.ok).length;
+
+  const grantsEnv = {
+    results: grantEnvs.flatMap(e => e.results),
+    // The first note from any query that actually ran, not from a slot that
+    // failed and has no note to give.
+    note: grantEnvs.find(e => e.ok && e.note)?.note,
+  };
+  const fundersEnv = { results: funderEnvs.flatMap(e => e.results) as FunderCard[] };
 
   // The service's response shape differs from the published spec (prose in
   // close_date, "$500,000" strings for amounts, eligibility under a different
@@ -78,7 +145,17 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
   // into eligible_grant. Anything that recomputes a record's identity later
   // breaks the review loop silently: a correction filed against the cached id
   // matches no base record, is neither applied nor appended, and vanishes.
-  const withIds = qualifyGrantIds(normalized) as unknown as LedgerRecord[];
+  // Sorted before ids are assigned. qualifyGrantIds gives the bare id to the
+  // FIRST record it sees and a slug-qualified one to later collisions, so
+  // identity used to depend on position in the list. With several queries
+  // unioned, that position changes whenever the index reranks, which would
+  // silently move a Ground Truth correction from one programme to its
+  // neighbour on the same landing page. Sorting makes the id a property of the
+  // record rather than of the run.
+  const ordered = [...normalized].sort((a, b) =>
+    (a.opportunity_number ?? "").localeCompare(b.opportunity_number ?? "") ||
+    (a.title ?? "").localeCompare(b.title ?? ""));
+  const withIds = qualifyGrantIds(ordered) as unknown as LedgerRecord[];
   const unmatched: string[] = [];
   const merged = mergeOverlay(withIds, overlay, {
     onUnmatched: row => unmatched.push(row.base_id ?? row.id),
@@ -168,8 +245,12 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     if (sweepError) console.error("could not clear stale matches", sweepError);
   } else {
     // No survivors: clear the table rather than leaving the last run's results
-    // standing as though they were current.
-    await db.from("eligible_grant").delete().eq("tenant_id", tenantId);
+    // standing as though they were current. Bounded by ranAt like the funder
+    // sweep, so a concurrent run's fresh rows are not collateral, and loud on
+    // failure rather than silent.
+    const { error: clearErr } = await db.from("eligible_grant")
+      .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    if (clearErr) console.error("could not clear grant matches", clearErr);
   }
 
   // The funder side, stored under the same rule: a run is a snapshot, not an
@@ -220,9 +301,29 @@ export async function runMatch(tenantId: string, orgName: string): Promise<Match
     if (clear) console.error("could not clear funder matches", clear);
   }
 
+  // What was actually asked, kept so a disappointing run can be diagnosed
+  // rather than argued about.
+  // What ran, not what was intended. A query that failed and was swallowed
+  // would otherwise be recorded as if it had executed, which defeats the point
+  // of keeping this in exactly the case where diagnosis matters.
+  const queries = [
+    ...grantQs.map((text, i) => ({ track: "grants" as const, text, ok: grantEnvs[i]?.ok ?? false, results: grantEnvs[i]?.results.length ?? 0 })),
+    ...funderQs.map((text, i) => ({ track: "funders" as const, text, ok: funderEnvs[i]?.ok ?? false, results: funderEnvs[i]?.results.length ?? 0 })),
+  ];
+  const { error: runErr } = await db.from("match_run").insert({
+    tenant_id: tenantId, queries, used_profile: useProfile, multi_query: multiQuery,
+    ran_by: ranBy ?? null,
+    profile_note: (health?.note ?? null) && failedQueries
+      ? `${health?.note ?? ""} ${failedQueries} of ${queries.length} queries failed this run.`.trim()
+      : health?.note ?? null,
+    kept: screened.length, dropped, funders: funderRows.length,
+  });
+  if (runErr) console.error("could not record match run", runErr);
+
   return {
     grants: screened, funders: funderRows, evidence: mergedEvidence,
     dropped, note: grantsEnv.note, ranAt,
+    queries, usedProfile: useProfile, profileNote: health?.note ?? null,
   };
 }
 
@@ -254,4 +355,17 @@ export async function getCachedFunders(tenantId: string): Promise<FunderRow[]> {
   // about this client's prospects, and it should only be made when it is true.
   if (error) throw new Error(`Funder matches could not be read: ${error.message}`);
   return (data ?? []) as unknown as FunderRow[];
+}
+
+/** The query text from the most recent run, for the admin panel. */
+export interface RunQuery { track: string; text: string; ok?: boolean; results?: number }
+
+export async function getLastRunQueries(tenantId: string): Promise<RunQuery[]> {
+  const { data, error } = await db.from("match_run")
+    .select("queries").eq("tenant_id", tenantId)
+    .order("ran_at", { ascending: false }).limit(1).maybeSingle();
+  // A failed read is not "no queries". Rendering it as an absence would hide
+  // the one thing this panel exists to show.
+  if (error) throw new Error(`match run read failed: ${error.message}`);
+  return ((data?.queries ?? []) as RunQuery[]);
 }

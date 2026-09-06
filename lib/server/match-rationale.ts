@@ -81,10 +81,29 @@ function ruleBased(g: ScreenedGrant, p: EligibilityProfile, orgName: string): st
  * fabrication and the whole rationale is discarded for the rule-based fallback.
  * Better a thin true sentence than a rich invented one.
  */
+/**
+ * How many opportunities go in one request.
+ *
+ * This is a single call with a hard output cap, and it must emit one object per
+ * opportunity. Multi-query retrieval roughly tripled the number of survivors, so
+ * a whole run's worth no longer fits: the response truncates mid-array, the JSON
+ * fails to parse, and EVERY rationale silently becomes the rule-based fallback.
+ * No error, no log, just uniformly generic text that reads as a worse model.
+ */
+const RATIONALE_BATCH = 12;
+
 export async function addRationales(
   grants: ScreenedGrant[], dossier: Dossier, p: EligibilityProfile, orgName: string,
 ): Promise<void> {
   if (!grants.length) return;
+  // Batched, and sequential rather than parallel: these are the same model
+  // credentials the rest of a run uses, and a burst is how throttling starts.
+  if (grants.length > RATIONALE_BATCH) {
+    for (let i = 0; i < grants.length; i += RATIONALE_BATCH) {
+      await addRationales(grants.slice(i, i + RATIONALE_BATCH), dossier, p, orgName);
+    }
+    return;
+  }
   if (!generationConfigured()) {
     // Worth being loud about. A run where every explanation is the fallback
     // looks like a weak model rather than an unconfigured one, and that

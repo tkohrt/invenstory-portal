@@ -237,9 +237,15 @@ export function qualifyGrantIds<T extends { opportunity_number?: string; title?:
     let id = base;
     if (usedIds.has(id)) {
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-      id = `${base}#${slug || usedIds.size}`.slice(0, GRANT_ID_MAX);
+      // Truncation can make the qualified id identical to the base, which
+      // would spin here forever. Shorten the base instead so the suffix always
+      // survives, and give up after a bounded number of tries rather than
+      // hanging a run.
+      const room = Math.max(0, GRANT_ID_MAX - (slug.length + 12));
+      const stem = base.slice(0, room) || base.slice(0, GRANT_ID_MAX - 12);
+      id = `${stem}#${slug || usedIds.size}`;
       let n = 2;
-      while (usedIds.has(id)) id = `${base}#${slug}-${n++}`.slice(0, GRANT_ID_MAX);
+      while (usedIds.has(id) && n < 500) id = `${stem}#${slug}-${n++}`;
     }
     usedIds.add(id);
     out.push({ ...g, id });

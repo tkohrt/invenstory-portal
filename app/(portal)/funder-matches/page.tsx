@@ -6,6 +6,8 @@ import { getCachedMatches, getCachedFunders } from "@/lib/server/matching";
 import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
 import { getEligibilityProfile } from "@/lib/server/eligibility";
+import { getSearchProfile } from "@/lib/server/search-profile-read";
+import { getLastRunQueries } from "@/lib/server/matching";
 import FunderMatchesView from "@/components/FunderMatchesView";
 
 export default async function FunderMatchesPage() {
@@ -28,9 +30,15 @@ export default async function FunderMatchesPage() {
   // screen, so they are fetched only for an admin session. A client's page does
   // not merely hide them; it never loads them.
   const isAdmin = session.role === "admin";
-  const contacts = isAdmin
-    ? await getContactsForEins(funders.map(f => f.ein ?? "").filter(Boolean))
-    : {};
+  // The Search Profile and the query text are For Granted's working view. A
+  // client session never loads them rather than loading and hiding them.
+  const [contacts, profile, lastQueries] = isAdmin
+    ? await Promise.all([
+        getContactsForEins(funders.map(f => f.ein ?? "").filter(Boolean)),
+        getSearchProfile(session.tenantId).catch(() => null),
+        getLastRunQueries(session.tenantId).catch(() => []),
+      ])
+    : [{}, null, []];
 
   return (
     <FunderMatchesView
@@ -41,6 +49,8 @@ export default async function FunderMatchesPage() {
       health={health}
       contacts={contacts}
       eligibility={eligibility}
+      profile={profile}
+      lastQueries={lastQueries}
       isAdmin={isAdmin}
     />
   );

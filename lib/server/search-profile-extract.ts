@@ -99,8 +99,15 @@ export async function rebuildSearchProfileAction(tenantId: string): Promise<Prof
     textByDoc.set(c.document_id, (textByDoc.get(c.document_id) ?? "") + "\n" + (c.text ?? ""));
   }
 
+  // Bounded fan-out. Unlimited Promise.all over every document times up to six
+  // windows is hundreds of simultaneous model calls on a large Inven(s)tory,
+  // and chatComplete returns null rather than throwing when throttled, so the
+  // failure would arrive as documents that "said nothing useful" and a thin
+  // profile that quietly falls back to the eligibility form.
+  const CONCURRENCY = 4;
   let skipped = 0, silent = 0;
-  const perDoc = await Promise.all(docList.map(async d => {
+
+  const runDoc = async (d: { id: string; title: string; layer: string | null }) => {
     const text = textByDoc.get(d.id) ?? "";
     if (isBoilerplate(d.title) || !text.trim()) { skipped += 1; return [] as ProfileFact[]; }
     const layer = (["I", "II", "III"].includes(d.layer ?? "") ? d.layer : null) as Layer;
@@ -109,7 +116,12 @@ export async function rebuildSearchProfileAction(tenantId: string): Promise<Prof
     const facts = parts.flat();
     if (!facts.length) silent += 1;
     return facts;
-  }));
+  };
+
+  const perDoc: ProfileFact[][] = [];
+  for (let i = 0; i < docList.length; i += CONCURRENCY) {
+    perDoc.push(...await Promise.all(docList.slice(i, i + CONCURRENCY).map(runDoc)));
+  }
 
   const facts = mergeFacts(perDoc.flat());
   const layers = [...new Set(facts.map(f => f.layer).filter(Boolean))] as ("I" | "II" | "III")[];
@@ -139,34 +151,4 @@ export async function rebuildSearchProfileAction(tenantId: string): Promise<Prof
   if (writeErr) throw new Error(`Search Profile could not be saved: ${writeErr.message}`);
 
   return { profile, note: health.note, usable: health.usable, scanned, skipped, silent };
-}
-
-export interface StoredProfile extends SearchProfile {
-  note: string | null;
-  /** True when documents have changed since this was built. */
-  stale: boolean;
-}
-
-/** The cached profile, and whether the Inven(s)tory has moved on since. */
-export async function getSearchProfile(tenantId: string): Promise<StoredProfile | null> {
-  const { data, error } = await db.from("search_profile")
-    .select("*").eq("tenant_id", tenantId).maybeSingle();
-  if (error) throw new Error(`search profile read failed: ${error.message}`);
-  if (!data) return null;
-
-  const { data: docs } = await db.from("document")
-    .select("id").eq("tenant_id", tenantId).eq("status", "ready");
-  const row = data as {
-    facts: ProfileFact[]; document_count: number; layers: string[];
-    doc_fingerprint: string | null; note: string | null; generated_at: string;
-  };
-
-  return {
-    facts: (row.facts ?? []) as ProfileFact[],
-    generatedAt: row.generated_at,
-    documentCount: row.document_count,
-    layers: (row.layers ?? []) as ("I" | "II" | "III")[],
-    note: row.note,
-    stale: documentFingerprint((docs ?? []) as { id: string }[]) !== row.doc_fingerprint,
-  };
 }
