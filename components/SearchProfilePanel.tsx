@@ -23,6 +23,13 @@ export interface PanelProfile {
   stale: boolean;
 }
 
+/** "RE-Assist's", but "Bridges'" rather than "Bridges's". */
+function possessive(name: string) {
+  const n = (name ?? "").trim();
+  if (!n) return "This client's";
+  return /s$/i.test(n) ? `${n}’` : `${n}’s`;
+}
+
 export default function SearchProfilePanel({ profile, lastQueries, orgName, job: initialJob }: {
   profile: PanelProfile | null;
   lastQueries: { track: string; text: string; ok?: boolean; results?: number }[];
@@ -116,8 +123,19 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
   return (
     <div className="sp">
       <div className="sp-head">
-        <strong>What we search on</strong>
-        <span className="ov-muted"> for {orgName}</span>
+        <strong>{possessive(orgName)} Funder Matching Profile:</strong>
+        {/* Native title= is what the rest of this panel uses, but it truncates
+            long text in some browsers and never appears on keyboard focus. This
+            one sentence is the only explanation of what the profile is FOR, so
+            it gets a real tooltip that a keyboard reaches. */}
+        <span className="sp-info" tabIndex={0} role="note"
+              aria-label="Your Funder Matching Profile is what For Granted uses to search our Ground Truth database for highly aligned funders and opportunities.">
+          <span aria-hidden="true">i</span>
+          <span className="sp-tip" aria-hidden="true">
+            Your Funder Matching Profile is what For Granted uses to search our
+            Ground Truth database for highly aligned funders and opportunities.
+          </span>
+        </span>
         <span className="ov-spacer" />
         {profile && (
           <button type="button" className="fc-link" onClick={() => setOpen(v => !v)}>
@@ -132,9 +150,14 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
             Continue
           </button>
         )}
-        <button type="button" className="btn ghost" onClick={rebuild}
+        {/* Same rule as the readiness CTA: loud until it has been done once,
+            quiet forever after. A Rebuild that pulses is asking to be pressed,
+            and pressing it throws away every document already read. */}
+        <button type="button"
+                className={profile ? "btn ghost" : `btn sp-build${working || starting || running ? "" : " sp-build-pulse"}`}
+                onClick={rebuild}
                 disabled={working || starting || running}
-                title={profile ? "Forgets what was read and starts over." : undefined}>
+                title={profile ? "Forgets what was read and starts over." : "Reads this Inven(s)tory and builds the profile the search runs on."}>
           {working ? "Reading…" : profile ? "Rebuild" : "Build it"}
         </button>
       </div>
