@@ -39,6 +39,19 @@ export async function POST(req: Request) {
     tenantId, "search_profile",
     `Reading ${tenant?.name ?? "this client"}'s Inven(s)tory`, session.user.id);
 
+  // The chain giving up is a real end state, and it has to reach the row.
+  // Otherwise the browser stops while the row still says "running", and the
+  // progress panel spins over work that ended minutes ago.
+  if (body?.stop) {
+    await releaseJob(tenantId, jobId);
+    if (!existing || existing.status === "running") {
+      await failJob(tenantId, jobId, typeof body.reason === "string" && body.reason.trim()
+        ? body.reason.trim().slice(0, 500)
+        : "Reading stopped before it finished. What was read is saved.");
+    }
+    return NextResponse.json({ jobId, stopped: true, complete: false, ...await profileBuildProgress(tenantId) });
+  }
+
   if (!await claimJob(tenantId, jobId)) {
     const p = await profileBuildProgress(tenantId);
     return NextResponse.json({ jobId, busy: true, complete: false, ...p });
@@ -64,7 +77,9 @@ export async function POST(req: Request) {
       await updateJob(tenantId, jobId, { detail: `${progress.done} of ${progress.total} documents read` });
       await releaseJob(tenantId, jobId);
     }
-    return NextResponse.json({ jobId, complete: r.complete, read: r.read, ...progress });
+    // `read` is the honest signal for the caller's decision to come back:
+    // `done` counts what exists, `read` counts what THIS invocation achieved.
+    return NextResponse.json({ jobId, complete: r.complete, read: r.read, remaining: r.remaining, ...progress });
   } catch (e) {
     await releaseJob(tenantId, jobId);
     const message = e instanceof Error ? e.message : "Could not finish reading the Inven(s)tory.";

@@ -15,7 +15,7 @@ import "server-only";
 import { db } from "./db";
 import { chatComplete, generationConfigured } from "./llm";
 import {
-  parseFacts, mergeFacts, assessProfile, documentFingerprint,
+  parseFacts, mergeFacts, assessProfile, documentFingerprint, chunkText,
   type ProfileFact, type SearchProfile,
 } from "@/lib/search-profile";
 
@@ -58,13 +58,39 @@ const SYS =
   "{\"facet\":\"<one of the above>\",\"text\":\"<short clause>\",\"quote\":\"<verbatim>\",\"subject\":\"organization|competitor|third_party\"}. " +
   "Return [] if the document says nothing useful.";
 
-async function scanWindow(title: string, text: string, src: { documentId: string; documentTitle: string; layer: Layer }) {
-  const res = await chatComplete({
+/**
+ * One window, with one retry and a bounded wait.
+ *
+ * chatComplete swallows every error and returns null, so a throttled call and a
+ * document with nothing to say are the same value. That is survivable per
+ * window and not survivable per document, so the null is reported upward here
+ * rather than quietly becoming an empty result.
+ */
+async function scanWindow(
+  title: string, text: string, src: { documentId: string; documentTitle: string; layer: Layer },
+): Promise<{ answered: boolean; facts: ProfileFact[] }> {
+  const ask = () => chatComplete({
     system: SYS,
     user: `DOCUMENT TITLE: ${title}\n\nDOCUMENT TEXT:\n${text}`,
     maxTokens: 1800, temperature: 0,
   });
-  return res ? parseFacts(res.text, src) : [];
+
+  let res = await ask();
+  // One retry, because the common failure here is a throttle from firing
+  // several windows of one transcript at once, and it clears in a second.
+  if (!res) { await new Promise(f => setTimeout(f, 1200)); res = await ask(); }
+
+  return res ? { answered: true, facts: parseFacts(res.text, src) } : { answered: false, facts: [] };
+}
+
+/** Run tasks at most `width` at a time. A six-way burst is what throttles. */
+async function pool<T>(tasks: (() => Promise<T>)[], width: number): Promise<T[]> {
+  const out: T[] = new Array(tasks.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(width, tasks.length) }, async () => {
+    for (let i = next++; i < tasks.length; i = next++) out[i] = await tasks[i]();
+  }));
+  return out;
 }
 
 export interface ProfileBuildResult {
@@ -82,6 +108,8 @@ export interface ProfileBuildResult {
 
 /** Leave enough of the function's budget to write results and answer. */
 const WORK_BUDGET_MS = 42_000;
+/** Windows of one document read at once. Six at once is what gets throttled. */
+const WINDOW_CONCURRENCY = 3;
 
 interface DocRow { id: string; title: string; layer: string | null; }
 
@@ -106,8 +134,16 @@ async function extractOne(tenantId: string, d: DocRow, text: string): Promise<nu
   const layer = (["I", "II", "III"].includes(d.layer ?? "") ? d.layer : null) as Layer;
   const src = { documentId: d.id, documentTitle: d.title, layer };
   const w = windows(text);
-  const parts = await Promise.all(w.map(win => scanWindow(d.title, win, src)));
-  const facts = parts.flat();
+  const parts = await pool(w.map(win => () => scanWindow(d.title, win, src)), WINDOW_CONCURRENCY);
+
+  // Not one row saying "read, nothing found". A document whose every window
+  // failed has not been read, and writing it as read is how it disappears from
+  // the profile permanently: the next pass sees a row and skips it.
+  if (!parts.some(p => p.answered)) {
+    throw new Error(`The model did not answer for any part of "${d.title}", so it has not been read. `
+      + "Nothing was saved for it; running again retries it.");
+  }
+  const facts = parts.flatMap(p => p.facts);
 
   const { error } = await db.from("search_profile_doc").upsert({
     tenant_id: tenantId, document_id: d.id, facts,
@@ -152,15 +188,24 @@ export async function continueProfileBuild(
   const done = new Map(((doneRows ?? []) as { document_id: string; content_hash: string | null }[])
     .map(r => [r.document_id, r.content_hash]));
 
-  // Current text length per document, cheap, so a document that was
-  // re-processed in place is re-read rather than trusted forever. The full
-  // hash is compared inside extractOne's stored value; this is the pre-filter.
+  // Current text length per document, so a document that was re-processed in
+  // place is re-read rather than trusted forever.
+  //
+  // Built through chunkText, the same function the reader uses. Computing this
+  // length independently is what broke the chain before: the two answers
+  // differed by one character per chunk boundary, nothing ever matched, and no
+  // document was ever considered read.
   const { data: sizes } = await db.from("document_chunk")
-    .select("document_id, text").eq("tenant_id", tenantId);
-  const lenByDoc = new Map<string, number>();
+    .select("document_id, chunk_index, text").eq("tenant_id", tenantId)
+    .order("chunk_index");
+  const rowsByDoc = new Map<string, { text: string | null }[]>();
   for (const c of ((sizes ?? []) as { document_id: string; text: string | null }[])) {
-    lenByDoc.set(c.document_id, (lenByDoc.get(c.document_id) ?? 0) + (c.text?.length ?? 0));
+    const list = rowsByDoc.get(c.document_id) ?? [];
+    list.push({ text: c.text });
+    rowsByDoc.set(c.document_id, list);
   }
+  const lenByDoc = new Map<string, number>();
+  for (const [id, rows] of rowsByDoc) lenByDoc.set(id, chunkText(rows).length);
 
   const stale = (d: DocRow) => {
     if (!done.has(d.id)) return true;
@@ -176,7 +221,13 @@ export async function continueProfileBuild(
 
   let read = 0;
   for (const d of todo) {
-    if (Date.now() - started > WORK_BUDGET_MS) break;
+    // A pass ALWAYS reads at least one document. The budget decides whether to
+    // read another, never whether to read at all.
+    //
+    // Without this a pass can return having done nothing, and a caller with no
+    // way to tell "no time left" from "cannot proceed" has to guess. It guessed
+    // wrong and stopped a chain that had ten documents still to read.
+    if (read > 0 && Date.now() - started > WORK_BUDGET_MS) break;
     step(already.size + read, total, `reading ${d.title}`);
 
     if (isBoilerplate(d.title)) {
@@ -192,8 +243,9 @@ export async function continueProfileBuild(
     }
 
     const { data: chunks } = await db.from("document_chunk")
-      .select("text").eq("tenant_id", tenantId).eq("document_id", d.id);
-    const text = ((chunks ?? []) as { text: string | null }[]).map(c => c.text ?? "").join("\n");
+      .select("chunk_index, text").eq("tenant_id", tenantId).eq("document_id", d.id)
+      .order("chunk_index");
+    const text = chunkText((chunks ?? []) as { text: string | null }[]);
     if (!text.trim()) {
       // No chunks yet, or an extraction that produced nothing. Recording it
       // avoids a model call on empty input every time the chain comes round.
@@ -207,6 +259,9 @@ export async function continueProfileBuild(
     }
     await extractOne(tenantId, d, text);
     read += 1;
+    // After, not only before. Reporting only before leaves the count one behind
+    // the words: a bar at 27% under a line reading "5 of 15 documents read".
+    step(already.size + read, total, `read ${d.title}`);
   }
 
   const remaining = todo.length - read;

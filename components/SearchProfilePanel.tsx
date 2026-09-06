@@ -62,8 +62,26 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
    */
   const runChain = useCallback(async (restart: boolean) => {
     setDismissed(false); setChainError(null); setPaused(false); setWorking(true);
-    let lastDone = -1;
-    let stuck = 0;
+    let jobRef: string | null = null;
+
+    // Tell the row it ended. Without this the browser stops and the row still
+    // says "running", so the progress panel spins over work that is over.
+    const stop = async (reason: string) => {
+      setPaused(true);
+      setChainError(reason);
+      try {
+        const res = await fetch("/api/jobs/search-profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ stop: true, reason }),
+        });
+        if (jobRef && res.ok) {
+          const j = await fetch(`/api/jobs/${jobRef}`, { cache: "no-store" })
+            .then(x => x.ok ? x.json() : null).catch(() => null);
+          if (j?.job) setJob(j.job);
+        }
+      } catch { /* the message on screen is the part that matters */ }
+    };
 
     try {
       // Bounded. A loop that cannot terminate is worse than one that stops
@@ -78,6 +96,7 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
         if (!res.ok) throw new Error(r.error ?? "Reading failed.");
 
         setChain({ done: r.done ?? 0, total: r.total ?? 0 });
+        if (r.jobId) jobRef = r.jobId;
         if (r.jobId) {
           const j = await fetch(`/api/jobs/${r.jobId}`, { cache: "no-store" }).then(x => x.ok ? x.json() : null).catch(() => null);
           if (j?.job) setJob(j.job);
@@ -88,24 +107,23 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName, job:
         // Another tab holds the lease. Wait rather than racing it.
         if (r.busy) { await new Promise(f => setTimeout(f, 3000)); continue; }
 
-        // Two passes with nothing read means something is wrong that another
-        // pass will not fix: a document that always overruns, or setup that
-        // eats the whole budget. Stop and say so rather than spending forever.
-        if ((r.done ?? 0) === lastDone) {
-          if (++stuck >= 2) {
-            setPaused(true);
-            setChainError(`Stopped after reading ${r.done} of ${r.total} documents: two passes in a row made no progress. `
-              + "What has been read is saved. Continue tries again from here.");
-            return;
-          }
-        } else { stuck = 0; }
-        lastDone = r.done ?? 0;
+        // A pass now always reads at least one document, so `read` of zero with
+        // work left is a real dead end rather than a slow pass, and one pass is
+        // enough to know it.
+        //
+        // This used to compare the TOTAL read so far across passes, which is a
+        // different question, and it answered the wrong one: it declared the
+        // build stuck while every pass was working correctly.
+        if ((r.read ?? 0) === 0) {
+          await stop(`Stopped after reading ${r.done} of ${r.total} documents: a pass read nothing `
+            + "while documents were still outstanding. What has been read is saved, and Continue "
+            + "tries again from here.");
+          return;
+        }
       }
-      setPaused(true);
-      setChainError("Stopped after many passes without finishing. What has been read is saved.");
+      await stop("Stopped after many passes without finishing. What has been read is saved.");
     } catch (e) {
-      setPaused(true);
-      setChainError(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
+      await stop(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
     } finally {
       setWorking(false);
     }

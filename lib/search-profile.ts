@@ -361,3 +361,21 @@ export function documentFingerprint(docs: { id: string }[]): string {
   for (let i = 0; i < ids.length; i++) { h = (h * 31 + ids.charCodeAt(i)) | 0; }
   return `${docs.length}:${(h >>> 0).toString(36)}`;
 }
+
+/**
+ * The text of a document, from its chunks.
+ *
+ * ONE function, because the length of what this returns is compared against a
+ * length recorded on a previous run to decide whether a document needs
+ * re-reading. Two places computing it two ways is exactly the bug this replaces:
+ * the reader joined chunks with newlines and stored 3146, the staleness
+ * pre-filter summed the chunks alone and got 3143, they never matched, and every
+ * document looked changed on every pass. The chain re-read the same five
+ * documents forever and could not advance.
+ *
+ * Ordered by chunk_index, so the text and its hash are stable run to run.
+ * Postgres makes no promise about the order of an unordered select.
+ */
+export function chunkText(rows: { text: string | null }[]): string {
+  return rows.map(c => c.text ?? "").join("\n");
+}
