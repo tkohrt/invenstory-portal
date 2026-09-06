@@ -11,6 +11,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { listTenantMatchesAction, resolveGrantUrlAction, type GrantPickerResult } from "@/lib/server/grant-lookup";
 import { STATUS_LABEL, STATUS_HELP, type GroundTruthState } from "@/lib/ledger-status";
+import Busy from "./Busy";
 import type { Tenant } from "@/lib/types";
 
 // Same badge vocabulary as the funder side. Two pickers showing the same three
@@ -93,7 +94,7 @@ export default function GrantPicker({ tenants, tenantId, onTenant, onAttach, onM
         </select>
       </label>
 
-      {pending && <div className="ov-muted">Loading…</div>}
+      {pending && <Busy label="Reading this client's recent matches" />}
 
       {tenantId && loaded && !rows.length && !pending && (
         <div className="empty">

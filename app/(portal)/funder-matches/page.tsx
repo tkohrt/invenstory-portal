@@ -7,7 +7,8 @@ import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
 import { getEligibilityProfile } from "@/lib/server/eligibility";
 import { getSearchProfile } from "@/lib/server/search-profile-read";
-import { getLastRunQueries } from "@/lib/server/matching";
+import { getLastRunQueries, pendingRationaleCount } from "@/lib/server/matching";
+import { latestJob } from "@/lib/server/jobs";
 import FunderMatchesView from "@/components/FunderMatchesView";
 
 export default async function FunderMatchesPage() {
@@ -32,13 +33,17 @@ export default async function FunderMatchesPage() {
   const isAdmin = session.role === "admin";
   // The Search Profile and the query text are For Granted's working view. A
   // client session never loads them rather than loading and hiding them.
-  const [contacts, profile, lastQueries] = isAdmin
+  const [contacts, profile, lastQueries, matchJob, profileJob, pendingRationales] = isAdmin
     ? await Promise.all([
         getContactsForEins(funders.map(f => f.ein ?? "").filter(Boolean)),
         getSearchProfile(session.tenantId).catch(() => null),
         getLastRunQueries(session.tenantId).catch(() => []),
+        // So a reload rejoins work already in flight rather than looking idle.
+        latestJob(session.tenantId, "match").catch(() => null),
+        latestJob(session.tenantId, "search_profile").catch(() => null),
+        pendingRationaleCount(session.tenantId).catch(() => 0),
       ])
-    : [{}, null, []];
+    : [{}, null, [], null, null, 0];
 
   return (
     <FunderMatchesView
@@ -51,6 +56,9 @@ export default async function FunderMatchesPage() {
       eligibility={eligibility}
       profile={profile}
       lastQueries={lastQueries}
+      matchJob={matchJob}
+      profileJob={profileJob}
+      pendingRationales={pendingRationales}
       isAdmin={isAdmin}
     />
   );

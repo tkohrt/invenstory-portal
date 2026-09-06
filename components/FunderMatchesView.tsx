@@ -2,9 +2,11 @@
 // Funder matching results. Hidden from clients by default; For Granted runs the
 // match and reads the results here. Every card is a June 2026 lead, and the page
 // says so rather than letting anyone forget it.
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { runMatchAction, clearMatchesAction } from "@/lib/server/match-actions";
+import { clearMatchesAction } from "@/lib/server/match-actions";
+import JobProgress, { useJob } from "./JobProgress";
+import type { Job } from "@/lib/job";
 import type { Verdict } from "@/lib/server/matching";
 import type { FunderRow } from "@/lib/funder-rows";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
@@ -114,9 +116,11 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
-  profile, lastQueries,
+  profile, lastQueries, matchJob, profileJob, pendingRationales,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
+  /** Matches still owed a real explanation, because a run was cut short. */
+  pendingRationales: number;
   health: { ok: boolean; detail: string }; isAdmin: boolean;
   /** For Granted internal, admin sessions only. Empty for a client. */
   contacts: Record<string, ContactRecord[]>;
@@ -125,11 +129,29 @@ export default function FunderMatchesView({
   /** For Granted's working view of what the search is built from. Admin only. */
   profile: PanelProfile | null;
   lastQueries: { track: string; text: string }[];
+  /** Work already in flight when the page loaded, so a reload rejoins it. */
+  matchJob: Job | null;
+  profileJob: Job | null;
 }) {
   const router = useRouter();
-  const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  // The run happens on the server against a job row, not in this tab, so the
+  // page can be closed and come back to it.
+  const { job, start: startJob, starting, running, error: jobError, gaveUp } = useJob(matchJob);
+  const [dismissed, setDismissed] = useState(false);
+  const shownJob = dismissed ? null : job;
+
+  // Refresh once the work lands, so the tables show the new run rather than
+  // asking somebody to reload.
+  const finished = job?.status;
+  // Refresh on failure as well as success: a run can fail after the grant
+  // tables were replaced, and reading a stale table beside a failure banner is
+  // how somebody acts on the wrong data.
+  useEffect(() => {
+    if (finished === "done" || finished === "failed") router.refresh();
+  }, [finished, router]);
   // Rows the source records as making no grants to anyone. Set aside rather
   // than dropped, and one click from view, so a wrong screen is visible.
   const [showNoHistory, setShowNoHistory] = useState(false);
@@ -140,23 +162,40 @@ export default function FunderMatchesView({
   // Why rows were set aside, so the toggle names a reason rather than a number.
   const hiddenReasons = [...new Set(screened.hidden.map(h => h.reason))];
 
-  const run = () => start(async () => {
-    setErr(null); setMsg("Searching Ground Truth. This can take up to a minute.");
-    try {
-      const r = await runMatchAction();
-      setMsg(`${r.kept} opportunities kept, ${r.dropped} filtered out as closed or ineligible. `
-        + `${r.funders} funder matches, ${r.evidence} with funding evidence. `
-        + (r.usedProfile
-            ? `Searched on the Inven(s)tory (${r.queries.length} queries).`
-            : "Searched on the eligibility form only, because there is no usable Search Profile yet."));
-      router.refresh();
-    } catch (e) {
-      setMsg(null);
-      setErr(e instanceof Error ? e.message : "Matching failed.");
-    }
-  });
+  // Wake the funding service on load, in its own request. It sleeps when idle
+  // and the first call after a nap spends most of a minute starting up, which
+  // inside a run is the difference between finishing and being killed at the
+  // function limit. Out here it costs nothing: by the time somebody has read
+  // the page and pressed Run, it is usually already awake.
+  useEffect(() => {
+    if (!isAdmin || !configured) return;
+    void fetch("/api/ledger/warm", { method: "POST" }).catch(() => { /* a failed warm-up is not a failure */ });
+  }, [isAdmin, configured]);
 
-  const clear = () => start(async () => { await clearMatchesAction(); setMsg(null); router.refresh(); });
+  const run = () => { setDismissed(false); setErr(null); void startJob("/api/jobs/match", "match"); };
+
+  // Explanations are the long tail of a run and the part most likely to be cut
+  // off by the function limit. They are also the only part that is safe to
+  // resume, so the page keeps asking until nothing is owed.
+  const { job: rJob, start: startRationales, running: rRunning, gaveUp: rGaveUp } = useJob(null);
+  const [owed, setOwed] = useState(pendingRationales);
+  useEffect(() => { setOwed(pendingRationales); }, [pendingRationales]);
+
+  const rFinished = rJob?.status;
+  useEffect(() => {
+    if (rFinished !== "done") return;
+    const remaining = Number((rJob?.result as { remaining?: number } | null)?.remaining ?? 0);
+    setOwed(remaining);
+    router.refresh();
+    // Still owed after a pass means the budget ran out, not that it failed.
+    // Another pass picks up where this one stopped.
+    if (remaining > 0) void startRationales("/api/jobs/rationales", "rationales");
+  }, [rFinished, rJob, router, startRationales]);
+
+  const clear = () => start(async () => {
+    try { await clearMatchesAction(); setErr(null); router.refresh(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Could not clear."); }
+  });
 
   return (
     <div>
@@ -173,8 +212,8 @@ export default function FunderMatchesView({
         {isAdmin && (
           <>
             <span className="spacer" />
-            <button className="btn" onClick={run} disabled={pending || !configured}>
-              {pending ? "Matching…" : matches.length ? "Re-run matching" : "Run matching"}
+            <button className="btn" onClick={run} disabled={starting || running || !configured}>
+              {running ? "Searching…" : starting ? "Starting…" : matches.length ? "Re-run matching" : "Run matching"}
             </button>
           </>
         )}
@@ -194,10 +233,26 @@ export default function FunderMatchesView({
       )}
 
       {isAdmin && (
-        <SearchProfilePanel profile={profile} lastQueries={lastQueries} orgName={orgName} />
+        <SearchProfilePanel
+          profile={profile} lastQueries={lastQueries} orgName={orgName} job={profileJob} />
       )}
 
-      {msg && <div className="fm-msg">{msg}</div>}
+      <JobProgress job={shownJob} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+      <JobProgress job={rJob} lostContact={rGaveUp} />
+
+      {isAdmin && owed > 0 && !rRunning && (
+        <div className="ov-note fm-owed">
+          {owed} match{owed === 1 ? "" : "es"} {owed === 1 ? "is" : "are"} showing a
+          rule-based summary because the last run ran out of time before explaining
+          {owed === 1 ? " it" : " them"}.
+          {" "}
+          <button type="button" className="fc-link"
+                  onClick={() => void startRationales("/api/jobs/rationales", "rationales")}>
+            Finish the explanations
+          </button>
+        </div>
+      )}
+      {jobError && <div className="ov-err">{jobError}</div>}
       {err && <div className="ov-err">{err}</div>}
 
       {matches.length === 0 && visibleFunders.length === 0 && !screened.hidden.length ? (

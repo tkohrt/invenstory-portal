@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 // Building the Search Profile: one pass over the Inven(s)tory, asking what
 // matters for finding money.
 //
@@ -13,7 +13,6 @@
 // skipping boilerplate, verbatim quotes, and the subject tag that decides
 // whether a line may describe the client at all.
 import { db } from "./db";
-import { getSession } from "./session";
 import { chatComplete, generationConfigured } from "./llm";
 import {
   parseFacts, mergeFacts, assessProfile, documentFingerprint,
@@ -82,10 +81,14 @@ export interface ProfileBuildResult {
  * Admin-gated: it is an LLM pass over the whole Inven(s)tory, and a client
  * clicking it repeatedly would be an expensive way to change nothing.
  */
-export async function rebuildSearchProfileAction(tenantId: string): Promise<ProfileBuildResult> {
-  const s = await getSession();
-  if (!s || s.role !== "admin") throw new Error("admin required");
+export async function rebuildSearchProfile(
+  tenantId: string, userId: string,
+  opts: { onProgress?: (p: { done: number; total: number; detail: string }) => void } = {},
+): Promise<ProfileBuildResult> {
   if (!generationConfigured()) throw new Error("No generation model is configured in this environment.");
+  const step = (done: number, total: number, detail: string) => {
+    try { opts.onProgress?.({ done, total, detail }); } catch { /* never fatal */ }
+  };
 
   const { data: docs, error } = await db.from("document")
     .select("id, title, layer").eq("tenant_id", tenantId).eq("status", "ready");
@@ -120,8 +123,13 @@ export async function rebuildSearchProfileAction(tenantId: string): Promise<Prof
 
   const perDoc: ProfileFact[][] = [];
   for (let i = 0; i < docList.length; i += CONCURRENCY) {
-    perDoc.push(...await Promise.all(docList.slice(i, i + CONCURRENCY).map(runDoc)));
+    const batch = docList.slice(i, i + CONCURRENCY);
+    step(i, docList.length, batch.length === 1
+      ? `reading ${batch[0].title}`
+      : `reading ${batch.length} documents including ${batch[0].title}`);
+    perDoc.push(...await Promise.all(batch.map(runDoc)));
   }
+  step(docList.length, docList.length, "working out what to search on");
 
   const facts = mergeFacts(perDoc.flat());
   const layers = [...new Set(facts.map(f => f.layer).filter(Boolean))] as ("I" | "II" | "III")[];
@@ -143,7 +151,7 @@ export async function rebuildSearchProfileAction(tenantId: string): Promise<Prof
     doc_fingerprint: documentFingerprint(docList),
     note: health.note,
     generated_at: profile.generatedAt,
-    generated_by: s.user.id,
+    generated_by: userId,
   }, { onConflict: "tenant_id" });
   // Loud, like every other write in this system. A profile that silently failed
   // to save would send the next run back to the eligibility profile with no

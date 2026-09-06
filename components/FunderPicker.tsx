@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { searchLedgerFundersAction, getLedgerFunderAction, type PickerResult, type FunderPrefill } from "@/lib/server/ledger-lookup";
 import { STATUS_LABEL, STATUS_HELP, type GroundTruthState } from "@/lib/ledger-status";
+import Busy from "./Busy";
 
 const BADGE_CLASS: Record<GroundTruthState, string> = {
   base: "gt-base", verified: "gt-verified", pending: "gt-pending",
@@ -111,7 +112,13 @@ export default function FunderPicker({ onAttach, onManual }: {
                placeholder="Search by name, e.g. Cleveland Foundation" />
       </label>
 
-      {pending && <div className="ov-muted">Searching… the first search after a quiet spell can take a moment.</div>}
+      {pending && (
+        <Busy
+          label="Searching Ground Truth"
+          slowAfterMs={6000}
+          slowHint="The funding service sleeps when idle, so the first search after a quiet spell takes up to a minute to wake it. Nothing is wrong."
+        />
+      )}
 
       {unavailable && (
         <div className="ov-note">

@@ -5,6 +5,7 @@ import Drawer from "./Drawer";
 import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
+import Busy from "./Busy";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
   I: { name: "Public Story", desc: "Everything the world can see", color: "var(--l1)", cls: "l1" },
@@ -247,7 +248,15 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
       <input value={tags} onChange={e => setTags(e.target.value)} placeholder="budget, transportation" />
       {error && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {error}</div>}
       <button className="btn" onClick={submit} disabled={busy}>
-        {busy ? "Uploading and reading the document…" : "Save to Inven(s)tory"}</button>
+        {busy ? "Uploading…" : "Save to Inven(s)tory"}</button>
+      {busy && (
+        <Busy
+          label="Uploading, then reading the document"
+          hint="It is read, split up and indexed so it can be searched and cited. Larger PDFs take longer."
+          slowAfterMs={20000}
+          slowHint="Still working. A long PDF can take a minute."
+        />
+      )}
       <div className="hint">Text is extracted, chunked, and embedded on upload — the document becomes searchable in seconds.</div>
     </Drawer>
   );

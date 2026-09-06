@@ -89,19 +89,28 @@ function ruleBased(g: ScreenedGrant, p: EligibilityProfile, orgName: string): st
  * a whole run's worth no longer fits: the response truncates mid-array, the JSON
  * fails to parse, and EVERY rationale silently becomes the rule-based fallback.
  * No error, no log, just uniformly generic text that reads as a worse model.
+ *
+ * Kept small for a second reason: on a 60-second function budget, a run may be
+ * killed part way. Smaller batches mean more matches already have their real
+ * explanation when that happens, rather than all of them losing it together.
  */
-const RATIONALE_BATCH = 12;
+const RATIONALE_BATCH = 8;
 
 export async function addRationales(
   grants: ScreenedGrant[], dossier: Dossier, p: EligibilityProfile, orgName: string,
+  /** Called between batches. This is the longest step in a run, and silence
+   *  here is what makes a live run look dead to the progress panel. */
+  onBatch?: (done: number, total: number) => void,
 ): Promise<void> {
   if (!grants.length) return;
   // Batched, and sequential rather than parallel: these are the same model
   // credentials the rest of a run uses, and a burst is how throttling starts.
   if (grants.length > RATIONALE_BATCH) {
     for (let i = 0; i < grants.length; i += RATIONALE_BATCH) {
+      onBatch?.(i, grants.length);
       await addRationales(grants.slice(i, i + RATIONALE_BATCH), dossier, p, orgName);
     }
+    onBatch?.(grants.length, grants.length);
     return;
   }
   if (!generationConfigured()) {
@@ -110,7 +119,8 @@ export async function addRationales(
     // misdiagnosis costs more than the log line.
     console.warn("[match] no generation provider configured — every rationale will be rule-based. "
       + "Check LLM credentials are scoped to this environment, not Production only.");
-    grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); });
+    // Final, not pending. Resuming would reach the same missing provider.
+    grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); g.rationale_source = "rule"; });
     return;
   }
 
@@ -141,8 +151,10 @@ ${opportunities}`;
 
   const res = await chatComplete({ system: SYSTEM, user, maxTokens: 2400, temperature: 0.2 });
   if (!res?.text) {
-    console.warn("[match] generation returned nothing; falling back to rule-based rationales");
-    grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); });
+    // Pending, not rule: the model failing to answer is a reason to try again,
+    // unlike a refusal or a missing provider.
+    console.warn("[match] generation returned nothing; these rationales stay pending");
+    grants.forEach(g => { g.rationale = ruleBased(g, p, orgName); g.rationale_source = "pending"; });
     return;
   }
 
@@ -153,14 +165,28 @@ ${opportunities}`;
   } catch { parsed = []; }
 
   const allowed = dossier.docTitles.map(t => t.toLowerCase());
-  for (const g of grants) g.rationale = undefined;
+  for (const g of grants) { g.rationale = undefined; g.rationale_source = undefined; }
   for (const row of parsed) {
     const g = grants[row.i];
     if (!g || typeof row.why !== "string") continue;
     // Any quoted string that looks like a document citation must be real.
     const cited = [...row.why.matchAll(/"([^"]{4,120})"/g)].map(m => m[1].toLowerCase());
     const fabricated = cited.some(c => !allowed.some(t => t.includes(c) || c.includes(t)));
-    g.rationale = fabricated ? ruleBased(g, p, orgName) : row.why.trim();
+    if (fabricated) {
+      // Final. The model invented a source; asking again invites the same.
+      g.rationale = ruleBased(g, p, orgName);
+      g.rationale_source = "rule";
+    } else {
+      g.rationale = row.why.trim();
+      g.rationale_source = "llm";
+    }
   }
-  for (const g of grants) if (!g.rationale) g.rationale = ruleBased(g, p, orgName);
+  // Anything the model skipped over is pending, not finished. A truncated
+  // response is the commonest cause, and it is exactly the case worth resuming.
+  for (const g of grants) {
+    if (!g.rationale) {
+      g.rationale = ruleBased(g, p, orgName);
+      g.rationale_source = "pending";
+    }
+  }
 }

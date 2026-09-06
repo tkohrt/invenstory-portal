@@ -9,9 +9,10 @@
 //
 // Admin only. It shows document titles and quotes, which is For Granted's
 // working view of a client's Inven(s)tory rather than a client-facing one.
-import { useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { rebuildProfileAction } from "@/lib/server/match-actions";
+import JobProgress, { useJob } from "./JobProgress";
+import type { Job } from "@/lib/job";
 import { FACET_LABEL, FACETS, type ProfileFact, type Facet } from "@/lib/search-profile";
 
 export interface PanelProfile {
@@ -22,31 +23,22 @@ export interface PanelProfile {
   stale: boolean;
 }
 
-export default function SearchProfilePanel({ profile, lastQueries, orgName }: {
+export default function SearchProfilePanel({ profile, lastQueries, orgName, job: initialJob }: {
   profile: PanelProfile | null;
   lastQueries: { track: string; text: string; ok?: boolean; results?: number }[];
   orgName: string;
+  /** A rebuild already in flight when the page loaded. */
+  job: Job | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [pending, start] = useTransition();
+  const { job, start: startJob, starting, running, error, gaveUp } = useJob(initialJob);
+  const [dismissed, setDismissed] = useState(false);
 
-  const rebuild = () => start(async () => {
-    setErr(null); setMsg("Reading the Inven(s)tory. This takes a moment per document.");
-    try {
-      const r = await rebuildProfileAction();
-      setMsg(`${r.factCount} facts from ${r.scanned} document(s)`
-        + (r.skipped ? `, ${r.skipped} skipped` : "")
-        + (r.silent ? `, ${r.silent} said nothing useful` : "")
-        + `. ${r.note}`);
-      router.refresh();
-    } catch (e) {
-      setMsg(null);
-      setErr(e instanceof Error ? e.message : "Could not rebuild the profile.");
-    }
-  });
+  const finished = job?.status;
+  useEffect(() => { if (finished === "done") router.refresh(); }, [finished, router]);
+
+  const rebuild = () => { setDismissed(false); void startJob("/api/jobs/search-profile", "search_profile"); };
 
   // Only facts that may describe the client. Competitor and partner lines are
   // kept in the data and deliberately not shown as if they were ours.
@@ -65,8 +57,8 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName }: {
             {open ? "hide" : "show"}
           </button>
         )}
-        <button type="button" className="btn ghost" onClick={rebuild} disabled={pending}>
-          {pending ? "Reading…" : profile ? "Rebuild" : "Build it"}
+        <button type="button" className="btn ghost" onClick={rebuild} disabled={starting || running}>
+          {running ? "Reading…" : starting ? "Starting…" : profile ? "Rebuild" : "Build it"}
         </button>
       </div>
 
@@ -93,8 +85,8 @@ export default function SearchProfilePanel({ profile, lastQueries, orgName }: {
         </p>
       )}
 
-      {msg && <div className="fm-msg">{msg}</div>}
-      {err && <div className="ov-err">{err}</div>}
+      <JobProgress job={dismissed ? null : job} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+      {error && <div className="ov-err">{error}</div>}
 
       {open && profile && (
         <>

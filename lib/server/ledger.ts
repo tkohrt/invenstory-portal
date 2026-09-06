@@ -20,7 +20,27 @@ export type { FunderCard, GrantCard, LedgerEnvelope } from "@/lib/ledger-types";
 // The service naps when idle and loads models on the first query after a cold
 // start; its own upstream timeout is 150s, so anything shorter here would time
 // out on exactly the request we most want to succeed.
-const TIMEOUT_MS = 150_000;
+/**
+ * How long one call may take.
+ *
+ * Tuned to the hosting budget, not to the service's patience. Functions on the
+ * current plan are killed at 60 seconds, so a 150-second timeout was a promise
+ * nothing could keep: the call would still be waiting when the platform pulled
+ * the floor out, which reads as a run that vanished rather than one that failed.
+ * Failing at 40 leaves room to report honestly and to record what happened.
+ *
+ * Raise it with FUNDER_LEDGER_TIMEOUT_MS the day the function budget goes up.
+ */
+const TIMEOUT_MS = Number(process.env.FUNDER_LEDGER_TIMEOUT_MS ?? 40_000);
+
+/**
+ * How long to allow when deliberately waking the service.
+ *
+ * Longer than a query timeout on purpose. Waking is the slow part, and doing it
+ * in its own request means the wait happens somewhere that can afford it rather
+ * than inside a run's budget.
+ */
+const WAKE_TIMEOUT_MS = 55_000;
 
 export type LedgerTool =
   | "find_funders" | "find_grants" | "funders_who_fund_orgs_like_mine"
@@ -98,6 +118,32 @@ export function lookupFunder(name: string) {
 }
 
 /** Liveness probe for the admin panel. Cheap and safe to call on page load. */
+/**
+ * Wake the service, off the critical path.
+ *
+ * The free tier sleeps when idle and the first call after a nap spends most of
+ * a minute starting up. Inside a run that is the difference between finishing
+ * and being killed. Called when the page loads, so the service is usually awake
+ * by the time somebody has read the screen and pressed the button.
+ *
+ * Never throws. A failed warm-up is not a failed anything; the run will try
+ * again on its own.
+ */
+export async function warmLedger(): Promise<{ awake: boolean; ms: number }> {
+  const base = process.env.FUNDER_LEDGER_URL;
+  if (!base) return { awake: false, ms: 0 };
+  const started = Date.now();
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/health`, {
+      signal: AbortSignal.timeout(WAKE_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    return { awake: res.ok, ms: Date.now() - started };
+  } catch {
+    return { awake: false, ms: Date.now() - started };
+  }
+}
+
 export async function ledgerHealth(): Promise<{ ok: boolean; detail: string }> {
   const base = process.env.FUNDER_LEDGER_URL;
   if (!base) return { ok: false, detail: "No FUNDER_LEDGER_URL configured." };

@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateAnswersAction, editAnswerAction, markAnswerReviewedAction } from "@/lib/server/answer-actions";
 import type { AnswerLibraryItem, Completeness } from "@/lib/types";
+import Busy from "./Busy";
 
 const CHIP: Record<Completeness, { label: string; cls: string }> = {
   strong: { label: "Strong", cls: "al-chip strong" },
@@ -103,6 +104,12 @@ export default function AnswerLibraryView({ items, isAdmin, tenantName }: { item
           </p>
         </div>
         <button className="btn" onClick={generate} disabled={pending}>{pending ? "Generating…" : "Generate drafts"}</button>
+        {pending && (
+          <Busy
+            label="Drafting answers from the Inven(s)tory"
+            hint="Each answer is grounded in your own documents, which takes a moment per question."
+          />
+        )}
       </div>
 
       <div className="al-meter">

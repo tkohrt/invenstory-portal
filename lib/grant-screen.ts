@@ -90,6 +90,9 @@ export interface ScreenedGrant {
   source_site?: string;         // where the record was listed. NOT the funder.
   website?: string; eligibility?: string; caveat?: string;
   rationale?: string;           // grounded "why this client fits", filled in later
+  /** llm = real; rule = deliberately rule-based and final; pending = not reached
+   *  yet, because the run ran out of time. Only pending is worth resuming. */
+  rationale_source?: "llm" | "rule" | "pending";
   from_overlay?: boolean;
   verified_at?: string | null;  // when For Granted last confirmed this at the source
 }

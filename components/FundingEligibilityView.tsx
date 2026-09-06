@@ -5,6 +5,7 @@ import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
+import Busy from "./Busy";
 
 function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [draft, setDraft] = useState("");
@@ -41,7 +42,11 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
     router.refresh();
   };
   const [analyzing, setAnalyzing] = useState(false);
-  const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
+  const analyze = async () => {
+    setAnalyzing(true);
+    try { await runGapAnalysisAction(); router.refresh(); }
+    finally { setAnalyzing(false); }
+  };
   const TIER = { critical: "🔴", essential: "🟠", important: "🟡", enriching: "⚪" } as const;
   const order = { critical: 0, essential: 1, important: 2, enriching: 3 } as const;
   const sortedGaps = [...gaps].sort((a, b) => order[a.tier] - order[b.tier]);
@@ -60,7 +65,15 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h3 style={{ margin: 0 }}>What&rsquo;s missing</h3>
           <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Analyzing…" : gapsComputedAt ? "Re-analyze Inven(s)tory" : "Analyze my Inven(s)tory"}</button>
+          <button className="btn ghost" onClick={analyze} disabled={analyzing}>{analyzing ? "Reading…" : gapsComputedAt ? "Re-analyze Inven(s)tory" : "Analyze my Inven(s)tory"}</button>
+          {analyzing && (
+            <Busy
+              label="Reading every document in your Inven(s)tory"
+              hint="Each one is read in full, so this takes longer the more you have added. You can leave this page open."
+              slowAfterMs={30000}
+              slowHint="Still going. Larger Inven(s)tories can take a couple of minutes."
+            />
+          )}
         </div>
         {sortedGaps.length === 0
           ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and Inven(s)tory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>

@@ -52,7 +52,11 @@ export interface MatchRun {
  */
 export async function runMatch(
   tenantId: string, orgName: string,
-  opts: { multiQuery?: boolean; ranBy?: string } = {},
+  opts: {
+    multiQuery?: boolean; ranBy?: string;
+    /** Called as the run moves, so a page can show where it has got to. */
+    onProgress?: (p: { done: number; total: number; detail: string }) => void;
+  } = {},
 ): Promise<MatchRun> {
   if (!ledgerConfigured()) throw new LedgerUnavailable("The Funder Ledger service is not configured yet.");
 
@@ -63,6 +67,11 @@ export async function runMatch(
 
   const multiQuery = opts.multiQuery ?? true;
   const ranBy = opts.ranBy;
+  // Best-effort throughout. Progress reporting must never be the reason a run
+  // fails, so every call is fire-and-forget.
+  const step = (done: number, total: number, detail: string) => {
+    try { opts.onProgress?.({ done, total, detail }); } catch { /* never fatal */ }
+  };
 
   // The Inven(s)tory drives the search when there is one worth searching on.
   //
@@ -71,6 +80,7 @@ export async function runMatch(
   // was used only to explain matches after the fact. The eligibility profile is
   // still authoritative for screening; it just no longer has to carry the
   // description on its own.
+  step(0, 5, "reading what we know about this client");
   const stored = await getSearchProfile(tenantId).catch(() => null);
   const health = stored ? assessProfile(stored) : null;
   const useProfile = !!stored && !!health?.usable;
@@ -103,6 +113,7 @@ export async function runMatch(
     catch (e) { console.error(`[match] ${label} failed`, e); return { ok: false, results: [] }; }
   };
 
+  step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data`);
   const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
     Promise.all(funderQs.map(need => attempt(`funder query "${need.slice(0, 60)}"`, () =>
@@ -137,6 +148,7 @@ export async function runMatch(
   // close_date, "$500,000" strings for amounts, eligibility under a different
   // key). Normalize first, or the screener reads nothing and the DB rejects
   // the write.
+  step(2, 5, `screening ${grantsEnv.results.length} opportunities against the eligibility profile`);
   const normalized = (grantsEnv.results as unknown as RawGrantResult[]).map(normalizeGrant);
 
   // Merge FG corrections over the frozen base before anything is judged.
@@ -209,12 +221,15 @@ export async function runMatch(
 
   // Explain each surviving match against the profile and the Inven(s)tory.
   // Best-effort: a rationale failure must not lose the match itself.
+  step(3, 5, `explaining ${screened.length} matches against the Inven(s)tory`);
   try {
-    await addRationales(screened, dossier, p, orgName);
+    await addRationales(screened, dossier, p, orgName,
+      (done, total) => step(3, 5, `explaining match ${done} of ${total} against the Inven(s)tory`));
   } catch (e) {
     console.error("rationale generation failed", e);
   }
 
+  step(4, 5, "saving the results");
   const ranAt = new Date().toISOString();
 
   if (screened.length) {
@@ -228,6 +243,9 @@ export async function runMatch(
         source_site: s.source_site?.slice(0, 200) ?? null,
         url: s.website?.slice(0, 500) ?? null,
         rationale: s.rationale?.slice(0, 2000) ?? null,
+        // Which explanations still owe a real answer. A run cut short at the
+        // function limit leaves these pending, and the follow-on job fills them.
+        rationale_source: s.rationale_source ?? "pending",
         verified_at: s.verified_at ?? null,
       })),
       { onConflict: "tenant_id,grant_id" });
@@ -335,7 +353,8 @@ export async function getCachedMatches(tenantId: string) {
     grant_id: string; verdict: Verdict; reason: string | null;
     close_date: string | null; award_ceiling: number | null; matched_at: string;
     title: string | null; funder: string | null; url: string | null;
-    rationale: string | null; source_site: string | null; verified_at: string | null;
+    rationale: string | null; rationale_source: string | null;
+    source_site: string | null; verified_at: string | null;
   }[];
 }
 
@@ -368,4 +387,60 @@ export async function getLastRunQueries(tenantId: string): Promise<RunQuery[]> {
   // the one thing this panel exists to show.
   if (error) throw new Error(`match run read failed: ${error.message}`);
   return ((data?.queries ?? []) as RunQuery[]);
+}
+
+/** How many matches are still waiting for a real explanation. */
+export async function pendingRationaleCount(tenantId: string): Promise<number> {
+  const { count } = await db.from("eligible_grant")
+    .select("grant_id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId).eq("rationale_source", "pending");
+  return count ?? 0;
+}
+
+/**
+ * Finish the explanations a cut-short run did not reach.
+ *
+ * Separate from a match run because it is resumable and a run is not: it reads
+ * what is already cached, fills what it can inside its own budget, and can be
+ * called again. Nothing else about the run is redone, so this is cheap and
+ * safe to repeat.
+ */
+export async function fillPendingRationales(
+  tenantId: string, orgName: string,
+  opts: { onProgress?: (p: { done: number; total: number; detail: string }) => void } = {},
+): Promise<{ filled: number; remaining: number }> {
+  const p = await getEligibilityProfile(tenantId);
+  const { data } = await db.from("eligible_grant")
+    .select("*").eq("tenant_id", tenantId).eq("rationale_source", "pending")
+    .order("matched_at", { ascending: false });
+
+  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+  const total = rows.length;
+  if (!total) return { filled: 0, remaining: 0 };
+
+  const dossier = await buildDossier(tenantId, orgName, p);
+
+  // Only as many as the remaining budget can plausibly carry. Anything left
+  // stays pending and the next call picks it up, which is the whole point.
+  const slice = rows.slice(0, 24);
+  const screened = slice.map(r => ({
+    grant_id: String(r.grant_id), title: String(r.title ?? r.grant_id),
+    verdict: r.verdict, reason: String(r.reason ?? ""),
+    close_date: r.close_date, award_ceiling: r.award_ceiling,
+    funder: r.funder ?? undefined, eligibility: r.eligibility ?? undefined,
+  })) as unknown as ScreenedGrant[];
+
+  await addRationales(screened, dossier, p, orgName,
+    (done, count) => opts.onProgress?.({ done, total: count, detail: `explaining match ${done} of ${count}` }));
+
+  let filled = 0;
+  for (const g of screened) {
+    if (g.rationale_source === "pending") continue;
+    const { error } = await db.from("eligible_grant")
+      .update({ rationale: g.rationale?.slice(0, 2000) ?? null, rationale_source: g.rationale_source })
+      .eq("tenant_id", tenantId).eq("grant_id", g.grant_id);
+    if (error) console.error("[rationales] write failed", error);
+    else filled += 1;
+  }
+  return { filled, remaining: await pendingRationaleCount(tenantId) };
 }

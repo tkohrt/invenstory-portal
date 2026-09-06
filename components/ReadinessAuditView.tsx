@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { runReadinessAuditAction, runDocExtractionAuditAction, refreshAllReadinessAction, type RefreshResult } from "@/lib/server/gap-actions";
 import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
 import type { DocExtractTrace, DocItemFinding } from "@/lib/server/doc-extract";
+import Busy from "./Busy";
 
 const STATE_LABEL: Record<string, string> = { covered: "ROBUST", thin: "THIN", missing: "MISSING" };
 
@@ -154,7 +155,15 @@ function RefreshAllCards() {
   return (
     <div className="acct-card" style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Refreshing all clients…" : "Refresh all client cards (document extraction)"}</button>
+        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Refreshing…" : "Refresh all client cards (document extraction)"}</button>
+        {busy && (
+          <Busy
+            label="Re-reading every document for every client"
+            hint="This is the slowest thing the portal does. Do not close the tab."
+            slowAfterMs={45000}
+            slowHint="Still going. Time scales with the total number of documents across all clients."
+          />
+        )}
         <span className="acct-note" style={{ margin: 0 }}>Recomputes every client's Readiness card with the current engine.</span>
       </div>
       {err && <div className="metric-gap" style={{ marginTop: 10 }}>{err}</div>}
