@@ -184,3 +184,76 @@ export function describeJob(j: Job, now = Date.now()): JobView {
     tone: "working", percent: pct, poll: true,
   };
 }
+
+/**
+ * What to say when a run goes quiet, and when to say it.
+ *
+ * A spinner already says "still working". Repeating that in words adds nothing,
+ * so each line names what is being waited ON and gives the reader something to
+ * judge with: how long, compared to what, and what it costs if it never comes
+ * back.
+ *
+ * Pure and computed in the browser from the newest line's timestamp. It writes
+ * nothing and asks the server for nothing, so a run that has genuinely died
+ * still explains itself.
+ */
+export const QUIET_AFTER_MS = 20_000;
+const QUIET_CAUSE_MS = 60_000;
+const QUIET_REASSURE_MS = 120_000;
+
+/** "1:04", or "9s" under a minute. */
+export function elapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+export interface QuietInput {
+  kind: JobKind;
+  /** Milliseconds since the newest line in the log. */
+  quietMs: number;
+  /** The newest line's text, so the wait can be named rather than described. */
+  lastText: string | null;
+  /** How long the gap before that line was, when there is one to compare to. */
+  previousGapMs: number | null;
+}
+
+/** The likely reason THIS kind of work goes quiet. Named, never generic. */
+const CAUSE: Record<JobKind, string> = {
+  match:
+    "The funding service sleeps when idle, and the first call after a quiet spell "
+    + "can take a minute to wake it.",
+  search_profile:
+    "A long transcript is read in several passes, and one pass is a single call "
+    + "that has to finish before anything can be reported.",
+  readiness:
+    "A long document is read in several passes, and one pass is a single call that "
+    + "has to finish before anything can be reported.",
+  rationales:
+    "Explanations are written in batches of eight, so nothing is reported until a "
+    + "whole batch comes back.",
+};
+
+export function quietLine(q: QuietInput): string | null {
+  if (q.quietMs < QUIET_AFTER_MS) return null;
+  const waited = elapsed(q.quietMs);
+
+  if (q.quietMs >= QUIET_REASSURE_MS) {
+    return `Quiet for ${waited}. Everything finished so far is already saved, so nothing `
+      + "is lost if this does not come back. It will be marked stalled shortly and you can pick up from there.";
+  }
+  if (q.quietMs >= QUIET_CAUSE_MS) {
+    return `Nothing new for ${waited}. ${CAUSE[q.kind]}`;
+  }
+  // The comparison is the useful part when it exists: 24 seconds means nothing
+  // on its own and a great deal beside a previous step that took three.
+  if (q.previousGapMs != null && q.previousGapMs > 0) {
+    const before = elapsed(q.previousGapMs);
+    return q.lastText
+      ? `Still on "${q.lastText}". The step before it took ${before}; this one has taken ${waited}.`
+      : `The step before took ${before}; this one has taken ${waited}.`;
+  }
+  return q.lastText
+    ? `Still on "${q.lastText}", ${waited} so far.`
+    : `Nothing new for ${waited}.`;
+}

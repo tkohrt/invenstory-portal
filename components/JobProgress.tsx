@@ -10,7 +10,7 @@
 // this tab, so someone can close the page, come back, and rejoin it.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  countPhrase, describeJob, MAX_EVENTS,
+  countPhrase, describeJob, elapsed, quietLine, MAX_EVENTS,
   type Job, type JobEvent, type JobKind,
 } from "@/lib/job";
 
@@ -54,8 +54,15 @@ export function useJob(initial: Job | null) {
     if (!res.ok) throw new Error("poll failed");
     const body = await res.json() as { job: Job; events?: JobEvent[] };
     if (body.events?.length) {
-      afterRef.current = body.events[body.events.length - 1].id;
-      setEvents(prev => [...prev, ...body.events!].slice(-MAX_EVENTS));
+      // The cursor is the largest id seen, which is what makes paging exact.
+      // The DISPLAY order is by when each line happened, which is a different
+      // question: an insert from inside a loop can land after one that came
+      // later, so the two orders are not the same and only one of them is what
+      // a reader wants.
+      afterRef.current = Math.max(afterRef.current, ...body.events.map(e => e.id));
+      setEvents(prev => [...prev, ...body.events!]
+        .sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id)
+        .slice(-MAX_EVENTS));
     }
     if (body.job) setJob(body.job);
     return body.job ?? null;
@@ -144,9 +151,24 @@ export function useJob(initial: Job | null) {
  * simply served no events, so this renders nothing and the panel above it is
  * unchanged.
  */
-function JobLog({ events }: { events: JobEvent[] }) {
+function JobLog({ events, kind, live }: {
+  events: JobEvent[];
+  kind: JobKind;
+  /** Still expecting more lines. A finished run does not narrate its silence. */
+  live: boolean;
+}) {
   const box = useRef<HTMLOListElement | null>(null);
   const last = events.length ? events[events.length - 1].id : 0;
+
+  // Ticks once a second while live, so the clock on the newest line moves and
+  // the quiet message appears at the moment the wait becomes unusual rather
+  // than when the server next has something to say.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [live]);
 
   // Follow the newest line, but only while the reader is already at the bottom.
   // Yanking the view back down while somebody is reading an earlier line is
@@ -159,19 +181,43 @@ function JobLog({ events }: { events: JobEvent[] }) {
   }, [last]);
 
   if (!events.length) return null;
+
+  const newest = events[events.length - 1];
+  const newestAt = new Date(newest.at).getTime();
+  const previous = events.length > 1 ? new Date(events[events.length - 2].at).getTime() : null;
+  const quietMs = live && !isNaN(newestAt) ? Math.max(0, now - newestAt) : 0;
+  const quiet = live
+    ? quietLine({
+        kind, quietMs, lastText: newest.text,
+        previousGapMs: previous != null && !isNaN(previous) ? newestAt - previous : null,
+      })
+    : null;
+
   return (
+    <>
     <ol className="jl" ref={box}>
       {events.map(e => {
+        // Only when the writer attached one. A count is shown because the
+        // step counts ITEMS; a step that counts stages leaves it off and lets
+        // the bar say so, rather than putting two denominators in one line:
+        // "explaining match 16 of 31 — 3 of 5 (60%)".
         const count = e.kind === "progress" ? countPhrase(e.done, e.total) : null;
         return (
           <li key={e.id} className={`jl-${e.kind}`}>
             <span className="jl-mark" aria-hidden="true" />
             <span className="jl-text">{e.text}</span>
             {count && <span className="jl-count">{count}</span>}
+            {/* Only the newest line carries a clock. Every line carrying one
+                turns a log into a stopwatch collection. */}
+            {live && e.id === newest.id && quietMs >= 3000 && (
+              <span className="jl-clock">{elapsed(quietMs)}</span>
+            )}
           </li>
         );
       })}
     </ol>
+    {quiet && <p className="jl-quiet">{quiet}</p>}
+    </>
   );
 }
 
@@ -222,7 +268,7 @@ export default function JobProgress({ job, events = [], onDismiss, lostContact }
       {v.percent !== null && (
         <div className="jp-bar"><div className="jp-fill" style={{ width: `${v.percent}%` }} /></div>
       )}
-      <JobLog events={events} />
+      <JobLog events={events} kind={job.kind} live={v.poll && !lostContact} />
     </div>
   );
 }

@@ -107,10 +107,12 @@ export async function addRationales(
   // credentials the rest of a run uses, and a burst is how throttling starts.
   if (grants.length > RATIONALE_BATCH) {
     for (let i = 0; i < grants.length; i += RATIONALE_BATCH) {
-      onBatch?.(i, grants.length);
       await addRationales(grants.slice(i, i + RATIONALE_BATCH), dossier, p, orgName);
+      // Reported AFTER the batch, so the number is what has been done rather
+      // than what is about to start. Reporting before produced "explaining
+      // match 0 of 31", which is both wrong and never reaches 31.
+      onBatch?.(Math.min(i + RATIONALE_BATCH, grants.length), grants.length);
     }
-    onBatch?.(grants.length, grants.length);
     return;
   }
   if (!generationConfigured()) {

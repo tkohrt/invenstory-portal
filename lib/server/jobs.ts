@@ -38,12 +38,19 @@ function toJob(r: Row): Job {
  */
 export async function recordEvent(
   tenantId: string, jobId: string,
-  e: { kind: JobEventKind; text: string; done?: number; total?: number },
+  e: { kind: JobEventKind; text: string; done?: number; total?: number; at?: string },
 ): Promise<void> {
   const { error } = await db.from("job_event").insert({
     tenant_id: tenantId, job_id: jobId,
     kind: e.kind, text: e.text.slice(0, 500),
     done: e.done ?? null, total: e.total ?? null,
+    // Stamped when the STEP fired, not when the insert landed.
+    //
+    // These writes are fire-and-forget from inside a loop, so two can be in
+    // flight at once and arrive in either order. Left to the column default,
+    // the log then reads out of sequence: a real run showed "screening 45
+    // opportunities" printed after two lines from the step that follows it.
+    at: e.at ?? new Date().toISOString(),
   });
   if (error) console.error("[job] event write failed", error);
 }
@@ -61,7 +68,10 @@ export async function jobEvents(
   const { data, error } = await db.from("job_event")
     .select("id, kind, text, done, total, at")
     .eq("tenant_id", tenantId).eq("job_id", jobId).gt("id", after)
-    .order("id").limit(MAX_EVENTS);
+    // Ordered by when it HAPPENED, with the row id only as a tie-break. The
+    // cursor stays the id, because that is what guarantees no line is fetched
+    // twice or skipped.
+    .order("at").order("id").limit(MAX_EVENTS);
   if (error) throw new Error(`job log read failed: ${error.message}`);
   return ((data ?? []) as { id: number; kind: JobEventKind; text: string; done: number | null; total: number | null; at: string }[])
     .map(r => ({ id: r.id, kind: r.kind, text: r.text, done: r.done, total: r.total, at: r.at }));

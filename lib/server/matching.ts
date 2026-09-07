@@ -113,6 +113,29 @@ export async function runMatch(
     catch (e) { console.error(`[match] ${label} failed`, e); return { ok: false, results: [] }; }
   };
 
+  /**
+   * Write down what is about to be asked, BEFORE asking it.
+   *
+   * This record exists so a disappointing run can be diagnosed. Written at the
+   * end, it was the first casualty of exactly the runs worth diagnosing: a run
+   * killed at the function limit left no trace of its queries at all, which is
+   * how a real stall on 7 September became unanswerable without reading the
+   * database by hand. The row is filled in with what each query returned once
+   * the calls come back.
+   *
+   * Best-effort. A diagnostic that can fail a run is worse than no diagnostic.
+   */
+  const plannedQueries = [
+    ...grantQs.map(text => ({ track: "grants" as const, text })),
+    ...funderQs.map(text => ({ track: "funders" as const, text })),
+  ];
+  const { data: runRow, error: planErr } = await db.from("match_run").insert({
+    tenant_id: tenantId, queries: plannedQueries, used_profile: useProfile,
+    multi_query: multiQuery, ran_by: ranBy ?? null, profile_note: health?.note ?? null,
+  }).select("id").maybeSingle();
+  if (planErr) console.error("could not record the planned queries", planErr);
+  const runId = (runRow as { id: string } | null)?.id ?? null;
+
   step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data`);
   const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
@@ -219,18 +242,27 @@ export async function runMatch(
     rank[a.verdict] - rank[b.verdict] ||
     (a.close_date ?? "9999").localeCompare(b.close_date ?? "9999"));
 
-  // Explain each surviving match against the profile and the Inven(s)tory.
-  // Best-effort: a rationale failure must not lose the match itself.
-  step(3, 5, `explaining ${screened.length} matches against the Inven(s)tory`);
-  try {
-    await addRationales(screened, dossier, p, orgName,
-      (done, total) => step(3, 5, `explaining match ${done} of ${total} against the Inven(s)tory`));
-  } catch (e) {
-    console.error("rationale generation failed", e);
-  }
-
-  step(4, 5, "saving the results");
+  /**
+   * SAVE FIRST, EXPLAIN AFTER. The order here is the whole point.
+   *
+   * Explaining 31 matches is a model call per batch and the longest step in a
+   * run. It used to happen BEFORE anything was written, so a run killed at the
+   * function limit threw away seven Ledger calls and a full screening pass to
+   * protect nothing: on 7 September a run died 57 seconds in, at match 16 of
+   * 31, and saved not one row. The page went on showing a shortlist from a week
+   * earlier as though it were current.
+   *
+   * The comment on the old code said a rationale failure must not lose the
+   * match. That was true of an exception and false of a killed function, which
+   * is the failure that actually happens. Now the results are durable before
+   * the expensive optional step begins, every row starts as `pending`, and an
+   * interrupted run costs explanations that the existing follow-on job refills
+   * in one click.
+   */
+  step(3, 5, "saving the results");
   const ranAt = new Date().toISOString();
+  // Pure, so it costs nothing to compute before the writes it feeds.
+  const funderRows = funderRowsFrom(mergedFunders, mergedEvidence);
 
   if (screened.length) {
     const { error } = await db.from("eligible_grant").upsert(
@@ -242,10 +274,12 @@ export async function runMatch(
         funder: s.funder?.slice(0, 200) ?? null,
         source_site: s.source_site?.slice(0, 200) ?? null,
         url: s.website?.slice(0, 500) ?? null,
-        rationale: s.rationale?.slice(0, 2000) ?? null,
-        // Which explanations still owe a real answer. A run cut short at the
-        // function limit leaves these pending, and the follow-on job fills them.
-        rationale_source: s.rationale_source ?? "pending",
+        // Nothing is explained yet at this point in a run, by design: results
+        // are made durable before the expensive optional step starts. Every row
+        // therefore begins owed an explanation, and either this run's last step
+        // or the follow-on job settles it.
+        rationale: null,
+        rationale_source: "pending",
         verified_at: s.verified_at ?? null,
       })),
       { onConflict: "tenant_id,grant_id" });
@@ -274,7 +308,6 @@ export async function runMatch(
   // The funder side, stored under the same rule: a run is a snapshot, not an
   // accumulation. Until now these were computed and discarded, which is why an
   // approved funder correction reached no view — there was no view.
-  const funderRows = funderRowsFrom(mergedFunders, mergedEvidence);
   if (funderRows.length) {
     const { error } = await db.from("matched_funder").upsert(
       funderRows.map(f => ({
@@ -328,15 +361,40 @@ export async function runMatch(
     ...grantQs.map((text, i) => ({ track: "grants" as const, text, ok: grantEnvs[i]?.ok ?? false, results: grantEnvs[i]?.results.length ?? 0 })),
     ...funderQs.map((text, i) => ({ track: "funders" as const, text, ok: funderEnvs[i]?.ok ?? false, results: funderEnvs[i]?.results.length ?? 0 })),
   ];
-  const { error: runErr } = await db.from("match_run").insert({
-    tenant_id: tenantId, queries, used_profile: useProfile, multi_query: multiQuery,
-    ran_by: ranBy ?? null,
+  const outcome = {
+    queries,
     profile_note: (health?.note ?? null) && failedQueries
       ? `${health?.note ?? ""} ${failedQueries} of ${queries.length} queries failed this run.`.trim()
       : health?.note ?? null,
     kept: screened.length, dropped, funders: funderRows.length,
-  });
+  };
+  // Fill in the row opened before the calls. Inserting a second one when that
+  // failed keeps the record complete rather than losing this run's queries
+  // because a write minutes ago did not land.
+  const { error: runErr } = runId
+    ? await db.from("match_run").update(outcome).eq("tenant_id", tenantId).eq("id", runId)
+    : await db.from("match_run").insert({
+        tenant_id: tenantId, used_profile: useProfile, multi_query: multiQuery,
+        ran_by: ranBy ?? null, ...outcome,
+      });
   if (runErr) console.error("could not record match run", runErr);
+
+  /**
+   * The last step, and the only one a run can afford to lose.
+   *
+   * Everything above is on disk. Every grant row went in as `pending`, so if
+   * this is cut short the shortlist stands, the page says how many explanations
+   * are owed, and one button fills them. Wrapped, because an explanation
+   * failure must not fail a run whose results are already saved.
+   */
+  step(4, 5, `explaining ${screened.length} matches against the Inven(s)tory`);
+  try {
+    await addRationales(screened, dossier, p, orgName,
+      (done, total) => step(4, 5, `explained ${done} of ${total} matches`));
+    await writeRationales(tenantId, screened);
+  } catch (e) {
+    console.error("rationale generation failed", e);
+  }
 
   return {
     grants: screened, funders: funderRows, evidence: mergedEvidence,
@@ -374,6 +432,28 @@ export async function getCachedFunders(tenantId: string): Promise<FunderRow[]> {
   // about this client's prospects, and it should only be made when it is true.
   if (error) throw new Error(`Funder matches could not be read: ${error.message}`);
   return (data ?? []) as unknown as FunderRow[];
+}
+
+/**
+ * Store the explanations that were produced, and only those.
+ *
+ * A row whose source is still `pending` did not get one, and writing it back as
+ * though it had is how a match ends up permanently holding a rule-based summary
+ * that nothing will ever revisit.
+ */
+export async function writeRationales(
+  tenantId: string, grants: ScreenedGrant[],
+): Promise<number> {
+  let filled = 0;
+  for (const g of grants) {
+    if (!g.rationale_source || g.rationale_source === "pending") continue;
+    const { error } = await db.from("eligible_grant")
+      .update({ rationale: g.rationale?.slice(0, 2000) ?? null, rationale_source: g.rationale_source })
+      .eq("tenant_id", tenantId).eq("grant_id", g.grant_id.slice(0, GRANT_ID_MAX));
+    if (error) console.error("[rationales] write failed", error);
+    else filled += 1;
+  }
+  return filled;
 }
 
 /** The query text from the most recent run, for the admin panel. */
@@ -431,16 +511,8 @@ export async function fillPendingRationales(
   })) as unknown as ScreenedGrant[];
 
   await addRationales(screened, dossier, p, orgName,
-    (done, count) => opts.onProgress?.({ done, total: count, detail: `explaining match ${done} of ${count}` }));
+    (done, count) => opts.onProgress?.({ done, total: count, detail: `explained ${done} of ${count} matches` }));
 
-  let filled = 0;
-  for (const g of screened) {
-    if (g.rationale_source === "pending") continue;
-    const { error } = await db.from("eligible_grant")
-      .update({ rationale: g.rationale?.slice(0, 2000) ?? null, rationale_source: g.rationale_source })
-      .eq("tenant_id", tenantId).eq("grant_id", g.grant_id);
-    if (error) console.error("[rationales] write failed", error);
-    else filled += 1;
-  }
+  const filled = await writeRationales(tenantId, screened);
   return { filled, remaining: await pendingRationaleCount(tenantId) };
 }

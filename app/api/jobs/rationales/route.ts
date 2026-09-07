@@ -44,9 +44,10 @@ export async function POST() {
           void updateJob(tenantId, jobId, p);
           if (p.detail && p.detail !== lastSaid) {
             lastSaid = p.detail;
-            void recordEvent(tenantId, jobId, {
-              kind: "progress", text: p.detail, done: p.done, total: p.total,
-            });
+            // No done/total: these are STAGE numbers (3 of 5), and the line
+            // already carries its own item count in words. The bar is where a
+            // stage number belongs.
+            void recordEvent(tenantId, jobId, { kind: "progress", text: p.detail });
           }
         },
       });

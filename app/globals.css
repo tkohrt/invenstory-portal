@@ -693,6 +693,13 @@ button.vis-dot.busy{opacity:.5}
 .jl-count{flex:none;font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted);
   background:#f1f3f2;border-radius:5px;padding:1px 6px}
 
+.jl-clock{flex:none;font-size:11px;font-variant-numeric:tabular-nums;color:#7a6320;
+  background:#fbf4e2;border-radius:5px;padding:1px 6px}
+
+/* Said only when the wait becomes unusual, and it names what is being waited on. */
+.jl-quiet{margin:8px 2px 2px;padding:7px 10px;font-size:12px;line-height:1.5;
+  color:#7a6320;background:#fbf7ec;border-left:3px solid #d9c58a;border-radius:0 7px 7px 0}
+
 /* Kind is the shape of the line, never its wording. */
 .jl-phase{font-weight:600}
 .jl-phase .jl-mark{background:#1f4d2e}
