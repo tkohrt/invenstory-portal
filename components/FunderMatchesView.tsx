@@ -203,8 +203,16 @@ export default function FunderMatchesView({
     catch (e) { setErr(e instanceof Error ? e.message : "Could not clear."); }
   });
 
-  return (
-    <div>
+  /**
+   * The heading, the caveat and the button that runs a search.
+   *
+   * Held in a variable rather than written inline because it moves. For an
+   * admin the profile is the INPUT to a match and belongs above the thing it
+   * feeds; the order on screen then matches the order of the work. A client
+   * never sees the profile, so for them this stays where it was, at the top.
+   */
+  const heading = (
+    <>
       <div className="page-head">
         <div>
           <h2>Funder Matches</h2>
@@ -237,12 +245,19 @@ export default function FunderMatchesView({
       {configured && !health.ok && (
         <div className="ov-note">{isAdmin ? `Ground Truth status: ${health.detail}` : "Matches are being refreshed."}</div>
       )}
+    </>
+  );
 
-      {isAdmin && (
-        <SearchProfilePanel
-          profile={profile} lastQueries={lastQueries} orgName={orgName}
-          job={profileJob} stored={profileStored} />
-      )}
+  return (
+    <div>
+      {isAdmin ? (
+        <>
+          <SearchProfilePanel
+            profile={profile} lastQueries={lastQueries} orgName={orgName}
+            job={profileJob} stored={profileStored} />
+          {heading}
+        </>
+      ) : heading}
 
       <JobProgress job={shownJob} events={events} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
       <JobProgress job={rJob} events={rEvents} lostContact={rGaveUp} />

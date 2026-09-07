@@ -207,7 +207,7 @@ export default function SearchProfilePanel({
         <span className="ov-spacer" />
         {profile && (
           <button type="button" className="fc-link" onClick={() => setOpen(v => !v)}>
-            {open ? "hide" : "show"}
+            {open ? "Hide" : "Expand"}
           </button>
         )}
         {/* Free and instant, so it is a link rather than a button competing
