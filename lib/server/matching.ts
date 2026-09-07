@@ -410,6 +410,8 @@ export async function getCachedMatches(tenantId: string) {
   return (data ?? []) as {
     grant_id: string; verdict: Verdict; reason: string | null;
     close_date: string | null; award_ceiling: number | null; matched_at: string;
+    /** When this first appeared, preserved across runs. See 0036. */
+    first_matched_at: string | null;
     title: string | null; funder: string | null; url: string | null;
     rationale: string | null; rationale_source: string | null;
     source_site: string | null; verified_at: string | null;

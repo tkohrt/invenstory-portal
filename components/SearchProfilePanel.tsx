@@ -13,7 +13,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
-import { FACET_LABEL, FACETS, type ProfileFact, type Facet } from "@/lib/search-profile";
+import {
+  FACET_LABEL, FACETS, factId, type ProfileFact, type Facet,
+} from "@/lib/search-profile";
+import {
+  hideFactAction, editFactAction, addFactAction, restoreFactAction,
+} from "@/lib/server/profile-edit-actions";
 
 export interface PanelProfile {
   facts: ProfileFact[];
@@ -21,6 +26,7 @@ export interface PanelProfile {
   documentCount: number;
   note: string | null;
   stale: boolean;
+  edits: { hidden: number; edited: number; added: number };
 }
 
 /** "RE-Assist's", but "Bridges'" rather than "Bridges's". */
@@ -188,6 +194,120 @@ export default function SearchProfilePanel({
   const others = (profile?.facts ?? []).filter(f => f.subject !== "organization");
   const byFacet = (f: Facet) => own.filter(x => x.facet === f);
 
+  /**
+   * One line, with the three things a person needs to do to it.
+   *
+   * The extractor gets things wrong in ways no prompt fully fixes: a call
+   * transcript produced another person's career as this client's evidence,
+   * because a meeting has several speakers and the reader never sees which one
+   * is talking. Four seconds of a human's attention beats any amount of
+   * prompt engineering for that, so the affordance is here rather than deferred.
+   */
+  const FactLine = ({ r }: { r: ProfileFact }) => {
+    const id = r.origin === "added" ? (r.editId ?? null) : factId(r);
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(r.text);
+    const [saving, setSaving] = useState(false);
+
+    const run = (fn: () => Promise<void>) => {
+      setSaving(true);
+      fn().catch(e => setChainError(e instanceof Error ? e.message : "That did not save."))
+          .finally(() => { setSaving(false); setEditing(false); router.refresh(); });
+    };
+
+    if (editing && id) {
+      return (
+        <li className="sp-editing">
+          <input className="sp-edit-in" value={draft} autoFocus
+                 onChange={e => setDraft(e.target.value)}
+                 onKeyDown={e => {
+                   if (e.key === "Enter") run(() => editFactAction(id, draft, r.facet));
+                   if (e.key === "Escape") { setDraft(r.text); setEditing(false); }
+                 }} />
+          <button type="button" className="fc-link" disabled={saving}
+                  onClick={() => run(() => editFactAction(id, draft, r.facet))}>save</button>
+          <button type="button" className="fc-link"
+                  onClick={() => { setDraft(r.text); setEditing(false); }}>cancel</button>
+        </li>
+      );
+    }
+
+    return (
+      <li className={r.origin ? `sp-${r.origin}` : undefined}>
+        <span className="sp-fact-text">{r.text}</span>
+        {r.origin === "added" ? (
+          // No quote, and no borrowed authority. Everything else here follows
+          // "no quote, no fact"; saying so keeps that rule meaningful.
+          <span className="sp-src sp-src-own" title="Written by For Granted. No document states this, so there is no quote behind it.">
+            Added by For Granted
+          </span>
+        ) : (
+          <span className="sp-src" title={r.origin === "edited"
+            ? `Reworded by For Granted. As extracted: "${r.originalText}". Quote: "${r.quote}"`
+            : `"${r.quote}"`}>
+            {r.documentTitle}{r.layer ? ` · Layer ${r.layer}` : ""}{r.origin === "edited" ? " · reworded" : ""}
+          </span>
+        )}
+        <span className="sp-acts">
+          {id && (
+            <button type="button" className="fc-link" disabled={saving}
+                    onClick={() => setEditing(true)}>edit</button>
+          )}
+          {id && r.origin === "edited" && (
+            <button type="button" className="fc-link" disabled={saving}
+                    title="Puts the extracted wording back."
+                    onClick={() => run(() => restoreFactAction(id))}>undo</button>
+          )}
+          <button type="button" className="fc-link sp-remove" disabled={saving}
+                  title={r.origin === "added"
+                    ? "Deletes this added line."
+                    : "Takes this line out of every query. Reversible."}
+                  onClick={() => run(() => !id
+                    ? Promise.resolve()
+                    : r.origin === "added" ? restoreFactAction(id) : hideFactAction(id))}>remove</button>
+        </span>
+      </li>
+    );
+  };
+
+  /** Write a line no document states usably. Collapsed until asked for. */
+  const AddLine = ({ facet }: { facet: Facet }) => {
+    const [open2, setOpen2] = useState(false);
+    const [draft, setDraft] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    const save = () => {
+      if (!draft.trim()) return;
+      setSaving(true);
+      addFactAction(facet, draft)
+        .then(() => { setDraft(""); setOpen2(false); })
+        .catch(e => setChainError(e instanceof Error ? e.message : "That did not save."))
+        .finally(() => { setSaving(false); router.refresh(); });
+    };
+
+    if (!open2) {
+      return (
+        <button type="button" className="fc-link sp-add-open"
+                onClick={() => setOpen2(true)}>+ add a line</button>
+      );
+    }
+    return (
+      <div className="sp-adding">
+        <input className="sp-edit-in" autoFocus value={draft}
+               placeholder={`Something true about them for "${FACET_LABEL[facet].toLowerCase()}"`}
+               onChange={e => setDraft(e.target.value)}
+               onKeyDown={e => {
+                 if (e.key === "Enter") save();
+                 if (e.key === "Escape") { setDraft(""); setOpen2(false); }
+               }} />
+        <button type="button" className="fc-link" disabled={saving || !draft.trim()}
+                onClick={save}>add</button>
+        <button type="button" className="fc-link"
+                onClick={() => { setDraft(""); setOpen2(false); }}>cancel</button>
+      </div>
+    );
+  };
+
   return (
     <div className="sp">
       <div className="sp-head">
@@ -263,6 +383,12 @@ export default function SearchProfilePanel({
               a client component renders under the server's locale during SSR
               and the browser's on hydration, which mismatches near midnight. */}
           {" "}Built {(profile.generatedAt ?? "").slice(0, 10) || "date unknown"}.
+          {(profile.edits.hidden + profile.edits.edited + profile.edits.added) > 0 && (
+            <span className="sp-edited" title="Corrections are stored separately from the extraction and survive a Rebuild.">
+              {" "}For Granted has removed {profile.edits.hidden}, reworded{" "}
+              {profile.edits.edited} and added {profile.edits.added}.
+            </span>
+          )}
           {profile.stale && (
             <span className="sp-stale" title="Documents have been added or removed since this was built, so the search is running on an out-of-date picture.">
               {" "}Documents have changed since. Rebuild before trusting a run.
@@ -286,23 +412,24 @@ export default function SearchProfilePanel({
       {open && profile && (
         <>
           <dl className="sp-facets">
+            {/* Every facet, even an empty one, now that a person can fill it.
+                Hiding an empty facet hides the fact that something is missing,
+                which is exactly when adding a line is most useful. */}
             {FACETS.map(f => {
               const rows = byFacet(f);
-              if (!rows.length) return null;
               return (
                 <div key={f}>
                   <dt>{FACET_LABEL[f]}</dt>
                   <dd>
                     <ul className="sp-list">
-                      {rows.map((r, i) => (
-                        <li key={`${f}-${i}`}>
-                          {r.text}
-                          <span className="sp-src" title={`"${r.quote}"`}>
-                            {r.documentTitle}{r.layer ? ` · Layer ${r.layer}` : ""}
-                          </span>
-                        </li>
+                      {rows.map(r => (
+                        <FactLine key={r.editId ?? `${factId(r)}-${r.text}`} r={r} />
                       ))}
+                      {!rows.length && (
+                        <li className="sp-empty">Nothing found for this.</li>
+                      )}
                     </ul>
+                    <AddLine facet={f} />
                   </dd>
                 </div>
               );

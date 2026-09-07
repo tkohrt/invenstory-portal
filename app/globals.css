@@ -814,6 +814,7 @@ button.vis-dot.busy{opacity:.5}
 .fm-verdict{cursor:help;border-bottom:1px dotted currentColor}
 .fm-funder{max-width:180px}
 .fm-listed{margin-top:3px;font-size:11px;color:var(--muted,#999);word-break:break-all}
+.fm-new{font-weight:700;color:#2f7d44;background:#e5f3e8;border-radius:5px;padding:1px 7px;font-size:11px}
 .fm-verified{color:#1f4d2e;font-size:12px;cursor:help;border-bottom:1px dotted currentColor}
 
 /* ---- Attach a verification to a record ---- */
@@ -925,6 +926,29 @@ button.vis-dot.busy{opacity:.5}
 .sp-src{margin-left:7px;font-size:11px;color:var(--muted,#999);cursor:help;
   border-bottom:1px dotted currentColor}
 .sp-quarantine{margin-top:11px}
+
+/* Editing a profile line. The controls stay out of the way until hovered,
+   because reading the profile is the common act and correcting it is not. */
+.sp-list li{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.sp-fact-text{flex:1;min-width:180px}
+.sp-acts{display:inline-flex;gap:9px;opacity:0;transition:opacity .12s ease;flex:none}
+.sp-list li:hover .sp-acts,.sp-list li:focus-within .sp-acts{opacity:1}
+.sp-acts .fc-link{font-size:11px}
+.sp-remove{color:#b0402f}
+.sp-empty{color:var(--muted,#999);font-style:italic}
+
+/* A line a person wrote or reworded is marked, never passed off as extracted. */
+.sp-added{border-left:2px solid #3a7d44;padding-left:8px;margin-left:-10px}
+.sp-edited .sp-src{color:#7a6320}
+.sp-src-own{color:#3a7d44;cursor:help}
+.sp-edited-note,.sp-edited{color:inherit}
+
+.sp-editing,.sp-adding{display:flex;align-items:center;gap:8px;margin:3px 0}
+.sp-edit-in{flex:1;min-width:0;font:inherit;font-size:12px;padding:5px 8px;
+  border:1px solid #9fb3a4;border-radius:7px;background:#fff}
+.sp-edit-in:focus{outline:none;border-color:#1f4d2e;box-shadow:0 0 0 2px rgba(31,77,46,.12)}
+.sp-add-open{font-size:11px;color:#3a7d44;margin-top:3px;display:inline-block}
+
 .sp-queries{margin-top:12px;font-size:12px}
 .sp-queries summary{cursor:pointer;color:#1f4d2e}
 .sp-queries ol{margin:8px 0 0;padding-left:20px;line-height:1.55}

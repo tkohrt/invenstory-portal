@@ -14,6 +14,9 @@ import { normalizeEin } from "@/lib/ein";
 import { resolveAccess, type AccessMode } from "@/lib/access-mode";
 
 export interface FunderRow {
+  /** When this funder first appeared for this client, preserved across runs. */
+  first_matched_at?: string | null;
+  matched_at?: string | null;
   funder_id: string;
   ein: string | null;
   name: string;

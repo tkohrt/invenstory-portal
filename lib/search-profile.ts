@@ -99,6 +99,107 @@ export interface ProfileFact {
    * partners and rivals is useful elsewhere, and quarantined here.
    */
   subject: Subject;
+  /**
+   * Where this line came from once a person has been at it.
+   *
+   * Absent means extracted and untouched. `edited` means a person rewrote the
+   * clause, and the original quote is still attached. `added` means a person
+   * wrote it from knowledge no document states usably, so there is no quote to
+   * attach and the interface must not imply one.
+   */
+  origin?: "edited" | "added";
+  /** The clause as extracted, kept when a person has replaced it. */
+  originalText?: string;
+  /** Who last touched it, for the panel. */
+  editedAt?: string;
+  /**
+   * The profile_edit row behind an ADDED line.
+   *
+   * An added line has no document and no quote, so factId() cannot name it.
+   * Without this the panel can show one and not remove it.
+   */
+  editId?: string;
+}
+
+/**
+ * A stable name for one extracted fact.
+ *
+ * Corrections are stored against this rather than against a position in a list,
+ * because the list is rebuilt from scratch by every Rebuild and every re-merge,
+ * and a correction keyed on position would silently slide onto its neighbour.
+ *
+ * Document, facet and quote, because all three survive a rebuild: reading the
+ * same document again produces the same verbatim quote for the same facet. The
+ * CLAUSE is deliberately not part of it, so a reworded extraction keeps the
+ * judgment already passed on it.
+ */
+export function factId(f: Pick<ProfileFact, "documentId" | "facet" | "quote">): string {
+  const raw = `${f.documentId}|${f.facet}|${(f.quote ?? "").trim().toLowerCase()}`;
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < raw.length; i++) {
+    h1 = Math.imul(h1 ^ raw.charCodeAt(i), 16777619) >>> 0;
+    h2 = Math.imul(h2 + raw.charCodeAt(i), 2246822519) >>> 0;
+  }
+  return `${h1.toString(36)}${h2.toString(36)}`;
+}
+
+/** One person's correction to one line. */
+export interface ProfileEdit {
+  factId: string;
+  kind: "hide" | "edit" | "add";
+  text: string | null;
+  facet: Facet | null;
+  note: string | null;
+  editedAt?: string;
+}
+
+/**
+ * The profile as For Granted means it: extraction with judgment applied.
+ *
+ * Hides come out entirely, so a wrong line reaches no query rather than being
+ * shown struck through and searched on anyway. Edits replace the clause and
+ * keep the quote, because the quote is still the evidence for the underlying
+ * point even when the wording was bad. Additions go in at the front of their
+ * facet: a person wrote them deliberately, which is a stronger signal than
+ * anything the extractor ranked, and it means the query builder's "first
+ * three" reaches them.
+ */
+export function applyProfileEdits(facts: ProfileFact[], edits: ProfileEdit[]): ProfileFact[] {
+  const byId = new Map(edits.map(e => [e.factId, e]));
+  const out: ProfileFact[] = [];
+
+  for (const f of facts) {
+    const e = byId.get(factId(f));
+    if (!e || e.kind === "add") { out.push(f); continue; }
+    if (e.kind === "hide") continue;
+    out.push({
+      ...f,
+      text: (e.text ?? "").trim() || f.text,
+      origin: "edited",
+      originalText: f.text,
+      editedAt: e.editedAt,
+    });
+  }
+
+  const added = edits.filter(e => e.kind === "add" && e.facet && (e.text ?? "").trim());
+  for (const e of added) {
+    out.unshift({
+      facet: e.facet as Facet,
+      text: (e.text ?? "").trim(),
+      // No quote, and no pretending otherwise. Everything else in this
+      // structure is "no quote, no fact"; this line is a person's word, and
+      // the panel labels it as such rather than dressing it as extraction.
+      quote: "",
+      documentId: "",
+      documentTitle: "Added by For Granted",
+      layer: null,
+      subject: "organization",
+      origin: "added",
+      editedAt: e.editedAt,
+      editId: e.factId,
+    });
+  }
+  return out;
 }
 
 export interface SearchProfile {

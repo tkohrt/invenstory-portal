@@ -18,6 +18,7 @@ import type { EligibilityProfile } from "@/lib/eligibility-fields";
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
   close_date: string | null; award_ceiling: number | null; matched_at: string;
+  first_matched_at: string | null;
   title: string | null; funder: string | null; url: string | null;
   rationale: string | null; source_site: string | null; verified_at: string | null;
 }
@@ -62,6 +63,38 @@ const VERDICT_HELP: Record<Verdict, string> = {
     "Either something is blocking (federal money without SAM.gov, a cost match you cannot meet), "
     + "or there is nothing to go on but topical similarity. Read the eligibility text before spending time on it.",
 };
+
+/**
+ * When this first appeared, which is a different question from when it was
+ * last confirmed.
+ *
+ * matched_at cannot answer it. A run is a snapshot: every surviving row is
+ * stamped with the same time and anything the run did not return is swept, so
+ * matched_at is identical on every row in the table and a column built on it
+ * would repeat one date down the page. first_matched_at is set on insert and
+ * never updated, so it survives later runs.
+ *
+ * "New" is judged against THIS run rather than against the clock, so a
+ * shortlist read a week after the run that produced it still says which rows
+ * were new to that run.
+ */
+function firstSeen(row: { matched_at?: string | null; first_matched_at?: string | null }):
+  { label: string; help: string } {
+  const first = row.first_matched_at ? new Date(row.first_matched_at) : null;
+  if (!first || isNaN(first.getTime())) {
+    return { label: "—", help: "This predates the record of when matches first appeared." };
+  }
+  const run = row.matched_at ? new Date(row.matched_at) : null;
+  // A minute of slack: the row's timestamp is set by the database on insert
+  // and the run's by the application, so they are close rather than equal.
+  const isNew = !!run && !isNaN(run.getTime()) && first.getTime() >= run.getTime() - 60_000;
+  return isNew
+    ? { label: "New", help: "First surfaced by the most recent run. It was not on the previous shortlist." }
+    : {
+        label: first.toLocaleDateString(),
+        help: `First surfaced on ${first.toLocaleDateString()} and returned by every run since, including the most recent.`,
+      };
+}
 
 function money(n: number | null) {
   if (n == null) return "—";
@@ -297,7 +330,8 @@ export default function FunderMatchesView({
             <thead>
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
-                <th>Deadline</th><th>Ceiling</th><th>Verified</th><th>Why this client</th>
+                <th>Deadline</th><th>Ceiling</th><th>First seen</th>
+                <th>Verified</th><th>Why this client</th>
               </tr>
             </thead>
             <tbody>
@@ -319,6 +353,10 @@ export default function FunderMatchesView({
                   </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
                   <td className="fm-nowrap">{money(m.award_ceiling)}</td>
+                  <td className="fm-nowrap">
+                    <span className={firstSeen(m).label === "New" ? "fm-new" : "ov-muted"}
+                          title={firstSeen(m).help}>{firstSeen(m).label}</span>
+                  </td>
                   <td className="fm-nowrap">
                     <span className={m.verified_at ? "fm-verified" : "ov-muted"} title={verified(m).help}>
                       {verified(m).label}
@@ -361,7 +399,7 @@ export default function FunderMatchesView({
               <tr>
                 <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
                 <th>Evidence</th>{isAdmin && <th>Who reads it</th>}
-                <th>Verified</th><th>Why this client</th>
+                <th>First seen</th><th>Verified</th><th>Why this client</th>
               </tr>
             </thead>
             <tbody>
@@ -436,6 +474,10 @@ export default function FunderMatchesView({
                       })()}
                     </td>
                   )}
+                  <td className="fm-nowrap">
+                    <span className={firstSeen(f).label === "New" ? "fm-new" : "ov-muted"}
+                          title={firstSeen(f).help}>{firstSeen(f).label}</span>
+                  </td>
                   <td className="fm-nowrap">
                     <span className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
                       {verified(f).label}
