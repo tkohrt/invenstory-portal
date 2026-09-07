@@ -319,35 +319,83 @@ export function parseFacts(raw: string, src: FactSource): ProfileFact[] {
 /**
  * Combine facts from every document into one profile.
  *
- * Two jobs. Drop near-duplicates, since the same sentence about what an
+ * Three jobs. Drop near-duplicates, since the same sentence about what an
  * organization does turns up in the website capture, the strategic plan and the
- * board deck. And cap each facet, because thirty ways of saying "job training"
+ * board deck. Cap each facet, because thirty ways of saying "job training"
  * makes a worse query than three, and the query builders take the first few
- * anyway.
+ * anyway. And take from every layer, which is the part this used to get wrong.
  *
- * Ordering is deliberate: a fact from Layer II or III outranks one from Layer I
- * within a facet. Internal strategy and the client's own voice say what the
- * organization actually needs; the public story says what it wants the world to
- * think. For finding money, the first is worth more.
+ * WHAT WENT WRONG, because the reasoning still holds and the implementation did
+ * not. Layer II and III outrank Layer I within a facet: internal strategy and
+ * the client's own voice say what the organization actually needs, where the
+ * public story says what it wants the world to think, and for finding money the
+ * first is worth more. That is an argument about ORDER. It was implemented as a
+ * hard sort followed by "keep the first six", which is a different thing
+ * entirely: every Layer II fact was considered before any Layer III fact, so a
+ * client with enough Layer II documents filled every facet from Layer II alone
+ * and nothing else could ever enter.
+ *
+ * On RE-Assist that was not a lean, it was a wipe. 445 facts were extracted and
+ * 48 were kept, all of them Layer II. All 192 facts from three call transcripts
+ * were discarded, including every one of the 99 from the Howie intro call, and
+ * so were all 82 from the public story. The `distinctive` facet, which is meant
+ * to hold what a programme officer would remember, was drawn entirely from
+ * signed proposals, which is the one source least likely to contain it.
+ *
+ * So slots are allocated round-robin across layers in rank order rather than
+ * filled by precedence. Layer II still goes first and still takes the largest
+ * share of a partly-filled facet; it can no longer take all of one. Layers with
+ * nothing to offer for a facet cost nothing: their turns fall through and the
+ * remaining slots go to whoever has candidates left, still in rank order.
  */
-export const MAX_PER_FACET = 6;
+export const MAX_PER_FACET = 8;
+/** Turn order within a facet, and the tie-break when slots are left over. */
+const LAYER_ORDER = ["II", "III", "I"] as const;
 const LAYER_RANK: Record<string, number> = { II: 0, III: 1, I: 2 };
 
 export function mergeFacts(all: ProfileFact[], maxPerFacet = MAX_PER_FACET): ProfileFact[] {
   const seen = new Set<string>();
   const byFacet = new Map<Facet, ProfileFact[]>();
 
+  // Deduplicate first, in rank order, so the surviving copy of a fact stated in
+  // both a proposal and a transcript is credited to the stronger layer.
   const ranked = [...all].sort((a, b) =>
     (LAYER_RANK[a.layer ?? "I"] ?? 3) - (LAYER_RANK[b.layer ?? "I"] ?? 3));
 
+  const pool = new Map<Facet, Map<string, ProfileFact[]>>();
   for (const f of ranked) {
     const key = `${f.facet}|${f.text.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const list = byFacet.get(f.facet) ?? [];
-    if (list.length >= maxPerFacet) continue;
-    list.push(f);
-    byFacet.set(f.facet, list);
+    const layer = LAYER_ORDER.includes((f.layer ?? "I") as typeof LAYER_ORDER[number])
+      ? (f.layer as string) : "I";
+    const perFacet = pool.get(f.facet) ?? new Map<string, ProfileFact[]>();
+    const perLayer = perFacet.get(layer) ?? [];
+    perLayer.push(f);
+    perFacet.set(layer, perLayer);
+    pool.set(f.facet, perFacet);
+  }
+
+  for (const [facet, perFacet] of pool) {
+    const taken: ProfileFact[] = [];
+    const at = new Map<string, number>(LAYER_ORDER.map(l => [l, 0]));
+    // Round-robin until the facet is full or every layer is exhausted. An empty
+    // layer simply does not take its turn, so a client with no transcripts is
+    // not punished with a shorter profile.
+    let served = true;
+    while (taken.length < maxPerFacet && served) {
+      served = false;
+      for (const layer of LAYER_ORDER) {
+        if (taken.length >= maxPerFacet) break;
+        const list = perFacet.get(layer) ?? [];
+        const i = at.get(layer) ?? 0;
+        if (i >= list.length) continue;
+        taken.push(list[i]);
+        at.set(layer, i + 1);
+        served = true;
+      }
+    }
+    byFacet.set(facet, taken);
   }
 
   // Emit in facet order so the stored profile reads the way the panel shows it.

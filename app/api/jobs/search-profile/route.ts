@@ -16,7 +16,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import {
-  continueProfileBuild, clearProfileDocs, profileBuildProgress,
+  continueProfileBuild, clearProfileDocs, profileBuildProgress, assembleProfile,
 } from "@/lib/server/search-profile-extract";
 import {
   createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob, recordEvent,
@@ -41,6 +41,31 @@ export async function POST(req: Request) {
   const jobId = existing?.id ?? await createJob(
     tenantId, "search_profile",
     `Reading ${tenant?.name ?? "this client"}'s Inven(s)tory`, session.user.id);
+
+  /**
+   * Re-merge what is already read, without reading anything again.
+   *
+   * The reading is the expensive half and the merging is free, and they change
+   * for different reasons. When the merge RULE changes (as it did when facets
+   * turned out to be filled entirely from one layer), every document's facts
+   * are still on disk and still correct; only the selection from them is wrong.
+   * Rebuilding would spend minutes and real money re-reading unchanged
+   * documents to reach the same stored facts.
+   */
+  if (body?.reassemble) {
+    try {
+      const r = await assembleProfile(tenantId, session.user.id);
+      await recordEvent(tenantId, jobId, {
+        kind: "done",
+        text: `Rebuilt the profile from documents already read: ${r.profile.facts.length} fact(s). ${r.note}`.trim(),
+      });
+      const p = await profileBuildProgress(tenantId);
+      return NextResponse.json({ jobId, complete: true, read: 0, reassembled: true, ...p });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not rebuild the profile.";
+      return NextResponse.json({ jobId, error: message }, { status: 500 });
+    }
+  }
 
   // The chain giving up is a real end state, and it has to reach the row.
   // Otherwise the browser stops while the row still says "running", and the

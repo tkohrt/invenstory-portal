@@ -139,6 +139,31 @@ export default function SearchProfilePanel({
 
   const rebuild = () => void runChain(true);
   const carryOn = () => void runChain(false);
+
+  /**
+   * Re-merge without re-reading.
+   *
+   * Reading costs minutes and real money; merging is free. They also go wrong
+   * for different reasons, so they get different buttons. When the selection
+   * rule changes and the documents have not, this is the whole fix.
+   */
+  const reassemble = useCallback(async () => {
+    setChainError(null); setWorking(true);
+    try {
+      const res = await fetch("/api/jobs/search-profile", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reassemble: true }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error ?? "Could not rebuild the profile.");
+      if (r.jobId) await syncJob(r.jobId).catch(() => null);
+      router.refresh();
+    } catch (e) {
+      setChainError(e instanceof Error ? e.message : "Could not rebuild the profile.");
+    } finally {
+      setWorking(false);
+    }
+  }, [router, syncJob]);
   const busy = working || starting || running;
 
   /**
@@ -183,6 +208,15 @@ export default function SearchProfilePanel({
         {profile && (
           <button type="button" className="fc-link" onClick={() => setOpen(v => !v)}>
             {open ? "hide" : "show"}
+          </button>
+        )}
+        {/* Free and instant, so it is a link rather than a button competing
+            with the one that costs three minutes. */}
+        {profile && stored.done > 0 && (
+          <button type="button" className="fc-link" onClick={() => void reassemble()}
+                  disabled={busy}
+                  title="Re-merges the facts already read into the profile. Reads nothing again, so it costs nothing and takes a moment.">
+            re-merge
           </button>
         )}
         {/* Start over is deliberately the QUIET button whenever there is
