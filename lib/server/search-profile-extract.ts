@@ -152,6 +152,24 @@ const WORK_BUDGET_MS = 42_000;
 /** Windows of one document read at once. Six at once is what gets throttled. */
 const WINDOW_CONCURRENCY = 3;
 
+/**
+ * What a document is about to cost, so the budget can guard its END.
+ *
+ * Checking only elapsed time guards the START, which is not the same thing. A
+ * document begun at 41 seconds runs for as long as it runs, and on 13 September
+ * that killed a rebuild: three documents read in 15 seconds each, then a
+ * six-window transcript started at 37 seconds and the invocation was cut off at
+ * 60 with nothing saved for it.
+ *
+ * The estimate is deliberately pessimistic. Being wrong high costs one extra
+ * pass; being wrong low costs the whole invocation.
+ */
+const PER_WINDOW_MS = 12_000;
+const ROSTER_MS = 8_000;
+function estimateMs(windowCount: number, needsRoster: boolean, width: number): number {
+  return Math.ceil(windowCount / width) * PER_WINDOW_MS + (needsRoster ? ROSTER_MS : 0);
+}
+
 interface DocRow {
   id: string; title: string; layer: string | null;
   /** Who speaks in this transcript, from a previous read. See 0038. */
@@ -177,11 +195,12 @@ function contentHash(text: string): string {
 /** Read one document and store its facts. Idempotent: re-reading replaces. */
 async function extractOne(
   tenantId: string, d: DocRow, text: string, roster: SpeakerRoster | null,
+  width = WINDOW_CONCURRENCY,
 ): Promise<{ facts: number; reattributed: number }> {
   const layer = (["I", "II", "III"].includes(d.layer ?? "") ? d.layer : null) as Layer;
   const src = { documentId: d.id, documentTitle: d.title, layer };
   const w = windows(text);
-  const parts = await pool(w.map(win => () => scanWindow(d.title, win, src, roster)), WINDOW_CONCURRENCY);
+  const parts = await pool(w.map(win => () => scanWindow(d.title, win, src, roster)), width);
 
   // Not one row saying "read, nothing found". A document whose every window
   // failed has not been read, and writing it as read is how it disappears from
@@ -291,7 +310,27 @@ export async function continueProfileBuild(
     // Without this a pass can return having done nothing, and a caller with no
     // way to tell "no time left" from "cannot proceed" has to guess. It guessed
     // wrong and stopped a chain that had ten documents still to read.
-    if (read > 0 && Date.now() - started > WORK_BUDGET_MS) break;
+    /**
+     * Will this document FINISH inside the budget, not merely start inside it.
+     *
+     * The old check asked only whether time was left, which let a six-window
+     * transcript begin at 37 seconds and get cut off at 60 with nothing saved.
+     * Now the cost is estimated first and a document that will not fit is left
+     * for the next pass, where it starts with the whole budget in front of it.
+     */
+    const size = lenByDoc.get(d.id) ?? 0;
+    const willNeedRoster = (d.layer === "III" || !d.speaker_roster) && size > 12_000;
+    const cost = estimateMs(windows("x".repeat(Math.min(size, 70_000))).length,
+      willNeedRoster, WINDOW_CONCURRENCY);
+    const left = WORK_BUDGET_MS - (Date.now() - started);
+    if (read > 0 && cost > left) break;
+
+    // A document too big for a whole budget would otherwise never be read at
+    // all, since it cannot fit however early it starts. It gets a pass to
+    // itself, and full parallelism, because nothing else is competing for the
+    // time and finishing matters more here than being gentle with the model.
+    const width = cost > WORK_BUDGET_MS ? Math.max(WINDOW_CONCURRENCY, 6) : WINDOW_CONCURRENCY;
+
     step(already.size + read, total, `reading ${d.title}`);
 
     if (isBoilerplate(d.title)) {
@@ -338,7 +377,7 @@ export async function continueProfileBuild(
       console.error("[speakers] roster failed", e);
     }
 
-    const found = await extractOne(tenantId, d, text, roster);
+    const found = await extractOne(tenantId, d, text, roster, width);
     read += 1;
     say("progress",
       `Read and stored ${d.title}: ${found.facts} fact(s)`

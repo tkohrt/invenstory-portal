@@ -99,6 +99,11 @@ export default function SearchProfilePanel({
       } catch { /* the message on screen is the part that matters */ }
     };
 
+    // A pass the platform killed is not a failed build. It is the normal end of
+    // a stage on a 60-second function limit, and everything read before it is
+    // saved. Counted so a genuinely broken run still stops.
+    let cutShort = 0;
+
     try {
       // Bounded. A loop that cannot terminate is worse than one that stops
       // early and says so.
@@ -109,7 +114,21 @@ export default function SearchProfilePanel({
           body: JSON.stringify({ restart: restart && pass === 0 }),
         });
         const r = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(r.error ?? "Reading failed.");
+
+        if (!res.ok) {
+          // A named error from our own code is a real failure and stops.
+          if (r.error) throw new Error(r.error);
+          // Anything else with no body is the platform cutting the invocation
+          // off. Come back and carry on, which is what a person would do.
+          if (++cutShort >= 3) {
+            await stop("Three stages in a row were cut off before they could report back. "
+              + "Everything read is saved, and Continue picks up from there.");
+            return;
+          }
+          await new Promise(f => setTimeout(f, 1500));
+          continue;
+        }
+        cutShort = 0;
 
         // Server truth about what is kept, so the buttons stay right even if
         // this tab is closed and reopened mid-build.
