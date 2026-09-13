@@ -72,18 +72,25 @@ Shane applies every patch by hand in `~/Desktop/fg-portal-push` and pushes from
 there. The agent never pushes to his repo: "let's keep things manual for now, I
 like our review loop."
 
-**Always give the preflight in the same block as the apply.** Not as advice
-beside it, in the block, so it is run rather than read:
+**The preflight must GATE, not merely print.** The first version of this rule
+put `git status --short && git log --oneline -1` at the top of the block, which
+printed the answer and then ran `git am` anyway, in the same paste, before
+anybody could read it. That is not a check, it is a caption.
 
 ```
 cd ~/Desktop/fg-portal-push
+git fetch -q origin main
 git status --short && git log --oneline -1
-git am ~/Desktop/<name>.patch
-git push origin main
+git apply --check ~/Desktop/<name>.patch && git am ~/Desktop/<name>.patch && git push origin main
 ```
 
-Clean output from line two, and the commit you generated the patch against,
-means go. Anything else means stop and look.
+`git apply --check` is a dry run. If the patch cannot apply, for any reason
+including having already been applied, it exits non-zero and the `&&` chain
+stops before `git am` runs. Nothing is touched and there is no half-applied
+state to unwind afterwards.
+
+Line three still prints the branch and the current commit, which is worth
+reading, but nothing now depends on somebody reading it in time.
 
 **Why, from three failures in one night.** Each one produced output that looked
 like success or looked like disaster, and was neither.
@@ -99,6 +106,8 @@ like success or looked like disaster, and was neither.
 - Re-applying a patch that had **already** landed produced the same alarming
   output plus "Everything up-to-date", which was literally true. Check
   `git log --oneline -1` against the expected commit before diagnosing anything.
+  This happened **twice**, because a printed check that does not gate does not
+  prevent anything. `git apply --check` is the fix; the earlier advice was not.
 
 **Migrations go first, in their own message**, as a comment-stripped block to
 paste into the Supabase SQL editor, with a plain-English note on what the change
