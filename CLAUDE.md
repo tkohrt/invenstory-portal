@@ -65,3 +65,53 @@ Primary engine = **document-level extraction** (`lib/server/doc-extract.ts`):
 3. `npm run build` (runs the tenancy check + compile) before deploying.
 4. Commit, push to `main`, then `vercel deploy --prod` from the correctly-named folder; confirm it aliases `portal.forgranted.com`.
 5. DB schema changes → deliver migration SQL for a human to apply; do not attempt direct DB writes from the sandbox.
+
+## Handing a patch to Shane
+
+Shane applies every patch by hand in `~/Desktop/fg-portal-push` and pushes from
+there. The agent never pushes to his repo: "let's keep things manual for now, I
+like our review loop."
+
+**Always give the preflight in the same block as the apply.** Not as advice
+beside it, in the block, so it is run rather than read:
+
+```
+cd ~/Desktop/fg-portal-push
+git status --short && git log --oneline -1
+git am ~/Desktop/<name>.patch
+git push origin main
+```
+
+Clean output from line two, and the commit you generated the patch against,
+means go. Anything else means stop and look.
+
+**Why, from three failures in one night.** Each one produced output that looked
+like success or looked like disaster, and was neither.
+
+- `git am` applied onto a leftover branch (`fix/completeness-free-points`) that
+  happened to sit at the same commit as `main`. Everything reported success and
+  `git push` said "Everything up-to-date", because `main` genuinely had nothing
+  new. Nothing deployed. `git status --short` names the branch it is about to
+  patch.
+- A half-applied `git am` left new files staged, so the next attempt failed with
+  "already exists in index" alongside real hunk failures. `git am --abort`
+  unwinds it.
+- Re-applying a patch that had **already** landed produced the same alarming
+  output plus "Everything up-to-date", which was literally true. Check
+  `git log --oneline -1` against the expected commit before diagnosing anything.
+
+**Migrations go first, in their own message**, as a comment-stripped block to
+paste into the Supabase SQL editor, with a plain-English note on what the change
+accomplishes and what it touches. Say explicitly when a change is additive and
+touches no existing data, because that is what makes it safe to paste. Then
+verify it from the read-only Supabase connector rather than asking Shane to run
+check queries.
+
+**After the push**, confirm the deploy from the Vercel connector (state READY,
+the right commit sha) and realign the sandbox with `git reset --hard
+origin/main`. The stop hook reports the sandbox being one commit ahead until
+that happens; that is expected and not something to act on.
+
+**Say which button to press afterwards, and why.** A change to the merge rule
+needs `re-merge`, which is free. A change to what is extracted needs `Rebuild`,
+which is minutes and real money. Getting that wrong wastes both.
