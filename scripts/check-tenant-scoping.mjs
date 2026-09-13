@@ -13,7 +13,7 @@ const TENANT_SCOPED = new Set([
   "document_chunk","document_tag","document_version","draft_bracket","eligibility_gap",
   "eligibility_profile","eligible_grant","feature_visibility","grant_draft","job",
   "job_event",
-  "match_run","matched_funder","plant_state","profile_edit","search_profile","search_profile_doc",
+  "match_run","match_triage","matched_funder","plant_state","profile_edit","search_profile","search_profile_doc",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

@@ -12,6 +12,12 @@ import type { FunderRow } from "@/lib/funder-rows";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { primaryContact, freshness, ROLE_LABEL, type ContactRecord } from "@/lib/funder-contact";
 import { screenFunders, hiddenByScreen } from "@/lib/funder-screen";
+import {
+  STATE_LABEL, STATE_HELP, statesFor, suppresses, findReason,
+  FUNDER_REASONS, GRANT_REASONS,
+  type TriageKind, type TriageState,
+} from "@/lib/triage";
+import { setTriageAction, clearTriageAction } from "@/lib/server/triage-actions";
 import SearchProfilePanel, { type PanelProfile } from "./SearchProfilePanel";
 import type { EligibilityProfile } from "@/lib/eligibility-fields";
 
@@ -149,7 +155,7 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
-  profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales,
+  profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments,
 }: {
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   /** Matches still owed a real explanation, because a run was cut short. */
@@ -167,6 +173,15 @@ export default function FunderMatchesView({
   profileJob: Job | null;
   /** Documents already read and kept for this client, from the server. */
   profileStored: { done: number; total: number };
+  /**
+   * What For Granted has already decided about these rows, keyed "kind:id".
+   *
+   * Kept in its own table rather than on the match rows, so a run that sweeps
+   * a row away does not sweep the judgment with it. Empty for a client session.
+   */
+  judgments: Record<string, {
+    state: TriageState; reason: string | null; note: string | null; decidedAt: string;
+  }>;
 }) {
   const router = useRouter();
   const [err, setErr] = useState<string | null>(null);
@@ -190,10 +205,29 @@ export default function FunderMatchesView({
   // Rows the source records as making no grants to anyone. Set aside rather
   // than dropped, and one click from view, so a wrong screen is visible.
   const [showNoHistory, setShowNoHistory] = useState(false);
+  // Rows For Granted has ruled out. Set aside at RENDER time rather than
+  // dropped from the run, so the judgment stays reversible and the row's
+  // first-seen date stays honest if it is ever put back.
+  const [showRuledOut, setShowRuledOut] = useState(false);
+  const judgmentOf = (kind: TriageKind, id: string) => judgments[`${kind}:${id}`] ?? null;
+  const isRuledOut = (kind: TriageKind, id: string) => {
+    const j = judgmentOf(kind, id);
+    return !!j && suppresses(j.state);
+  };
+
   const screened = screenFunders(funders, eligibility);
-  const visibleFunders = showNoHistory
+  const afterScreen = showNoHistory
     ? [...screened.shown, ...screened.hidden.map(h => h.row)]
     : screened.shown;
+  const ruledOutFunders = afterScreen.filter(f => isRuledOut("funder", f.funder_id));
+  const visibleFunders = showRuledOut
+    ? afterScreen
+    : afterScreen.filter(f => !isRuledOut("funder", f.funder_id));
+
+  const ruledOutGrants = matches.filter(m => isRuledOut("grant", m.grant_id));
+  const visibleMatches = showRuledOut
+    ? matches
+    : matches.filter(m => !isRuledOut("grant", m.grant_id));
   // Why rows were set aside, so the toggle names a reason rather than a number.
   const hiddenReasons = [...new Set(screened.hidden.map(h => h.reason))];
 
@@ -281,6 +315,79 @@ export default function FunderMatchesView({
     </>
   );
 
+  /**
+   * What For Granted thinks of one row, and how to change it.
+   *
+   * One component for both lanes, because the mechanics are identical and only
+   * the words differ. The reason picker appears only for a state that rules the
+   * row out, since that is exactly when a reason is required: a rejection with
+   * no reason cannot be counted, cannot suppress usefully, and cannot become a
+   * correction to the shared record.
+   */
+  const Triage = ({ kind, id, label }: { kind: TriageKind; id: string; label: string }) => {
+    const j = judgmentOf(kind, id);
+    const [picking, setPicking] = useState<TriageState | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const apply = (state: TriageState, reason?: string) => {
+      setBusy(true);
+      setTriageAction({ kind, targetId: id, label, state, reason: reason ?? null })
+        .then(() => setPicking(null))
+        .catch(e => setErr(e instanceof Error ? e.message : "That did not save."))
+        .finally(() => { setBusy(false); router.refresh(); });
+    };
+    const undo = () => {
+      setBusy(true);
+      clearTriageAction(kind, id)
+        .catch(e => setErr(e instanceof Error ? e.message : "That did not save."))
+        .finally(() => { setBusy(false); router.refresh(); });
+    };
+
+    if (picking) {
+      const codes = kind === "funder" ? FUNDER_REASONS : GRANT_REASONS;
+      return (
+        <div className="tri-reasons">
+          <div className="tri-reasons-head">Why?</div>
+          {codes.map(c => (
+            <button key={c.code} type="button" className="tri-reason" disabled={busy}
+                    title={c.global
+                      ? `${c.help} Filed as a proposed Ground Truth correction for review.`
+                      : c.help}
+                    onClick={() => apply(picking, c.code)}>
+              {c.label}{c.global && <span className="tri-global" title="True for every client. Goes to the Ground Truth queue as a proposal.">shared</span>}
+            </button>
+          ))}
+          <button type="button" className="fc-link" onClick={() => setPicking(null)}>cancel</button>
+        </div>
+      );
+    }
+
+    if (j) {
+      const r = findReason(kind, j.reason);
+      return (
+        <div className="tri-set">
+          <span className={`ov-tag tri-${j.state}`} title={STATE_HELP[j.state]}>
+            {STATE_LABEL[j.state]}
+          </span>
+          {r && <span className="tri-why" title={r.help}>{r.label}</span>}
+          <button type="button" className="fc-link" disabled={busy} onClick={undo}>undo</button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="tri-pick">
+        {statesFor(kind).map(st => (
+          <button key={st} type="button" className={`fc-link tri-opt tri-opt-${st}`} disabled={busy}
+                  title={STATE_HELP[st]}
+                  onClick={() => suppresses(st) ? setPicking(st) : apply(st)}>
+            {STATE_LABEL[st]}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div>
       {isAdmin ? (
@@ -322,7 +429,7 @@ export default function FunderMatchesView({
       ) : (
         <>
           <div className="ov-runbar">
-            {matches.length} opportunities · compiled{" "}
+            {visibleMatches.length} opportunities · compiled{" "}
             {new Date(matches[0].matched_at).toLocaleDateString()} · every match is a lead to
             confirm with the funder before applying
           </div>
@@ -331,11 +438,11 @@ export default function FunderMatchesView({
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
                 <th>Deadline</th><th>Ceiling</th><th>First seen</th>
-                <th>Verified</th><th>Why this client</th>
+                <th>Verified</th><th>Why this client</th>{isAdmin && <th>Decision</th>}
               </tr>
             </thead>
             <tbody>
-              {matches.map(m => (
+              {visibleMatches.map(m => (
                 <tr key={m.grant_id}>
                   <td className="fm-name">
                     {m.url
@@ -368,6 +475,11 @@ export default function FunderMatchesView({
                       <div className="fm-screen">Screen: {m.reason}</div>
                     )}
                   </td>
+                  {isAdmin && (
+                    <td className="fm-decide">
+                      <Triage kind="grant" id={m.grant_id} label={m.title || m.grant_id} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -400,6 +512,7 @@ export default function FunderMatchesView({
                 <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
                 <th>Evidence</th>{isAdmin && <th>Who reads it</th>}
                 <th>First seen</th><th>Verified</th><th>Why this client</th>
+                {isAdmin && <th>Decision</th>}
               </tr>
             </thead>
             <tbody>
@@ -495,6 +608,11 @@ export default function FunderMatchesView({
                           ? <span className="ov-muted" title="The funder's own stated focus, not a match explanation.">{f.focus}</span>
                           : <span className="ov-muted">—</span>}
                   </td>
+                  {isAdmin && (
+                    <td className="fm-decide">
+                      <Triage kind="funder" id={f.funder_id} label={f.name} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -517,6 +635,21 @@ export default function FunderMatchesView({
             </button>
           )}
         </>
+      )}
+
+      {isAdmin && (ruledOutFunders.length > 0 || ruledOutGrants.length > 0) && (
+        <div className="ov-note tri-hidden">
+          {/* Set aside, never silently. A shortlist that quietly drops rows is
+              impossible to audit, and a wrong judgment would be invisible. */}
+          {ruledOutGrants.length > 0 && `${ruledOutGrants.length} opportunit${ruledOutGrants.length === 1 ? "y" : "ies"}`}
+          {ruledOutGrants.length > 0 && ruledOutFunders.length > 0 && " and "}
+          {ruledOutFunders.length > 0 && `${ruledOutFunders.length} funder${ruledOutFunders.length === 1 ? "" : "s"}`}
+          {" "}ruled out by For Granted and hidden from these tables.
+          {" "}
+          <button type="button" className="fc-link" onClick={() => setShowRuledOut(v => !v)}>
+            {showRuledOut ? "hide them again" : "show them"}
+          </button>
+        </div>
       )}
 
       {isAdmin && (matches.length > 0 || funders.length > 0) && (

@@ -714,6 +714,38 @@ button.vis-dot.busy{opacity:.5}
 .jl-done{font-weight:600}
 .jl-done .jl-mark{background:#2f7d44}
 
+/* Triage: what For Granted has decided about a row.
+   Options stay quiet until hovered; a decision, once made, is always visible. */
+.fm-decide{min-width:150px}
+.tri-pick{display:flex;flex-wrap:wrap;gap:6px;opacity:.35;transition:opacity .12s ease}
+tr:hover .tri-pick,.tri-pick:focus-within{opacity:1}
+.tri-opt{font-size:11px;white-space:nowrap}
+.tri-opt-not_a_fit,.tri-opt-rejected{color:#b0402f}
+
+.tri-set{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tri-set .fc-link{font-size:11px;opacity:0;transition:opacity .12s ease}
+tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
+.tri-why{font-size:11px;color:var(--muted);cursor:help}
+
+.ov-tag.tri-target,.ov-tag.tri-pinned{background:#e5f3e8;color:#2f7d44}
+.ov-tag.tri-watching,.ov-tag.tri-under_review{background:#fbf1d9;color:#9a7a1e}
+.ov-tag.tri-approached{background:#e8eef6;color:#2f6f9a}
+.ov-tag.tri-not_a_fit,.ov-tag.tri-rejected{background:#f6e2df;color:#b0402f}
+
+/* Choosing why. Mandatory, so it is a step rather than an afterthought. */
+.tri-reasons{display:flex;flex-direction:column;gap:3px;align-items:flex-start;
+  background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px;
+  box-shadow:var(--shadow);min-width:210px}
+.tri-reasons-head{font-size:11px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.tri-reason{display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+  font:inherit;font-size:12px;background:none;border:none;border-radius:6px;
+  padding:4px 6px;cursor:pointer;color:var(--ink)}
+.tri-reason:hover{background:#eef5ee}
+.tri-global{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;
+  background:#e8eef6;color:#2f6f9a;border-radius:4px;padding:1px 5px;margin-left:auto}
+.tri-hidden{margin:0 0 14px}
+
 /* Readiness audit (admin diagnostic) */
 .ra-summary{font-size:12.5px;color:var(--muted);margin:0 0 12px}
 .ra-list{display:flex;flex-direction:column;gap:8px}
