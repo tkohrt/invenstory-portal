@@ -100,7 +100,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const r = await continueProfileBuild(tenantId, session.user.id, {
+    const r = await continueProfileBuild(
+      tenantId, session.user.id, tenant?.name ?? "this client", {
       onProgress: p => { void updateJob(tenantId, jobId, p); },
       onEvent: e => { void recordEvent(tenantId, jobId, e); },
     });
