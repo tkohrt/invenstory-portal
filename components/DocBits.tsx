@@ -103,6 +103,12 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   const del = async () => { setBusy("delete"); await deleteDocAction(d.id); setBusy(null); onClose(); router.refresh(); };
 
   const failed = d.status === "failed";
+  // A document still "processing" minutes after it was added was cut off
+  // mid-read (the function was killed at its time limit), and nothing will ever
+  // finish it. It needs the same way back as a failure.
+  const [openedAt] = useState(() => Date.now());
+  const stalled = (d.status === "processing" || d.status === "pending")
+    && openedAt - new Date(d.updated_at ?? d.created_at).getTime() > 3 * 60 * 1000;
 
   return (
     <Drawer onClose={onClose}>
@@ -136,9 +142,11 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
       <div className="kv"><div className="k">File type</div><div>{fileTypeLabel(d)}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
-      {failed && isAdmin && (
+      {(failed || stalled) && isAdmin && (
         <div className="metric-gap" style={{ marginTop: 6 }}>
-          This document couldn&rsquo;t be read. If the issue has been fixed, reprocess it.
+          {stalled
+            ? <>Reading this document stopped partway through and did not finish. Reprocess it to read it again.</>
+            : <>This document couldn&rsquo;t be read. If the issue has been fixed, reprocess it.</>}
           <div style={{ marginTop: 8 }}><button className="btn inline" onClick={reprocess} disabled={busy === "reprocess"}>{busy === "reprocess" ? "Reprocessing…" : "↻ Reprocess"}</button></div>
         </div>
       )}

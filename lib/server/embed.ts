@@ -48,3 +48,27 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[] |
   }
   return out.length === texts.length ? out : null;
 }
+
+/**
+ * Batch embeddings, several sub-batches in flight at once.
+ *
+ * Aligned to input order; an item is null when its sub-batch failed, so one bad
+ * batch costs eight chunks their vectors rather than the whole document. Built
+ * for ingestion: a 127-chunk transcript embedded one chunk at a time took the
+ * whole 60-second function budget on 30 September 2026 (Hope Town's onsite-week
+ * transcript) and the upload died with a 504.
+ */
+export async function embedTextsParallel(texts: string[], width = 4): Promise<(number[] | null)[]> {
+  const out: (number[] | null)[] = new Array(texts.length).fill(null);
+  const starts: number[] = [];
+  for (let i = 0; i < texts.length; i += EMBED_BATCH) starts.push(i);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(width, starts.length) }, async () => {
+    for (let k = next++; k < starts.length; k = next++) {
+      const i = starts[k];
+      const part = await embedBatchOnce(texts.slice(i, i + EMBED_BATCH));
+      if (part) part.forEach((v, j) => { out[i + j] = Array.isArray(v) ? v : null; });
+    }
+  }));
+  return out;
+}

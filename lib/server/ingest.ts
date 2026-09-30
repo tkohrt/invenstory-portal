@@ -3,7 +3,8 @@ import "server-only";
 // Runs inline after upload (docs at this scale take seconds). Scanned-PDF OCR
 // via Textract needs an S3 staging bucket + IAM change — journaled follow-up;
 // until then image-only PDFs fail loudly with a clear error, never silently.
-import { embedText } from "./embed";
+import { after } from "next/server";
+import { embedText, embedTextsParallel } from "./embed";
 import { db } from "./db";
 
 const EMBED_MODEL = "gte-small";
@@ -132,31 +133,50 @@ export async function processDocument(documentId: string): Promise<void> {
     if (chunks.length === 0) throw new Error("extraction produced no text");
     // replace any prior chunks (reprocess-safe)
     await db.from("document_chunk").delete().eq("document_id", documentId);  // tenant-safe: ingestion worker: chunks of the document being processed
-    let embedFailure: string | null = null;
-    for (const c of chunks) {
-      const { data: row, error } = await db.from("document_chunk").insert({
-        document_id: documentId, tenant_id: doc.tenant_id, ...c, embedding_model: EMBED_MODEL,
-      }).select("id").single();
+
+    // Chunks in bulk, then embeddings in parallel batches, then vectors in bulk.
+    // One round trip per chunk (insert, embed, insert) cost about half a second
+    // each, so a long transcript ran out the 60-second function budget before it
+    // could be marked ready (30 September 2026, a 127-chunk transcript: 504).
+    const rows: { id: string; chunk_index: number }[] = [];
+    for (let i = 0; i < chunks.length; i += 200) {
+      const { data, error } = await db.from("document_chunk").insert(
+        chunks.slice(i, i + 200).map(c => ({ document_id: documentId, tenant_id: doc.tenant_id, ...c, embedding_model: EMBED_MODEL })),
+      ).select("id, chunk_index");
       if (error) throw error;
-      if (embedFailure) continue; // text stays searchable; embeddings backfill via /api/ingest
-      try {
-        const vector = await embed(c.text);
-        const { error: eErr } = await db.from("chunk_embedding").insert({
-          chunk_id: row.id, tenant_id: doc.tenant_id, embedding: JSON.stringify(vector),
-        });
-        if (eErr) throw eErr;
-      } catch (e) {
-        embedFailure = e instanceof Error ? e.message.slice(0, 160) : "embedding failed";
-      }
+      rows.push(...((data ?? []) as { id: string; chunk_index: number }[]));
     }
+    const idByIndex = new Map(rows.map(r => [r.chunk_index, r.id]));
+
+    const vectors = await embedTextsParallel(chunks.map(c => c.text));
+    const embedded = chunks.flatMap((c, i) => {
+      const id = idByIndex.get(c.chunk_index); const v = vectors[i];
+      return id && v ? [{ chunk_id: id, tenant_id: doc.tenant_id, embedding: JSON.stringify(v) }] : [];
+    });
+    let embedFailure: string | null = null;
+    for (let i = 0; i < embedded.length; i += 100) {
+      const { error: eErr } = await db.from("chunk_embedding").insert(embedded.slice(i, i + 100));  // tenant-safe: each row carries tenant_id
+      if (eErr) { embedFailure = eErr.message.slice(0, 160); break; }
+    }
+    const missing = chunks.length - embedded.length;
+    if (!embedFailure && missing > 0) embedFailure = `${missing} of ${chunks.length} passages not yet embedded`;
+
     const snippet = chunks[0].text.slice(0, 220);
     await db.from("document").update({  // tenant-safe: ingestion worker: same document by id
       status: "ready", snippet,
+      // Text stays searchable either way; embeddings backfill via /api/ingest.
       error_detail: embedFailure ? `semantic index pending: ${embedFailure}` : null,
     }).eq("id", documentId);
-    // Best-effort: fold this new document's evidence into the tenant's readiness coverage
-    // so the Readiness Checklist updates on upload (full recompute still available via the button).
-    try { const { mergeDocumentIntoCoverage } = await import("./doc-extract"); await mergeDocumentIntoCoverage(documentId); } catch { /* non-fatal */ }
+
+    // Best-effort: fold this new document's evidence into the tenant's readiness
+    // coverage so the Readiness Checklist updates on upload (full recompute still
+    // available via the button). It is model calls over the whole document, so it
+    // runs after the response has been sent: a long transcript must not turn a
+    // successful upload into a timeout. Outside a request it simply runs inline.
+    const mergeCoverage = async () => {
+      try { const { mergeDocumentIntoCoverage } = await import("./doc-extract"); await mergeDocumentIntoCoverage(documentId); } catch { /* non-fatal */ }
+    };
+    try { after(mergeCoverage); } catch { await mergeCoverage(); }
   } catch (e) {
     await db.from("document").update({  // tenant-safe: ingestion worker: same document by id
       status: "failed", error_detail: e instanceof Error ? e.message.slice(0, 300) : "unknown error",
