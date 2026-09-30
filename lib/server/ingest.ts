@@ -138,34 +138,20 @@ export async function processDocument(documentId: string): Promise<void> {
     // One round trip per chunk (insert, embed, insert) cost about half a second
     // each, so a long transcript ran out the 60-second function budget before it
     // could be marked ready (30 September 2026, a 127-chunk transcript: 504).
-    const rows: { id: string; chunk_index: number }[] = [];
     for (let i = 0; i < chunks.length; i += 200) {
-      const { data, error } = await db.from("document_chunk").insert(
+      const { error } = await db.from("document_chunk").insert(
         chunks.slice(i, i + 200).map(c => ({ document_id: documentId, tenant_id: doc.tenant_id, ...c, embedding_model: EMBED_MODEL })),
-      ).select("id, chunk_index");
+      );
       if (error) throw error;
-      rows.push(...((data ?? []) as { id: string; chunk_index: number }[]));
     }
-    const idByIndex = new Map(rows.map(r => [r.chunk_index, r.id]));
-
-    const vectors = await embedTextsParallel(chunks.map(c => c.text));
-    const embedded = chunks.flatMap((c, i) => {
-      const id = idByIndex.get(c.chunk_index); const v = vectors[i];
-      return id && v ? [{ chunk_id: id, tenant_id: doc.tenant_id, embedding: JSON.stringify(v) }] : [];
-    });
-    let embedFailure: string | null = null;
-    for (let i = 0; i < embedded.length; i += 100) {
-      const { error: eErr } = await db.from("chunk_embedding").insert(embedded.slice(i, i + 100));  // tenant-safe: each row carries tenant_id
-      if (eErr) { embedFailure = eErr.message.slice(0, 160); break; }
-    }
-    const missing = chunks.length - embedded.length;
-    if (!embedFailure && missing > 0) embedFailure = `${missing} of ${chunks.length} passages not yet embedded`;
+    const { missing, total } = await indexMissingEmbeddings(documentId, doc.tenant_id, Date.now() + 35_000);
+    const embedFailure = missing > 0 ? `${missing} of ${total} passages not yet embedded` : null;
 
     const snippet = chunks[0].text.slice(0, 220);
     await db.from("document").update({  // tenant-safe: ingestion worker: same document by id
       status: "ready", snippet,
-      // Text stays searchable either way; embeddings backfill via /api/ingest.
-      error_detail: embedFailure ? `semantic index pending: ${embedFailure}` : null,
+      // Text stays readable either way; the drawer's "Finish indexing" completes the rest.
+      error_detail: embedFailure ? `${INDEX_PENDING}: ${embedFailure}` : null,
     }).eq("id", documentId);
 
     // Best-effort: fold this new document's evidence into the tenant's readiness
@@ -183,4 +169,41 @@ export async function processDocument(documentId: string): Promise<void> {
     }).eq("id", documentId);
     throw e;
   }
+}
+
+/** The error_detail prefix for a document whose text is in but whose semantic index is not complete. */
+export const INDEX_PENDING = "semantic index pending";
+
+/**
+ * Embed whichever of a document's passages have no vector yet, until the
+ * deadline. Safe to call repeatedly: it only ever fills gaps, and a vector
+ * written twice is ignored (chunk_id is the primary key).
+ */
+export async function indexMissingEmbeddings(
+  documentId: string, tenantId: string, deadline: number,
+): Promise<{ missing: number; total: number }> {
+  const { data: chunks, error } = await db.from("document_chunk")
+    .select("id, text").eq("tenant_id", tenantId).eq("document_id", documentId).order("chunk_index");
+  if (error) throw error;
+  const all = (chunks ?? []) as { id: string; text: string }[];
+  if (!all.length) return { missing: 0, total: 0 };
+  const have = new Set<string>();
+  for (let i = 0; i < all.length; i += 200) {
+    const { data } = await db.from("chunk_embedding").select("chunk_id")
+      .eq("tenant_id", tenantId).in("chunk_id", all.slice(i, i + 200).map(c => c.id));
+    for (const r of (data ?? []) as { chunk_id: string }[]) have.add(r.chunk_id);
+  }
+  const todo = all.filter(c => !have.has(c.id));
+  if (todo.length && Date.now() < deadline) {
+    const vectors = await embedTextsParallel(todo.map(c => c.text), { deadline });
+    const rows = todo.flatMap((c, i) => vectors[i]
+      ? [{ chunk_id: c.id, tenant_id: tenantId, embedding: JSON.stringify(vectors[i]) }] : []);
+    for (let i = 0; i < rows.length; i += 100) {
+      // tenant-safe: every row in the payload carries this document's tenant_id
+      const { error: eErr } = await db.from("chunk_embedding").upsert(rows.slice(i, i + 100), { onConflict: "chunk_id", ignoreDuplicates: true });
+      if (eErr) throw eErr;
+      for (const r of rows.slice(i, i + 100)) have.add(r.chunk_id);
+    }
+  }
+  return { missing: all.filter(c => !have.has(c.id)).length, total: all.length };
 }

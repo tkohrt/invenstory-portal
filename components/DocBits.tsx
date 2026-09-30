@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
-import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction } from "@/lib/server/doc-actions";
+import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction, finishIndexingAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 import Busy from "./Busy";
@@ -102,6 +102,28 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   };
   const del = async () => { setBusy("delete"); await deleteDocAction(d.id); setBusy(null); onClose(); router.refresh(); };
 
+  /**
+   * Keep indexing until nothing is missing. Each call works for up to about 45
+   * seconds and reports what is left, so a long transcript takes a few rounds;
+   * the loop stops when a round makes no progress rather than spinning.
+   */
+  const finishIndexing = async () => {
+    setBusy("index"); setMsg(null);
+    let last = Infinity;
+    try {
+      for (let round = 0; round < 8; round++) {
+        const r = await finishIndexingAction(d.id);
+        if (!r.ok) { setMsg(r.error); break; }
+        if (r.missing === 0) { setMsg(`Fully indexed: all ${r.total} passages are searchable.`); break; }
+        if (r.missing >= last) { setMsg(`${r.missing} of ${r.total} passages still need indexing and the last round made no progress. Try again in a minute.`); break; }
+        last = r.missing;
+        setMsg(`Indexing: ${r.total - r.missing} of ${r.total} passages done, continuing…`);
+      }
+    } catch { setMsg("Could not reach the portal. Check the connection and try again."); }
+    setBusy(null);
+    router.refresh();
+  };
+  const indexPending = d.status === "ready" && (d.error_detail ?? "").startsWith("semantic index pending");
   const failed = d.status === "failed";
   // A document still "processing" minutes after it was added was cut off
   // mid-read (the function was killed at its time limit), and nothing will ever
@@ -142,6 +164,17 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
       <div className="kv"><div className="k">File type</div><div>{fileTypeLabel(d)}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
+      {indexPending && (
+        <div className="metric-gap" style={{ marginTop: 6 }}>
+          The full text is in and already read for readiness and the Card Library. Some passages are not yet in the
+          semantic index that &ldquo;Ask your Inven(s)tory&rdquo; searches. When this is finished, this note disappears
+          and the status reads plain &ldquo;ready&rdquo;.
+          <div style={{ marginTop: 8 }}>
+            <button className="btn inline" onClick={finishIndexing} disabled={busy === "index"}>
+              {busy === "index" ? "Indexing\u2026" : "Finish indexing"}</button>
+          </div>
+        </div>
+      )}
       {(failed || stalled) && isAdmin && (
         <div className="metric-gap" style={{ marginTop: 6 }}>
           {stalled

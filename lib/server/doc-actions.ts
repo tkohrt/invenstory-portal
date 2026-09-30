@@ -89,3 +89,29 @@ export async function changeDocLayerAction(documentId: string, layer: "I" | "II"
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "change_layer", detail: `${documentId}: ${doc.layer} -> ${layer}` });
   revalidatePath("/invenstory"); revalidatePath("/search");
 }
+
+/**
+ * Finish a document's semantic index: embed only the passages that have no
+ * vector yet, for up to about 45 seconds. The drawer calls it again until
+ * nothing is left, so a long document finishes in a few presses at most and
+ * never re-reads or re-chunks anything.
+ */
+export async function finishIndexingAction(documentId: string): Promise<{ ok: true; missing: number; total: number } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "You are signed out. Sign in and try again." };
+  const supabase = await userClient();
+  const { data: doc } = await supabase.from("document").select("id, tenant_id, status").eq("id", documentId).single();
+  if (!doc) return { ok: false, error: "That document no longer exists." };
+  if (doc.status !== "ready") return { ok: false, error: "This document has not finished reading yet. Reprocess it first." };
+  const { indexMissingEmbeddings, INDEX_PENDING } = await import("./ingest");
+  try {
+    const { missing, total } = await indexMissingEmbeddings(documentId, doc.tenant_id, Date.now() + 45_000);
+    await db.from("document").update({
+      error_detail: missing > 0 ? `${INDEX_PENDING}: ${missing} of ${total} passages not yet embedded` : null,
+    }).eq("id", documentId).eq("tenant_id", doc.tenant_id);
+    revalidatePath("/invenstory"); revalidatePath("/search");
+    return { ok: true, missing, total };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Indexing failed. Try again." };
+  }
+}

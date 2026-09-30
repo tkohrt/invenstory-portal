@@ -50,25 +50,53 @@ export async function embedTexts(texts: string[]): Promise<(number[] | null)[] |
 }
 
 /**
- * Batch embeddings, several sub-batches in flight at once.
+ * Batch embeddings, a couple of sub-batches in flight, with retries.
  *
- * Aligned to input order; an item is null when its sub-batch failed, so one bad
- * batch costs eight chunks their vectors rather than the whole document. Built
- * for ingestion: a 127-chunk transcript embedded one chunk at a time took the
- * whole 60-second function budget on 30 September 2026 (Hope Town's onsite-week
- * transcript) and the upload died with a 504.
+ * Aligned to input order; an item stays null when its batch never succeeded.
+ * Built for ingestion: a 127-chunk transcript embedded one chunk at a time took
+ * the whole 60-second function budget on 30 September 2026 and the upload died
+ * with a 504. The first parallel version ran four batches at once and the
+ * embedding function refused most of them (96 of 154 passages left without a
+ * vector; its logs show status 546, its per-call resource limit), so this runs
+ * two at a time and then retries what failed in smaller batches until
+ * everything is embedded or the deadline passes. Whatever is left is finished
+ * later by indexMissingEmbeddings.
  */
-export async function embedTextsParallel(texts: string[], width = 4): Promise<(number[] | null)[]> {
+export async function embedTextsParallel(
+  texts: string[], opts: { width?: number; deadline?: number } = {},
+): Promise<(number[] | null)[]> {
+  const width = opts.width ?? 2;
+  const deadline = opts.deadline ?? Date.now() + 35_000;
   const out: (number[] | null)[] = new Array(texts.length).fill(null);
+  // Four passages per call on the first pass, half the older batch size: the
+  // 546s came on batches of eight.
+  const FIRST = 4;
   const starts: number[] = [];
-  for (let i = 0; i < texts.length; i += EMBED_BATCH) starts.push(i);
+  for (let i = 0; i < texts.length; i += FIRST) starts.push(i);
+  const run = async (i: number) => {
+    const part = await embedBatchOnce(texts.slice(i, i + FIRST));
+    if (part) part.forEach((v, j) => { out[i + j] = Array.isArray(v) ? v : null; });
+  };
+
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(width, starts.length) }, async () => {
-    for (let k = next++; k < starts.length; k = next++) {
-      const i = starts[k];
-      const part = await embedBatchOnce(texts.slice(i, i + EMBED_BATCH));
-      if (part) part.forEach((v, j) => { out[i + j] = Array.isArray(v) ? v : null; });
-    }
+    for (let k = next++; k < starts.length && Date.now() < deadline; k = next++) await run(starts[k]);
   }));
+
+  // Retry what did not come back, in smaller pieces each time. The failures on
+  // 30 September were the embedding function's own resource limit (status 546,
+  // "worker limit") on batches of eight long transcript passages, so the answer
+  // is less work per call, not only fewer calls at once: 2 passages, then 1.
+  for (const size of [2, 1, 1]) {
+    const missing = texts.map((t, i) => (out[i] === null && (t ?? "").trim() ? i : -1)).filter(i => i >= 0);
+    if (!missing.length) break;
+    for (let k = 0; k < missing.length; k += size) {
+      if (Date.now() >= deadline) return out;
+      const idx = missing.slice(k, k + size);
+      const part = await embedBatchOnce(idx.map(i => texts[i]));
+      if (part) part.forEach((v, j) => { out[idx[j]] = Array.isArray(v) ? v : null; });
+      else await new Promise(f => setTimeout(f, 300));
+    }
+  }
   return out;
 }
