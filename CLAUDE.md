@@ -26,6 +26,8 @@ Multi-tenant client portal for **For Granted** (grants-partnership firm; founder
 - Storage keys are `{tenant_id}/{document_id}/{version}`; storage RLS checks the first path segment. Files served via short-lived signed URLs.
 
 ## Migrations
+- **The database sleeps when idle.** After a quiet spell every Supabase connector query that touches the database (`execute_sql`, `list_tables`, `list_migrations`, `apply_migration`) times out with "Connection terminated due to connection timeout", while `get_project` still reports ACTIVE_HEALTHY. It is not a network restriction or connection exhaustion. One ordinary REST request wakes it (about 10 seconds the first time): `curl "https://dafofmvbbggrmyfnjspg.supabase.co/rest/v1/grant_question?select=slug&limit=1" -H "apikey: <publishable key from get_publishable_keys>"`. Do that before concluding the connector is broken.
+- **0039 and 0040 were applied through the Supabase connector** (`apply_migration`) on 30 Sept 2026 at Shane's explicit instruction in chat, and verified from it. That was a one-off approval, not a change to the rule below.
 - Numbered SQL in `supabase/migrations/`. **Applied to Supabase out-of-band (dashboard / CLI by Tyler)** — the sandbox has no DB creds (Supabase service key + embed secret are *sensitive/write-only* in Vercel and cannot be pulled). So: an agent here **cannot run migrations or write to the DB directly**; ship migration SQL for a human to apply, and do DB-touching client ops through the deployed app or a read-only connector.
 
 ## The Readiness engine (how an Inven(s)tory is graded)

@@ -16,7 +16,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // A Search Profile job's detail is For Granted's working view of a client's
   // Inven(s)tory, which the page deliberately never sends to a client. Reading
   // it by id would be a way around that.
-  if (job.kind === "search_profile" && session.role !== "admin") {
+  //
+  // The same holds for a Card Library build, which exists only for For Granted
+  // (Decision 1 of the Story Card Drafter spec: never shown to client accounts).
+  if ((job.kind === "search_profile" || job.kind === "cards") && session.role !== "admin") {
     return NextResponse.json({ error: "no such job" }, { status: 404 });
   }
   // The log is admin-only for every kind, which is stricter than the job row

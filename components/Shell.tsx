@@ -160,6 +160,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
             </Link>
             <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>
+            <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library"><span className="ic">▣</span> Card Library</Link>
           </div>
         )}
       </div>

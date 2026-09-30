@@ -1016,3 +1016,51 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 @media (prefers-reduced-motion: reduce){.skel-cell{animation:none;background:#eee}}
 .fm-owed{border-left:3px solid #c8b273;padding-left:11px;margin:0 0 14px}
 .sp-chain{border-left:3px solid #c9d6cc;padding-left:11px;margin:0 0 12px}
+
+/* ---------- Card Library (Story Card Drafter, Phase 1) ----------
+   Outline colour is the card's layer (public, internal, living voice); a dashed
+   outline is a thin card. Colour is never the only signal: the layer and status
+   are also written on every card. */
+.cl-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cl-primary{background:#1f4d2e}
+.cl-error{background:#fdecec;border:1px solid #f3c2c2;color:#8a1f1f;border-radius:9px;padding:9px 12px;margin:10px 0;font-size:13px}
+.cl-summary{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 4px;color:var(--muted);font-size:13px}
+.cl-summary b{color:var(--ink)}
+.cl-read{margin-left:auto}
+.cl-note{color:var(--muted);font-size:13px;margin:6px 0}
+.cl-empty{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;max-width:760px;margin-top:14px}
+.cl-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 14px}
+.cl-count{opacity:.7;font-size:12px}
+.cl-select{width:auto;padding:6px 10px}
+.cl-search{width:240px;max-width:100%;padding:7px 11px}
+.cl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.cl-card{background:var(--panel);border:2px solid var(--line);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.cl-card.cl-l1{border-color:var(--l1)} .cl-card.cl-l2{border-color:var(--l2)} .cl-card.cl-l3{border-color:var(--l3)}
+.cl-card.cl-thin{border-style:dashed}
+.cl-card.cl-retired{opacity:.62}
+.cl-card-head{display:flex;align-items:center;gap:8px;font-size:12px}
+.cl-kind{font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cl-layer{color:var(--muted)}
+.cl-spacer{flex:1}
+.cl-badge{border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
+.cl-badge-ok{border-color:#1f4d2e;color:#1f4d2e;font-weight:600}
+.cl-badge-off{color:#8a1f1f;border-color:#f3c2c2}
+.cl-statement{margin:0;font-size:14.5px;line-height:1.5}
+.cl-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+.cl-tags span{background:var(--bg);border-radius:6px;padding:1px 7px}
+.cl-link{background:none;border:none;color:var(--accent);font-size:12px;padding:0;margin-left:auto}
+.cl-evidence{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.cl-evidence li{border-left:3px solid var(--line);padding-left:9px}
+.cl-quote{font-size:13px;color:var(--ink)}
+.cl-src{font-size:12px;color:var(--muted)}
+.cl-card-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.cl-card-acts .btn{padding:6px 10px;font-size:13px}
+.cl-edit textarea{font-size:14px;line-height:1.5}
+.cl-dup{background:var(--accent-soft);border-radius:9px;padding:9px 11px}
+.cl-dup p{margin:4px 0 8px;font-size:13px}
+.cl-dup-head{font-size:12px;font-weight:700}
+.cl-refusals{margin-top:26px}
+.cl-refusal{margin:10px 0 16px}
+.cl-refusal h4{margin:0 0 6px;font-size:14px}
+.cl-refusal-ex{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 11px;margin-bottom:6px;font-size:13px}
+@media (max-width:640px){.cl-grid{grid-template-columns:1fr}.cl-read{margin-left:0}.cl-search{width:100%}}
