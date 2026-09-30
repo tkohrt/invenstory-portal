@@ -16,6 +16,9 @@ const TENANT_SCOPED = new Set([
   "match_run","match_triage","matched_funder","plant_state","profile_edit","search_profile","search_profile_doc",
   // Card Library (0039).
   "story_card","story_card_version","story_card_evidence","story_card_doc","story_card_variant",
+  // Drafter (0041). question_candidate is deliberately absent: For Granted IP
+  // pooled across clients with no tenant_id, admin-only, like ledger_overlay.
+  "draft_section","section_block","draft_snapshot","question_observation",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

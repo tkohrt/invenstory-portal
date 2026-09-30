@@ -148,11 +148,34 @@ export interface TenantSummary extends Tenant { doc_count: number; by_layer: Rec
 
 // ---- Grant Drafts ("In the Works") ----
 export type DraftStatus = "drafting" | "client_review" | "submitted" | "won" | "lost";
+export type DraftMode = "bracket" | "cards";
 export interface GrantDraft {
   id: string; tenant_id: string; title: string; funder: string | null;
   amount_cents: number | null; deadline: string | null; status: DraftStatus;
   body: string; outcome_note: string | null; created_by: string;
   created_at: string; updated_at: string;
+  // Card-mode drafts (0041). Optional so the page still renders against a
+  // database the migration has not reached: a missing mode reads as bracket.
+  mode?: DraftMode;
+  source_kind?: "url" | "pdf" | "docx" | "paste" | "match" | null;
+  source_url?: string | null;
+  source_filename?: string | null;
+  opportunity_ref?: { grant_id?: string; funder_id?: string } | null;
+  required_attachments?: string[] | null;
+  parse_state?: { truncated?: boolean; stats?: Record<string, number> } | null;
+  parsed_at?: string | null;
+  confirmed_at?: string | null;
+}
+/** One question from a funder's application (draft_section). */
+export interface DraftSection {
+  id: string; draft_id: string; sort_order: number;
+  prompt: string; guidance: string | null;
+  limit_value: number | null; limit_unit: "words" | "characters" | null;
+  criteria: string | null;
+  question_slugs: string[]; wanted_kinds: string[];
+  origin: "parsed" | "manual"; in_source: boolean;
+  match_reason: string | null; matched_prompt: string | null;
+  confirmed: boolean;
 }
 export interface DraftBracket {
   id: string; draft_id: string; tenant_id: string; label: string;

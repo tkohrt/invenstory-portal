@@ -21,7 +21,11 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
       <div className="page-head">
         <div><h2>In the Works</h2><p>Grant applications For Granted is preparing for {tenantName}. Answer the highlighted questions and they file straight into your Inven(s)tory.</p></div>
         <div className="spacer" />
-        {isAdmin && <button className="btn secondary" onClick={() => setCreating(true)}>＋ New draft</button>}
+        {isAdmin && <>
+          <button className="btn inline" onClick={() => router.push("/drafts/new")}
+            title="Bring in a funder's application and draft it from Story Cards. For Granted only.">＋ From a funder&rsquo;s application</button>
+          <button className="btn secondary" onClick={() => setCreating(true)}>＋ New draft</button>
+        </>}
       </div>
       {drafts.length === 0 && <div className="empty">No drafts yet.{isAdmin ? " Create one to get started." : " For Granted will post applications here as they're prepared."}</div>}
       <div className="draft-cols">
@@ -30,6 +34,11 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
           return (
             <div key={d.id} className="doc-card draft-card" onClick={() => router.push(`/drafts/${d.id}`)}>
               <span className={`status-pill ${d.status}`}>{STATUS_LABEL[d.status]}</span>
+              {d.mode === "cards" && (
+                <span className="ov-tag" style={{ marginLeft: 6 }} title="Built from the funder's application. For Granted only; the client does not see it.">
+                  {d.confirmed_at ? "Questions confirmed" : d.parsed_at ? "Questions to confirm" : "Reading the application"}
+                </span>
+              )}
               <h4 style={{ marginTop: 10 }}>{d.title}</h4>
               <div className="dc-meta">
                 {d.funder && <span>{d.funder}</span>}

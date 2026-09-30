@@ -19,7 +19,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   //
   // The same holds for a Card Library build, which exists only for For Granted
   // (Decision 1 of the Story Card Drafter spec: never shown to client accounts).
-  if ((job.kind === "search_profile" || job.kind === "cards") && session.role !== "admin") {
+  //
+  // And for reading a funder's application into a card-mode draft, which is the
+  // drafter itself (same decision).
+  if ((job.kind === "search_profile" || job.kind === "cards" || job.kind === "parse_application")
+      && session.role !== "admin") {
     return NextResponse.json({ error: "no such job" }, { status: 404 });
   }
   // The log is admin-only for every kind, which is stricter than the job row

@@ -60,6 +60,7 @@ Primary engine = **document-level extraction** (`lib/server/doc-extract.ts`):
 - `lib/server/doc-extract.ts` (primary readiness) · `lib/server/gap-agent.ts` (audit/legacy) · `lib/checklist.ts`
 - `lib/server/garden.ts` · `components/Shell.tsx` · `components/ReadinessCard.tsx` · `components/ReadinessAuditView.tsx` · `components/GardenPanel.tsx`
 - `lib/server/ingest.ts` · `scripts/check-tenant-scoping.mjs` · `supabase/migrations/`
+- Story Card Drafter, Phase 2 (bringing in a funder's application, 0041): `lib/application-parse.ts` (pure: windows, merge, limit and verbatim checks, bank-match validation) · `lib/application-text.ts` (PDF/Word/HTML to text, URL safety) · `lib/server/application-parse.ts` (the chained read + match job) · `lib/server/application-actions.ts` (save, confirm, reopen; writes `question_observation`) · `app/api/drafts/ingest` · `app/api/jobs/parse-application` · `/drafts/new`. Card-mode drafts are admin-only by RLS; the funder's text lives on `grant_draft.source_text` and is never filed into the Inven(s)tory. Sample applications for testing: `tests/fixtures/applications.ts`.
 
 ## When working here
 1. Clone into a folder named `invenstory-portal`.

@@ -8,7 +8,7 @@
 // Pure and free of `server-only` so the staleness rule and the copy can be
 // tested without a database.
 
-export type JobKind = "match" | "search_profile" | "readiness" | "rationales" | "cards";
+export type JobKind = "match" | "search_profile" | "readiness" | "rationales" | "cards" | "parse_application";
 export type JobStatus = "running" | "done" | "failed";
 
 /**
@@ -117,6 +117,7 @@ const WORKING: Record<JobKind, string> = {
   readiness: "Reading the Inven(s)tory",
   rationales: "Finishing the explanations",
   cards: "Building the Card Library",
+  parse_application: "Reading the application",
 };
 
 const DONE: Record<JobKind, string> = {
@@ -125,6 +126,7 @@ const DONE: Record<JobKind, string> = {
   readiness: "Finished reading",
   rationales: "Explanations finished",
   cards: "Card Library built",
+  parse_application: "Questions ready to confirm",
 };
 
 /**
@@ -237,6 +239,9 @@ const CAUSE: Record<JobKind, string> = {
   cards:
     "A long document is read in several passes, and each pass returns every card it "
     + "found at once, so nothing is reported until the whole document is back.",
+  parse_application:
+    "A long application is read in parts of about six pages, and each part returns "
+    + "all of its questions at once, so nothing is reported until the part is back.",
 };
 
 export function quietLine(q: QuietInput): string | null {
