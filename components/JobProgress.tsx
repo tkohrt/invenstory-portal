@@ -60,7 +60,9 @@ export function useJob(initial: Job | null) {
       // later, so the two orders are not the same and only one of them is what
       // a reader wants.
       afterRef.current = Math.max(afterRef.current, ...body.events.map(e => e.id));
-      setEvents(prev => [...prev, ...body.events!]
+      // De-duplicated by id: a page that polls AND drives its own chain can
+      // fetch the same new lines twice when the two reads overlap.
+      setEvents(prev => [...prev, ...body.events!.filter(e => !prev.some(p => p.id === e.id))]
         .sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id)
         .slice(-MAX_EVENTS));
     }

@@ -42,6 +42,10 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
   const router = useRouter();
   const { job, events, syncJob, resetEvents, starting, running, error: jobError, gaveUp } = useJob(initialJob);
   const [working, setWorking] = useState(false);
+  // True from the click until the server has acknowledged the build: the one
+  // moment when there is no job on screen yet. Shown at once, so a click never
+  // looks like it did nothing.
+  const [launching, setLaunching] = useState(false);
   const [chainError, setChainError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -94,9 +98,19 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
       try { await post({ stop: true, reason }); if (jobRef) await syncJob(jobRef); } catch { /* the message is what matters */ }
     };
     let cutShort = 0;
+    setLaunching(true);
     try {
+      // Acknowledged in well under a second. From here the job's own log is
+      // polled every two seconds, so each document shows as it is read rather
+      // than when a 40-second stage finishes.
+      const b = await post({ begin: true, restart });
+      const br = await b.json().catch(() => ({}));
+      if (!b.ok) throw new Error(br.error ?? "Could not start the build.");
+      if (br.jobId) { jobRef = br.jobId; await syncJob(br.jobId).catch(() => null); }
+      setLaunching(false);
+
       for (let pass = 0; pass < 40; pass++) {
-        const res = await post({ restart: restart && pass === 0 });
+        const res = await post({ restart: restart && pass === 0, begun: true });
         const r = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (r.error) throw new Error(r.error);
@@ -112,6 +126,8 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         if (r.jobId) { jobRef = r.jobId; await syncJob(r.jobId).catch(() => null); }
         if (r.complete) { router.refresh(); return; }
         if (r.busy) { await new Promise(f => setTimeout(f, 3000)); continue; }
+        // Keep the "documents read" count on the page moving between stages.
+        router.refresh();
         if ((r.read ?? 0) === 0) {
           await stop(`Stopped after reading ${r.done} of ${r.total} documents: a pass read nothing while `
             + "documents were still outstanding. What has been read is saved.");
@@ -122,6 +138,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
     } catch (e) {
       await stop(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
     } finally {
+      setLaunching(false);
       setWorking(false);
     }
   }, [router, syncJob, resetEvents]);
@@ -158,8 +175,9 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         <div className="spacer" />
         <div className="cl-actions">
           {nothingYet ? (
-            <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void runChain(false)}>
-              Build the Card Library
+            <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void runChain(false)}
+              aria-busy={busy}>
+              {busy ? "Building\u2026" : "Build the Card Library"}
             </button>
           ) : (
             <>
@@ -186,7 +204,17 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         </div>
       </div>
 
-      {!dismissed && (job || jobError) && (
+      {launching && (
+        <div className="jp jp-working" role="status" aria-live="polite">
+          <div className="jp-head">
+            <span className="jp-spin" aria-hidden="true" />
+            <strong>Starting {possessive(orgName)} Card Library build</strong>
+          </div>
+          <div className="jp-detail">Request received. Each document will appear below as it is read.
+            If the database has been idle it can take a few seconds to wake.</div>
+        </div>
+      )}
+      {!launching && !dismissed && (job || jobError) && (
         <JobProgress job={job} events={events} lostContact={gaveUp} onDismiss={() => setDismissed(true)} />
       )}
       {(chainError || jobError) && <div className="cl-error">{chainError ?? jobError}</div>}
@@ -208,7 +236,9 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
           <p>No cards yet. Building reads each ready document once and keeps only claims backed by a verbatim quote.
             Anything whose quote is not in its document, whose figures are not in its quote, or which describes a
             competitor is refused, and the refusals are listed here so the checks can be judged too.</p>
-          <p>Expect about a minute per two or three documents. Everything read is kept, so closing the page pauses
+          <p>Expect about a minute per two or three documents. Each document appears in the progress log as it is
+            read; the cards themselves appear here once the last one is done, because that is when cards found in
+            different documents are recognised as the same claim. Everything read is kept, so closing the page pauses
             the build rather than losing it.</p>
         </div>
       ) : (

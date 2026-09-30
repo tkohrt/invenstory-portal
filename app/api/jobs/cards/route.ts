@@ -9,7 +9,8 @@
 // client's story and is never shown to a client account (Decision 1 of the
 // Story Card Drafter spec).
 //
-// Three requests besides "carry on":
+// Four requests besides "carry on":
+//   begin     create or rejoin the job and answer at once, reading nothing
 //   restart   forget what was read and read every document again (paid)
 //   remerge   rebuild the library from what is already read (free)
 //   stop      mark the chain ended, keeping everything read
@@ -67,20 +68,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ jobId, stopped: true, complete: false, ...await cardBuildProgress(tenantId) });
   }
 
+  const opening = () => recordEvent(tenantId, jobId, {
+    kind: "phase",
+    text: `Starting the Card Library build for ${orgName}. Each document is read once for claims a `
+      + "writer could put in front of a funder, each proven by a quote. The code then refuses any card "
+      + "whose quote is not in its document, whose figures are not in its quote, or which describes a competitor.",
+  });
+
+  /**
+   * Acknowledge at once, read nothing.
+   *
+   * A reading stage runs for up to 42 seconds before it can answer, and the page
+   * learned the job existed only from that answer: on 30 September that was a
+   * 25-second pause after pressing Build with nothing on screen, long enough to
+   * wonder whether the click registered. The page now asks for this first, gets
+   * the job id back in well under a second, and watches the job's own log while
+   * the stages run, so the first document read appears as it happens.
+   */
+  if (body?.begin) {
+    if (!existing || body?.restart) await opening();
+    return NextResponse.json({ jobId, begun: true, ...await cardBuildProgress(tenantId) });
+  }
+
   if (!await claimJob(tenantId, jobId)) {
     return NextResponse.json({ jobId, busy: true, complete: false, ...await cardBuildProgress(tenantId) });
   }
 
   if (body?.restart) await clearCardDocs(tenantId);
 
-  if (!existing || body?.restart) {
-    await recordEvent(tenantId, jobId, {
-      kind: "phase",
-      text: `Starting the Card Library build for ${orgName}. Each document is read once for claims a `
-        + "writer could put in front of a funder, each proven by a quote. The code then refuses any card "
-        + "whose quote is not in its document, whose figures are not in its quote, or which describes a competitor.",
-    });
-  }
+  // A caller that did not begin first still gets its opening line.
+  if (!body?.begun && (!existing || body?.restart)) await opening();
 
   try {
     const { data: prof } = await db.from("eligibility_profile")
