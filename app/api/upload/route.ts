@@ -1,14 +1,15 @@
+// Upload with the file in the request body.
+//
+// Kept for small files and any caller that still posts the file itself, but
+// Vercel refuses request bodies over 4.5 MB before this runs (a 413 the portal
+// never sees). The upload form uses /api/upload/sign and /api/upload/complete
+// instead, which send the file straight to storage.
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
-import { processDocument } from "@/lib/server/ingest";
-import { markStaleOnUpload } from "@/lib/server/artifacts";
-import { notifyClientUpload } from "@/lib/server/notify";
-import { EXT_TO_KIND } from "@/lib/uploads";
+import { fileUploadedDocument, kindFor, storageKeyFor, MAX_UPLOAD_BYTES } from "@/lib/server/upload";
 
 export const maxDuration = 60;
-
-const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -21,42 +22,20 @@ export async function POST(req: NextRequest) {
   const tags = String(form.get("tags") ?? "").split(",").map(t => t.trim()).filter(Boolean);
 
   if (!file) return NextResponse.json({ error: "file required" }, { status: 400 });
-  if (file.size > MAX_BYTES) return NextResponse.json({ error: "file too large (25 MB max)" }, { status: 400 });
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "file too large (25 MB max)" }, { status: 400 });
   if (!["I", "II", "III"].includes(layer)) return NextResponse.json({ error: "layer required" }, { status: 400 });
-  const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-  const docKind = EXT_TO_KIND[ext];
-  if (!docKind) return NextResponse.json({ error: `unsupported file type .${ext}` }, { status: 400 });
+  if (!kindFor(file.name)) return NextResponse.json({ error: `unsupported file type .${(file.name.split(".").pop() ?? "").toLowerCase()}` }, { status: 400 });
 
   const tenantId = session.tenantId;
   const docId = crypto.randomUUID();
-  const storageKey = `${tenantId}/${docId}/1`;
   const buffer = Buffer.from(await file.arrayBuffer());
-
   const { error: upErr } = await db.storage.from("documents")
-    .upload(storageKey, buffer, { contentType: file.type || "application/octet-stream" });
+    .upload(storageKeyFor(tenantId, docId), buffer, { contentType: file.type || "application/octet-stream" });
   if (upErr) return NextResponse.json({ error: `storage: ${upErr.message}` }, { status: 500 });
 
-  const { error: docErr } = await db.from("document").insert({
-    id: docId, tenant_id: tenantId, title: title || file.name, layer,
-    original_name: file.name,
-    storage_key: storageKey, mime_type: file.type || "application/octet-stream",
-    doc_kind: docKind, status: "pending", uploaded_by: session.user.id,
-    source: session.role === "admin" ? "for_granted" : "client",
+  const r = await fileUploadedDocument({
+    tenantId, role: session.role, userId: session.user.id, userName: session.user.full_name,
+    docId, filename: file.name, contentType: file.type, title, layer, tags,
   });
-  if (docErr) return NextResponse.json({ error: docErr.message }, { status: 500 });
-  await db.from("document_version").insert({
-    document_id: docId, tenant_id: tenantId, version: 1, storage_key: storageKey, uploaded_by: session.user.id,
-  });
-  if (tags.length) await db.from("document_tag").insert(
-    tags.map(tag => ({ document_id: docId, tenant_id: tenantId, tag })));
-
-  try { await processDocument(docId); } catch { /* status=failed already recorded; card shows it */ }
-  // New material invalidates approved Story Intelligence -> stale (offers regenerate).
-  await markStaleOnUpload(tenantId);
-  // Notify the For Granted team when a client (not an admin) uploads.
-  if (session.role === "client") {
-    const { data: t } = await db.from("tenant").select("name").eq("id", tenantId).single();
-    await notifyClientUpload({ org: t?.name ?? "a client", uploader: session.user.full_name, title: title || file.name, layer });
-  }
-  return NextResponse.json({ id: docId });
+  return "error" in r ? NextResponse.json({ error: r.error }, { status: r.status }) : NextResponse.json({ id: r.id });
 }

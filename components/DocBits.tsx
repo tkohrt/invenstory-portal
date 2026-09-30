@@ -6,6 +6,7 @@ import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocActi
 import type { DocumentWithTags, Layer } from "@/lib/types";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 import Busy from "./Busy";
+import { browserClient } from "@/lib/supabase-browser";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
   I: { name: "Public Story", desc: "Everything the world can see", color: "var(--l1)", cls: "l1" },
@@ -210,11 +211,28 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
     if (!file) { setError("Choose a file first."); return; }
     if (!isAccepted(file.name)) { setError(`That file type isn\u2019t supported yet. Accepted: ${ACCEPTED_LABEL}. Other types can be emailed to ${SUPPORT_EMAIL}.`); return; }
     setBusy(true); setError(null);
-    const fd = new FormData();
-    fd.set("file", file); fd.set("title", title); fd.set("layer", layer); fd.set("tags", tags);
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    // The file goes straight to storage with a one-time URL. Posting it to the
+    // portal hit Vercel's 4.5 MB request limit (a bare 413) well below the
+    // 25 MB this form promises.
+    try {
+      const json = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const s = await fetch("/api/upload/sign", json({ filename: file.name, size: file.size }));
+      const sb = await s.json().catch(() => ({}));
+      if (!s.ok) throw new Error(sb.error ?? `Upload failed (${s.status})`);
+      const { error: upErr } = await browserClient().storage.from("documents")
+        .uploadToSignedUrl(sb.path, sb.token, file, { contentType: file.type || "application/octet-stream" });
+      if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
+      const c = await fetch("/api/upload/complete", json({
+        docId: sb.docId, filename: file.name, contentType: file.type, title, layer, tags,
+      }));
+      const cb = await c.json().catch(() => ({}));
+      if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
+    } catch (e) {
+      setBusy(false);
+      setError(e instanceof Error ? e.message : "Upload failed.");
+      return;
+    }
     setBusy(false);
-    if (!res.ok) { const b = await res.json().catch(() => ({})); setError(b.error ?? `Upload failed (${res.status})`); return; }
     onDone(); onClose();
   };
 
