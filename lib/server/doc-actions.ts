@@ -36,17 +36,23 @@ export async function renameDocAction(documentId: string, title: string) {
 }
 
 // Reprocess a document through ingestion (clears stale failures after a fix).
-export async function reprocessDocAction(documentId: string) {
+// Returns the reason rather than throwing it. In production Next.js replaces the
+// message of an error thrown from a server action with a generic one, so a
+// scanned PDF surfaced as "Minified React error #441" instead of saying it has
+// no text to read (30 September 2026, Hope Town's 990).
+export async function reprocessDocAction(documentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await getSession();
-  if (!session) throw new Error("unauthorized");
+  if (!session) return { ok: false, error: "You are signed out. Sign in and try again." };
   const supabase = await userClient();
   const { data: doc } = await supabase.from("document").select("id, tenant_id").eq("id", documentId).single();
-  if (!doc) throw new Error("not found");
+  if (!doc) return { ok: false, error: "That document no longer exists." };
   const { processDocument } = await import("./ingest");
+  let failure: string | null = null;
   try { await processDocument(documentId); }
-  catch (e) { throw new Error(e instanceof Error ? e.message : "reprocess failed"); }
+  catch (e) { failure = e instanceof Error ? e.message : "Reading the document failed."; }
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "reprocess_doc", detail: documentId });
   revalidatePath("/invenstory"); revalidatePath("/search");
+  return failure ? { ok: false, error: failure } : { ok: true };
 }
 
 // Delete a document entirely: storage object + DB row (cascades chunks,

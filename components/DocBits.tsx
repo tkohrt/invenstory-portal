@@ -93,8 +93,11 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   const saveTitle = async () => { setBusy("title"); await renameDocAction(d.id, title); setBusy(null); setRenaming(false); router.refresh(); };
   const reprocess = async () => {
     setBusy("reprocess"); setMsg(null);
-    try { await reprocessDocAction(d.id); setMsg("Reprocessed — refreshing."); router.refresh(); }
-    catch (e) { setMsg(e instanceof Error ? e.message : "Reprocess failed"); }
+    try {
+      const r = await reprocessDocAction(d.id);
+      setMsg(r.ok ? "Reprocessed, refreshing." : r.error);
+      router.refresh();
+    } catch { setMsg("Could not reach the portal to reprocess. Check the connection and try again."); }
     setBusy(null);
   };
   const del = async () => { setBusy("delete"); await deleteDocAction(d.id); setBusy(null); onClose(); router.refresh(); };

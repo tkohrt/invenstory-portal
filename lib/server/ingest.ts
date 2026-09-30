@@ -49,7 +49,7 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
     const perPage = Array.isArray(res.text) ? res.text : [res.text];
     const pages = perPage.map((t, i) => ({ page: i + 1, text: t ?? "" }));
     const totalChars = pages.reduce((n, p) => n + p.text.trim().length, 0);
-    if (totalChars < 20) throw new Error("No extractable text — likely a scanned/image PDF. OCR (Textract) integration pending.");
+    if (totalChars < 20) throw new Error("This PDF is a scan: its pages are pictures with no text in them, and the portal cannot read scans yet. Upload a text-based copy instead (for a 990, the e-filed PDF from ProPublica Nonprofit Explorer or the IRS usually has text).");
     return pages;
   }
   if (docKind === "docx") {
