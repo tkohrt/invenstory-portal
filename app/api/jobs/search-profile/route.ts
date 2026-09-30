@@ -80,6 +80,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ jobId, stopped: true, complete: false, ...await profileBuildProgress(tenantId) });
   }
 
+  const opening = async () => {
+    await recordEvent(tenantId, jobId, {
+      kind: "phase",
+      text: `Starting the Funder Matching Profile build for ${tenant?.name ?? "this client"}.`,
+    });
+    await recordEvent(tenantId, jobId, { kind: "phase", text: PROFILE_INTRO });
+  };
+
+  /**
+   * Acknowledge at once, read nothing.
+   *
+   * A reading stage runs for up to 42 seconds before it can answer, and the
+   * page learned the job existed only from that answer, so pressing Build was
+   * followed by silence. The page now asks for this first, gets the job id back
+   * in well under a second, and follows the job's own log while stages run.
+   * The same fix as the Card Library build (30 September).
+   */
+  if (body?.begin) {
+    if (!existing || body?.restart) await opening();
+    return NextResponse.json({ jobId, begun: true, complete: false, ...await profileBuildProgress(tenantId) });
+  }
+
   if (!await claimJob(tenantId, jobId)) {
     const p = await profileBuildProgress(tenantId);
     return NextResponse.json({ jobId, busy: true, complete: false, ...p });
@@ -91,13 +113,8 @@ export async function POST(req: Request) {
 
   // The opening of the log, written once per run rather than once per stage.
   // A build is several invocations and only the first one is a beginning.
-  if (!existing || body?.restart) {
-    await recordEvent(tenantId, jobId, {
-      kind: "phase",
-      text: `Starting the Funder Matching Profile build for ${tenant?.name ?? "this client"}.`,
-    });
-    await recordEvent(tenantId, jobId, { kind: "phase", text: PROFILE_INTRO });
-  }
+  // A caller that did not begin first still gets its opening lines.
+  if (!body?.begun && (!existing || body?.restart)) await opening();
 
   try {
     const r = await continueProfileBuild(

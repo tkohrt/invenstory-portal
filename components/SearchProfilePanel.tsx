@@ -59,6 +59,9 @@ export default function SearchProfilePanel({
   const [dismissed, setDismissed] = useState(false);
   const [chainError, setChainError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  // From the click until the server acknowledges: the one moment with no job
+  // on screen. Shown at once so a click never looks like it did nothing.
+  const [launching, setLaunching] = useState(false);
   // Partial work exists and no profile was assembled from it. Server truth on
   // load, updated by the chain as it goes.
   const [partial, setPartial] = useState(!profile && stored.done > 0);
@@ -105,13 +108,26 @@ export default function SearchProfilePanel({
     let cutShort = 0;
 
     try {
+      // Acknowledged in well under a second; from then on the job's log is
+      // polled, so each document shows as it is read.
+      setLaunching(true);
+      const b = await fetch("/api/jobs/search-profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ begin: true, restart }),
+      });
+      const br = await b.json().catch(() => ({}));
+      if (!b.ok) throw new Error(br.error ?? "Could not start the build.");
+      if (br.jobId) { jobRef = br.jobId; await syncJob(br.jobId).catch(() => null); }
+      setLaunching(false);
+
       // Bounded. A loop that cannot terminate is worse than one that stops
       // early and says so.
       for (let pass = 0; pass < 40; pass++) {
         const res = await fetch("/api/jobs/search-profile", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ restart: restart && pass === 0 }),
+          body: JSON.stringify({ restart: restart && pass === 0, begun: true }),
         });
         const r = await res.json().catch(() => ({}));
 
@@ -158,6 +174,7 @@ export default function SearchProfilePanel({
     } catch (e) {
       await stop(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
     } finally {
+      setLaunching(false);
       setWorking(false);
     }
   }, [router, syncJob, resetEvents]);
@@ -418,8 +435,19 @@ export default function SearchProfilePanel({
 
       {/* One box now. The staging note and the transient error text used to sit
           beside it saying overlapping things; both are lines in the log. */}
-      <JobProgress job={dismissed ? null : job} events={events}
-                   onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+      {launching ? (
+        <div className="jp jp-working" role="status" aria-live="polite">
+          <div className="jp-head">
+            <span className="jp-spin" aria-hidden="true" />
+            <strong>Starting the Funder Matching Profile build</strong>
+          </div>
+          <div className="jp-detail">Request received. Each document will appear below as it is read.
+            If the database has been idle it can take a few seconds to wake.</div>
+        </div>
+      ) : (
+        <JobProgress job={dismissed ? null : job} events={events}
+                     onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
+      )}
 
       {/* Kept for the case the log cannot cover: a failure to START, and a stop
           whose write to the row did not land. Anything the row knows about is

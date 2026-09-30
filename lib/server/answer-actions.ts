@@ -5,7 +5,6 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { generateAnswers } from "./answers";
 
 async function requireSession() {
   const s = await getSession();
@@ -18,11 +17,16 @@ async function requireAdmin() {
   return s;
 }
 
-export async function generateAnswersAction() {
-  const s = await requireSession();
-  const { data: t } = await db.from("tenant").select("org_type").eq("id", s.tenantId).single();
-  await generateAnswers(s.tenantId, (t?.org_type as "nonprofit" | "startup" | null) ?? null);
-  revalidatePath("/answer-library");
+/**
+ * Paused on 30 September 2026 (Story Card Drafter spec, section 16).
+ *
+ * Every export of a "use server" module is a public endpoint, so removing the
+ * button is not enough: this refuses outright. The generator itself stays in
+ * lib/server/answers.ts until Standard Answers ship in Phase 3, then goes.
+ */
+export async function generateAnswersAction(): Promise<never> {
+  await requireSession();
+  throw new Error("Answer generation is paused while the Answer Library moves to Story Cards.");
 }
 
 export async function editAnswerAction(questionId: string, field: "short_answer" | "long_answer", value: string) {

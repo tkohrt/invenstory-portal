@@ -1,9 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generateAnswersAction, editAnswerAction, markAnswerReviewedAction } from "@/lib/server/answer-actions";
+import { editAnswerAction, markAnswerReviewedAction } from "@/lib/server/answer-actions";
 import type { AnswerLibraryItem, Completeness } from "@/lib/types";
-import Busy from "./Busy";
 
 const CHIP: Record<Completeness, { label: string; cls: string }> = {
   strong: { label: "Strong", cls: "al-chip strong" },
@@ -80,14 +79,11 @@ function Card({ item }: { item: AnswerLibraryItem }) {
 }
 
 export default function AnswerLibraryView({ items, isAdmin, tenantName }: { items: AnswerLibraryItem[]; isAdmin: boolean; tenantName: string }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
   const answered = items.filter(i => i.answer && i.answer.completeness !== "missing").length;
   const reviewed = items.filter(i => i.answer?.status === "published").length;
   const total = items.length;
   const pct = total ? Math.round((answered / total) * 100) : 0;
 
-  const generate = () => start(async () => { await generateAnswersAction(); router.refresh(); });
 
   const cats = [...new Set(items.map(i => i.question.category))];
 
@@ -103,12 +99,16 @@ export default function AnswerLibraryView({ items, isAdmin, tenantName }: { item
             high-quality draft instead of a blank page.
           </p>
         </div>
-        <button className="btn" onClick={generate} disabled={pending}>{pending ? "Generating…" : "Generate drafts"}</button>
-        {pending && (
-          <Busy
-            label="Drafting answers from the Inven(s)tory"
-            hint="Each answer is grounded in your own documents, which takes a moment per question."
-          />
+        {/* Generation is paused (30 September 2026). Answers here will be built
+            from the Card Library in the drafter's Standard Answers (Story Card
+            Drafter spec, section 16), where every sentence traces to a verified
+            quote. The old generator summarised retrieved passages with no such
+            check, so it stays off rather than filling this page with drafts that
+            would have to be rewritten. Existing answers can still be edited. */}
+        {isAdmin && (
+          <p className="al-paused" style={{ maxWidth: 360, fontSize: 13, color: "var(--muted)", margin: 0 }}>
+            New drafts are paused while this library moves to Story Cards. Existing answers can still be edited and reviewed.
+          </p>
         )}
       </div>
 

@@ -73,9 +73,36 @@ export function speakerLabels(text: string): string[] {
   return out;
 }
 
-/** Looks like a transcript: several turns from more than one speaker. */
+/**
+ * Looks like a transcript: a few people taking many turns each.
+ *
+ * "Several turns from more than one label" was the old rule, and on 30
+ * September it called a master services agreement a meeting with 23 speakers
+ * and a proposal a meeting with 12. Forms and contracts are full of lines like
+ * "Date:", "Name:", "Objective 3:" and "Subtotal:", and each of those looks
+ * exactly like a speaker turn. What they do not do is TALK: a heading appears
+ * once or twice, while a speaker comes back again and again.
+ *
+ * Measured on every multi-label document in the portal that day: the real
+ * calls had three speakers holding 100% of 157 to 248 turns; the misfires had
+ * their top three labels holding 27% to 75% of turns, with most labels never
+ * repeating. So a transcript is either dominated by its three busiest
+ * speakers, or a longer meeting in which everybody speaks more than once.
+ *
+ * Getting this wrong in the other direction is cheap: a transcript missed here
+ * is read like any other document, just without speaker attribution. Getting
+ * it wrong this way costs a model call per document and invents "speakers".
+ */
 export function looksLikeTranscript(text: string): boolean {
-  return speakerLabels(text).length >= 2 && speakerTurns(text).length >= 4;
+  const turns = speakerTurns(text);
+  if (turns.length < 4) return false;
+  const counts = new Map<string, number>();
+  for (const t of turns) counts.set(t.label, (counts.get(t.label) ?? 0) + 1);
+  if (counts.size < 2) return false;
+  const sorted = [...counts.values()].sort((a, b) => b - a);
+  const topThree = sorted.slice(0, 3).reduce((n, c) => n + c, 0) / turns.length;
+  if (topThree >= 0.8) return true;
+  return turns.length >= 12 && sorted.every(c => c >= 2);
 }
 
 /** Who was speaking at this position in the text, if anybody. */

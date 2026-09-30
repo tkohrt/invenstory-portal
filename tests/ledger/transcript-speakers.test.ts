@@ -49,6 +49,33 @@ describe("finding the turns", () => {
     expect(looksLikeTranscript(CALL)).toBe(true);
   });
 
+  it("does not mistake a contract's field labels for speakers", () => {
+    // The shape of the Sentara services agreement that was misread on 30 September:
+    // many labels, most appearing once, a few repeated across schedules.
+    const contract = [
+      "Date: April 1, 2026", "Name: Jane Roe", "Title: VP Operations",
+      "Focus: Care coordination", "Key Activities: Onboarding", "Weeks: 1-4",
+      "Date: May 1, 2026", "Name: John Doe", "Title: Director",
+      "Focus: Pilot evaluation", "Key Activities: Reporting", "Weeks: 5-8",
+      "Term: Twelve months", "Fees: As in Schedule B", "Governing Law: Ohio",
+      "Confidentiality: Both parties", "Notices: In writing",
+    ].join("\n");
+    expect(looksLikeTranscript(contract)).toBe(false);
+  });
+
+  it("does not mistake a proposal's numbered objectives for speakers", () => {
+    const proposal = ["Objective 1: Reduce readmissions", "Objective 2: Train staff",
+      "Objective 3: Expand to two sites", "Step 5: Evaluate", "Objective 4: Report",
+      "Step 5: Publish findings", "Objective 5: Sustain"].join("\n");
+    expect(looksLikeTranscript(proposal)).toBe(false);
+  });
+
+  it("still recognises a larger meeting in which everyone speaks more than once", () => {
+    const names = ["Ann", "Bo", "Cy", "Di", "Ed", "Flo"];
+    const meeting = [0, 1, 2].flatMap(() => names.map(n => `${n}: I think we should keep going.`)).join("\n");
+    expect(looksLikeTranscript(meeting)).toBe(true);
+  });
+
   it("places a position with the speaker who was talking at the time", () => {
     const turns = speakerTurns(CALL);
     expect(speakerAt(turns, CALL.indexOf("mentored"))).toBe("Speaker 1");

@@ -1,20 +1,15 @@
-// Trigger Answer Library generation for the active tenant (admin, or the
-// tenant's own client). Mirrors /api/si/generate.
-import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/server/session";
-import { db } from "@/lib/server/db";
-import { generateAnswers } from "@/lib/server/answers";
+// Answer Library generation: PAUSED on 30 September 2026.
+//
+// The Answer Library will be built from the Card Library in the drafter's
+// Standard Answers (Story Card Drafter spec, section 16), where every sentence
+// traces to a verified quote. The generator this route called summarised
+// retrieved passages with no such check. It answers 410 Gone rather than
+// running, and the generator code is removed once Phase 3 ships.
+import { NextResponse } from "next/server";
 
-export const maxDuration = 120;
-
-export async function POST(_req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  try {
-    const { data: t } = await db.from("tenant").select("org_type").eq("id", session.tenantId).single();
-    const r = await generateAnswers(session.tenantId, (t?.org_type as "nonprofit" | "startup" | null) ?? null);
-    return NextResponse.json(r);
-  } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "failed" }, { status: 500 });
-  }
+export async function POST() {
+  return NextResponse.json(
+    { error: "Answer generation is paused while the Answer Library moves to Story Cards." },
+    { status: 410 },
+  );
 }
