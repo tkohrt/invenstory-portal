@@ -1116,8 +1116,6 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ws-nav{display:flex;gap:8px;align-items:center;margin:0 0 12px}
 .ws-pills{display:flex;gap:5px;flex-wrap:wrap;flex:1}
 .ws-pill{min-width:30px;height:28px;border-radius:7px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
-.ws-pill.ws-drafting{border-color:#c9b77e;color:#7a6320;background:#fffbef}
-.ws-pill.ws-done{border-color:#1f4d2e;color:#fff;background:#1f4d2e}
 .ws-pill.active{outline:2px solid var(--ink);outline-offset:1px}
 .ws-question{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 15px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
 .ws-q-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -1148,7 +1146,6 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ws-overlay{box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:360px;cursor:grabbing}
 .ws-answer{min-height:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px}
 .ws-answer.ws-over{border-color:#1f4d2e;background:#f6faf6}
-.ws-empty{color:var(--muted);font-size:13.5px;border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center}
 .ws-std{margin-top:12px;text-align:left;background:#eef5ef;border-radius:9px;padding:10px 12px;color:var(--ink)}
 .ws-std-text{font-size:13px;color:var(--muted);margin:6px 0 8px;white-space:pre-wrap}
 .ws-dropzone{font-size:12px;color:var(--muted);text-align:center;padding:4px}
@@ -1181,8 +1178,6 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .cl-sens .cl-link{margin-left:6px}
 
 /* Workspace, Phase 3.1: optional questions, new questions, seams. */
-.ws-pill.ws-opt{opacity:.6;border-style:dashed}
-.ws-pill.ws-new{box-shadow:0 0 0 2px #d9a441}
 .ws-opt-toggle{font-size:12px}
 .ws-soft-notice{background:#fbf8ef;border-color:#eadfc2}
 .ws-tag-sens{border-color:#d9a441;color:#7a5410}
@@ -1213,3 +1208,56 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .bn > span{flex:1;min-width:220px}
 .bn-link{font-weight:600;white-space:nowrap}
 .bn-x{background:none;border:none;font-size:18px;line-height:1;color:var(--muted);cursor:pointer;padding:0 4px}
+
+/* ---- Storyboard layout (Phase 3.2) ----
+   Top line across the page; then two columns that scroll on their own: Story
+   Cards on the left, full height; on the right the stages, the questions, the
+   question card, progress and the answer, with the action bar pinned below. */
+.ws-page{display:flex;flex-direction:column;gap:10px}
+.ws-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ws-back{padding:2px 4px}
+.ws-title{margin:0;font-size:22px}
+.ws-flag{font-size:12px;color:var(--accent);font-weight:600}
+.ws-about-wrap{display:flex;align-items:center;gap:8px;position:relative}
+.ws-meta{font-size:13px;color:var(--muted)}
+.ws-about summary{list-style:none;cursor:pointer;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 9px}
+.ws-about summary::-webkit-details-marker{display:none}
+.ws-about[open] summary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ws-about-pop{position:absolute;z-index:20;top:28px;left:0;width:min(420px,80vw);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;box-shadow:var(--shadow)}
+.ws-split{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;min-height:0}
+.ws-split > .ws-panel{position:static;max-height:none;height:100%;overflow:auto}
+.ws-main{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0}
+.ws-scroll{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:0 4px 18px 0}
+.ws-scroll .ws-stages{margin:0}
+.ws-scroll .ws-nav{margin:0}
+.ws-scroll .ws-question{margin:0}
+.ws-progress{font-size:12px;color:var(--muted);margin:-2px 2px 0}
+.ws-strip{position:absolute;z-index:5;top:0;left:0;right:12px;display:flex;gap:8px;align-items:center;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 10px;box-shadow:var(--shadow);cursor:pointer;font:inherit}
+.ws-strip-text{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-bar{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;box-shadow:0 -2px 10px rgba(0,0,0,.05)}
+.ws-bar .spacer{flex:1}
+.ws-bar-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ws-bar-group + .ws-bar-group{padding-left:8px;border-left:1px solid var(--line)}
+.ws-bar .btn{padding:6px 11px;font-size:13px}
+.ws-done-btn{border-color:#1f4d2e;color:#1f4d2e}
+.ws-count{white-space:nowrap}
+.ws-count.ws-lim-near{background:#fff6dc;color:#7a6320}
+.ws-count.ws-lim-over{background:#fbeceb;color:#8a2f22}
+.ws-notice-x{display:flex;gap:10px;align-items:flex-start}
+.ws-notice-x > span{flex:1}
+.ws-empty-answer{color:var(--muted);font-size:13.5px;border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center}
+.ws-panel-close,.ws-panel-toggle{display:none}
+/* Question buttons: status classes are ws-pill-*, kept apart from other ws-* names. */
+.ws-pill{display:inline-flex;align-items:center;justify-content:center;line-height:1;padding:0 6px;vertical-align:middle}
+.ws-pill.ws-pill-drafting{border-color:#c9b77e;color:#7a6320;background:#fffbef}
+.ws-pill.ws-pill-done{border-color:#1f4d2e;color:#fff;background:#1f4d2e}
+.ws-pill.ws-pill-opt{opacity:.6;border-style:dashed}
+.ws-pill.ws-pill-new{box-shadow:0 0 0 2px #d9a441}
+@media (max-width:860px){
+  .ws-split{grid-template-columns:1fr;height:auto !important}
+  .ws-scroll{overflow:visible}
+  .ws-bar{position:sticky;bottom:0;z-index:6}
+  .ws-split > .ws-panel{position:fixed;z-index:40;top:0;bottom:0;left:0;width:min(380px,92vw);height:auto;transform:translateX(-105%);transition:transform .2s;box-shadow:var(--shadow)}
+  .ws-split > .ws-panel.ws-panel-open{transform:none}
+  .ws-panel-close,.ws-panel-toggle{display:inline-block}
+}
