@@ -285,9 +285,10 @@ export default function FunderMatchesView({
           <h2>Funder Matches</h2>
           <p>
             Opportunities screened for {orgName}: eligibility rules first, then alignment,
-            then funding evidence. Everything here is a <strong>June 2026 lead, not a fact</strong>.
-            Verify eligibility and deadlines on the funder&apos;s own site before any of it
-            reaches a client or an application.
+            then funding evidence.{" "}
+            {isAdmin
+              ? <>Anything not yet checked against Ground Truth is a <strong>lead, not a fact</strong>: verify eligibility and deadlines on the funder&apos;s own site before it reaches a client or an application.</>
+              : <>Check deadlines and eligibility on the funder&apos;s own site before you apply; your For Granted team can help.</>}
           </p>
         </div>
         {isAdmin && (

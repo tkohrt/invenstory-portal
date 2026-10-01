@@ -15,7 +15,6 @@
 export type CardSubject = "organization" | "competitor" | "third_party";
 export type CardLayer = "I" | "II" | "III";
 export type CardStrength = "covered" | "thin";
-export type CardStatus = "suggested" | "verified" | "retired";
 
 export interface CardKind {
   key: string;

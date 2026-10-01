@@ -14,16 +14,12 @@ export interface WorkspaceFeature {
 }
 
 export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
-  { key: "dashboard",      href: "/dashboard",      label: "Dashboard",              icon: "▤", defaultVisible: true },
-  { key: "answer_library", href: "/answer-library", label: "Answer Library",         icon: "◎", defaultVisible: false },
   { key: "chat",           href: "/chat",           label: "Ask your Inven(s)tory",  icon: "✦", defaultVisible: true },
-  // The Storyboarding Tool's front door: a triage page, then Standard Answers or
-  // a funder's application. For Granted only for now, so off for every client
-  // until an admin turns it on.
-  { key: "draft_application", href: "/draft",      label: "Draft an Application", icon: "✚", defaultVisible: false },
-  // Every draft and its versions. On by default: clients already answer
-  // bracket questions here (it was called "In the Works").
-  { key: "drafts",         href: "/drafts",         label: "Drafts",                 icon: "✎", defaultVisible: true },
+  // Every draft and its versions. Off for every client until there is a
+  // client-facing view of the Storyboarding Tool: today its drafts are For
+  // Granted only, so a client would only ever see an empty page. (Draft an
+  // Application, the tool's front door, is admin-only and not a toggle.)
+  { key: "drafts",         href: "/drafts",         label: "Drafts",                 icon: "✎", defaultVisible: false },
   { key: "eligibility",    href: "/funding-eligibility", label: "Funding Eligibility", icon: "◇", defaultVisible: true },
   // Funder matching against the Ledger. defaultVisible:false = hidden from
   // every client account until an admin turns it on for that client. For
@@ -39,7 +35,3 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
 export const WORKSPACE_FEATURE_MAP: Record<string, WorkspaceFeature> =
   Object.fromEntries(WORKSPACE_FEATURES.map(f => [f.key, f]));
 
-// Which toggleable feature (if any) owns a given pathname — used to gate routes.
-export function featureForPath(pathname: string): WorkspaceFeature | undefined {
-  return WORKSPACE_FEATURES.find(f => pathname === f.href || pathname.startsWith(f.href + "/"));
-}

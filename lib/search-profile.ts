@@ -289,18 +289,6 @@ export function funderQueries(
   return dedupeQueries(out);
 }
 
-/**
- * Constraints stated in the documents, for the admin panel and for catching a
- * mismatch with the eligibility form.
- *
- * Never query text. If a strategic plan says "fiscally sponsored" and the form
- * says 501(c)(3), one of them is wrong and somebody should know before a client
- * spends a week on an application.
- */
-export function constraintFacts(p: SearchProfile): ProfileFact[] {
-  return p.facts.filter(f => f.subject === "organization" && f.facet === "constraints");
-}
-
 /** Drop near-identical angles; three copies of one query is one query. */
 export function dedupeQueries(qs: string[]): string[] {
   const seen = new Set<string>();

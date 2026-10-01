@@ -29,7 +29,7 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
     db.from("plant_state").select("*").eq("tenant_id", tenantId).maybeSingle(),
     db.from("achievement").select("key, unlocked_at").eq("tenant_id", tenantId),
     db.from("grant_draft").select("status, updated_at").eq("tenant_id", tenantId),
-    db.from("answer").select("source, status").eq("tenant_id", tenantId),
+    db.from("answer").select("status, draft_section_id").eq("tenant_id", tenantId).eq("status", "published"),
     db.from("tenant").select("created_at").eq("id", tenantId).single(),
     getContentCoverage(tenantId),
     db.from("eligibility_profile").select("completeness, org_type").eq("tenant_id", tenantId).maybeSingle(),
@@ -43,7 +43,9 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   const newestL3 = D.filter(d => d.layer === "III").length ? Math.max(...D.filter(d => d.layer === "III").map(d => +new Date(d.created_at))) : null;
   const accountAgeDays = tenant ? Math.floor((Date.now() - +new Date(tenant.created_at)) / DAY) : 0;
   const dr = drafts ?? [];
-  const reviewedAnswers = (answers ?? []).filter(a => a.source === "human").length;
+  // Standard Answers approved from Story Cards (the key keeps its old name so
+  // anyone who earned it keeps it).
+  const approvedAnswers = (answers ?? []).filter(a => a.draft_section_id).length;
   const answeredCount = (answers ?? []).length;
 
   // ---- achievements (compute + persist new) ----
@@ -56,7 +58,7 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   check("all_layers", layersCovered === 3);
   check("first_interview", D.some(d => d.layer === "III"));
   check("age_6mo", accountAgeDays >= 182); check("age_1yr", accountAgeDays >= 365);
-  check("answers_reviewed_5", reviewedAnswers >= 5);
+  check("answers_reviewed_5", approvedAnswers >= 5);
   check("grant_submitted", dr.some(d => ["submitted", "won", "lost"].includes(d.status)));
   check("grant_won", dr.some(d => d.status === "won"));
 
@@ -105,7 +107,7 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
   const coverage = layersCovered * 10;
   const volume = Math.min(25, D.length * 2);
   const fresh = health === "thriving" ? 30 : health === "okay" ? 20 : 8;
-  const ansScore = answeredCount > 0 ? Math.round(15 * Math.min(1, reviewedAnswers / Math.max(5, answeredCount * 0.5))) : 0;
+  const ansScore = answeredCount > 0 ? Math.round(15 * Math.min(1, approvedAnswers / Math.max(5, answeredCount * 0.5))) : 0;
   const score = Math.min(100, coverage + volume + fresh + ansScore + (answeredCount === 0 ? Math.min(10, D.length) : 0));
 
   // ---- bloom (real wins) ----

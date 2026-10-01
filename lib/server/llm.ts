@@ -1,6 +1,6 @@
 import "server-only";
 // Provider-agnostic text generation. One entry point (chatComplete) that the
-// chat, Story Intelligence, and Answer Library paths all call. The provider is
+// chat, Story Intelligence, Card Library and Storyboarding Tool paths all call. The provider is
 // a config flip:
 //   LLM_PROVIDER=vertex   -> Claude on Google Vertex AI (AnthropicVertex)
 //   LLM_PROVIDER=bedrock  -> Claude on AWS Bedrock (Converse)

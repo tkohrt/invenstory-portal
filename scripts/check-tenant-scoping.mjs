@@ -10,7 +10,7 @@ import { join } from "node:path";
 const TENANT_SCOPED = new Set([
   "achievement","answer","answer_citation","answer_event","app_user","artifact_card",
   "artifact_set","audit_log","chat_message","chat_session","chunk_embedding","document",
-  "document_chunk","document_tag","document_version","draft_bracket","eligibility_gap",
+  "document_chunk","document_tag","document_version","eligibility_gap",
   "eligibility_profile","eligible_grant","feature_visibility","grant_draft","job",
   "job_event",
   "match_run","match_triage","matched_funder","plant_state","profile_edit","search_profile","search_profile_doc",

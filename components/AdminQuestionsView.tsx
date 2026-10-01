@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { saveQuestionAction, deleteQuestionAction } from "@/lib/server/answer-actions";
+import { saveQuestionAction, deleteQuestionAction } from "@/lib/server/question-actions";
 import type { GrantQuestion, Audience } from "@/lib/types";
 import { TYPICAL_WORDS } from "@/lib/story-card-rank";
 
@@ -50,7 +50,7 @@ export default function AdminQuestionsView({ questions }: { questions: GrantQues
       <div className="page-head">
         <div>
           <h2>Question bank</h2>
-          <p>The shared grant-question set every client&apos;s Answer Library is built from. For Granted IP — changes apply to all clients.</p>
+          <p>The shared grant questions behind every client&apos;s Standard Answers, and what a funder&apos;s questions are matched against. For Granted IP; changes apply to all clients.</p>
         </div>
         {!adding && <button className="btn" onClick={() => setAdding(true)}>Add question</button>}
       </div>

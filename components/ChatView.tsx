@@ -1,8 +1,7 @@
 "use client";
 // Real RAG chat via /api/chat. Retrieval is RLS-scoped; answers are grounded
-// in the tenant's own documents with citations. While Bedrock generation is
-// being provisioned, answers are extractive (top passages) and clearly noted;
-// they become generated automatically once Bedrock is live — no UI change.
+// in the tenant's own Story Cards and documents, with citations. If generation
+// fails, the answer falls back to the top passages and says so.
 import { useRef, useState, type MouseEvent } from "react";
 import { DocDrawer } from "./DocBits";
 import Drawer from "./Drawer";
@@ -134,7 +133,7 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
       </aside>
       <div className="chat-wrap">
       <div className="page-head" style={{ marginBottom: 10 }}><div><h2>Ask your Inven(s)tory</h2>
-        <p>Ask anything about {tenantName}. Answers with citations are drawn only from your own documents,
+        <p>Ask anything about {tenantName}. Answers with citations are drawn only from your own Story Cards and documents,
           with your data protected by Supabase and Amazon Bedrock.{" "}
           <button className="btn ghost" style={{ fontSize: 12.5, padding: "0 4px" }} onClick={() => setShowBedrock(true)}>Learn More</button></p>
       </div></div>
@@ -155,12 +154,12 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
                 ? <AnswerBody content={m.content} citations={m.citations ?? []} onOpen={setOpenDocId} mode={m.mode} />
                 : <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>}
               {m.role === "assistant" && m.mode === "extractive" && (
-                <div className="ai-disclaimer" style={{ marginTop: 8 }}>Showing source passages while AI generation is being provisioned — each is linked to its document.</div>
+                <div className="ai-disclaimer" style={{ marginTop: 8 }}>The AI could not write an answer this time, so these are the closest source passages, each linked to its document.</div>
               )}
             </div>
           </div>
         ))}
-        {busy && <div className="msg ai"><div className="who">AI</div><div className="bubble"><p className="empty">Reading your documents…</p></div></div>}
+        {busy && <div className="msg ai"><div className="who">AI</div><div className="bubble"><p className="empty">Reading your Inven(s)tory…</p></div></div>}
       </div>
       <div className="chat-input">
         <input placeholder="Ask about this Inven(s)tory…" value={input} disabled={busy}

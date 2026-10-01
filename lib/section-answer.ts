@@ -3,8 +3,8 @@
 // An answer is never one text field (spec Decision 5). It is a list of blocks,
 // each a Story Card (as placed, or as edited in this draft) or text a person
 // wrote. Everything a writer sees as "the answer" (the count against the limit,
-// the text copied into a funder's portal, the Standard Answer approved into the
-// Answer Library) is assembled here from those blocks, so all three always agree.
+// the text copied into a funder's portal, the approved Standard Answer) is
+// assembled here from those blocks, so all three always agree.
 //
 // Free of `server-only`; tested in tests/drafter/section-answer.test.ts.
 
@@ -94,7 +94,7 @@ export function sameOrder(a: string[], b: string[]) {
 }
 
 /**
- * The short form of an approved answer, for the Answer Library's summary line:
+ * The short form of an approved Standard Answer (answer.short_answer):
  * whole sentences from the start, up to about sixty words. Never cut mid-sentence;
  * if the first sentence alone is longer, it is used whole.
  */

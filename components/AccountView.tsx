@@ -91,10 +91,6 @@ export default function AccountView({ fullName, email, role, orgName, website, c
         <div className="stat-card"><div className="stat-value">{num(stats.won)}</div><div className="stat-label">Grants won</div></div>
         <div className="stat-card accent"><div className="stat-value">{money(stats.revenueWonCents)}</div><div className="stat-label">Grant revenue won</div></div>
       </div>
-      <div className="section-label" style={{ marginTop: 18 }}>Coming soon</div>
-      <div className="stat-grid tight">
-        <div className="stat-card"><div className="stat-value">—</div><div className="stat-label">Funders matched</div><div className="stat-sub">Arrives with funder matching</div></div>
-      </div>
     </section>
   );
 
@@ -167,7 +163,7 @@ export default function AccountView({ fullName, email, role, orgName, website, c
         {mfaMsg && <div className="gap-note" style={{ marginTop: 10 }}>{mfaMsg}</div>}
       </section>}
 
-      <section className="acct-card">
+      {!isClient && <section className="acct-card">
         <h3>Storyboarding Tool</h3>
         <label className="acct-note" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" style={{ width: "auto" }} checked={warnRemove}
@@ -175,7 +171,7 @@ export default function AccountView({ fullName, email, role, orgName, website, c
           Ask before removing a card from an answer
         </label>
         <p className="acct-note">Edited cards and your own writing always ask first, whatever this is set to, and every removal can be undone for a few seconds.</p>
-      </section>
+      </section>}
 
       {isClient && (
         <section className="acct-card">

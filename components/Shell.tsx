@@ -54,11 +54,11 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   // visibility defaults and route gating; this one drives the nav. A feature
   // added to the registry but not here is reachable by URL and invisible in the
   // sidebar. Add to both.
-  const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
+  // adminOnly: For Granted's own tools, never shown to a client and never a toggle.
+  const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean; adminOnly?: boolean }[] = [
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
-    { key: "draft_application", href: "/draft",     ic: "✚", label: "Draft an Application",   toggle: true },
+    {                        href: "/draft",             ic: "✚", label: "Draft an Application",   toggle: false, adminOnly: true },
     { key: "drafts",         href: "/drafts",          ic: "✎", label: "Drafts",                 toggle: true },
-    { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
     { key: "funder_matches", href: "/funder-matches",  ic: "◈", label: "Funder Matches",        toggle: true },
@@ -118,13 +118,14 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         )}
         <div className="nav-section-label">Workspace</div>
         {workspaceNav.map(item => {
+          if (item.adminOnly && !admin) return null;
           const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;
           if (item.toggle && !admin && !visible) return null;
           return (
             <Link key={item.href} onClick={closeNav}
               className={`${nav(item.href)}${item.toggle && admin && !visible ? " nav-hidden" : ""}`}
               href={item.href}
-              title={item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
+              title={item.adminOnly ? "For Granted only" : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
               <span className="ic">{item.ic}</span> {item.label}
               {item.key === "card_review" && storyCardsWaiting > 0 && <span className="badge-count" title="New cards to look at">{storyCardsWaiting}</span>}
               {item.toggle && admin && (
@@ -164,7 +165,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
             </Link>
             <Link onClick={closeNav} className={nav("/admin/ledger-overlay")} href="/admin/ledger-overlay">
-              <span className="ic">◈</span> Funder Ledger review
+              <span className="ic">◈</span> Ground Truth review
               {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
             </Link>
             <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>

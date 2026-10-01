@@ -9,7 +9,7 @@ import { userClient } from "./supabase";
 import { db } from "./db";
 import type {
   ArtifactBundle, ArtifactCard, ArtifactSet, ArtifactType, CiteDoc,
-  Document, DocumentWithTags, Layer, Tenant, TenantSummary,
+  Document, DocumentWithTags, Tenant,
 } from "@/lib/types";
 
 export async function getTenants(): Promise<Tenant[]> {
@@ -67,7 +67,6 @@ export async function getArtifactBundles(tenantId: string): Promise<ArtifactBund
   return bundles;
 }
 
-
 // Nav-visible artifact types: admins see all (to manage/toggle); clients see
 // only types whose set is client_visible for their tenant.
 export async function getNavArtifactTypes(tenantId: string, isAdmin: boolean): Promise<import("@/lib/types").NavArtifact[]> {
@@ -83,8 +82,8 @@ export async function getNavArtifactTypes(tenantId: string, isAdmin: boolean): P
 
 // Top-level Workspace feature visibility. Each toggleable feature has a default
 // (see lib/workspace.ts). Resolution: an explicit feature_visibility row wins;
-// otherwise the feature's registry default applies (e.g. Answer Library => hidden,
-// Dashboard/Ask/Grants => visible). Unknown keys default hidden.
+// otherwise the feature's registry default applies (e.g. Drafts => hidden,
+// Ask your Inven(s)tory => visible). Unknown keys default hidden.
 export async function getFeatureVisible(tenantId: string, featureKey: string): Promise<boolean> {
   const map = await getWorkspaceVisibility(tenantId);
   return map[featureKey] ?? (WORKSPACE_FEATURE_MAP[featureKey]?.defaultVisible ?? false);
@@ -99,25 +98,6 @@ export async function getWorkspaceVisibility(tenantId: string): Promise<Record<s
   const out: Record<string, boolean> = {};
   for (const f of WORKSPACE_FEATURES) out[f.key] = rows.get(f.key) ?? f.defaultVisible;
   return out;
-}
-
-export async function getArtifactTypes(): Promise<ArtifactType[]> {
-  const s = await userClient();
-  const { data } = await s.from("artifact_type").select("*").order("slug");
-  return (data ?? []) as ArtifactType[];
-}
-
-// Admin aggregates: RLS still applies (is_admin() gate), a non-admin gets nothing.
-export async function getTenantSummaries(): Promise<TenantSummary[]> {
-  const s = await userClient();
-  const tenants = await getTenants();
-  const { data: docs } = await s.from("document").select("tenant_id, layer");
-  return tenants.map(t => {
-    const mine = (docs ?? []).filter(d => d.tenant_id === t.id);
-    const by_layer: Record<Layer, number> = { I: 0, II: 0, III: 0 };
-    mine.forEach(d => { by_layer[d.layer as Layer] += 1; });
-    return { ...t, doc_count: mine.length, by_layer };
-  });
 }
 
 export interface PendingReview { set: ArtifactSet; type: ArtifactType; tenant: Tenant; card_count: number }
@@ -139,7 +119,11 @@ export async function getClientStats(tenantId: string): Promise<import("@/lib/ty
   const s = await userClient();
   const [{ data: docs }, { data: drafts }, wc] = await Promise.all([
     s.from("document").select("layer").eq("tenant_id", tenantId),
-    s.from("grant_draft").select("status, amount_cents").eq("tenant_id", tenantId),
+    // Counts only, through the service client: drafts themselves are For Granted
+    // only (RLS hides them from clients), but a client should still see how
+    // many applications are in progress, submitted and won. Callers pass the
+    // session's tenant.
+    db.from("grant_draft").select("status, amount_cents").eq("tenant_id", tenantId).neq("purpose", "standard_answers"),
     s.rpc("tenant_word_count", { p_tenant: tenantId }),
   ]);
   const byLayer = { I: 0, II: 0, III: 0 } as Record<import("@/lib/types").Layer, number>;
@@ -147,7 +131,7 @@ export async function getClientStats(tenantId: string): Promise<import("@/lib/ty
   const dr = (drafts ?? []) as { status: string; amount_cents: number | null }[];
   const applied = dr.filter(d => ["submitted", "won", "lost"].includes(d.status)).length;
   const won = dr.filter(d => d.status === "won").length;
-  const inProgress = dr.filter(d => ["drafting", "client_review"].includes(d.status)).length;
+  const inProgress = dr.filter(d => ["drafting", "client_review", "completed"].includes(d.status)).length;
   const revenueWonCents = dr.filter(d => d.status === "won").reduce((n, d) => n + (d.amount_cents ?? 0), 0);
   return { docs: (docs ?? []).length, byLayer, words: Number(wc.data ?? 0), applied, won, inProgress, revenueWonCents };
 }
@@ -179,47 +163,6 @@ export async function getPortfolioStats(): Promise<import("@/lib/types").Portfol
     revenueWonCents: dr.filter(d => d.status === "won").reduce((n, d) => n + (d.amount_cents ?? 0), 0),
     perClient,
   };
-}
-
-// ---- Answer Library ----
-export async function getAnswerLibrary(tenantId: string, orgType: "nonprofit" | "startup" | null): Promise<import("@/lib/types").AnswerLibraryItem[]> {
-  const s = await userClient();
-  const audiences = ["both", orgType ?? "nonprofit"];
-  const [{ data: questions }, { data: answers }] = await Promise.all([
-    s.from("grant_question").select("*").eq("active", true).in("audience", audiences).order("sort_order"),
-    s.from("answer").select("*").eq("tenant_id", tenantId),
-  ]);
-  const ansByQ = new Map((answers ?? []).map((a: Record<string, unknown>) => [a.question_id as string, a]));
-  // citations for the answers of this tenant
-  const answerIds = (answers ?? []).map((a: Record<string, unknown>) => a.id as string);
-  const citesByAnswer = new Map<string, import("@/lib/types").AnswerCite[]>();
-  if (answerIds.length) {
-    const { data: cites } = await s.from("answer_citation").select("answer_id, document_id").in("answer_id", answerIds);
-    const docIds = [...new Set((cites ?? []).map((c: Record<string, unknown>) => c.document_id as string))];
-    const { data: docs } = await s.from("document").select("id, title").in("id", docIds.length ? docIds : ["00000000-0000-0000-0000-000000000000"]);
-    const titleById = new Map((docs ?? []).map((d: Record<string, unknown>) => [d.id as string, d.title as string]));
-    const ansById = new Map((answers ?? []).map((a: Record<string, unknown>) => [a.id as string, a.question_id as string]));
-    void ansById;
-    for (const c of (cites ?? []) as Record<string, unknown>[]) {
-      const aid = c.answer_id as string;
-      const list = citesByAnswer.get(aid) ?? [];
-      list.push({ document_id: c.document_id as string, title: titleById.get(c.document_id as string) ?? "Document" });
-      citesByAnswer.set(aid, list);
-    }
-  }
-  return ((questions ?? []) as import("@/lib/types").GrantQuestion[]).map(q => {
-    const a = ansByQ.get(q.id) as Record<string, unknown> | undefined;
-    return {
-      question: q,
-      answer: a ? {
-        short_answer: (a.short_answer as string) ?? null, long_answer: (a.long_answer as string) ?? null,
-        completeness: a.completeness as import("@/lib/types").Completeness, robustness_score: (a.robustness_score as number) ?? 0,
-        source: a.source as "auto" | "human", status: a.status as "draft" | "in_review" | "published",
-        reviewed_at: (a.reviewed_at as string) ?? null, stale: (a.stale as boolean) ?? false,
-      } : null,
-      citations: a ? (citesByAnswer.get(a.id as string) ?? []) : [],
-    };
-  });
 }
 
 export async function getAllQuestions(): Promise<import("@/lib/types").GrantQuestion[]> {

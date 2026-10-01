@@ -18,7 +18,7 @@ const VAR_NAMES: Record<string, string> = { variegated: "Variegated leaves", gol
 const ACH_NAMES: Record<string, string> = {
   first_doc: "First document", docs_5: "5 documents", docs_10: "10 documents", docs_20: "20 documents", docs_50: "50 documents",
   all_layers: "All three layers", first_interview: "First living voice", size_2: "Established plant", size_3: "Flourishing plant",
-  age_6mo: "6 months growing", age_1yr: "One year growing", answers_reviewed_5: "5 answers reviewed",
+  age_6mo: "6 months growing", age_1yr: "One year growing", answers_reviewed_5: "5 Standard Answers approved",
   grant_submitted: "Grant submitted", grant_won: "Grant won",
 };
 
@@ -83,7 +83,7 @@ export default function GardenPanel({ garden }: { garden: GardenState }) {
         <button className={`chip ${!g.variegation ? "active" : ""}`} disabled={pending} onClick={() => set({ variegation: null })}>Classic green</button>
         {g.unlocks.variegations.map(v => (
           <button key={v} className={`chip ${g.variegation === v ? "active" : ""}`} disabled={pending} onClick={() => set({ variegation: v })}>{VAR_NAMES[v] ?? v}</button>))}
-        {g.unlocks.variegations.length === 0 && <span className="garden-locked">Unlock leaf styles by reviewing Answer Library answers</span>}
+        {g.unlocks.variegations.length === 0 && <span className="garden-locked">Unlock leaf styles as your Standard Answers are approved</span>}
       </div>
 
       <div className="section-label" style={{ marginTop: 10 }}>Milestones ({g.achievements.length})</div>

@@ -62,7 +62,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .nav-item:hover{background:#f3f4f6}
 .nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
 .nav-item .ic{width:18px;text-align:center}
-.nav-upload{margin-top:14px}
 .client-switch{margin:4px 4px 14px}
 .client-switch select{font-weight:600}
 .admin-flag{font-size:11px;color:var(--accent);font-weight:700;margin:0 4px 8px}
@@ -214,21 +213,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .drawer h3{margin:4px 0 2px}
 .kv{display:flex;gap:10px;margin:10px 0;font-size:13px}
 .kv .k{width:90px;color:var(--muted);flex:none}
-.dropzone{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted);
-  background:#fafbfc;margin:6px 0 4px}
-.dropzone strong{color:var(--ink)}
 .tag-input-row{display:flex;gap:8px;margin-top:6px}
 .tag-input-row input{flex:1}
 .tagedit{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .tagedit .tag{cursor:pointer}
 .tagedit .tag:after{content:" ×";color:#9ca3af}
 .req{color:#c0492f}
-
-/* toast */
-.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;
-  padding:12px 18px;border-radius:10px;font-size:13.5px;z-index:60;display:flex;align-items:center;gap:10px;
-  box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:90vw}
-.toast .tk{color:#f0d99a;font-weight:700}
 
 /* ---------- Responsive: sidebar collapses to off-canvas drawer ---------- */
 @media (max-width: 900px){
@@ -242,25 +232,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
   .chat-wrap{height:calc(100vh - 58px - 32px)}
 }
 
-/* ---------- Grant Drafts ("In the Works") ---------- */
-.draft-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+/* ---------- Drafts ---------- */
+
 .status-pill{font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;display:inline-block}
 .status-pill.drafting{background:#e0e7ff;color:#3730a3}
 .status-pill.client_review{background:var(--accent-soft);color:#6e5720}
 .status-pill.submitted{background:#dbeafe;color:#1e40af}
 .status-pill.won{background:#dcfce7;color:#166534}
 .status-pill.lost{background:#fee2e2;color:#991b1b}
-.draft-card .dc-meta{color:var(--muted);font-size:12.5px;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
 .draft-progress{height:6px;background:#eef0f3;border-radius:999px;margin-top:10px;overflow:hidden}
 .draft-progress > i{display:block;height:100%;background:var(--accent)}
-.draft-body{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;line-height:1.7;white-space:pre-wrap;font-size:14px}
-.bracket-token{background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:1px 6px;font-weight:700;font-style:italic;cursor:pointer}
-.bracket-token.filled{background:#dcfce7;color:#166534;font-style:normal}
-.qcard{background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:14px 16px;margin-bottom:12px}
-.qcard h4{margin:0 0 8px;font-size:14.5px}
-.qcard.filled{border-left-color:#22c55e}
-.qcard .answered{font-size:13px;color:#3b4252;background:#f7fbf8;border-radius:8px;padding:8px 10px}
-.status-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 18px}
 
 /* Account profile line (library header) */
 .profile-line{margin:4px 0 0;color:var(--muted);font-size:13px}
@@ -329,45 +310,8 @@ button.vis-dot.busy{opacity:.5}
 .topbar-search{max-width:none}
 .topbar .userchip{flex:none;margin-left:8px}
 
-/* Answer Library intro */
-.al-intro-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}
-.al-step{display:flex;gap:10px;align-items:flex-start;background:var(--panel,#fff);border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:14px}
-.al-step-n{flex:none;width:24px;height:24px;border-radius:50%;background:#1A1A1A;color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center}
-.al-step strong{display:block;font-size:14px;margin-bottom:2px}
-.al-step p{margin:0;font-size:12.5px;color:var(--muted,#666);line-height:1.4}
-.al-soon{background:var(--panel,#fff);border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:18px 20px}
-.al-soon-lede{margin:6px 0 14px;font-size:13.5px;color:var(--muted,#555);line-height:1.5;max-width:70ch}
-.al-cat-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 20px}
-.al-cat-list li{font-size:13px;padding:8px 12px;border:1px dashed var(--border,#ddd);border-radius:8px;color:#333}
-@media(max-width:720px){.al-intro-grid{grid-template-columns:1fr}.al-cat-list{grid-template-columns:1fr}}
+/* Shared question-card actions */
 
-/* Answer Library — question cards */
-.al-meter{margin:14px 0 20px}
-.al-meter-row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted,#555);margin-bottom:6px}
-.al-bar{height:8px;border-radius:6px;background:#ececec;overflow:hidden}
-.al-bar-fill{height:100%;background:#1A1A1A;border-radius:6px;transition:width .3s}
-.al-cat{margin-bottom:22px}
-.al-card{border:1px solid var(--border,#e6e6e6);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--panel,#fff)}
-.al-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-.al-q{font-weight:600;font-size:14px}
-.al-guide{font-size:12px;color:var(--muted,#777);margin-top:2px}
-.al-flags{display:flex;gap:6px;flex:none;align-items:center}
-.al-chip{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
-.al-chip.strong{background:#e6f4ea;color:#1a7f37}
-.al-chip.partial{background:#fdf0e3;color:#b25e09}
-.al-chip.missing{background:#f0f0f0;color:#777}
-.al-badge{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap}
-.al-badge.auto{background:#eef2fb;color:#3651a5}
-.al-badge.human{background:#e6f4ea;color:#1a7f37}
-.al-answer{margin-top:10px}
-.al-short{font-size:13.5px;margin:0}
-.al-long{font-size:13px;color:#333;margin:8px 0 0;white-space:pre-wrap;line-height:1.5}
-.al-empty{font-size:13px;color:var(--muted,#999);font-style:italic;margin:0}
-.al-link{background:none;border:none;color:#3651a5;font-size:12.5px;cursor:pointer;padding:4px 0}
-.al-cites{font-size:11.5px;color:var(--muted,#888);margin-top:8px}
-.al-edit{margin-top:10px;display:flex;flex-direction:column;gap:4px}
-.al-edit label{font-size:12px;color:var(--muted,#666);margin-top:6px}
-.al-edit textarea{width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--border,#ddd);border-radius:8px;resize:vertical}
 .al-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 
 /* Admin question bank */
@@ -449,9 +393,6 @@ button.vis-dot.busy{opacity:.5}
 
 /* Inven(s)tory Garden */
 .garden{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin:2px 0 6px;position:relative;z-index:3}
-.garden-left{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none;margin-bottom:4px}
-.garden-plant{background:none;border:none;cursor:pointer;padding:0;line-height:0}
-.garden-plant:hover{filter:brightness(1.04)}
 .garden-meta{display:flex;gap:10px;font-size:12px;color:var(--muted,#777)}
 .garden-health{font-weight:600}
 .garden-health.thriving{color:#3a7d44}.garden-health.okay{color:#b08a2e}.garden-health.thirsty{color:#b06a2e}
@@ -460,12 +401,10 @@ button.vis-dot.busy{opacity:.5}
 .garden-prompt:hover{background:#e8f3e8}
 .gp-cta{font-weight:700;margin-left:6px;white-space:nowrap}
 .layers-zone{position:relative}
-.plant-overhang{position:absolute;top:-14px;left:-6px;width:min(100%,900px);height:700px;max-height:calc(100% + 14px);opacity:.95;pointer-events:none;z-index:2}
 .garden-opts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
 .garden-locked{font-size:11.5px;color:var(--muted,#999);font-style:italic;align-self:center}
 .ach{font-size:11.5px;border:1px solid var(--border,#eee);border-radius:14px;padding:3px 9px;color:#999}
 .ach.on{color:#3a7d44;border-color:#cfe4cf;background:#f2f8f2}
-@media(max-width:760px){.plant-overhang{display:none}}
 
 /* Greenhouse thumbnails on All clients */
 .gh-client{display:flex;align-items:center;gap:8px}
@@ -484,28 +423,6 @@ button.vis-dot.busy{opacity:.5}
 .acct-col-wide{flex:1.2;max-width:none}
 .acct-dash .stat-grid.tight{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 @media(max-width:900px){.acct-layout{flex-direction:column}.acct-col,.acct-col-wide{max-width:none;width:100%}}
-
-/* Funding Eligibility — panel beside the plant */
-.garden-row{display:flex;gap:22px;align-items:flex-start;width:100%}
-.elig-panel{flex:1;min-width:0;padding-top:6px}
-.elig-label{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted,#888);margin-bottom:8px}
-.elig-invite{display:flex;flex-direction:column;gap:3px;border:1px solid #d9e6d9;background:#f2f8f2;border-radius:12px;padding:14px 16px;max-width:360px;text-decoration:none;color:inherit}
-.elig-invite b{color:#2f5d38}.elig-invite span{font-size:13px;color:var(--muted,#666)}
-.elig-invite .elig-cta{font-weight:700;color:#3a7d44;margin-top:2px}
-.elig-cards{display:flex;gap:10px;flex-wrap:wrap}
-.elig-card{background:var(--panel,#fff);border:1px solid var(--line,#eee);border-radius:12px;padding:12px 16px;min-width:96px;text-align:center;box-shadow:var(--shadow)}
-.elig-card.done{border-color:#cfe4cf;background:#f4faf4}
-.elig-card.link{text-decoration:none;color:inherit;cursor:pointer}
-.elig-card.link:hover{border-color:#bcd}
-.elig-card.muted{opacity:.6}
-.elig-val{font-size:20px;font-weight:600;color:#2f5d38}
-.elig-card.muted .elig-val,.elig-card.link .elig-val{color:var(--muted,#888)}
-.elig-cap{font-size:11.5px;color:var(--muted,#888);margin-top:2px}
-.elig-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.elig-chip{font-size:11.5px;border:1px solid var(--line,#e5e5e5);background:#fafafa;border-radius:12px;padding:2px 9px;color:#555}
-.elig-finish{display:inline-block;margin-top:10px;font-size:12.5px;color:#3a7d44;text-decoration:none}
-.elig-finish:hover{text-decoration:underline}
-@media(max-width:760px){.garden-row{flex-direction:column}}
 
 /* Funding Eligibility — editor form */
 .fe-progress{display:flex;align-items:center;gap:12px;margin:0 0 16px}
@@ -528,20 +445,10 @@ button.vis-dot.busy{opacity:.5}
 .gap-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .gap-item{display:flex;align-items:center;gap:10px;border:1px solid var(--line,#eee);border-radius:10px;padding:9px 12px;background:#fff}
 .gap-item.red{border-color:#e7c3ba;background:#fdf5f3}
-.gap-item.yellow{border-color:#ead9b6;background:#fdfaf1}
 .gap-ic{font-size:13px}
 .gap-text{flex:1;font-size:13px}
 .gap-fix{font-size:12.5px;color:#3a7d44;text-decoration:none;white-space:nowrap}
 .gap-fix:hover{text-decoration:underline}
-/* Gap counts (plant panel) */
-.elig-gaps{display:inline-flex;align-items:center;gap:8px;margin-top:10px;text-decoration:none}
-.elig-gaps .eg{font-size:12px;font-weight:600;color:#444}
-.elig-gaps .eg-label{font-size:11.5px;color:var(--muted,#999);font-weight:400}
-
-/* Hidden-plant state: keep a way back */
-.garden-hidden{align-items:flex-start;padding-top:4px}
-.garden-show{white-space:nowrap}
-
 /* Inven(s)tory readiness checklist */
 .ck-list{display:flex;flex-direction:column;gap:2px}
 .ck-row{display:flex;align-items:center;gap:8px;font-size:13px;width:100%;text-align:left;border:none;background:none;padding:6px 6px;border-radius:6px;cursor:pointer;border-bottom:1px solid #f2f2f0}
@@ -554,26 +461,12 @@ button.vis-dot.busy{opacity:.5}
 .ck-label{flex:1;min-width:0;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ck-row.missing .ck-label{color:#8a8a8a}
 .ck-badge-slot{flex:none;width:52px;display:inline-flex;justify-content:flex-end}
-.ck-act-slot{flex:none;width:64px}
-.ck-up-slot{flex:none;width:58px;text-align:right}
 .ck-badge{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:8px;padding:1px 6px;border:1px solid}
 .ck-badge.thin{color:#b08a2e;background:#fdf6e3;border-color:#eadfc0}
 .ck-badge.robust{color:#3a7d44;background:#f2f8f2;border-color:#cfe4cf}
-.ck-write{border:none;background:none;color:#3a7d44;font-size:12px;cursor:pointer;padding:0}
-.ck-write:hover{text-decoration:underline}
-.ck-upload{font-size:12px;color:var(--muted,#999);text-decoration:none}
-.ck-upload:hover{text-decoration:underline}
-.ck-note{margin:6px 0 4px 22px}
-.ck-note textarea{width:100%;max-width:560px;min-height:70px}
-.elig-gaps .eg.ess{color:#b06a2e}
-
-/* Readiness card beside the plant + eligibility panel */
-.garden-row .readiness-card{flex:1.5;min-width:300px;margin:0;align-self:stretch}
-.elig-panel{flex:1;min-width:220px}
-@media(max-width:1100px){.garden-row{flex-wrap:wrap}}
 
 /* Readiness card as the sole right-of-plant panel, tiers in 3 columns */
-.garden-row .readiness-card{flex:1;min-width:340px}
+
 .ck-cols{display:flex;gap:20px;align-items:stretch}
 .ck-col{flex:1;min-width:0}
 @media(max-width:900px){.ck-cols{flex-direction:column;gap:10px}}
@@ -589,9 +482,8 @@ button.vis-dot.busy{opacity:.5}
 .ck-col.enriching{border-color:#8fc4ec}
 .ck-col .section-label{margin-top:0}
 
-
 /* Expandable checklist item detail (overlays its tier card) */
-.ck-overlay{position:absolute;inset:0;background:rgba(255,255,255,.99);border:1px solid var(--line,#e6e6e6);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);overflow-y:auto;z-index:6;padding:12px 14px}
+
 .ck-detail-head{display:flex;align-items:center;gap:8px}
 .ck-detail-head b{font-size:14px}
 .ck-close{border:none;background:none;font-size:20px;line-height:1;cursor:pointer;color:#999;padding:0 2px}
@@ -603,17 +495,10 @@ button.vis-dot.busy{opacity:.5}
 .ck-detail .section-label{margin-top:0}
 .ck-detail textarea{width:100%;min-height:64px;margin-top:2px}
 .ck-detail-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
-.ck-upbtn{margin-top:10px;width:100%}
 .ck-badge.missing{color:#c0492f;background:#fdf5f3;border-color:#e7c3ba}
 /* Tier label stays above; overlay covers only the list area */
 .ck-body{position:relative;flex:1}
 .ck-col{display:flex;flex-direction:column}
-
-/* Plant row: plant left, org profile right; readiness card full width below */
-.inv-profile{flex:1;min-width:0;padding-top:4px}
-.inv-profile h2{margin:0 0 2px}
-.inv-readiness{margin-top:4px}
-.inv-readiness .readiness-card{width:100%}
 
 /* Plant in the left sidebar (links to /plant) */
 .sidebar-plant{position:relative;display:block;text-align:center;text-decoration:none;padding:5px 6px 2px;margin:0 0 8px;border-bottom:1px solid #e8eae6;border-radius:8px;background:#eef5ee}
@@ -625,7 +510,6 @@ button.vis-dot.busy{opacity:.5}
 /* /plant page panel */
 .garden-panel{max-width:720px}
 .gp-plant-hero{text-align:center;padding:12px 0 4px}
-
 
 /* Sidebar plant hover overlay */
 .sp-overlay{position:absolute;inset:0;overflow:hidden;background:#eef5ee;border-radius:8px;display:flex;flex-direction:column;padding:5px 6px 2px;text-align:center;opacity:0;pointer-events:none;transition:opacity .12s ease}
@@ -645,7 +529,6 @@ button.vis-dot.busy{opacity:.5}
 
 /* Full-width detail panel: spans the whole readiness card, below the tier labels */
 .ck-cols{position:relative}
-.ck-overlay-full{inset:auto;left:0;right:0;top:44px;bottom:0}
 
 /* Detail panel as a centered modal over a dimmed full-page backdrop */
 .ck-modal-backdrop{position:fixed;inset:0;background:rgba(28,32,28,.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:24px}
@@ -1076,14 +959,12 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ap-go{background:#1f4d2e}
 .ap-error{background:#fbeceb;border:1px solid #e6c2bd;color:#8a2f22;border-radius:9px;padding:9px 12px;font-size:13px;margin:10px 0}
 .ap-summary{display:flex;flex-direction:column;gap:4px;background:#fbf8ef;border:1px solid #eadfc2;border-radius:10px;padding:11px 14px;font-size:13px;margin:10px 0 14px}
-.ap-summary.ap-done{background:#eef5ef;border-color:#cfe2d3}
 .ap-list{list-style:none;padding:0;margin:0 0 12px;display:flex;flex-direction:column;gap:10px}
 .ap-q{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;display:flex;flex-direction:column;gap:8px}
 .ap-q.ap-flag{border-color:#e0c98a;background:#fffdf6}
 .ap-q-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .ap-q-head .spacer{flex:1}
 .ap-num{font-weight:700;font-size:13px;min-width:20px;color:var(--muted)}
-.ap-prompt{font-size:14px;flex:1 1 60%}
 .ap-mini{font-size:12px;padding:3px 7px}
 .ap-del{color:#b0402f}
 .ap-warn{border-color:#c8b273;color:#7a6320}
@@ -1125,8 +1006,6 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ws-prompt{margin:0;font-size:15.5px;line-height:1.5;font-weight:600}
 .ws-guide summary{font-size:12px;color:var(--muted);cursor:pointer}
 .ws-count{font-size:13px;font-weight:600;border-radius:999px;padding:2px 10px;background:var(--bg)}
-.ws-count.ws-near{background:#fff6dc;color:#7a6320}
-.ws-count.ws-over{background:#fbeceb;color:#8a2f22}
 .ws-notice{background:#eef5ef;border:1px solid #cfe2d3;border-radius:9px;padding:9px 12px;font-size:13px;margin:10px 0}
 .ws-grid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start}
 .ws-panel{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:10px}
@@ -1348,7 +1227,6 @@ a.dl-row:hover{background:#f6f8f5}
 .dl-title{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dl-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dl-sub{display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px}
-.dl-older{border:1px dashed var(--line);border-radius:6px;padding:0 5px}
 .dl-due{display:flex;flex-direction:column}
 .dl-due em{font-style:normal;font-size:11.5px;color:var(--muted)}
 .dl-due.soon em{color:#9a6a00;font-weight:600}

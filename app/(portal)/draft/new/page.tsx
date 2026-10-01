@@ -7,7 +7,6 @@
 // application anyway: a grant due Friday is never held up by the common app.
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
-import { gateFeature } from "@/lib/server/gate";
 import { getTenant } from "@/lib/server/data";
 import { standardAnswersProgress } from "@/lib/server/draft-start";
 import StandardAnswersIntro from "@/components/StandardAnswersIntro";
@@ -15,8 +14,7 @@ import StandardAnswersIntro from "@/components/StandardAnswersIntro";
 export default async function DraftNewPage({ searchParams }: { searchParams: Promise<{ grant?: string; funder?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/");
-  await gateFeature(session.role, session.tenantId, "draft_application");
-  if (session.role !== "admin") redirect("/draft");
+  if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
   const carry = sp.grant ? `?grant=${encodeURIComponent(sp.grant)}` : sp.funder ? `?funder=${encodeURIComponent(sp.funder)}` : "";
   const [tenant, progress] = await Promise.all([getTenant(session.tenantId), standardAnswersProgress(session.tenantId)]);

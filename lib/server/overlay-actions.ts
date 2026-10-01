@@ -34,6 +34,11 @@ function assertHttpUrl(url: string) {
 export async function proposeOverlayAction(p: OverlayProposal) {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
+  // Admin-only until a client-facing way to suggest a funder exists. Nothing in
+  // the portal calls this yet (it waits on the discovery bot), and every export
+  // of a "use server" module is a public endpoint, so it stays closed to
+  // client sessions. The non-admin handling below is kept for when it opens.
+  if (s.role !== "admin") throw new Error("admin required");
   assertHttpUrl(p.source_url);
   if (p.kind !== "funder" && p.kind !== "grant") throw new Error("kind must be funder or grant");
 

@@ -148,16 +148,15 @@ export interface ArtifactBundle { type: ArtifactType; set: ArtifactSet; cards: A
 export interface NavArtifact { slug: string; nav_label: string; visible: boolean }
 export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }
 
-// ---- Grant Drafts (the Drafts page, formerly "In the Works") ----
+// ---- Drafts (the Storyboarding Tool) ----
 export type DraftStatus = "drafting" | "client_review" | "completed" | "submitted" | "won" | "lost";
-export type DraftMode = "bracket" | "cards";
+/** Every draft is a Storyboarding Tool draft; bracket drafts were removed in 0046. */
+export type DraftMode = "cards";
 export interface GrantDraft {
   id: string; tenant_id: string; title: string; funder: string | null;
   amount_cents: number | null; deadline: string | null; status: DraftStatus;
-  body: string; outcome_note: string | null; created_by: string;
+  outcome_note: string | null; created_by: string;
   created_at: string; updated_at: string;
-  // Card-mode drafts (0041). Optional so the page still renders against a
-  // database the migration has not reached: a missing mode reads as bracket.
   mode?: DraftMode;
   /** 0042: one built-in Standard Answers draft per client (spec 16.1). */
   purpose?: "application" | "standard_answers";
@@ -185,15 +184,6 @@ export interface DraftSection {
   match_reason: string | null; matched_prompt: string | null;
   confirmed: boolean;
 }
-export interface DraftBracket {
-  id: string; draft_id: string; tenant_id: string; label: string;
-  answer: string | null; answered_by: string | null; answered_at: string | null;
-  filed_document_id: string | null; sort_order: number;
-}
-export interface DraftWithBrackets extends GrantDraft {
-  brackets: DraftBracket[];
-  answered_count: number;
-}
 
 // ---- Dashboard stats ----
 export interface ClientStats {
@@ -206,7 +196,7 @@ export interface PortfolioStats {
   applied: number; won: number; revenueWonCents: number; perClient: PortfolioClient[];
 }
 
-// ---- Answer Library ----
+// ---- Question bank ----
 export type Audience = "nonprofit" | "startup" | "both";
 export type Completeness = "strong" | "partial" | "missing";
 export interface GrantQuestion {
@@ -214,18 +204,6 @@ export interface GrantQuestion {
   guidance: string | null; audience: Audience; sort_order: number; active: boolean;
   /** Words a good answer usually runs to; null means the proposed default for its slug. */
   typical_limit?: number | null;
-}
-export interface AnswerCite { document_id: string; title: string }
-export interface AnswerRow {
-  short_answer: string | null; long_answer: string | null;
-  completeness: Completeness; robustness_score: number;
-  source: "auto" | "human"; status: "draft" | "in_review" | "published";
-  reviewed_at: string | null; stale: boolean;
-}
-export interface AnswerLibraryItem {
-  question: GrantQuestion;
-  answer: AnswerRow | null;
-  citations: AnswerCite[];
 }
 
 // ---- Chat history ----

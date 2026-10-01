@@ -183,11 +183,11 @@ export default function AdminLedgerOverlayView({
     <div>
       <div className="page-head">
         <div>
-          <h2>Funder Ledger review</h2>
+          <h2>Ground Truth review</h2>
           <p>
-            The Ledger base is a frozen June 2026 snapshot and never changes. These are
-            For Granted&apos;s verified corrections and new finds, waiting for approval before
-            they merge over the base in client matching. Everything here is a lead until
+            Ground Truth is the funder base (a frozen June 2026 snapshot that never changes)
+            plus For Granted&apos;s verified corrections and new finds. These are waiting for
+            approval before they merge over the base in client matching. Everything here is a lead until
             someone checks it at the source.
           </p>
         </div>

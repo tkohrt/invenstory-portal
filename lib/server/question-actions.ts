@@ -1,7 +1,6 @@
 "use server";
-// Answer Library actions. Generation may be run by a client or admin for the
-// active tenant. Edit + mark-reviewed promote an answer's source to 'human' and
-// are tenant-scoped server-side. Question-bank CRUD is admin-only.
+// Question bank actions (admin only). Approved Standard Answers are written by
+// approveStandardAnswerAction in workspace-actions.ts.
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
@@ -15,37 +14,6 @@ async function requireAdmin() {
   const s = await requireSession();
   if (s.role !== "admin") throw new Error("admin required");
   return s;
-}
-
-/**
- * Paused on 30 September 2026 (Story Card Drafter spec, section 16).
- *
- * Every export of a "use server" module is a public endpoint, so removing the
- * button is not enough: this refuses outright. The generator itself stays in
- * lib/server/answers.ts until Standard Answers ship in Phase 3, then goes.
- */
-export async function generateAnswersAction(): Promise<never> {
-  await requireSession();
-  throw new Error("Answer generation is paused while the Answer Library moves to Story Cards.");
-}
-
-export async function editAnswerAction(questionId: string, field: "short_answer" | "long_answer", value: string) {
-  const s = await requireSession();
-  await db.from("answer").upsert({
-    tenant_id: s.tenantId, question_id: questionId, [field]: value,
-    source: "human", updated_at: new Date().toISOString(),
-  }, { onConflict: "tenant_id,question_id" });
-  await db.from("answer_event").insert({ tenant_id: s.tenantId, question_id: questionId, kind: "human_edited" });
-  revalidatePath("/answer-library");
-}
-
-export async function markAnswerReviewedAction(questionId: string) {
-  const s = await requireSession();
-  await db.from("answer").update({
-    source: "human", status: "published", reviewed_by: s.user.id, reviewed_at: new Date().toISOString(),
-  }).eq("tenant_id", s.tenantId).eq("question_id", questionId);
-  await db.from("answer_event").insert({ tenant_id: s.tenantId, question_id: questionId, kind: "reviewed" });
-  revalidatePath("/answer-library");
 }
 
 // ---- Question-bank CRUD (admin) ----

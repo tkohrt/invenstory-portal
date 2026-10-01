@@ -199,8 +199,8 @@ function DocExtractPanel({ tenantName, tenantId }: { tenantName: string; tenantI
   const exJson = () => { if (trace) triggerDownload(`doc-extract-${slug}-${stamp}.json`, JSON.stringify(trace, null, 2), "application/json"); };
   return (
     <div style={{ marginTop: 28, borderTop: "2px solid var(--line)", paddingTop: 18 }}>
-      <h3 style={{ margin: "0 0 4px" }}>Document-level extraction (beta)</h3>
-      <p className="acct-note" style={{ marginTop: 0 }}>Reads each document once and asks which items it supports — the parallel path to compare against retrieval above.</p>
+      <h3 style={{ margin: "0 0 4px" }}>Document-level extraction</h3>
+      <p className="acct-note" style={{ marginTop: 0 }}>Reads each document once and asks which items it supports. This is what the Readiness Checklist uses; the retrieval audit above is kept for comparison.</p>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
         <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Reading documents…" : trace ? "Re-run extraction" : "Run document extraction"}</button>
         {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exMd}>⬇ Export Markdown</button>}

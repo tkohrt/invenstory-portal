@@ -90,14 +90,9 @@ check("client can sign in", !authErr && !!auth.session, authErr?.message ?? PROB
   const { data } = await sb.from("grant_draft").select("id").eq("tenant_id", KHAI);
   check("client CANNOT read other tenant grant_draft", (data?.length ?? 0) === 0, `rows ${data?.length ?? 0}`);
 }
-// 13. Draft brackets isolation.
-{
-  const { data } = await sb.from("draft_bracket").select("id").eq("tenant_id", KHAI);
-  check("client CANNOT read other tenant draft_bracket", (data?.length ?? 0) === 0, `rows ${data?.length ?? 0}`);
-}
 // 14. Client cannot CREATE a grant_draft (admin-only write).
 {
-  const { error } = await sb.from("grant_draft").insert({ tenant_id: FTC, title: "FORGED", body: "x", created_by: "b3000000-0000-4000-8000-000000000003" });
+  const { error } = await sb.from("grant_draft").insert({ tenant_id: FTC, title: "FORGED", created_by: "b3000000-0000-4000-8000-000000000003" });
   check("client CANNOT create grant_draft (admin-only)", !!error, error ? error.code : "INSERT SUCCEEDED");
 }
 // 15. Client CAN see own tenant's draft (positive control).

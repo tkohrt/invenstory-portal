@@ -115,7 +115,6 @@ export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBl
 
 export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before";
 
-
 /** The client's live cards, with what ranking and placement need. */
 export async function loadCards(tenantId: string): Promise<WsCard[]> {
   const s = await userClient();
@@ -190,10 +189,3 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
   return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank };
 }
 
-/** The client's Standard Answers draft, if it has been opened before. */
-export async function getStandardAnswersId(tenantId: string): Promise<string | null> {
-  const s = await userClient();
-  const { data } = await s.from("grant_draft").select("id")
-    .eq("tenant_id", tenantId).eq("purpose", "standard_answers").maybeSingle();
-  return (data?.id as string | undefined) ?? null;
-}

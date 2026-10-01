@@ -56,15 +56,13 @@ export async function reprocessDocAction(documentId: string): Promise<{ ok: true
 }
 
 // Delete a document entirely: storage object + DB row (cascades chunks,
-// embeddings, tags, versions). Nulls any draft-bracket reference first.
+// embeddings, tags, versions).
 export async function deleteDocAction(documentId: string) {
   const session = await getSession();
   if (!session) throw new Error("unauthorized");
   const supabase = await userClient();
   const { data: doc } = await supabase.from("document").select("id, tenant_id, storage_key").eq("id", documentId).single();
   if (!doc) throw new Error("not found");
-  // detach FK reference from any grant-draft bracket
-  await db.from("draft_bracket").update({ filed_document_id: null }).eq("filed_document_id", documentId);  // tenant-safe: unlink brackets referencing the tenant-scoped document being deleted
   // remove all stored versions under this doc's folder
   const folder = doc.storage_key.split("/").slice(0, 2).join("/");
   const { data: objs } = await db.storage.from("documents").list(folder);

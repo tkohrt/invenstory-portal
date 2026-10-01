@@ -16,9 +16,6 @@ export interface ClientCard {
   evidence: { title: string; quote: string }[];
 }
 
-/** Cards a client reviews in one sitting. */
-export const BATCH_SIZE = 10;
-
 export async function getClientCards(tenantId: string): Promise<ClientCard[]> {
   const s = await userClient();
   const { data, error } = await s.from("story_card")

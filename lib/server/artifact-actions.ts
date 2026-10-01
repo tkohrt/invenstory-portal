@@ -72,6 +72,4 @@ export async function setFeatureVisibilityAction(featureKey: string, visible: bo
     updated_by: s.user.id, updated_at: new Date().toISOString(),
   }, { onConflict: "tenant_id,feature_key" });
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "feature_visibility", detail: `${featureKey}=${visible ? "visible" : "hidden"}` });
-  revalidatePath("/answer-library");
-  revalidatePath("/dashboard");
 }

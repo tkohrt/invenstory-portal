@@ -160,7 +160,7 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         <button className="btn" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save eligibility profile"}</button>
         {msg && <span className="gap-note">{msg}</span>}
       </div>
-      <p className="acct-note" style={{ marginTop: 14 }}>Grant matching against these facts arrives with the funder database. Everything surfaced will be a lead to verify at the funder&rsquo;s site — a June 2026 snapshot, not a guarantee.</p>
+      <p className="acct-note" style={{ marginTop: 14 }}>Funder Matches screens funders against these facts, so keeping them current keeps the matches right.</p>
     </div>
   );
 }

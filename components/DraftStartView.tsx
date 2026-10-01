@@ -11,16 +11,7 @@ function ago(iso: string) {
   return new Date(iso).toLocaleDateString();
 }
 
-export default function DraftStartView({ tenantName, last, isAdmin }: { tenantName: string; last: LastDraft | null; isAdmin: boolean }) {
-  if (!isAdmin) {
-    return (
-      <div className="ds">
-        <h2>Draft an Application</h2>
-        <p className="ds-lead">For Granted drafts {tenantName}&rsquo;s applications with you for now. Your drafts, and any questions waiting for your answer, are on the Drafts page.</p>
-        <div className="ds-choices"><Link className="ds-choice" href="/drafts"><strong>Go to Drafts</strong><span>See every application in progress.</span></Link></div>
-      </div>
-    );
-  }
+export default function DraftStartView({ tenantName, last }: { tenantName: string; last: LastDraft | null }) {
   return (
     <div className="ds">
       <h2>Draft an Application</h2>

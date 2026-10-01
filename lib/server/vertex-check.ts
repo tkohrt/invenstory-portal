@@ -27,7 +27,7 @@ function interpret(cfg: VertexCheck["config"], probe: VertexCheck["probe"]): { v
     if (!cfg.credentials) missing.push("GOOGLE_VERTEX_CREDENTIALS");
     return { verdict: `Not configured yet. Set ${missing.join(" and ")} (plus VERTEX_REGION and VERTEX_CLAUDE_MODEL) on Vercel, then re-run this check.`, redLayer: "not_configured" };
   }
-  if (probe.ok) return { verdict: "All green — Claude on Vertex is responding. Set LLM_PROVIDER=vertex (if not already) and the Answer Library + chat switch from extractive to prose.", redLayer: "none" };
+  if (probe.ok) return { verdict: "All green: Claude on Vertex is responding. Set LLM_PROVIDER=vertex (if not already) and generation (chat, Story Intelligence, the Card Library) switches from extractive to prose.", redLayer: "none" };
   const m = (probe.message ?? "").toLowerCase();
   const s = probe.status;
   if (s === 401 || /could not load the default credentials|invalid_grant|invalid jwt|unauthenticated|invalid authentication|account not found/.test(m))

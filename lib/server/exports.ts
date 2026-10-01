@@ -3,8 +3,8 @@ import "server-only";
 //
 // Clients' agreements say their material is theirs when an engagement ends, and
 // the Inven(s)tory has always downloaded as a .zip. These two are the rest of
-// it: every card with the quote and document behind it, and every answer in the
-// Answer Library. Read through userClient, so a client gets exactly its own
+// it: every card with the quote and document behind it, and every approved
+// Standard Answer. Read through userClient, so a client gets exactly its own
 // (0043 lets a client read its cards) and an admin gets the client being viewed.
 import { userClient } from "./supabase";
 import { CARD_KIND_MAP } from "@/lib/story-card";
@@ -49,17 +49,17 @@ export async function answersMarkdown(tenantId: string, orgName: string): Promis
   const { data, error } = await s.from("answer")
     .select("short_answer, long_answer, status, source, reviewed_at, updated_at, question:question_id(category, prompt_text, sort_order), "
       + "answer_citation(snippet, document:document_id(title))")
-    .eq("tenant_id", tenantId);
+    .eq("tenant_id", tenantId).eq("status", "published");
   if (error) throw new Error(`Could not read the answers: ${error.message}`);
   type Row = { short_answer: string | null; long_answer: string | null; status: string; source: string; reviewed_at: string | null;
     question: { category: string; prompt_text: string; sort_order: number } | null;
     answer_citation: { snippet: string | null; document: { title: string } | null }[] };
   const rows = ((data ?? []) as unknown as Row[]).filter(r => r.long_answer || r.short_answer)
     .sort((a, b) => (a.question?.sort_order ?? 0) - (b.question?.sort_order ?? 0));
-  const out = [`# ${orgName}: Answer Library`, "", `Exported ${new Date().toISOString().slice(0, 10)}. ${rows.length} answer(s).`, ""];
+  const out = [`# ${orgName}: Standard Answers`, "", `Exported ${new Date().toISOString().slice(0, 10)}. ${rows.length} answer(s).`, ""];
   for (const r of rows) {
     out.push(`## ${r.question?.category ?? "Question"}`, "", `*${r.question?.prompt_text ?? ""}*`, "");
-    out.push(r.status === "published" ? `Approved${r.reviewed_at ? ` ${r.reviewed_at.slice(0, 10)}` : ""}.` : "Draft, not yet approved.", "");
+    out.push(`Approved${r.reviewed_at ? ` ${r.reviewed_at.slice(0, 10)}` : ""}.`, "");
     out.push(r.long_answer ?? r.short_answer ?? "", "");
     const docs = [...new Set((r.answer_citation ?? []).map(c => c.document?.title).filter(Boolean))];
     if (docs.length) out.push(`Sources: ${docs.join("; ")}`, "");

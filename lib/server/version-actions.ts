@@ -224,7 +224,7 @@ export async function newDraftFromAction(draftId: string): Promise<string> {
   if (!src || src.mode !== "cards" || src.purpose === "standard_answers") throw new Error("That is not one of this client's applications.");
   const now = new Date().toISOString();
   const { data: made, error } = await db.from("grant_draft").insert({
-    ...src, tenant_id: s.tenantId, title: `${src.title} (revised)`.slice(0, 200), body: "", status: "drafting",
+    ...src, tenant_id: s.tenantId, title: `${src.title} (revised)`.slice(0, 200), status: "drafting",
     created_by: s.user.id, confirmed_by: s.user.id, confirmed_at: src.confirmed_at ?? now, stage: "arrange",
   }).select("id").single();
   if (error || !made) throw new Error(`Could not start the new draft: ${error?.message ?? "no row"}`);

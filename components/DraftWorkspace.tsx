@@ -530,8 +530,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               {standard && std && (
                 <p className="ov-muted ws-approved">
                   {std.sectionId === section.id
-                    ? `In the Answer Library since ${std.approvedAt ? new Date(std.approvedAt).toLocaleDateString() : "approval"}${changedSinceApproval ? "; this answer has changed since, and the library still has the earlier text." : "."}`
-                    : "The Answer Library has an earlier, hand-written answer to this question. Approving replaces it."}
+                    ? `Approved ${std.approvedAt ? new Date(std.approvedAt).toLocaleDateString() : ""}${changedSinceApproval ? ". This answer has changed since; applications still start from the approved text until you approve the changes." : "."}`
+                    : "There is an earlier approved answer to this question. Approving replaces it."}
                 </p>
               )}
 
@@ -606,14 +606,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                       onClick={() => void run(() => setSectionDoneAction(section.id, true), st => setStatusBy(m => ({ ...m, [section.id]: st })))}>Mark this answer done</button>}
                 {standard && (
                   <button type="button" className="btn inline ap-go" disabled={locked || !text || (std?.sectionId === section.id && !changedSinceApproval)}
-                    title="Publish this answer to the client's Answer Library, linked to the cards it was built from."
+                    title="Make this the approved Standard Answer, linked to the cards it was built from. Applications start from approved answers."
                     onClick={() => void run(() => approveStandardAnswerAction(section.id), r => {
                       if (!slug) return;
                       setStandards(list => [...list.filter(x => x.slug !== slug), { slug, answerId: "", sectionId: section.id, text, approvedAt: r.approvedAt }]);
                       setStatusBy(m => ({ ...m, [section.id]: "done" }));
-                      say("Approved into the Answer Library.");
+                      say("Approved. Applications asking this question will start from it.");
                     })}>
-                    {std?.sectionId === section.id ? (changedSinceApproval ? "Approve the changes" : "Approved") : "Approve into the Answer Library"}
+                    {std?.sectionId === section.id ? (changedSinceApproval ? "Approve the changes" : "Approved") : "Approve this answer"}
                   </button>
                 )}
               </span>
@@ -683,7 +683,7 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
         <summary title="What this page is for">About</summary>
         <div className="ws-about-pop">
           {standard
-            ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer goes into the Answer Library and can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
+            ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
             : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave and Polish come next.</>}
         </div>
       </details>

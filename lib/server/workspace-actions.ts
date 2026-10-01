@@ -1,11 +1,11 @@
 "use server";
-// The drafting workspace's writes (Story Card Drafter, Phase 3: Arrange).
+// The Storyboard's writes (the Storyboarding Tool's Arrange stage).
 //
 // Admin-only (Decision 1). EVERY export of a "use server" module is a public
 // endpoint, so none takes a tenant id: the tenant comes from the session, every
 // read and write is scoped to it, and a section or block id from another client
 // simply matches nothing. Every write also checks that the section belongs to a
-// card-mode draft, so a bracket draft can never grow blocks.
+// card-mode draft and that the draft is not locked.
 //
 // Each change is saved the moment it is made and returns the section's blocks
 // as the database now holds them, so the page always shows what is stored.
@@ -441,7 +441,7 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
   if (!draft) {
     const now = new Date().toISOString();
     const { data: made, error } = await db.from("grant_draft").insert({
-      tenant_id: s.tenantId, title: "Standard Answers", funder: null, body: "", created_by: s.user.id,
+      tenant_id: s.tenantId, title: "Standard Answers", funder: null, created_by: s.user.id,
       mode: "cards", purpose: "standard_answers", parsed_at: now, confirmed_at: now, confirmed_by: s.user.id,
     }).select("id").single();
     if (error || !made) {
@@ -495,7 +495,8 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
 }
 
 /**
- * Approve a Standard Answers section into the Answer Library.
+ * Approve a Standard Answers section: it becomes the client's approved answer
+ * to that bank question (an `answer` row), which applications start from.
  *
  * Written as a human, published answer for that bank question, replacing any
  * earlier answer to it (including the old generator's drafts, which a person's
@@ -506,7 +507,7 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
 export async function approveStandardAnswerAction(sectionId: string): Promise<{ approvedAt: string }> {
   const s = await requireAdmin();
   const section = await loadSection(s.tenantId, sectionId);
-  if (section.purpose !== "standard_answers") throw new Error("Only Standard Answers are approved into the Answer Library.");
+  if (section.purpose !== "standard_answers") throw new Error("Only Standard Answers can be approved.");
   const slug = section.question_slugs[0];
   if (!slug) throw new Error("This question is not linked to a bank question.");
   const { data: q } = await db.from("grant_question").select("id").eq("slug", slug).maybeSingle();
@@ -544,7 +545,6 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
   }
   await db.from("answer_event").insert({ tenant_id: s.tenantId, question_id: q.id, kind: "approved_from_cards" });
   await db.from("draft_section").update({ status: "done", updated_at: now }).eq("tenant_id", s.tenantId).eq("id", sectionId);
-  revalidatePath("/answer-library");
   return { approvedAt: now };
 }
 

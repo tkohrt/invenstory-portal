@@ -65,7 +65,7 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
     return [{ page: null, text: stripRtf(buffer) }];
   }
   if (docKind === "audio") {
-    throw new Error("Audio transcription pending (Transcribe/Whisper integration — Phase 3b follow-up).");
+    throw new Error("Audio files can't be read yet. Upload a transcript of the recording instead.");
   }
   if (docKind === "xlsx") {
     const XLSX = await import("xlsx");

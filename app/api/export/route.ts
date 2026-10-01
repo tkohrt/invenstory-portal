@@ -41,7 +41,7 @@ export async function GET() {
       zip.folder(folder)!.file(`${safe} (preview).txt`, `${d.title}\n\n${d.snippet ?? ""}`);
     }
   }
-  // The rest of what is the client's: its Story Cards and its Answer Library.
+  // The rest of what is the client's: its Story Cards and its approved Standard Answers.
   // Best-effort: a failure here must not cost the client its documents.
   try {
     const { csv, count } = await cardsCsv(session.tenantId);
@@ -49,7 +49,7 @@ export async function GET() {
   } catch (e) { console.error("[export] cards", e); }
   try {
     const { md, count } = await answersMarkdown(session.tenantId, tenant?.name ?? "Client");
-    if (count) { zip.file("Answer Library.md", md); manifest.push(`- Answer Library.md: ${count} answer(s)`); }
+    if (count) { zip.file("Standard Answers.md", md); manifest.push(`- Standard Answers.md: ${count} approved answer(s)`); }
   } catch (e) { console.error("[export] answers", e); }
   zip.file("MANIFEST.txt", manifest.join("\n"));
   const buf = await zip.generateAsync({ type: "nodebuffer" });

@@ -24,12 +24,11 @@ All files here run only on the server. Grouped by concern:
 - `bedrock.ts` / `bedrock-check.ts` — AWS Bedrock client + diagnostics.
 - `vertex-check.ts` — Google Vertex diagnostics.
 - `rag.ts` — retrieval-augmented, cited answer construction.
-- `refine.ts` — extractive fallback ranking.
 
 ## Features
-- `answers.ts`, `answer-actions.ts` — Answer Library.
+- `question-actions.ts`: the question bank (admin).
 - `artifacts.ts`, `artifact-actions.ts`, `si-registry.ts` — Story Intelligence.
-- `drafts.ts`, `draft-actions.ts` — Grant Drafts.
+- `drafts.ts`, `version-actions.ts`, `workspace.ts`, `workspace-actions.ts`: Drafts and the Storyboarding Tool.
 - `garden.ts`, `garden-actions.ts`, `garden-email.ts` — the Garden (score/size/
   health engine, cosmetic state, flag-gated growth emails).
 - `account-actions.ts`, `admin-actions.ts` — account + admin operations.

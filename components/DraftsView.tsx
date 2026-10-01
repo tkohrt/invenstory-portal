@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { openStandardAnswersAction } from "@/lib/server/workspace-actions";
-import type { DraftStatus, DraftWithBrackets } from "@/lib/types";
+import type { DraftStatus, GrantDraft } from "@/lib/types";
 import type { DraftProgress } from "@/lib/server/drafts";
 import type { StandardProgress } from "@/lib/server/draft-start";
 
@@ -25,7 +25,7 @@ const FILTERS: { key: Filter; label: string; has: (s: DraftStatus) => boolean }[
 ];
 
 export default function DraftsView({ tenantName, drafts, isAdmin, progress = {}, standard = null }: {
-  tenantName: string; drafts: DraftWithBrackets[]; isAdmin: boolean;
+  tenantName: string; drafts: GrantDraft[]; isAdmin: boolean;
   progress?: Record<string, DraftProgress>; standard?: StandardProgress | null;
 }) {
   const router = useRouter();
@@ -43,7 +43,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
     catch (e) { setOpenError(e instanceof Error ? e.message : "Could not open Standard Answers."); setOpening(false); }
   };
 
-  const edited = (d: DraftWithBrackets) => {
+  const edited = (d: GrantDraft) => {
     const p = progress[d.id]?.lastEdited;
     return p && p > d.updated_at ? p : d.updated_at;
   };
@@ -52,7 +52,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
   const shown = apps.filter(d => FILTERS.find(f => f.key === filter)!.has(d.status)).sort((a, b) => {
     if (sort === "deadline") {
       // What is still being worked on comes before what has gone out.
-      const closed = (x: DraftWithBrackets) => x.status === "submitted" || x.status === "won" || x.status === "lost";
+      const closed = (x: GrantDraft) => x.status === "submitted" || x.status === "won" || x.status === "lost";
       if (closed(a) !== closed(b)) return closed(a) ? 1 : -1;
       // Soonest deadline first; no deadline after every dated one.
       if (a.deadline && b.deadline && a.deadline !== b.deadline) return a.deadline.localeCompare(b.deadline);
@@ -68,7 +68,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
       <div className="page-head">
         <div><h2>Drafts</h2><p>{isAdmin
           ? `Every application For Granted is drafting for ${tenantName}, soonest deadline first.`
-          : `Grant applications For Granted is preparing for ${tenantName}. Answer the highlighted questions and they file straight into your Inven(s)tory.`}</p></div>
+          : `Grant applications For Granted is preparing for ${tenantName}.`}</p></div>
         <div className="spacer" />
         {isAdmin && (
           <button className="btn inline" onClick={() => router.push("/draft/new")}
@@ -82,7 +82,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
           <div className="dl-standard-txt">
             <span className="ov-tag">Pinned</span>
             <h4>Standard Answers</h4>
-            <p>The questions funders ask again and again, answered once from Story Cards and approved into the Answer Library. Every application starts from them.</p>
+            <p>The questions funders ask again and again, answered once from Story Cards and approved. Every application starts from them.</p>
           </div>
           <div className="dl-standard-prog">
             <strong>{standard.approved} of {standard.recommended}</strong>
@@ -111,7 +111,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
         </div>
       )}
 
-      {apps.length === 0 && <div className="empty">No applications yet.{isAdmin ? " Use Draft an application to bring one in." : " For Granted will post applications here as they're prepared."}</div>}
+      {apps.length === 0 && <div className="empty">No applications yet.{isAdmin ? " Use Draft an application to bring one in." : " Nothing is ready to show you here yet."}</div>}
       {apps.length > 0 && shown.length === 0 && <div className="empty">Nothing here.</div>}
 
       {shown.length > 0 && (
@@ -120,10 +120,9 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
             <span>Application</span><span>Status</span><span>Deadline</span><span>Progress</span><span>Last edited</span>
           </div>
           {shown.map(d => {
-            const cards = d.mode === "cards";
             const p = progress[d.id];
-            const done = cards ? (p?.done ?? 0) : d.answered_count;
-            const total = cards ? (p?.total ?? 0) : d.brackets.length;
+            const done = p?.done ?? 0;
+            const total = p?.total ?? 0;
             const pct = total ? Math.round((done / total) * 100) : 0;
             const due = d.deadline ? Math.ceil((asDate(d.deadline).getTime() - now) / 86_400_000) : null;
             const open = d.status === "drafting" || d.status === "client_review" || d.status === "completed";
@@ -134,9 +133,8 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
                   <span className="dl-sub">
                     {d.funder && <span>{d.funder}</span>}
                     {money(d.amount_cents) && <span>{money(d.amount_cents)}</span>}
-                    {cards && !d.confirmed_at && <span>{d.parsed_at ? "Questions to confirm" : "Reading the application"}</span>}
-                    {cards && d.confirmed_at && d.stage && <span>Stage: {STAGE_LABEL[d.stage]}</span>}
-                    {isAdmin && !cards && <span className="dl-older" title="Made before the Storyboarding Tool: a narrative with [square brackets].">older format</span>}
+                    {!d.confirmed_at && <span>{d.parsed_at ? "Questions to confirm" : "Reading the application"}</span>}
+                    {d.confirmed_at && d.stage && <span>Stage: {STAGE_LABEL[d.stage]}</span>}
                   </span>
                 </span>
                 <span><span className={`status-pill ${d.status}`}>{STATUS_LABEL[d.status]}</span></span>
@@ -144,7 +142,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
                   {d.deadline ? <>{day(d.deadline)}{open && due != null && <em>{due < 0 ? "passed" : due === 0 ? "today" : `${due} day${due === 1 ? "" : "s"}`}</em>}</> : "None set"}
                 </span>
                 <span className="dl-prog">
-                  {total ? <>{done} of {total} {cards ? "done" : "answered"}<span className="draft-progress"><i style={{ width: `${pct}%` }} /></span></> : "Not started"}
+                  {total ? <>{done} of {total} done<span className="draft-progress"><i style={{ width: `${pct}%` }} /></span></> : "Not started"}
                 </span>
                 <span className="dl-edited">{day(edited(d))}</span>
               </Link>

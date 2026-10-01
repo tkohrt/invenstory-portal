@@ -1,7 +1,4 @@
-// Start a draft from a funder's application (Story Card Drafter, Phase 2).
-//
-// For Granted only (Decision 1): a client who reaches this address is sent to
-// the drafts list, where their bracket drafts live.
+// Start a draft from a funder's application. For Granted only.
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
@@ -13,7 +10,7 @@ export default async function NewApplicationPage({ searchParams }: {
 }) {
   const session = await getSession();
   if (!session) redirect("/");
-  if (session.role !== "admin") redirect("/drafts");
+  if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
   const [tenant, prefill] = await Promise.all([
     getTenant(session.tenantId),
