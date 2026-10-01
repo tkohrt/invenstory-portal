@@ -2,7 +2,6 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { parseBrackets } from "./drafts";
 import { processDocument } from "./ingest";
 import { markStaleOnUpload } from "./artifacts";
 import type { DraftStatus } from "@/lib/types";
@@ -11,41 +10,6 @@ async function requireAdmin() {
   const s = await getSession();
   if (!s || s.role !== "admin") throw new Error("admin required");
   return s;
-}
-
-// Admin creates/updates a draft; brackets are (re)parsed from the body.
-export async function saveDraftAction(input: {
-  id?: string; title: string; funder: string; amountDollars: string; deadline: string; body: string;
-}) {
-  const s = await requireAdmin();
-  const amount_cents = input.amountDollars ? Math.round(parseFloat(input.amountDollars) * 100) : null;
-  const row = {
-    tenant_id: s.tenantId, title: input.title, funder: input.funder || null,
-    amount_cents, deadline: input.deadline || null, body: input.body, created_by: s.user.id,
-  };
-  let draftId = input.id;
-  if (draftId) {
-    await db.from("grant_draft").update(row).eq("id", draftId).eq("tenant_id", s.tenantId);
-  } else {
-    const { data } = await db.from("grant_draft").insert(row).select("id").single();  // tenant-safe: payload row includes tenant_id
-    draftId = data?.id;
-  }
-  if (!draftId) throw new Error("save failed");
-  // sync brackets with the body
-  const labels = parseBrackets(input.body);
-  const { data: existing } = await db.from("draft_bracket").select("id, label").eq("draft_id", draftId).eq("tenant_id", s.tenantId);
-  const have = new Map((existing ?? []).map(b => [b.label, b.id]));
-  // insert new labels
-  const toInsert = labels.filter(l => !have.has(l)).map((label, i) => ({
-    draft_id: draftId, tenant_id: s.tenantId, label, sort_order: i,
-  }));
-  if (toInsert.length) await db.from("draft_bracket").insert(toInsert);  // tenant-safe: payload includes tenant_id
-  // remove brackets no longer present AND unanswered
-  const gone = (existing ?? []).filter(b => !labels.includes(b.label));
-  for (const g of gone) await db.from("draft_bracket").delete().eq("id", g.id).is("answer", null);  // tenant-safe: rows from tenant-scoped query above
-  await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "draft_save", detail: input.title });
-  revalidatePath("/drafts");
-  return { id: draftId };
 }
 
 export async function setDraftStatusAction(draftId: string, status: DraftStatus, outcomeNote?: string) {
