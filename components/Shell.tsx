@@ -46,7 +46,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
   const plantHealthLabel = garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty";
   const plantOwner = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "’" : "’s"}` : "Your";
-  const nav = (href: string) => `nav-item${path.startsWith(href) ? " active" : ""}`;
+  // Exact segment match, so /draft is not lit up while on /drafts.
+  const nav = (href: string) => `nav-item${path === href || path.startsWith(href + "/") ? " active" : ""}`;
   const invLabel = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "'" : "'s"} Inven(s)tory` : "Inven(s)tory";
   // NOTE: this list is what actually renders in the sidebar, and it is NOT
   // derived from WORKSPACE_FEATURES in lib/workspace.ts. That registry drives
@@ -55,6 +56,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   // sidebar. Add to both.
   const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean }[] = [
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
+    { key: "draft_application", href: "/draft",     ic: "✚", label: "Draft an Application",   toggle: true },
+    { key: "drafts",         href: "/drafts",          ic: "✎", label: "Drafts",                 toggle: true },
     { key: "answer_library", href: "/answer-library", ic: "◎", label: "Answer Library",         toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },

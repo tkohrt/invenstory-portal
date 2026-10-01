@@ -57,7 +57,7 @@ export default function DraftDetailView({ tenantName, draft, isAdmin }: {
     <div>
       <div className="page-head">
         <div>
-          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← In the Works</button>
+          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← Drafts</button>
           <h2>{draft.title}</h2>
           <p>{[draft.funder, money(draft.amount_cents), draft.deadline ? `due ${new Date(draft.deadline).toLocaleDateString()}` : null].filter(Boolean).join(" · ")}</p>
         </div>

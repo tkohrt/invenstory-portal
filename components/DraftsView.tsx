@@ -30,7 +30,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
     <div>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName}</div>}
       <div className="page-head">
-        <div><h2>In the Works</h2><p>Grant applications For Granted is preparing for {tenantName}. Answer the highlighted questions and they file straight into your Inven(s)tory.</p></div>
+        <div><h2>Drafts</h2><p>Grant applications For Granted is preparing for {tenantName}. Answer the highlighted questions and they file straight into your Inven(s)tory.</p></div>
         <div className="spacer" />
         {isAdmin && <>
           <button className="btn inline" onClick={() => router.push("/drafts/new")}

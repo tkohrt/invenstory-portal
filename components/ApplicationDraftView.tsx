@@ -115,7 +115,7 @@ export default function ApplicationDraftView({ tenantName, draft, sections, bank
       <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName} · For Granted only</div>
       <div className="page-head">
         <div>
-          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← In the Works</button>
+          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← Drafts</button>
           <h2>{draft.title}</h2>
           <p>{[draft.funder, money, draft.deadline ? `due ${new Date(draft.deadline + "T12:00:00").toLocaleDateString()}` : null].filter(Boolean).join(" · ")}</p>
           <p className="ov-muted" style={{ marginTop: 2 }}>

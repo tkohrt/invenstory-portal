@@ -241,7 +241,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName} · For Granted only</div>
       <div className="page-head">
         <div>
-          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← In the Works</button>
+          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← Drafts</button>
           <h2>{draft.title}</h2>
           {standard
             ? <p>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer goes into the Answer Library and can start any application&rsquo;s matching question.</p>

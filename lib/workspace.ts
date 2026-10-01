@@ -17,7 +17,13 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   { key: "dashboard",      href: "/dashboard",      label: "Dashboard",              icon: "▤", defaultVisible: true },
   { key: "answer_library", href: "/answer-library", label: "Answer Library",         icon: "◎", defaultVisible: false },
   { key: "chat",           href: "/chat",           label: "Ask your Inven(s)tory",  icon: "✦", defaultVisible: true },
-  { key: "drafts",         href: "/drafts",         label: "Grants In The Works",    icon: "✎", defaultVisible: true },
+  // The Storyboarding Tool's front door: a triage page, then Standard Answers or
+  // a funder's application. For Granted only for now, so off for every client
+  // until an admin turns it on.
+  { key: "draft_application", href: "/draft",      label: "Draft an Application", icon: "✚", defaultVisible: false },
+  // Every draft and its versions. On by default: clients already answer
+  // bracket questions here (it was called "In the Works").
+  { key: "drafts",         href: "/drafts",         label: "Drafts",                 icon: "✎", defaultVisible: true },
   { key: "eligibility",    href: "/funding-eligibility", label: "Funding Eligibility", icon: "◇", defaultVisible: true },
   // Funder matching against the Ledger. defaultVisible:false = hidden from
   // every client account until an admin turns it on for that client. For

@@ -146,7 +146,7 @@ export interface ArtifactBundle { type: ArtifactType; set: ArtifactSet; cards: A
 export interface NavArtifact { slug: string; nav_label: string; visible: boolean }
 export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }
 
-// ---- Grant Drafts ("In the Works") ----
+// ---- Grant Drafts (the Drafts page, formerly "In the Works") ----
 export type DraftStatus = "drafting" | "client_review" | "submitted" | "won" | "lost";
 export type DraftMode = "bracket" | "cards";
 export interface GrantDraft {

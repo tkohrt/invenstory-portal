@@ -51,7 +51,7 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
       <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName}</div>
       <div className="page-head">
         <div>
-          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← In the Works</button>
+          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← Drafts</button>
           <h2>Build from a funder&rsquo;s application</h2>
           <p>Bring in the funder&rsquo;s questions. The portal reads them, you check the result, and each confirmed
             question is answered from {tenantName}&rsquo;s Story Cards. The funder&rsquo;s text stays with this draft

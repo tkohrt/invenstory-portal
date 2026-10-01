@@ -8,7 +8,7 @@ import { TableSkeleton } from "@/components/Busy";
 export default function Loading() {
   return (
     <div>
-      <div className="page-head"><div><h2>In the Works</h2></div></div>
+      <div className="page-head"><div><h2>Drafts</h2></div></div>
       <TableSkeleton rows={6} />
     </div>
   );
