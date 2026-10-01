@@ -105,9 +105,10 @@ export default function AnswerLibraryView({ items, isAdmin, tenantName }: { item
             quote. The old generator summarised retrieved passages with no such
             check, so it stays off rather than filling this page with drafts that
             would have to be rewritten. Existing answers can still be edited. */}
+        <a className="btn ghost" href="/api/export/answers" style={{ alignSelf: "flex-start" }} title="Every answer, as one document">⬇ Download</a>
         {isAdmin && (
           <p className="al-paused" style={{ maxWidth: 360, fontSize: 13, color: "var(--muted)", margin: 0 }}>
-            New drafts are paused while this library moves to Story Cards. Existing answers can still be edited and reviewed.
+            New answers are written in the drafter&rsquo;s Standard Answers, from Story Cards, and arrive here when approved. Existing answers can still be edited and reviewed.
           </p>
         )}
       </div>

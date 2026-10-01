@@ -10,22 +10,23 @@
 // Colour carries meaning, not decoration: the outline is the card's layer
 // (public, internal, living voice), a dashed outline is a thin card, and a
 // verified card says so in words as well as colour.
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
 import type { CardLibraryData, LibraryCard } from "@/lib/server/card-library";
 import {
   verifyCardAction, unverifyCardAction, editCardAction, retireCardAction,
-  reinstateCardAction, mergeCardAction, dismissDuplicateAction,
+  reinstateCardAction, mergeCardAction, dismissDuplicateAction, clearSensitiveAction, reopenSensitiveAction,
 } from "@/lib/server/card-actions";
+import { CLEARANCE_LABEL } from "@/lib/card-sensitivity";
 
-type StatusFilter = "review" | "verified" | "duplicates" | "retired" | "all";
+type StatusFilter = "review" | "sensitive" | "verified" | "duplicates" | "retired" | "all";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 const RETIRED_WHY: Record<string, string> = {
   source_removed: "its source document is gone or no longer says this",
-  superseded: "superseded by newer information",
+  superseded: "out of date",
   inaccurate: "marked inaccurate",
   merged: "merged into another card",
 };
@@ -58,6 +59,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
   const byId = useMemo(() => new Map(data.cards.map(c => [c.id, c])), [data.cards]);
   const counts = useMemo(() => ({
     review: data.cards.filter(c => c.status === "suggested").length,
+    sensitive: data.cards.filter(c => c.status !== "retired" && c.sensitive && !c.sensitiveCleared).length,
     verified: data.cards.filter(c => c.status === "verified").length,
     duplicates: data.cards.filter(c => c.status !== "retired" && c.possibleDuplicateOf).length,
     retired: data.cards.filter(c => c.status === "retired").length,
@@ -68,6 +70,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
 
   const shown = data.cards.filter(c => {
     if (status === "review" && c.status !== "suggested") return false;
+    if (status === "sensitive" && !(c.status !== "retired" && c.sensitive && !c.sensitiveCleared)) return false;
     if (status === "verified" && c.status !== "verified") return false;
     if (status === "duplicates" && !(c.status !== "retired" && c.possibleDuplicateOf)) return false;
     if (status === "retired" && c.status !== "retired") return false;
@@ -82,66 +85,44 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
   });
 
   /**
-   * Read the whole Inven(s)tory, however many invocations it takes. The same
-   * loop as the Search Profile build: each call reads what fits, keeps it, and
-   * says what is left, and the decision to come back is made from the response.
+   * Start the build, then watch it.
+   *
+   * The server carries the build from stage to stage itself (since 1 October
+   * 2026), so this page only starts it and polls the job's own log. Leaving the
+   * page does not stop it; the notice at the top of every portal page shows its
+   * progress and says when it is done.
    */
   const runChain = useCallback(async (restart: boolean) => {
     setDismissed(false); setChainError(null); setWorking(true);
     if (restart) resetEvents();
-    let jobRef: string | null = null;
     const post = (body: unknown) => fetch("/api/jobs/cards", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
-    const stop = async (reason: string) => {
-      setChainError(reason);
-      try { await post({ stop: true, reason }); if (jobRef) await syncJob(jobRef); } catch { /* the message is what matters */ }
-    };
-    let cutShort = 0;
     setLaunching(true);
     try {
-      // Acknowledged in well under a second. From here the job's own log is
-      // polled every two seconds, so each document shows as it is read rather
-      // than when a 40-second stage finishes.
       const b = await post({ begin: true, restart });
       const br = await b.json().catch(() => ({}));
       if (!b.ok) throw new Error(br.error ?? "Could not start the build.");
-      if (br.jobId) { jobRef = br.jobId; await syncJob(br.jobId).catch(() => null); }
-      setLaunching(false);
-
-      for (let pass = 0; pass < 40; pass++) {
-        const res = await post({ restart: restart && pass === 0, begun: true });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          if (r.error) throw new Error(r.error);
-          if (++cutShort >= 3) {
-            await stop("Three stages in a row were cut off before they could report back. "
-              + "Everything read is saved, and Build picks up from there.");
-            return;
-          }
-          await new Promise(f => setTimeout(f, 1500));
-          continue;
-        }
-        cutShort = 0;
-        if (r.jobId) { jobRef = r.jobId; await syncJob(r.jobId).catch(() => null); }
-        if (r.complete) { router.refresh(); return; }
-        if (r.busy) { await new Promise(f => setTimeout(f, 3000)); continue; }
-        // Keep the "documents read" count on the page moving between stages.
-        router.refresh();
-        if ((r.read ?? 0) === 0) {
-          await stop(`Stopped after reading ${r.done} of ${r.total} documents: a pass read nothing while `
-            + "documents were still outstanding. What has been read is saved.");
-          return;
-        }
-      }
-      await stop("Stopped after many passes without finishing. What has been read is saved.");
+      if (br.jobId) await syncJob(br.jobId).catch(() => null);
+      const k = await post({ kick: true, restart, begun: true });
+      const kr = await k.json().catch(() => ({}));
+      if (!k.ok) throw new Error(kr.error ?? "Could not start the build.");
+      if (kr.jobId) await syncJob(kr.jobId).catch(() => null);
     } catch (e) {
-      await stop(e instanceof Error ? e.message : "Reading failed. What has been read is saved.");
+      setChainError(e instanceof Error ? e.message : "Could not start the build. What has been read is saved.");
     } finally {
       setLaunching(false);
       setWorking(false);
     }
-  }, [router, syncJob, resetEvents]);
+  }, [syncJob, resetEvents]);
+
+  // When the build the page is watching finishes, show its cards.
+  const jobStatus = job?.status;
+  const lastStatus = useRef(jobStatus);
+  useEffect(() => {
+    if (lastStatus.current === "running" && jobStatus && jobStatus !== "running") router.refresh();
+    lastStatus.current = jobStatus;
+  }, [jobStatus, router]);
 
   const remerge = useCallback(async () => {
     setChainError(null); setWorking(true);
@@ -170,7 +151,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         <div>
           <h2>Card Library</h2>
           <p>{possessive(orgName)} story as claim-sized cards, each proven by a quote from the Inven(s)tory.
-            For Granted only; never shown to the client.</p>
+            For Granted&rsquo;s working view. The client sees its own cards only if Story Cards is turned on for it.</p>
         </div>
         <div className="spacer" />
         <div className="cl-actions">
@@ -221,6 +202,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
 
       <div className="cl-summary">
         <span><b>{counts.review}</b> to review</span>
+        {counts.sensitive > 0 && <span className="cl-sens-count"><b>{counts.sensitive}</b> sensitive, awaiting a decision</span>}
         <span><b>{counts.verified}</b> verified</span>
         <span><b>{counts.duplicates}</b> possible duplicates</span>
         <span><b>{counts.retired}</b> retired</span>
@@ -238,15 +220,15 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
             competitor is refused, and the refusals are listed here so the checks can be judged too.</p>
           <p>Expect about a minute per two or three documents. Each document appears in the progress log as it is
             read; the cards themselves appear here once the last one is done, because that is when cards found in
-            different documents are recognised as the same claim. Everything read is kept, so closing the page pauses
-            the build rather than losing it.</p>
+            different documents are recognised as the same claim. The build runs on the server, so you can leave this
+            page: the portal shows its progress and tells you when it is done.</p>
         </div>
       ) : (
         <>
           <div className="cl-filters">
-            {(["review", "verified", "duplicates", "retired", "all"] as StatusFilter[]).map(s => (
+            {(["review", "sensitive", "verified", "duplicates", "retired", "all"] as StatusFilter[]).map(s => (
               <button key={s} type="button" className={`chip${status === s ? " active" : ""}`} onClick={() => setStatus(s)}>
-                {s === "review" ? "To review" : s === "duplicates" ? "Possible duplicates" : s[0].toUpperCase() + s.slice(1)}
+                {s === "review" ? "To review" : s === "duplicates" ? "Possible duplicates" : s === "sensitive" ? "Sensitive" : s[0].toUpperCase() + s.slice(1)}
                 {" "}<span className="cl-count">{counts[s]}</span>
               </button>
             ))}
@@ -259,6 +241,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
                 onClick={() => setLayer(layer === l ? "" : l)}>{LAYER_NAME[l]}</button>
             ))}
             <input className="cl-search" placeholder="Search statements and quotes" value={q} onChange={e => setQ(e.target.value)} />
+            <a className="btn ghost" href="/api/export/cards" title="Every card with its quotes and sources, as a spreadsheet">⬇ Export cards (.csv)</a>
           </div>
 
           {shown.length === 0
@@ -303,6 +286,10 @@ function CardTile({ card: c, byId }: { card: LibraryCard; byId: Map<string, Libr
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(c.statement);
   const [open, setOpen] = useState(false);
+  const [retiring, setRetiring] = useState<"inaccurate" | "superseded" | null>(null);
+  const [retireNote, setRetireNote] = useState("");
+  const [clearing, setClearing] = useState<"consent" | "deidentified" | "not_sensitive" | null>(null);
+  const [clearNote, setClearNote] = useState("");
 
   const act = (fn: () => Promise<unknown>) => start(async () => {
     setErr(null);
@@ -319,7 +306,8 @@ function CardTile({ card: c, byId }: { card: LibraryCard; byId: Map<string, Libr
         <span className="cl-kind">{c.kindLabel}</span>
         {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
         <span className="cl-spacer" />
-        {c.status === "verified" && <span className="cl-badge cl-badge-ok">Verified</span>}
+        {c.sensitive && !c.sensitiveCleared && c.status !== "retired" && <span className="cl-badge cl-badge-sens" title={c.sensitiveReason ?? ""}>Sensitive</span>}
+        {c.status === "verified" && <span className="cl-badge cl-badge-ok">{c.verifiedByRole === "client" ? "Verified by client" : "Verified"}</span>}
         {c.status === "suggested" && <span className="cl-badge">Suggested</span>}
         {c.status === "retired" && <span className="cl-badge cl-badge-off">Retired</span>}
       </div>
@@ -363,7 +351,44 @@ function CardTile({ card: c, byId }: { card: LibraryCard; byId: Map<string, Libr
 
       {c.status === "retired" && (
         <p className="cl-note">Retired: {RETIRED_WHY[c.retiredReason ?? ""] ?? c.retiredReason ?? "no reason recorded"}
-          {c.mergedInto && byId.get(c.mergedInto) ? ` (“${byId.get(c.mergedInto)!.statement.slice(0, 80)}…”)` : ""}.</p>
+          {c.mergedInto && byId.get(c.mergedInto) ? ` (“${byId.get(c.mergedInto)!.statement.slice(0, 80)}…”)` : ""}.
+          {c.retiredNote ? <> Note: {c.retiredNote}</> : null}</p>
+      )}
+
+      {c.sensitive && c.status !== "retired" && (
+        <div className={`cl-sens${c.sensitiveCleared ? " cl-sens-done" : ""}`}>
+          {c.sensitiveCleared ? (
+            <>
+              <strong>{CLEARANCE_LABEL[c.sensitiveCleared]}.</strong>{c.sensitiveNote ? ` ${c.sensitiveNote}` : ""}
+              <button type="button" className="cl-link" disabled={pending} onClick={() => act(() => reopenSensitiveAction(c.id))}>Reopen</button>
+            </>
+          ) : (
+            <>
+              <strong>Sensitive: cannot be placed in an answer yet.</strong> {c.sensitiveReason}
+              {clearing ? (
+                <div className="cl-edit">
+                  <textarea rows={2} value={clearNote} onChange={e => setClearNote(e.target.value)}
+                    placeholder={clearing === "consent" ? "Who consented, when, and how (for example: Terry, by email to Ted, 3 Oct 2026)"
+                      : clearing === "deidentified" ? "Optional: what was removed" : "Why this is not sensitive"} />
+                  <div className="cl-card-acts">
+                    <button type="button" className="btn inline cl-primary" disabled={pending}
+                      onClick={() => act(async () => { await clearSensitiveAction(c.id, clearing, clearNote); setClearing(null); setClearNote(""); })}>
+                      Record: {CLEARANCE_LABEL[clearing].toLowerCase()}</button>
+                    <button type="button" className="btn ghost" onClick={() => setClearing(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="cl-card-acts">
+                  <button type="button" className="btn secondary" onClick={() => setClearing("consent")}>Record consent</button>
+                  <button type="button" className="btn secondary" disabled={c.statementOrigin !== "human"}
+                    title={c.statementOrigin !== "human" ? "Edit the card to remove what identifies the person first" : undefined}
+                    onClick={() => setClearing("deidentified")}>Mark de-identified</button>
+                  <button type="button" className="btn ghost" onClick={() => setClearing("not_sensitive")}>Not sensitive</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       {dup && c.status !== "retired" && (
@@ -392,13 +417,25 @@ function CardTile({ card: c, byId }: { card: LibraryCard; byId: Map<string, Libr
           {c.status !== "retired" && (
             <>
               <button type="button" className="btn ghost" disabled={pending} onClick={() => setEditing(true)}>Edit</button>
-              <button type="button" className="btn ghost" disabled={pending} onClick={() => act(() => retireCardAction(c.id, "inaccurate"))}>Inaccurate</button>
-              <button type="button" className="btn ghost" disabled={pending} onClick={() => act(() => retireCardAction(c.id, "superseded"))}>Out of date</button>
+              <button type="button" className="btn ghost" disabled={pending} onClick={() => setRetiring("inaccurate")}>Inaccurate</button>
+              <button type="button" className="btn ghost" disabled={pending} onClick={() => setRetiring("superseded")}>Out of date</button>
             </>
           )}
           {c.status === "retired" && (
             <button type="button" className="btn ghost" disabled={pending} onClick={() => act(() => reinstateCardAction(c.id))}>Reinstate</button>
           )}
+        </div>
+      )}
+      {retiring && (
+        <div className="cl-edit">
+          <textarea rows={2} value={retireNote} onChange={e => setRetireNote(e.target.value)} autoFocus
+            placeholder={retiring === "inaccurate" ? "Optional: what is wrong with it" : "Optional: what has changed, or what replaces it"} />
+          <div className="cl-card-acts">
+            <button type="button" className="btn inline cl-primary" disabled={pending}
+              onClick={() => act(async () => { await retireCardAction(c.id, retiring, retireNote); setRetiring(null); setRetireNote(""); })}>
+              Retire as {retiring === "inaccurate" ? "inaccurate" : "out of date"}</button>
+            <button type="button" className="btn ghost" onClick={() => { setRetiring(null); setRetireNote(""); }}>Cancel</button>
+          </div>
         </div>
       )}
       {err && <div className="cl-error">{err}</div>}

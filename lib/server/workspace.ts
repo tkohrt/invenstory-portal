@@ -22,6 +22,9 @@ export interface WsCard extends RankCard {
   version: number;
   newestSource: string | null;
   subject: "organization" | "third_party";
+  /** 0043: an identifiable person's protected information, and whether a person has decided it. */
+  sensitive: boolean; sensitiveReason: string | null;
+  sensitiveCleared: "consent" | "deidentified" | "not_sensitive" | null;
   evidence: WsEvidence[];
 }
 
@@ -48,6 +51,7 @@ export interface WsSection {
   slugs: string[];
   wantedKinds: string[];
   status: "empty" | "drafting" | "done";
+  createdAt: string;
 }
 
 /** A client's approved standard answer, by bank slug. */
@@ -66,6 +70,8 @@ export interface Workspace {
   blocks: WsBlock[];
   cards: WsCard[];
   standards: WsStandard[];
+  /** Bank question stats by slug, for recommending Standard Answers sections. */
+  bank: Record<string, { origin: "seed" | "observed"; observed: number }>;
 }
 
 type Raw = Record<string, unknown>;
@@ -107,23 +113,50 @@ export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBl
 
 export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before";
 
+
+/** The client's live cards, with what ranking and placement need. */
+export async function loadCards(tenantId: string): Promise<WsCard[]> {
+  const s = await userClient();
+  const { data: cardRows, error: cErr } = await s.from("story_card")
+      .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
+      .eq("tenant_id", tenantId).neq("status", "retired");
+  if (cErr) throw new Error(`Could not read the Card Library: ${cErr.message}`);
+  type Ev = { quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string; created_at: string } | null };
+  return ((cardRows ?? []) as Raw[]).map(r => {
+    const ev = ((r.story_card_evidence as Ev[]) ?? []).filter(e => e.document?.status === "ready");
+    const newest = ev.reduce<Ev | null>((a, e) => (!a || (e.document!.created_at > a.document!.created_at) ? e : a), null);
+    return {
+      id: r.id as string, kind: r.kind as string, kindLabel: CARD_KIND_MAP[r.kind as string]?.label ?? (r.kind as string),
+      itemKey: (r.item_key as string | null) ?? null, strength: r.strength as WsCard["strength"],
+      status: r.status as WsCard["status"], layer: (r.layer as WsCard["layer"]) ?? null,
+      subject: r.subject as WsCard["subject"], statement: r.statement as string, version: r.version as number,
+      sensitive: !!r.sensitive, sensitiveReason: (r.sensitive_reason as string | null) ?? null,
+      sensitiveCleared: (r.sensitive_cleared as WsCard["sensitiveCleared"]) ?? null,
+      // The upload date of the newest document behind the card: the closest the
+      // portal holds to "how current is this evidence". A document's own date is
+      // not recorded anywhere yet.
+      newestEvidenceAt: newest?.document?.created_at ?? null,
+      newestSource: newest?.document?.title ?? null,
+      evidence: ev.map(e => ({ title: e.document!.title, layer: e.document!.layer, quote: e.quote, speaker: e.speaker })),
+    };
+  });
+}
+
 export async function getWorkspace(tenantId: string, draftId: string): Promise<Workspace> {
   const s = await userClient();
 
-  const [{ data: draft }, { data: secRows, error: sErr }, { data: cardRows, error: cErr }, { data: ansRows }] = await Promise.all([
+  const [{ data: draft }, { data: secRows, error: sErr }, cards, { data: ansRows }, { data: bankRows }] = await Promise.all([
     s.from("grant_draft").select("purpose").eq("tenant_id", tenantId).eq("id", draftId).maybeSingle(),
     s.from("draft_section")
-      .select("id, sort_order, prompt, guidance, criteria, limit_value, limit_unit, question_slugs, wanted_kinds, status")
+      .select("id, sort_order, prompt, guidance, criteria, limit_value, limit_unit, question_slugs, wanted_kinds, status, created_at")
       .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order"),
-    s.from("story_card")
-      .select("id, kind, item_key, strength, status, layer, subject, statement, version, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
-      .eq("tenant_id", tenantId).neq("status", "retired"),
+    loadCards(tenantId),
     s.from("answer")
       .select("id, long_answer, status, source, reviewed_at, draft_section_id, question:question_id(slug)")
       .eq("tenant_id", tenantId).eq("status", "published"),
+    s.from("grant_question").select("slug, origin, observed"),
   ]);
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
-  if (cErr) throw new Error(`Could not read the Card Library: ${cErr.message}`);
 
   const sections: WsSection[] = ((secRows ?? []) as Raw[]).map(r => ({
     id: r.id as string, sortOrder: r.sort_order as number, prompt: r.prompt as string,
@@ -131,6 +164,7 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
     limitValue: (r.limit_value as number | null) ?? null, limitUnit: (r.limit_unit as WsSection["limitUnit"]) ?? null,
     slugs: (r.question_slugs as string[]) ?? [], wantedKinds: (r.wanted_kinds as string[]) ?? [],
     status: (r.status as WsSection["status"]) ?? "empty",
+    createdAt: (r.created_at as string | null) ?? "",
   }));
 
   let blocks: WsBlock[] = [];
@@ -141,24 +175,6 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
     blocks = await resolveBlocks(tenantId, (bRows ?? []) as Raw[]);
   }
 
-  type Ev = { quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string; created_at: string } | null };
-  const cards: WsCard[] = ((cardRows ?? []) as Raw[]).map(r => {
-    const ev = ((r.story_card_evidence as Ev[]) ?? []).filter(e => e.document?.status === "ready");
-    const newest = ev.reduce<Ev | null>((a, e) => (!a || (e.document!.created_at > a.document!.created_at) ? e : a), null);
-    return {
-      id: r.id as string, kind: r.kind as string, kindLabel: CARD_KIND_MAP[r.kind as string]?.label ?? (r.kind as string),
-      itemKey: (r.item_key as string | null) ?? null, strength: r.strength as WsCard["strength"],
-      status: r.status as WsCard["status"], layer: (r.layer as WsCard["layer"]) ?? null,
-      subject: r.subject as WsCard["subject"], statement: r.statement as string, version: r.version as number,
-      // The upload date of the newest document behind the card: the closest the
-      // portal holds to "how current is this evidence". A document's own date is
-      // not recorded anywhere yet.
-      newestEvidenceAt: newest?.document?.created_at ?? null,
-      newestSource: newest?.document?.title ?? null,
-      evidence: ev.map(e => ({ title: e.document!.title, layer: e.document!.layer, quote: e.quote, speaker: e.speaker })),
-    };
-  });
-
   const standards: WsStandard[] = ((ansRows ?? []) as Raw[])
     .filter(r => (r.question as { slug?: string } | null)?.slug && r.long_answer)
     .map(r => ({
@@ -167,7 +183,9 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
       approvedAt: (r.reviewed_at as string | null) ?? null,
     }));
 
-  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards };
+  const bank: Record<string, { origin: "seed" | "observed"; observed: number }> = Object.fromEntries(
+    ((bankRows ?? []) as { slug: string; origin: "seed" | "observed"; observed: number }[]).map(q => [q.slug, { origin: q.origin, observed: q.observed }]));
+  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank };
 }
 
 /** The client's Standard Answers draft, if it has been opened before. */

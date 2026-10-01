@@ -15,7 +15,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { remergeLibrary } from "./card-extract";
-import { MIN_STATEMENT_WORDS, MAX_STATEMENT_WORDS, untracedFigures } from "@/lib/story-card";
+import { writeCardEdit } from "./card-edit";
 
 const PATH = "/admin/card-library";
 
@@ -44,7 +44,7 @@ export async function verifyCardAction(id: string) {
   const card = await loadCard(s.tenantId, id);
   if (card.status === "retired") throw new Error("Reinstate a retired card before verifying it.");
   const { error } = await db.from("story_card").update({
-    status: "verified", retired_reason: null, verified_by: s.user.id,
+    status: "verified", retired_reason: null, verified_by: s.user.id, verified_by_role: "admin",
     verified_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", id);
   if (error) throw new Error(`could not verify: ${error.message}`);
@@ -57,7 +57,7 @@ export async function unverifyCardAction(id: string) {
   const s = await adminSession();
   await loadCard(s.tenantId, id);
   const { error } = await db.from("story_card").update({
-    status: "suggested", verified_by: null, verified_at: null, updated_at: new Date().toISOString(),
+    status: "suggested", verified_by: null, verified_at: null, verified_by_role: null, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", id);
   if (error) throw new Error(`could not update: ${error.message}`);
   await audit(s.tenantId, s.user.id, "card_unverify", id);
@@ -74,45 +74,28 @@ export async function unverifyCardAction(id: string) {
  */
 export async function editCardAction(id: string, statement: string) {
   const s = await adminSession();
-  const card = await loadCard(s.tenantId, id);
-  const text = statement.trim().replace(/\s+/g, " ");
-  const n = text.split(" ").filter(Boolean).length;
-  if (n < MIN_STATEMENT_WORDS) throw new Error(`A card needs at least ${MIN_STATEMENT_WORDS} words to stand on its own.`);
-  if (n > MAX_STATEMENT_WORDS) throw new Error(`A card is one claim; keep it under ${MAX_STATEMENT_WORDS} words, or split it.`);
-  if (text === card.statement) return;
-
-  const { data: ev } = await db.from("story_card_evidence").select("quote")
-    .eq("tenant_id", s.tenantId).eq("card_id", id);
-  const quotes = ((ev ?? []) as { quote: string }[]).map(e => e.quote).join("\n");
-  const untraced = untracedFigures(text, quotes);
-  if (untraced.length) {
-    throw new Error(`${untraced.join(", ")} ${untraced.length === 1 ? "is" : "are"} not in any of this card's quotes. `
-      + "Add the source to the Inven(s)tory first, so the figure has evidence behind it.");
-  }
-
-  const version = card.version + 1;
-  const { error: vErr } = await db.from("story_card_version").insert({
-    card_id: id, tenant_id: s.tenantId, version, statement: text, origin: "human", created_by: s.user.id,
-  });
-  if (vErr) throw new Error(`could not save the new version: ${vErr.message}`);
-  const { error } = await db.from("story_card").update({
-    statement: text, statement_origin: "human", version, updated_at: new Date().toISOString(),
-  }).eq("tenant_id", s.tenantId).eq("id", id);
-  if (error) throw new Error(`could not update the card: ${error.message}`);
+  const version = await writeCardEdit(s.tenantId, s.user.id, id, statement);
+  if (version == null) return;
   await audit(s.tenantId, s.user.id, "card_edit", `${id} v${version}`);
   revalidatePath(PATH);
 }
 
-/** Take a card out of use. Kept, with its history, and reversible. */
-export async function retireCardAction(id: string, reason: "inaccurate" | "superseded") {
+/**
+ * Take a card out of use. Kept, with its history, and reversible.
+ *
+ * The note says why, in the reviewer's words. Optional, but worth asking for:
+ * why a card was taken out is itself something the library learns from.
+ */
+export async function retireCardAction(id: string, reason: "inaccurate" | "superseded", note?: string | null) {
   const s = await adminSession();
   if (reason !== "inaccurate" && reason !== "superseded") throw new Error("unknown reason");
   await loadCard(s.tenantId, id);
+  const why = (note ?? "").trim().slice(0, 600) || null;
   const { error } = await db.from("story_card").update({
-    status: "retired", retired_reason: reason, possible_duplicate_of: null, updated_at: new Date().toISOString(),
+    status: "retired", retired_reason: reason, retired_note: why, possible_duplicate_of: null, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", id);
   if (error) throw new Error(`could not retire: ${error.message}`);
-  await audit(s.tenantId, s.user.id, "card_retire", `${id} ${reason}`);
+  await audit(s.tenantId, s.user.id, "card_retire", `${id} ${reason}${why ? `: ${why}` : ""}`);
   revalidatePath(PATH);
 }
 
@@ -121,7 +104,7 @@ export async function reinstateCardAction(id: string) {
   const s = await adminSession();
   await loadCard(s.tenantId, id);
   const { error } = await db.from("story_card").update({
-    status: "suggested", retired_reason: null, merged_into: null, updated_at: new Date().toISOString(),
+    status: "suggested", retired_reason: null, retired_note: null, merged_into: null, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", id);
   if (error) throw new Error(`could not reinstate: ${error.message}`);
   await audit(s.tenantId, s.user.id, "card_reinstate", id);
@@ -161,5 +144,52 @@ export async function dismissDuplicateAction(id: string) {
   }).eq("tenant_id", s.tenantId).eq("id", id);
   if (error) throw new Error(`could not dismiss: ${error.message}`);
   await audit(s.tenantId, s.user.id, "card_dup_dismiss", id);
+  revalidatePath(PATH);
+}
+
+/**
+ * Decide a sensitive card. Until this is done it cannot be placed in an answer.
+ *
+ *   consent        the person has agreed to this use. The note says who agreed,
+ *                  when and how, because that is what anyone will ask later.
+ *   deidentified   the card has been reworded so the person cannot be
+ *                  recognised. Only after a person has edited the statement:
+ *                  the reader's wording is what was flagged.
+ *   not_sensitive  the flag is wrong. The note says why.
+ */
+export async function clearSensitiveAction(id: string, how: "consent" | "deidentified" | "not_sensitive", note: string) {
+  const s = await adminSession();
+  if (!["consent", "deidentified", "not_sensitive"].includes(how)) throw new Error("unknown decision");
+  const why = note.trim().slice(0, 800);
+  if (how !== "deidentified" && why.length < 8) {
+    throw new Error(how === "consent"
+      ? "Say who consented, when and how, so the record answers the question later."
+      : "Say briefly why this card is not sensitive.");
+  }
+  const { data: card } = await db.from("story_card").select("id, sensitive, statement_origin")
+    .eq("tenant_id", s.tenantId).eq("id", id).maybeSingle();
+  if (!card) throw new Error("That card is not in this client's library.");
+  if (how === "deidentified" && card.statement_origin !== "human") {
+    throw new Error("Edit the card first to remove what identifies the person, then mark it de-identified.");
+  }
+  const { error } = await db.from("story_card").update({
+    sensitive_cleared: how, sensitive_note: why || null, sensitive_cleared_by: s.user.id,
+    sensitive_cleared_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", id);
+  if (error) throw new Error(`could not record the decision: ${error.message}`);
+  await audit(s.tenantId, s.user.id, "card_sensitive_clear", `${id} ${how}${why ? `: ${why}` : ""}`);
+  revalidatePath(PATH);
+}
+
+/** Undo a sensitivity decision: the card cannot be placed again until it is decided anew. */
+export async function reopenSensitiveAction(id: string) {
+  const s = await adminSession();
+  await loadCard(s.tenantId, id);
+  const { error } = await db.from("story_card").update({
+    sensitive_cleared: null, sensitive_note: null, sensitive_cleared_by: null, sensitive_cleared_at: null,
+    updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", id);
+  if (error) throw new Error(`could not reopen: ${error.message}`);
+  await audit(s.tenantId, s.user.id, "card_sensitive_reopen", id);
   revalidatePath(PATH);
 }

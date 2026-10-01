@@ -17,11 +17,13 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { chatComplete } from "./llm";
-import { BLOCK_COLS, resolveBlocks, type WsBlock } from "./workspace";
+import { BLOCK_COLS, loadCards, resolveBlocks, type WsBlock } from "./workspace";
 import { orgTypeOf } from "./application-parse";
 import { SLUG_KINDS } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
 import { assembleAnswer, parseTidy, shortFrom, type TidyProposal } from "@/lib/section-answer";
+import { placeable } from "@/lib/card-sensitivity";
+import { arrangeBudget, arrangePicks, rankCards } from "@/lib/story-card-rank";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -97,6 +99,19 @@ async function finish(s: Session, section: SectionRow): Promise<WsBlock[]> {
   return resolveBlocks(s.tenantId, rows);
 }
 
+const SENSITIVE_REFUSAL = "That card ties an identifiable person to protected information. Record consent, "
+  + "de-identify it, or rule it not sensitive in the Card Library before it can go into an answer.";
+
+/** Ids among these cards that are sensitive and not yet decided. */
+async function undecidedSensitive(tenantId: string, cardIds: string[]): Promise<string[]> {
+  if (!cardIds.length) return [];
+  const { data, error } = await db.from("story_card").select("id, sensitive, sensitive_cleared")
+    .eq("tenant_id", tenantId).in("id", cardIds);
+  if (error) throw new Error(`Could not check the cards: ${error.message}`);
+  return ((data ?? []) as { id: string; sensitive: boolean; sensitive_cleared: string | null }[])
+    .filter(c => !placeable({ sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared as never })).map(c => c.id);
+}
+
 const clampPos = (p: number, n: number) => Math.max(0, Math.min(Number.isInteger(p) ? p : n, n));
 
 // ---------------------------------------------------------------------------
@@ -115,11 +130,12 @@ export async function addCardBlockAction(sectionId: string, cardId: string, posi
   rank?: { position: number; score: number } | null): Promise<WsBlock[]> {
   const s = await requireAdmin();
   const section = await loadSection(s.tenantId, sectionId);
-  const { data: card, error: cErr } = await db.from("story_card").select("id, version, status")
+  const { data: card, error: cErr } = await db.from("story_card").select("id, version, status, sensitive, sensitive_cleared")
     .eq("tenant_id", s.tenantId).eq("id", cardId).maybeSingle();
   if (cErr) throw new Error(`Could not read the card: ${cErr.message}`);
   if (!card) throw new Error("That card is not in this client's library.");
   if (card.status === "retired") throw new Error("That card has been retired from the library.");
+  if (!placeable({ sensitive: card.sensitive, sensitiveCleared: card.sensitive_cleared })) throw new Error(SENSITIVE_REFUSAL);
 
   const rows = await rawBlocks(s.tenantId, sectionId);
   if (rows.some(r => r.card_id === cardId && r.kind === "card")) throw new Error("That card is already in this answer.");
@@ -360,14 +376,17 @@ export async function tidyAction(sectionId: string): Promise<TidyProposal | { er
  * Sections are created confirmed: these questions are the bank's own wording,
  * written by For Granted, so there is no funder text to check them against.
  */
-export async function openStandardAnswersAction(): Promise<string> {
+export async function openStandardAnswersAction(): Promise<{ draftId: string; since: string | null; added: number }> {
   const s = await requireAdmin();
   const orgType = await orgTypeOf(s.tenantId);
   const branch = orgType === "for_profit" ? "startup" : "nonprofit";
   const allowed = new Set(kindsFor(orgType).map(k => k.key));
 
-  let { data: draft } = await db.from("grant_draft").select("id")
+  const { data: found } = await db.from("grant_draft").select("id, seen_at")
     .eq("tenant_id", s.tenantId).eq("purpose", "standard_answers").maybeSingle();
+  // When it was last opened, so the page can say which questions are new since.
+  const since = (found?.seen_at as string | null | undefined) ?? null;
+  let draft: { id: string } | null = found ? { id: found.id as string } : null;
   if (!draft) {
     const now = new Date().toISOString();
     const { data: made, error } = await db.from("grant_draft").insert({
@@ -376,15 +395,15 @@ export async function openStandardAnswersAction(): Promise<string> {
     }).select("id").single();
     if (error || !made) {
       // A second tab may have made it a moment ago; the unique index says so.
-      const { data: again } = await db.from("grant_draft").select("id")
+      const { data: again } = await db.from("grant_draft").select("id, seen_at")
         .eq("tenant_id", s.tenantId).eq("purpose", "standard_answers").maybeSingle();
       if (!again) throw new Error(`Could not create Standard Answers: ${error?.message ?? "no row"}`);
-      draft = again;
+      draft = { id: again.id as string };
     } else {
-      draft = made;
+      draft = { id: made.id as string };
     }
   }
-  const draftId = draft.id as string;
+  const draftId = draft.id;
 
   const [{ data: bank, error: bErr }, { data: have }] = await Promise.all([
     db.from("grant_question").select("slug, prompt_text, guidance, audience, sort_order, wanted_kinds, typical_limit")
@@ -410,7 +429,8 @@ export async function openStandardAnswersAction(): Promise<string> {
     const { error } = await db.from("draft_section").insert(add);  // tenant-safe: every row carries tenant_id from the session
     if (error) throw new Error(`Could not add the bank's questions: ${error.message}`);
   }
-  return draftId;
+  await db.from("grant_draft").update({ seen_at: new Date().toISOString() }).eq("tenant_id", s.tenantId).eq("id", draftId);
+  return { draftId, since, added: since ? add.length : 0 };
 }
 
 /**
@@ -435,6 +455,9 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
   const blocks = await resolveBlocks(s.tenantId, rows);
   const text = assembleAnswer(blocks);
   if (!text) throw new Error("There is nothing in this answer to approve yet.");
+  if ((await undecidedSensitive(s.tenantId, blocks.filter(b => b.cardId).map(b => b.cardId as string))).length) {
+    throw new Error("This answer holds a sensitive card that has not been decided. Decide it in the Card Library, or remove it, before approving.");
+  }
 
   const now = new Date().toISOString();
   const { data: ans, error } = await db.from("answer").upsert({
@@ -489,6 +512,9 @@ export async function startFromStandardAction(sectionId: string): Promise<WsBloc
   }
   const source = await rawBlocks(s.tenantId, ans.draft_section_id as string);
   if (!source.length) throw new Error("The standard answer has no blocks to start from.");
+  if ((await undecidedSensitive(s.tenantId, source.filter(b => b.card_id).map(b => b.card_id as string))).length) {
+    throw new Error("The standard answer holds a sensitive card whose decision was reopened. Decide it in the Card Library first.");
+  }
   const { error } = await db.from("section_block").insert(source.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the session
     tenant_id: s.tenantId, section_id: sectionId, sort_order: i, kind: b.kind,
     card_id: b.card_id ?? null, card_version: b.card_version ?? null, text: b.text ?? null,
@@ -499,4 +525,116 @@ export async function startFromStandardAction(sectionId: string): Promise<WsBloc
     event: "added" as const, card_id: b.card_id as string, payload: { via: "standard_answer" },
   })));
   return finish(s, section);
+}
+
+// ---------------------------------------------------------------------------
+// Arrange for me, and filling an application from Standard Answers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Place a first arrangement of cards in an empty answer.
+ *
+ * Cards only, chosen by the same ranking the panel shows (lib/story-card-rank.ts,
+ * arrangePicks): one of each kind the question asks for, then more while about
+ * four-fifths of the limit allows. Nothing is written, so every sentence still
+ * traces to a quote. Never a sensitive card that has not been decided, never one
+ * already used in another answer here. Logged as `added` with the rank each was
+ * shown at and `via: "arrange"`, so the learning can tell these from a person's
+ * own choices.
+ */
+export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: WsBlock[]; placed: number }> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  if ((await rawBlocks(s.tenantId, sectionId)).length) throw new Error("Arrange for me starts an empty answer. Clear this one first.");
+
+  const { data: sec } = await db.from("draft_section").select("wanted_kinds, limit_value, limit_unit, question_slugs")
+    .eq("tenant_id", s.tenantId).eq("id", sectionId).maybeSingle();
+  const { data: siblings } = await db.from("draft_section").select("id")
+    .eq("tenant_id", s.tenantId).eq("draft_id", section.draft_id);
+  const otherIds = ((siblings ?? []) as { id: string }[]).map(x => x.id).filter(id => id !== sectionId);
+  const { data: usedRows } = otherIds.length
+    ? await db.from("section_block").select("card_id").eq("tenant_id", s.tenantId).in("section_id", otherIds)
+    : { data: [] };
+  const usedElsewhere = new Set(((usedRows ?? []) as { card_id: string | null }[]).map(r => r.card_id).filter((x): x is string => !!x));
+
+  const cards = await loadCards(s.tenantId);
+  const wanted = (sec?.wanted_kinds as string[] | null) ?? [];
+  const ranked = rankCards(cards, {
+    prompt: section.prompt, guidance: section.guidance, wantedKinds: wanted, slugs: section.question_slugs,
+  }, { now: new Date(), usedElsewhere, inSection: new Set(), sectionHasVoice: false });
+  const byId = new Map(cards.map(c => [c.id, c]));
+  const picks = arrangePicks(ranked, wanted,
+    arrangeBudget((sec?.limit_value as number | null) ?? null, (sec?.limit_unit as "words" | "characters" | null) ?? null),
+    c => placeable(byId.get(c.id) ?? {}));
+  if (!picks.length) {
+    throw new Error(wanted.length
+      ? "No unused cards of the kinds this question asks for are ready to place. Add cards by hand, or write your own text."
+      : "This question has no card kinds set, so there is nothing to arrange from. Add cards by hand.");
+  }
+
+  const { data: ins, error } = await db.from("section_block").insert(picks.map((r, i) => ({  // tenant-safe: every row carries tenant_id from the session
+    tenant_id: s.tenantId, section_id: sectionId, sort_order: i, kind: "card",
+    card_id: r.card.id, card_version: byId.get(r.card.id)?.version ?? 1, created_by: s.user.id,
+  }))).select("id, card_id");
+  if (error) throw new Error(`Could not place the cards: ${error.message}`);
+  const blockOf = new Map(((ins ?? []) as { id: string; card_id: string }[]).map(b => [b.card_id, b.id]));
+  await logEvents(s, section, picks.map(r => ({
+    event: "added" as const, card_id: r.card.id, block_id: blockOf.get(r.card.id) ?? null,
+    position: r.position, rank_score: r.score, payload: { via: "arrange" },
+  })));
+  return { blocks: await finish(s, section), placed: picks.length };
+}
+
+/**
+ * Start every empty question of an application from the client's approved
+ * standard answer to the same bank question, at once.
+ *
+ * The same copy as "Start from the standard answer", for every question it
+ * applies to. Questions already started, questions with no matched bank
+ * question, and standard answers holding an undecided sensitive card are left
+ * alone and counted, so the writer knows what is still to do.
+ */
+export async function fillFromStandardsAction(draftId: string): Promise<{ filled: number; skipped: number }> {
+  const s = await requireAdmin();
+  const { data: draft } = await db.from("grant_draft").select("id, mode, purpose")
+    .eq("tenant_id", s.tenantId).eq("id", draftId).maybeSingle();
+  if (!draft || draft.mode !== "cards" || draft.purpose === "standard_answers") throw new Error("That is not one of this client's applications.");
+
+  const [{ data: secs }, { data: answers }] = await Promise.all([
+    db.from("draft_section").select("id, question_slugs").eq("tenant_id", s.tenantId).eq("draft_id", draftId),
+    db.from("answer").select("draft_section_id, status, question:question_id(slug)")
+      .eq("tenant_id", s.tenantId).eq("status", "published").not("draft_section_id", "is", null),
+  ]);
+  const stdBySlug = new Map(((answers ?? []) as unknown as { draft_section_id: string; question: { slug: string } | null }[])
+    .filter(a => a.question?.slug).map(a => [a.question!.slug, a.draft_section_id]));
+  const sections = (secs ?? []) as { id: string; question_slugs: string[] }[];
+  if (!sections.length) return { filled: 0, skipped: 0 };
+
+  const { data: existing } = await db.from("section_block").select("section_id")
+    .eq("tenant_id", s.tenantId).in("section_id", sections.map(x => x.id));
+  const started = new Set(((existing ?? []) as { section_id: string }[]).map(r => r.section_id));
+
+  let filled = 0, skipped = 0;
+  for (const sec of sections) {
+    const from = sec.question_slugs[0] ? stdBySlug.get(sec.question_slugs[0]) : undefined;
+    if (!from || started.has(sec.id)) continue;
+    const source = await rawBlocks(s.tenantId, from);
+    if (!source.length || (await undecidedSensitive(s.tenantId, source.filter(b => b.card_id).map(b => b.card_id as string))).length) {
+      skipped += 1; continue;
+    }
+    const { error } = await db.from("section_block").insert(source.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the session
+      tenant_id: s.tenantId, section_id: sec.id, sort_order: i, kind: b.kind,
+      card_id: b.card_id ?? null, card_version: b.card_version ?? null, text: b.text ?? null,
+      edited: !!b.edited, break_before: !!b.break_before, created_by: s.user.id,
+    })));
+    if (error) throw new Error(`Could not copy a standard answer: ${error.message}`);
+    await db.from("draft_section").update({ status: "drafting", updated_at: new Date().toISOString() })
+      .eq("tenant_id", s.tenantId).eq("id", sec.id);
+    const section = await loadSection(s.tenantId, sec.id);
+    await logEvents(s, section, source.filter(b => b.kind === "card").map(b => ({
+      event: "added" as const, card_id: b.card_id as string, payload: { via: "standard_answer" },
+    })));
+    filled += 1;
+  }
+  return { filled, skipped };
 }

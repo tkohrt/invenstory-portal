@@ -24,7 +24,12 @@ export const WEIGHTS = {
   verified: 1.0,
   /** Its newest evidence is recent. */
   fresh: 0.5,
-  /** A living-voice card, while the answer has none yet. */
+  /**
+   * A VERIFIED living-voice card, while the answer has none yet. Verified only:
+   * on RE-Assist's unreviewed library the bonus put transcript cards ahead of
+   * documented evidence across the board (1 October 2026). A voice a person has
+   * confirmed is worth surfacing; an unchecked transcript line is not.
+   */
   voice: 0.5,
   /** Already used in another section of this application. Negative. */
   usedElsewhere: -1.0,
@@ -168,7 +173,7 @@ export function scoreCard(card: RankCard, section: RankSection, ctx: RankContext
     covered: card.strength === "covered" ? WEIGHTS.covered : 0,
     verified: card.status === "verified" ? WEIGHTS.verified : 0,
     fresh: newest && !Number.isNaN(newest.getTime()) && monthsBetween(ctx.now, newest) <= FRESH_MONTHS ? WEIGHTS.fresh : 0,
-    voice: card.layer === "III" && !ctx.sectionHasVoice ? WEIGHTS.voice : 0,
+    voice: card.layer === "III" && card.status === "verified" && !ctx.sectionHasVoice ? WEIGHTS.voice : 0,
     usedElsewhere: ctx.usedElsewhere.has(card.id) ? WEIGHTS.usedElsewhere : 0,
     similarity: WEIGHTS.similarity * overlap(`${section.prompt} ${section.guidance ?? ""}`, card.statement),
     prior: ctx.prior ? ctx.prior(card) : 0,
@@ -213,4 +218,90 @@ export function reasonFor(r: Ranked, kindLabel: string, source: string | null): 
   const from = source ? `; from ${source}` : "";
   const line = bits.join("; ");
   return `${line[0].toUpperCase()}${line.slice(1)}${from} (${status}${thin}).`;
+}
+
+// ---------------------------------------------------------------------------
+// Arrange for me: a first arrangement made only of cards.
+// ---------------------------------------------------------------------------
+
+/** About how many words of cards to place: four-fifths of the limit, leaving room for the writer. */
+export function arrangeBudget(limitValue: number | null, limitUnit: "words" | "characters" | null): number {
+  if (!limitValue || limitValue <= 0) return 200;
+  const words = limitUnit === "characters" ? limitValue / 6 : limitValue;
+  return Math.max(40, Math.floor(words * 0.8));
+}
+
+const wordCount = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+/**
+ * The cards "Arrange for me" places, in the order it places them.
+ *
+ * Only cards: nothing is written, so every sentence still traces to a quote and
+ * the writer edits from a sourced starting point rather than from prose they
+ * would have to check line by line. Never a card used in another answer of this
+ * application, never one `canPlace` refuses (sensitive and undecided). One card
+ * of each kind the question asks for first, best-ranked, in the order the kinds
+ * are listed; then further cards of those kinds while the budget allows.
+ */
+export function arrangePicks(
+  ranked: Ranked[], wantedKinds: string[], budgetWords: number,
+  canPlace: (card: RankCard) => boolean, maxCards = 8,
+): Ranked[] {
+  const pool = ranked.filter(r => canPlace(r.card) && r.parts.usedElsewhere === 0
+    && (wantedKinds.length === 0 || wantedKinds.includes(r.card.kind)));
+  const picked: Ranked[] = [];
+  let words = 0;
+  const take = (r: Ranked) => {
+    if (picked.length >= maxCards || picked.includes(r)) return false;
+    const w = wordCount(r.card.statement);
+    if (picked.length && words + w > budgetWords) return false;
+    picked.push(r); words += w;
+    return true;
+  };
+  if (wantedKinds.length) {
+    for (const k of wantedKinds) {
+      const best = pool.find(r => r.card.kind === k);
+      if (best) take(best);
+    }
+  }
+  for (const r of pool) {
+    if (words >= budgetWords * 0.9 || picked.length >= maxCards) break;
+    take(r);
+  }
+  const kindAt = (k: string) => { const i = wantedKinds.indexOf(k); return i < 0 ? wantedKinds.length : i; };
+  return [...picked].sort((a, b) => kindAt(a.card.kind) - kindAt(b.card.kind) || a.position - b.position);
+}
+
+// ---------------------------------------------------------------------------
+// Standard Answers: which questions to put first.
+// ---------------------------------------------------------------------------
+
+export interface BankQuestionStats {
+  origin: "seed" | "observed";
+  /** How many confirmed funder questions have matched it. */
+  observed: number;
+}
+
+/** A question funders have asked at least this often earns a place among the recommended. */
+export const RECOMMEND_MIN_OBSERVED = 3;
+
+/**
+ * Recommended or optional, with the reason.
+ *
+ * Kept to two facts that need no model: how often funders actually ask the
+ * question, and whether this client has cards that can answer it. The 19 seed
+ * questions are the ones nearly every application asks, so they are recommended
+ * whenever the client has material for them. A question the bank learned from
+ * applications must have been seen several times first. Everything else waits
+ * under "optional", answerable but not in the way.
+ */
+export function recommendSection(
+  q: BankQuestionStats | null, wantedKinds: string[], kindsAvailable: ReadonlySet<string>,
+): { recommended: boolean; why: string } {
+  const covered = wantedKinds.length === 0 || wantedKinds.some(k => kindsAvailable.has(k));
+  if (!covered) return { recommended: false, why: "No cards yet for what this question asks." };
+  if (!q || q.origin === "seed") return { recommended: true, why: "A question most funders ask." };
+  return q.observed >= RECOMMEND_MIN_OBSERVED
+    ? { recommended: true, why: `Asked in ${q.observed} funder applications so far.` }
+    : { recommended: false, why: `Asked in ${q.observed} funder application${q.observed === 1 ? "" : "s"} so far.` };
 }

@@ -4,6 +4,7 @@ import { getSession } from "@/lib/server/session";
 import { userClient } from "@/lib/server/supabase";
 import { db } from "@/lib/server/db";
 import { downloadFilename } from "@/lib/server/filename";
+import { answersMarkdown, cardsCsv } from "@/lib/server/exports";
 
 export const maxDuration = 60;
 
@@ -40,6 +41,16 @@ export async function GET() {
       zip.folder(folder)!.file(`${safe} (preview).txt`, `${d.title}\n\n${d.snippet ?? ""}`);
     }
   }
+  // The rest of what is the client's: its Story Cards and its Answer Library.
+  // Best-effort: a failure here must not cost the client its documents.
+  try {
+    const { csv, count } = await cardsCsv(session.tenantId);
+    if (count) { zip.file("Story Cards.csv", csv); manifest.push(`- Story Cards.csv: ${count} card(s) with their sources`); }
+  } catch (e) { console.error("[export] cards", e); }
+  try {
+    const { md, count } = await answersMarkdown(session.tenantId, tenant?.name ?? "Client");
+    if (count) { zip.file("Answer Library.md", md); manifest.push(`- Answer Library.md: ${count} answer(s)`); }
+  } catch (e) { console.error("[export] answers", e); }
   zip.file("MANIFEST.txt", manifest.join("\n"));
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: session.tenantId, action: "export_inventory", detail: `${(docs ?? []).length} docs` });

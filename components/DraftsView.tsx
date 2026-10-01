@@ -20,7 +20,10 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
   const [openError, setOpenError] = useState<string | null>(null);
   const openStandard = async () => {
     setOpening(true); setOpenError(null);
-    try { router.push(`/drafts/${await openStandardAnswersAction()}`); }
+    try {
+      const r = await openStandardAnswersAction();
+      router.push(`/drafts/${r.draftId}${r.added && r.since ? `?since=${encodeURIComponent(r.since)}` : ""}`);
+    }
     catch (e) { setOpenError(e instanceof Error ? e.message : "Could not open Standard Answers."); setOpening(false); }
   };
   return (

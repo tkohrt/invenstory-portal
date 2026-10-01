@@ -13,10 +13,10 @@ import { getWorkspace } from "@/lib/server/workspace";
 export const maxDuration = 60;
 
 export default async function DraftDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ q?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ q?: string; since?: string }>;
 }) {
   const { id } = await params;
-  const { q } = await searchParams;
+  const { q, since } = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
   await gateFeature(session.role, session.tenantId, "drafts");
@@ -34,7 +34,8 @@ export default async function DraftDetailPage({ params, searchParams }: {
     if (draft.confirmed_at) {
       const ws = await getWorkspace(session.tenantId, id);
       return <DraftWorkspace tenantName={tenant.name} draft={rest} ws={ws} sourceText={source_text ?? ""}
-        initialQuestion={Math.max(1, Number.parseInt(q ?? "1", 10) || 1)} />;
+        initialQuestion={Math.max(1, Number.parseInt(q ?? "1", 10) || 1)}
+        since={since && !Number.isNaN(Date.parse(since)) ? since : null} />;
     }
     const [sections, bank] = await Promise.all([getSections(session.tenantId, id), getBankOptions(session.tenantId)]);
     return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} bank={bank} sourceText={source_text ?? ""} />;

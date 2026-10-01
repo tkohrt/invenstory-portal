@@ -18,6 +18,11 @@ export interface LibraryCard {
   status: "suggested" | "verified" | "retired"; retiredReason: string | null;
   mergedInto: string | null; possibleDuplicateOf: string | null;
   createdFrom: string; version: number; verifiedAt: string | null; createdAt: string;
+  /** 0043: who verified it, and why it was retired, in the reviewer's words. */
+  verifiedByRole: "admin" | "client" | null; retiredNote: string | null;
+  /** 0043: ties an identifiable person to a protected status; see lib/card-sensitivity.ts. */
+  sensitive: boolean; sensitiveReason: string | null;
+  sensitiveCleared: "consent" | "deidentified" | "not_sensitive" | null; sensitiveNote: string | null;
   evidence: LibraryEvidence[];
 }
 
@@ -71,6 +76,12 @@ export async function getCardLibrary(tenantId: string): Promise<CardLibraryData>
     version: r.version as number,
     verifiedAt: (r.verified_at as string | null) ?? null,
     createdAt: r.created_at as string,
+    verifiedByRole: (r.verified_by_role as LibraryCard["verifiedByRole"]) ?? null,
+    retiredNote: (r.retired_note as string | null) ?? null,
+    sensitive: !!r.sensitive,
+    sensitiveReason: (r.sensitive_reason as string | null) ?? null,
+    sensitiveCleared: (r.sensitive_cleared as LibraryCard["sensitiveCleared"]) ?? null,
+    sensitiveNote: (r.sensitive_note as string | null) ?? null,
     evidence: ((r.story_card_evidence as EvRow[]) ?? [])
       .filter(e => e.document?.status === "ready")
       .map(e => ({

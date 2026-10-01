@@ -1,35 +1,31 @@
-// Build the Card Library, one invocation's worth at a time.
+// Build the Card Library, in stages the server carries on by itself.
 //
-// The same shape as the Search Profile build, and for the same reason: reading a
-// whole Inven(s)tory is minutes of model time and no single request gets that
-// long. Each call reads what fits in 42 seconds, keeps it, and reports what is
-// left; the page calls again until nothing is.
+// Reading a whole Inven(s)tory is minutes of model time and no single request
+// gets that long, so the build runs in stages of about 35 seconds. Until
+// 1 October 2026 the page called each stage, so closing it paused the build.
+// Now the page starts the build and watches; each stage hands on to the next
+// itself (lib/server/job-chain.ts), and the portal shows the build's progress
+// and an estimate wherever the admin, or the client, happens to be.
 //
-// Admin-only, always. The Card Library is For Granted's working view of a
-// client's story and is never shown to a client account (Decision 1 of the
-// Story Card Drafter spec).
+// Admin-only to start, stop or re-merge.
 //
-// Four requests besides "carry on":
+// Requests:
 //   begin     create or rejoin the job and answer at once, reading nothing
-//   restart   forget what was read and read every document again (paid)
+//   kick      start the server-carried chain from where reading stopped
+//             (with restart: forget what was read and read everything again, paid)
 //   remerge   rebuild the library from what is already read (free)
-//   stop      mark the chain ended, keeping everything read
-import { NextResponse } from "next/server";
+//   stop      mark the build ended, keeping everything read
+//   (none)    the same as kick, for a page from before this change
+import { NextResponse, after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { db } from "@/lib/server/db";
-import {
-  continueCardBuild, clearCardDocs, cardBuildProgress, remergeLibrary, type MergeSummary,
-} from "@/lib/server/card-extract";
-import {
-  createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob, recordEvent,
-} from "@/lib/server/jobs";
+import { clearCardDocs, cardBuildProgress, remergeLibrary } from "@/lib/server/card-extract";
+import { createJob, finishJob, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
+import { describeMerge } from "@/lib/server/card-build";
+import { scheduleCardPass } from "@/lib/server/job-chain";
 
 export const maxDuration = 60;
-
-const describeMerge = (m: MergeSummary) =>
-  `${m.cards} live card(s): ${m.created} new, ${m.revived} restored, ${m.retired} retired `
-  + `for lack of evidence, ${m.duplicates} possible duplicate(s) flagged for review.`;
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -90,38 +86,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ jobId, begun: true, ...await cardBuildProgress(tenantId) });
   }
 
-  if (!await claimJob(tenantId, jobId)) {
-    return NextResponse.json({ jobId, busy: true, complete: false, ...await cardBuildProgress(tenantId) });
+  // Start, or restart, the chain. Answers at once; the stages run on the server.
+  if (body?.restart) {
+    await clearCardDocs(tenantId);
+    if (!body?.begun) await opening();
+  } else if (!body?.begun && !existing) {
+    await opening();
   }
-
-  if (body?.restart) await clearCardDocs(tenantId);
-
-  // A caller that did not begin first still gets its opening line.
-  if (!body?.begun && (!existing || body?.restart)) await opening();
-
-  try {
-    const { data: prof } = await db.from("eligibility_profile")
-      .select("org_type").eq("tenant_id", tenantId).maybeSingle();
-    const orgType = (prof?.org_type as string | null) ?? null;
-
-    const r = await continueCardBuild(tenantId, orgName, orgType, {
-      onProgress: p => { void updateJob(tenantId, jobId, p); },
-      onEvent: e => { void recordEvent(tenantId, jobId, e); },
-    });
-    const progress = await cardBuildProgress(tenantId);
-
-    if (r.complete) {
-      await releaseJob(tenantId, jobId);
-      await finishJob(tenantId, jobId, { ...(r.merge ?? {}) }, r.merge ? describeMerge(r.merge) : "Finished.");
-    } else {
-      await updateJob(tenantId, jobId, { detail: `${progress.done} of ${progress.total} documents read` });
-      await releaseJob(tenantId, jobId);
-    }
-    return NextResponse.json({ jobId, complete: r.complete, read: r.read, remaining: r.remaining, ...progress });
-  } catch (e) {
-    await releaseJob(tenantId, jobId);
-    const message = e instanceof Error ? e.message : "Could not finish reading the Inven(s)tory.";
-    await failJob(tenantId, jobId, message);
-    return NextResponse.json({ jobId, error: message }, { status: 500 });
-  }
+  await db.from("job").update({ chain_passes: 0, updated_at: new Date().toISOString() })
+    .eq("tenant_id", tenantId).eq("id", jobId).eq("status", "running");
+  await recordEvent(tenantId, jobId, {
+    kind: "phase",
+    text: "Reading in stages on the server. This page can be closed: the build carries on, and the portal shows its progress wherever you are.",
+  });
+  const origin = new URL(req.url).origin;
+  after(async () => { await scheduleCardPass(origin, tenantId, jobId); });
+  return NextResponse.json({ jobId, chained: true, complete: false, ...await cardBuildProgress(tenantId) });
 }

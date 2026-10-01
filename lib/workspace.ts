@@ -23,6 +23,11 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   // every client account until an admin turns it on for that client. For
   // Granted runs matches on the client's behalf in the meantime.
   { key: "funder_matches", href: "/funder-matches", label: "Funder Matches",   icon: "◈", defaultVisible: false },
+  // The client's own Story Cards, to verify, correct or mark out of date in
+  // short batches (Phase 3.1). Hidden until an admin turns it on for a client,
+  // like Funder Matches: Decision 1 of the drafter spec kept cards For Granted's
+  // view in version 1, and this is the deliberate step past it.
+  { key: "card_review",    href: "/story-cards",    label: "Story Cards",      icon: "▣", defaultVisible: false },
 ];
 
 export const WORKSPACE_FEATURE_MAP: Record<string, WorkspaceFeature> =

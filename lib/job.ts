@@ -170,7 +170,12 @@ export function describeJob(j: Job, now = Date.now()): JobView {
   if (j.detail) parts.push(j.detail);
   else if (j.total > 0) parts.push(`${j.done} of ${j.total}`);
 
-  if (elapsed > 25_000 && j.kind === "match") {
+  if (j.kind === "cards") {
+    // A Card Library build runs in stages for minutes by design, carried by the
+    // server from one stage to the next, so the single-run time limit below
+    // does not apply to it.
+    if (elapsed > 45_000) parts.push("it keeps going if you leave this page");
+  } else if (elapsed > 25_000 && j.kind === "match") {
     parts.push("the funding service sleeps when idle, so the first search after a quiet spell takes a minute to wake it");
   } else if (elapsed > 45_000) {
     parts.push("still going");
@@ -178,7 +183,7 @@ export function describeJob(j: Job, now = Date.now()): JobView {
   // The hosting plan allows a minute per run. Past that the work is killed
   // mid-flight, which shows up here as a job that stops moving, so it is worth
   // warning before it happens rather than explaining afterwards.
-  if (elapsed > 55_000) {
+  if (elapsed > 55_000 && j.kind !== "cards") {
     parts.push("close to the time limit for a single run; if it stops here, run it again and it will pick up faster with the service already awake");
   }
 
@@ -266,4 +271,46 @@ export function quietLine(q: QuietInput): string | null {
   return q.lastText
     ? `Still on "${q.lastText}", ${waited} so far.`
     : `Nothing new for ${waited}.`;
+}
+
+// ---------------------------------------------------------------------------
+// How long is left.
+// ---------------------------------------------------------------------------
+
+/** Assumed per document before any has been timed: a two-window document with one retry. */
+export const DEFAULT_MS_PER_UNIT = 25_000;
+/** The assembly at the end of a Card Library build: one merge, no model calls. */
+export const FINISH_MS = 15_000;
+
+/**
+ * Milliseconds left, estimated from the pace so far, or null when nothing can
+ * be said (finished, or nothing to count).
+ *
+ * The pace is the time from the job's start to its latest finished unit,
+ * divided by the units finished IN THIS RUN: units carried forward from an
+ * earlier build cost nothing and would make the pace look impossibly fast. With
+ * nothing timed yet it assumes DEFAULT_MS_PER_UNIT, which is honest about being
+ * a guess by being round.
+ */
+export function estimateRemainingMs(input: {
+  done: number; total: number; startedAt: string;
+  /** Times of the units finished in this run, oldest first. */
+  unitTimes: string[];
+}): number | null {
+  const left = input.total - input.done;
+  if (input.total <= 0 || left <= 0) return input.total > 0 ? FINISH_MS : null;
+  const start = new Date(input.startedAt).getTime();
+  const last = input.unitTimes.length ? new Date(input.unitTimes[input.unitTimes.length - 1]).getTime() : NaN;
+  const pace = input.unitTimes.length && !isNaN(start) && !isNaN(last) && last > start
+    ? (last - start) / input.unitTimes.length
+    : DEFAULT_MS_PER_UNIT;
+  return Math.round(left * Math.max(pace, 5_000) + FINISH_MS);
+}
+
+/** "about 3 minutes", "under a minute": a person's way of saying an estimate. */
+export function roughly(ms: number | null): string | null {
+  if (ms == null) return null;
+  if (ms < 60_000) return "under a minute";
+  const m = Math.round(ms / 60_000);
+  return m === 1 ? "about a minute" : `about ${m} minutes`;
 }

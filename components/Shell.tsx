@@ -6,6 +6,7 @@ import { signOutAction, switchTenantAction } from "@/lib/server/actions";
 import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/server/artifact-actions";
 import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
 import PlantVisual from "./PlantVisual";
+import BuildNotice from "./BuildNotice";
 import { promptHref } from "@/lib/garden-prompt";
 
 export interface ShellProps {
@@ -13,10 +14,12 @@ export interface ShellProps {
   tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number; overlayPendingCount: number;
   workspaceVis: Record<string, boolean>;
   garden: GardenState;
+  /** Story Cards waiting for the client to look at (0 when the page is off). */
+  storyCardsWaiting?: number;
   children?: React.ReactNode;
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, workspaceVis, garden, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, workspaceVis, garden, storyCardsWaiting = 0, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -56,6 +59,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
     { key: "funder_matches", href: "/funder-matches",  ic: "◈", label: "Funder Matches",        toggle: true },
+    { key: "card_review",    href: "/story-cards",     ic: "▣", label: "Story Cards",           toggle: true },
   ];
   const closeNav = () => setNavOpen(false);
 
@@ -119,6 +123,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               href={item.href}
               title={item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
               <span className="ic">{item.ic}</span> {item.label}
+              {item.key === "card_review" && storyCardsWaiting > 0 && <span className="badge-count" title="New cards to look at">{storyCardsWaiting}</span>}
               {item.toggle && admin && (
                 <button type="button"
                   className={`vis-dot ${visible ? "on" : "off"}${togglingFeature === item.key ? " busy" : ""}`}
@@ -164,7 +169,10 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           </div>
         )}
       </div>
-      <div className="main">{children}</div>
+      <div className="main">
+        <BuildNotice role={role} tenantId={tenantId} cardsVisible={admin || !!workspaceVis.card_review} />
+        {children}
+      </div>
     </div>
   );
 }

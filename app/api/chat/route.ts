@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { userClient } from "@/lib/server/supabase";
 import { db } from "@/lib/server/db";
-import { retrieve, generate } from "@/lib/server/rag";
+import { retrieve, retrieveCards, generate } from "@/lib/server/rag";
 
 export const maxDuration = 60;
 
@@ -46,8 +46,12 @@ export async function POST(req: NextRequest) {
   // Retrieve (RLS-scoped) -> generate (Bedrock or extractive fallback).
   // Admins have RLS lifted, so re-scope retrieval to the tenant being viewed
   // (parity with the search route) — red-team L1.
-  const r = await retrieve(q, 6, session.role === "admin" ? session.tenantId : undefined);
-  const passages = r.passages;
+  // Story Cards first (every document, quote-checked), then the closest passages.
+  const [r, cardPassages] = await Promise.all([
+    retrieve(q, 6, session.role === "admin" ? session.tenantId : undefined),
+    retrieveCards(q, session.tenantId, 4).catch(() => []),
+  ]);
+  const passages = [...cardPassages, ...r.passages];
   const mode = r.mode;
   const answer = await generate(q, passages);
 

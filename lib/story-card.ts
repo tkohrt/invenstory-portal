@@ -211,6 +211,12 @@ export interface CardCandidate {
   quote: string;
   subject: CardSubject;
   strength: CardStrength;
+  /**
+   * The reader's flag: the claim ties an identifiable person to a protected
+   * status. Optional, so candidates stored before 0043 read as unflagged. The
+   * rule in lib/card-sensitivity.ts is applied as well; either one flags a card.
+   */
+  sensitive?: boolean;
 }
 
 /** A candidate that passed every check, carrying what the checks established. */
@@ -255,6 +261,7 @@ export function parseCandidates(raw: string): CardCandidate[] {
       quote: str(r.quote).slice(0, 1200),
       subject,
       strength: r.strength === "covered" ? "covered" : "thin",
+      sensitive: r.sensitive === true,
     });
   }
   return out;

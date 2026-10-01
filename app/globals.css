@@ -1171,3 +1171,45 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ws-approved{margin:0 0 10px;font-size:12.5px}
 .ws-foot{margin-top:18px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 @media (max-width:860px){.ws-grid{grid-template-columns:1fr}.ws-panel{position:static;max-height:none}}
+
+/* Sensitive cards (0043): a person's protected information. Amber, not red:
+   it is a decision waiting, not an error. */
+.cl-badge-sens{border-color:#d9a441;color:#7a5410;font-weight:600;background:#fff7e6}
+.cl-sens-count{color:#7a5410}
+.cl-sens{background:#fff7e6;border:1px solid #f0d49b;border-radius:9px;padding:9px 11px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.cl-sens.cl-sens-done{background:#eef5ef;border-color:#cfe2d3}
+.cl-sens .cl-link{margin-left:6px}
+
+/* Workspace, Phase 3.1: optional questions, new questions, seams. */
+.ws-pill.ws-opt{opacity:.6;border-style:dashed}
+.ws-pill.ws-new{box-shadow:0 0 0 2px #d9a441}
+.ws-opt-toggle{font-size:12px}
+.ws-soft-notice{background:#fbf8ef;border-color:#eadfc2}
+.ws-tag-sens{border-color:#d9a441;color:#7a5410}
+.ws-seams{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 15px;margin:12px 0;font-size:14.5px;line-height:1.7}
+.ws-seams p{margin:8px 0 0}
+.ws-seams-key{display:flex;gap:8px;flex-wrap:wrap;font-size:12px}
+.ws-seams-key span{padding:1px 8px;border-radius:6px}
+.seam-card{background:#e8f0f7}
+.seam-edited{background:#fff1d6}
+.seam-human{background:#eef5ef}
+.seam-bridge{background:#f1e9f8}
+.ws-seams-on{background:var(--ink);color:#fff}
+
+/* Story Cards, the client's view (0043). */
+.sc-deck{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin:6px 0 14px;max-width:760px}
+.sc-deck-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
+.sc-card{border:2px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.sc-card.cl-l1{border-color:var(--l1)} .sc-card.cl-l2{border-color:var(--l2)} .sc-card.cl-l3{border-color:var(--l3)}
+.sc-statement{margin:0;font-size:17px;line-height:1.5}
+.sc-acts .btn{padding:8px 12px}
+.sc-invite{color:var(--muted);font-size:13px;max-width:760px}
+
+/* The build notice at the top of every page. */
+.bn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-radius:10px;padding:9px 13px;margin:0 0 14px;font-size:13px;border:1px solid var(--line);background:var(--panel)}
+.bn-run{border-color:#c9d6e6;background:#f2f6fb}
+.bn-done{border-color:#cfe2d3;background:#eef5ef}
+.bn-fail{border-color:#f0d49b;background:#fff7e6}
+.bn > span{flex:1;min-width:220px}
+.bn-link{font-weight:600;white-space:nowrap}
+.bn-x{background:none;border:none;font-size:18px;line-height:1;color:var(--muted);cursor:pointer;padding:0 4px}

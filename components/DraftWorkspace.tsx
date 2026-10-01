@@ -23,12 +23,14 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, editBlockAction, logShownAction,
+  addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
+  fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   startFromStandardAction, tidyAction,
 } from "@/lib/server/workspace-actions";
 import { reopenSectionsAction } from "@/lib/server/application-actions";
-import { PANEL_SIZE, rankCards, reasonFor, type Ranked } from "@/lib/story-card-rank";
+import { PANEL_SIZE, rankCards, reasonFor, recommendSection, type Ranked } from "@/lib/story-card-rank";
+import { placeable } from "@/lib/card-sensitivity";
 import { assembleAnswer, countFor, limitState, moveItem } from "@/lib/section-answer";
 import { CARD_KIND_MAP, untracedFigures } from "@/lib/story-card";
 import type { Workspace, WsBlock, WsCard, WsSection, WsStandard } from "@/lib/server/workspace";
@@ -40,8 +42,10 @@ const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF
 
 const layerClass = (l: string | null) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "");
 
-export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion }: {
+export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion, since }: {
   tenantName: string; draft: GrantDraft; ws: Workspace; sourceText: string; initialQuestion: number;
+  /** Standard Answers: when it was last opened, to mark questions added since. */
+  since?: string | null;
 }) {
   const router = useRouter();
   const standard = ws.purpose === "standard_answers";
@@ -64,6 +68,16 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [editing, setEditing] = useState<string | null>(null);
   const [tidy, setTidy] = useState<{ order: string[]; rationale: string } | null>(null);
   const [dragging, setDragging] = useState<WsCard | null>(null);
+  const [seams, setSeams] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
+
+  // Standard Answers: recommended questions first, the rest under "optional".
+  // An application keeps the funder's order.
+  const kindsAvailable = useMemo(() => new Set(ws.cards.filter(c => placeable(c)).map(c => c.kind)), [ws.cards]);
+  const advice = useMemo(() => sections.map(s => standard
+    ? recommendSection(ws.bank[s.slugs[0] ?? ""] ?? null, s.wantedKinds, kindsAvailable)
+    : { recommended: true, why: "" }), [sections, standard, ws.bank, kindsAvailable]);
+  const isNew = (s: WsSection) => !!since && !!s.createdAt && s.createdAt > since;
 
   // A refresh after a failed save brings the stored answer back: start from it.
   // (Adjusting state while rendering, React's pattern for state derived from props.)
@@ -89,6 +103,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   }, [idx, section]);
 
   const go = (i: number) => { setIdx(i); setTidy(null); setEditing(null); setNotice(null); };
+  const recommendedIdx = sections.map((_, i) => i).filter(i => advice[i].recommended);
+  const optionalIdx = sections.map((_, i) => i).filter(i => !advice[i].recommended);
+  const navOrder = [...recommendedIdx, ...optionalIdx];
+  const navAt = navOrder.indexOf(idx);
 
   // ---- The save queue -------------------------------------------------------
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -200,6 +218,15 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const slug = section.slugs[0];
   const std = slug ? standards.find(x => x.slug === slug) : undefined;
   const changedSinceApproval = standard && std && std.sectionId === section.id && std.text !== text;
+  // An application question whose limit is tighter than the standard answer it
+  // can start from: say so before the writer starts, not after.
+  const stdCount = std?.text ? countFor(std.text, unit) : 0;
+  const stdTooLong = !standard && !!std?.sectionId && !!section.limitValue && stdCount > section.limitValue;
+  // Every empty question that an approved standard answer could start.
+  const fillable = standard ? 0 : sections.filter(s => (blocksBy[s.id] ?? []).length === 0
+    && s.slugs[0] && standards.some(x => x.slug === s.slugs[0] && x.sectionId)).length;
+  const noStandards = !standard && !standards.some(x => x.sectionId);
+  const blockedHere = blocks.filter(b => b.cardId && !placeable(cardById.get(b.cardId) ?? {})).length;
 
   const money = draft.amount_cents == null ? null : "$" + (draft.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -234,16 +261,60 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       </div>
 
       <nav className="ws-nav" aria-label="Questions">
-        <button type="button" className="btn ghost ap-mini" disabled={idx === 0} onClick={() => go(idx - 1)}>← Previous</button>
+        <button type="button" className="btn ghost ap-mini" disabled={navAt <= 0} onClick={() => go(navOrder[navAt - 1])}>← Previous</button>
         <div className="ws-pills">
-          {sections.map((s, i) => (
-            <button key={s.id} type="button" className={`ws-pill ws-${statusBy[s.id]}${i === idx ? " active" : ""}`}
-              onClick={() => go(i)} title={`${i + 1}. ${s.prompt.slice(0, 120)} (${STATUS_LABEL[statusBy[s.id]]})`}
-              aria-current={i === idx ? "step" : undefined}>{i + 1}</button>
-          ))}
+          {recommendedIdx.map(i => {
+            const s = sections[i];
+            return (
+              <button key={s.id} type="button" className={`ws-pill ws-${statusBy[s.id]}${i === idx ? " active" : ""}${isNew(s) ? " ws-new" : ""}`}
+                onClick={() => go(i)} title={`${i + 1}. ${s.prompt.slice(0, 120)} (${STATUS_LABEL[statusBy[s.id]]})${isNew(s) ? " · new since you last opened this" : ""}`}
+                aria-current={i === idx ? "step" : undefined}>{i + 1}</button>
+            );
+          })}
+          {optionalIdx.length > 0 && (
+            <button type="button" className="btn ghost ap-mini ws-opt-toggle" onClick={() => setShowOptional(v => !v)}
+              title="Questions fewer funders ask, or that this client has no cards for yet">
+              {showOptional || optionalIdx.includes(idx) ? "Optional:" : `＋ ${optionalIdx.length} optional`}
+            </button>
+          )}
+          {(showOptional || optionalIdx.includes(idx)) && optionalIdx.map(i => {
+            const s = sections[i];
+            return (
+              <button key={s.id} type="button" className={`ws-pill ws-opt ws-${statusBy[s.id]}${i === idx ? " active" : ""}${isNew(s) ? " ws-new" : ""}`}
+                onClick={() => go(i)} title={`${i + 1}. ${s.prompt.slice(0, 120)} · optional: ${advice[i].why}`}
+                aria-current={i === idx ? "step" : undefined}>{i + 1}</button>
+            );
+          })}
         </div>
-        <button type="button" className="btn ghost ap-mini" disabled={idx === sections.length - 1} onClick={() => go(idx + 1)}>Next →</button>
+        <button type="button" className="btn ghost ap-mini" disabled={navAt < 0 || navAt >= navOrder.length - 1} onClick={() => go(navOrder[navAt + 1])}>Next →</button>
       </nav>
+
+      {standard && since && sections.some(isNew) && (
+        <div className="ws-notice" role="status">
+          {sections.filter(isNew).length} new question{sections.filter(isNew).length === 1 ? "" : "s"} since you last opened Standard Answers,
+          learned from funders&rsquo; applications: {sections.filter(isNew).map(s => sections.indexOf(s) + 1).join(", ")}. They are marked in the list above.
+        </div>
+      )}
+      {noStandards && (
+        <div className="ws-notice ws-soft-notice">
+          <strong>Start with Standard Answers.</strong> {tenantName} has no approved standard answers yet. Answer the questions
+          funders ask most once, and every application, this one included, can start from them.{" "}
+          <button type="button" className="cl-link" onClick={() => void openStandardAnswersAction()
+            .then(r => router.push(`/drafts/${r.draftId}`)).catch(e => setError(e instanceof Error ? e.message : "Could not open Standard Answers."))}>Open Standard Answers</button>
+        </div>
+      )}
+      {fillable > 0 && (
+        <div className="ws-notice">
+          {fillable} question{fillable === 1 ? "" : "s"} here match{fillable === 1 ? "es" : ""} an approved standard answer and {fillable === 1 ? "is" : "are"} still empty.{" "}
+          <button type="button" className="btn secondary ap-mini" disabled={locked}
+            onClick={() => void run(() => fillFromStandardsAction(draft.id), r => {
+              setNotice(`${r.filled} question${r.filled === 1 ? "" : "s"} started from Standard Answers`
+                + (r.skipped ? `; ${r.skipped} left empty because their standard answer holds a sensitive card awaiting a decision.` : ".")
+                + " Rearrange each for this funder.");
+              router.refresh();
+            })}>Fill {fillable} from Standard Answers</button>
+        </div>
+      )}
 
       <section className="ws-question">
         <div className="ws-q-head">
@@ -262,6 +333,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             {section.guidance && <div className="ap-guidance">{section.guidance}</div>}
             {section.criteria && <div className="ap-guidance"><strong>Scoring:</strong> {section.criteria}</div>}
           </details>
+        )}
+        {standard && !advice[idx].recommended && <div className="ov-muted">Optional: {advice[idx].why}</div>}
+        {stdTooLong && (
+          <div className="ws-warn ws-soft">The standard answer is {stdCount.toLocaleString()} {unit}; this funder allows {section.limitValue!.toLocaleString()}. Starting from it means cutting.</div>
         )}
         <div className="ap-kinds">
           <span className="ov-muted">Calls for:</span>
@@ -293,7 +368,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             empty={
               <EmptyAnswer
                 std={!standard && std?.sectionId ? std : undefined}
+                locked={locked}
                 onStart={() => void run(() => startFromStandardAction(section.id), putBlocks(section.id))}
+                onArrange={() => void run(() => arrangeForMeAction(section.id), r => {
+                  putBlocks(section.id)(r.blocks);
+                  setNotice(`Placed ${r.placed} card${r.placed === 1 ? "" : "s"}: one of each kind this question asks for first, then more while about four-fifths of the limit allowed. Nothing was written; edit, reorder or remove as you like.`);
+                })}
               />
             }
           />
@@ -302,6 +382,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
           {dragging ? <div className={`ws-card ws-overlay ${layerClass(dragging.layer)}`}><p className="cl-statement">{dragging.statement}</p></div> : null}
         </DragOverlay>
       </DndContext>
+
+      {blockedHere > 0 && (
+        <div className="ws-warn">{blockedHere} card{blockedHere === 1 ? " here is" : "s here are"} now flagged as sensitive and undecided. Decide {blockedHere === 1 ? "it" : "them"} in the Card Library, or remove {blockedHere === 1 ? "it" : "them"}, before this answer is used.</div>
+      )}
+
+      {seams && blocks.length > 0 && <SeamsView blocks={blocks} />}
 
       {tidy && (
         <div className="ws-tidy" role="status">
@@ -332,6 +418,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             else setTidy(r);
           })}>Tidy</button>
         <CopyButton text={text} count={count} unit={unit} />
+        <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length} onClick={() => setSeams(v => !v)}
+          title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
         <span className="spacer" />
         {statusBy[section.id] === "done"
           ? <button type="button" className="btn ghost" disabled={locked}
@@ -447,8 +535,9 @@ function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked,
 function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; locked: boolean; onAdd: (id: string) => void }) {
   const c = r.card as WsCard;
   const [open, setOpen] = useState(false);
+  const ok = placeable(c);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `card:${c.id}`, data: { type: "card", cardId: c.id },
+    id: `card:${c.id}`, data: { type: "card", cardId: c.id }, disabled: !ok,
   });
   return (
     <div ref={setNodeRef} className={`ws-card ${layerClass(c.layer)}${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
@@ -461,8 +550,13 @@ function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; lock
       </div>
       <p className="cl-statement">{c.statement}</p>
       <div className="ws-reason">{reasonFor(r, c.kindLabel, c.newestSource)}</div>
+      {!ok && (
+        <div className="ws-warn ws-soft">Sensitive: {c.sensitiveReason ?? "it may identify a person's protected information."} Record consent,
+          de-identify it, or rule it not sensitive in the <a href="/admin/card-library">Card Library</a> before placing it.</div>
+      )}
       <div className="cl-card-acts">
-        <button type="button" className="btn inline cl-primary" disabled={locked} onClick={() => onAdd(c.id)}>Add</button>
+        <button type="button" className="btn inline cl-primary" disabled={locked || !ok} onClick={() => onAdd(c.id)}
+          title={ok ? undefined : "Sensitive: decide it in the Card Library first"}>Add</button>
         {used.length > 0 && <span className="ov-tag" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
         <button type="button" className="cl-link" onClick={() => setOpen(o => !o)}>{open ? "Hide" : "Sources"} ({c.evidence.length})</button>
       </div>
@@ -514,10 +608,12 @@ function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, o
   );
 }
 
-function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }) {
+function EmptyAnswer({ std, locked, onStart, onArrange }: { std?: WsStandard; locked: boolean; onStart: () => void; onArrange: () => void }) {
   return (
     <div className="ws-empty">
       <p>Drag cards here, or press <strong>Add</strong> on a card. Cards go in the order you place them, and you can move them afterwards.</p>
+      <p><button type="button" className="btn secondary" disabled={locked} onClick={onArrange}>Arrange for me</button>
+        <span className="ov-muted"> Places the best cards for this question, in order. Cards only: nothing is written for you.</span></p>
       {std && (
         <div className="ws-std">
           <strong>This client has an approved standard answer to this question.</strong>
@@ -570,6 +666,7 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
         {isCard && card?.status === "suggested" && <span className="ov-tag" title="Not yet verified in the Card Library">Unverified card</span>}
+        {isCard && card && !placeable(card) && <span className="ov-tag ws-tag-sens" title={card.sensitiveReason ?? ""}>Sensitive, undecided</span>}
         <span className="cl-spacer" />
         {index > 0 && (
           <label className="ws-break" title="Start a new paragraph with this block">
@@ -630,5 +727,37 @@ function CopyButton({ text, count, unit }: { text: string; count: number; unit: 
       try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 2000); }
       catch { prompt("Copy the answer:", text); }
     }}>{done ? "Copied" : `Copy answer (${count.toLocaleString()} ${unit})`}</button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Show seams: where each part of the answer came from.
+// ---------------------------------------------------------------------------
+
+/**
+ * The answer as one text, each part marked by its origin. Honest about
+ * authorship: a card's wording is the reader's phrasing of a quote from the
+ * client's documents, not the client's own sentence; an edited card is a writer
+ * changing that phrasing; "your words" are a writer's own. Bridges (Weave) will
+ * be the fourth kind.
+ */
+function SeamsView({ blocks }: { blocks: WsBlock[] }) {
+  const cls = (b: WsBlock) => b.kind === "human" ? "seam-human" : b.kind === "bridge" ? "seam-bridge" : b.edited ? "seam-edited" : "seam-card";
+  return (
+    <div className="ws-seams" aria-label="The answer, marked by source">
+      <div className="ws-seams-key">
+        <span className="seam-card">From a Story Card (phrased from a quote)</span>
+        <span className="seam-edited">Story Card, edited by the writer</span>
+        <span className="seam-human">Written by the writer</span>
+      </div>
+      <p>
+        {blocks.filter(b => b.text.trim()).map((b, i) => (
+          <span key={b.id}>
+            {i > 0 && (b.breakBefore ? <><br /><br /></> : " ")}
+            <span className={cls(b)}>{b.kind === "human" ? b.text.trim() : b.text.replace(/\s+/g, " ").trim()}</span>
+          </span>
+        ))}
+      </p>
+    </div>
   );
 }

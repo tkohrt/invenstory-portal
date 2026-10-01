@@ -5,6 +5,7 @@ import { getWorkspaceVisibility, getNavArtifactTypes, getPendingReviews, getTena
 import { userClient } from "@/lib/server/supabase";
 import { getGardenState } from "@/lib/server/garden";
 import { getOverlayPendingCount } from "@/lib/server/ledger-overlay";
+import { clientCardsWaiting } from "@/lib/server/client-cards";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -18,9 +19,11 @@ export default async function PortalLayout({ children }: { children: React.React
     getGardenState(session.tenantId),
     session.role === "admin" ? getOverlayPendingCount() : Promise.resolve(0),
   ]);
+  // The sidebar badge on Story Cards, only where the page is on.
+  const storyCardsWaiting = workspaceVis.card_review ? await clientCardsWaiting(session.tenantId).catch(() => 0) : 0;
   return (
     <Shell user={session.user} role={session.role} tenantId={session.tenantId}
-      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} workspaceVis={workspaceVis} garden={garden}>
+      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}>
       {children}
     </Shell>
   );

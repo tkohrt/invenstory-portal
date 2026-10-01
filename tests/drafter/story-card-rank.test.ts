@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  WEIGHTS, rankCards, scoreCard, reasonFor, overlap, SLUG_ITEMS,
+  WEIGHTS, rankCards, scoreCard, reasonFor, overlap, SLUG_ITEMS, arrangeBudget, arrangePicks, recommendSection,
   type RankCard, type RankContext, type RankSection,
 } from "@/lib/story-card-rank";
 import { SLUG_KINDS } from "@/lib/application-parse";
@@ -42,10 +42,11 @@ describe("scoreCard follows spec section 8", () => {
     expect(scoreCard(card({ id: "a", newestEvidenceAt: "nonsense" }), need, ctx()).parts.fresh).toBe(0);
   });
 
-  test("living voice earns its half point only while the answer has none", () => {
-    const v = card({ id: "v", layer: "III" });
+  test("living voice earns its half point only when verified, and only while the answer has none", () => {
+    const v = card({ id: "v", layer: "III", status: "verified" });
     expect(scoreCard(v, need, ctx({ sectionHasVoice: false })).parts.voice).toBe(WEIGHTS.voice);
     expect(scoreCard(v, need, ctx({ sectionHasVoice: true })).parts.voice).toBe(0);
+    expect(scoreCard({ ...v, status: "suggested" }, need, ctx({ sectionHasVoice: false })).parts.voice).toBe(0);
   });
 
   test("a card used in another section loses a point", () => {
@@ -127,5 +128,43 @@ describe("the tables agree with the rest of the drafter", () => {
   });
   test("every wanted kind in SLUG_KINDS is a real card kind", () => {
     for (const kinds of Object.values(SLUG_KINDS)) for (const k of kinds) expect(CARD_KIND_MAP[k], k).toBeTruthy();
+  });
+});
+
+
+describe("arrangePicks", () => {
+  const cards = [
+    card({ id: "d1", kind: "need_data", itemKey: "need", statement: "one two three four five six seven eight nine ten" }),
+    card({ id: "d2", kind: "need_data", itemKey: "need", strength: "thin", statement: "one two three four five six seven eight nine ten" }),
+    card({ id: "s1", kind: "need_story", statement: "one two three four five six seven eight nine ten" }),
+    card({ id: "x", kind: "finance_budget", statement: "one two three four five six seven eight nine ten" }),
+    card({ id: "used", kind: "population_geography", statement: "one two three four five" }),
+    card({ id: "blocked", kind: "population_geography", statement: "one two three four five" }),
+  ];
+  const ranked = rankCards(cards, need, ctx({ usedElsewhere: new Set(["used"]) }));
+  test("one of each wanted kind first, in the kinds' order, skipping used and refused cards", () => {
+    const picks = arrangePicks(ranked, need.wantedKinds, 25, c => c.id !== "blocked").map(r => r.card.id);
+    expect(picks).toEqual(["d1", "s1"]);
+  });
+  test("fills further cards of wanted kinds while the budget allows, never off-kind ones", () => {
+    const picks = arrangePicks(ranked, need.wantedKinds, 100, () => true).map(r => r.card.id);
+    expect(picks).toEqual(["d1", "d2", "s1", "blocked"]);
+  });
+  test("budget follows the limit", () => {
+    expect(arrangeBudget(250, "words")).toBe(200);
+    expect(arrangeBudget(1500, "characters")).toBe(200);
+    expect(arrangeBudget(null, null)).toBe(200);
+  });
+});
+
+describe("recommendSection", () => {
+  const have = new Set(["need_data"]);
+  test("seed questions are recommended when the client has cards for them", () => {
+    expect(recommendSection({ origin: "seed", observed: 0 }, ["need_data"], have).recommended).toBe(true);
+    expect(recommendSection({ origin: "seed", observed: 0 }, ["traction"], have).recommended).toBe(false);
+  });
+  test("learned questions need to have been seen several times", () => {
+    expect(recommendSection({ origin: "observed", observed: 2 }, ["need_data"], have).recommended).toBe(false);
+    expect(recommendSection({ origin: "observed", observed: 3 }, ["need_data"], have).recommended).toBe(true);
   });
 });
