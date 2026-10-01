@@ -29,6 +29,11 @@ import {
   restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
 } from "@/lib/server/workspace-actions";
 import { setUiPrefAction } from "@/lib/server/account-actions";
+import {
+  autosaveVersionAction, compareVersionAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
+  saveVersionAction, setDraftStatusAction, type VersionItem,
+} from "@/lib/server/version-actions";
+import { LOCKED_STATUSES, STATUS_NAME, type DraftStatus, type SectionDiff } from "@/lib/draft-version";
 import { reopenSectionsAction } from "@/lib/server/application-actions";
 import { PANEL_SIZE, rankCards, reasonFor, recommendSection, type Ranked } from "@/lib/story-card-rank";
 import { placeable } from "@/lib/card-sensitivity";
@@ -74,6 +79,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [seams, setSeams] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   // Removing a block: which is being dragged, where a card would land, the
   // question being asked, and the Undo on offer.
   const [activeBlock, setActiveBlock] = useState<string | null>(null);
@@ -122,6 +129,22 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     noticeTimer.current = setTimeout(() => setNotice(null), 12_000);
   }, []);
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
+
+  // Every ten minutes of editing, a checkpoint, if anything changed since the
+  // last one. The server skips it when the answers are as the last version had them.
+  // A submitted application is the copy the funder received: read-only.
+  const readOnly = LOCKED_STATUSES.has((draft.status ?? "drafting") as DraftStatus);
+  const lastAutosave = useRef<number>(Date.now());
+  useEffect(() => {
+    if (readOnly) return;
+    const t = setInterval(() => {
+      if (savedAt && savedAt > lastAutosave.current) {
+        lastAutosave.current = Date.now();
+        void autosaveVersionAction(draft.id).catch(() => null);
+      }
+    }, 10 * 60_000);
+    return () => clearInterval(t);
+  }, [savedAt, readOnly, draft.id]);
 
   /** Bring what a bar button opened (Tidy, seams) into view, just above the bar. */
   const reveal = () => setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 60);
@@ -218,7 +241,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const locked = pending > 0;
+  const noSensors = useSensors();
+  const locked = pending > 0 || readOnly;
 
   const addCard = useCallback((cardId: string, position: number) => {
     if (!section) return;
@@ -348,22 +372,46 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     : `${count.toLocaleString()} ${unit}`;
 
   return (
-    <div className="ws ws-page">
+    <div className={`ws ws-page${readOnly ? " ws-readonly" : ""}`}>
       <header className="ws-top">
         <button className="btn ghost ws-back" onClick={() => router.push("/drafts")}>← Drafts</button>
         <h2 className="ws-title">{draft.title}</h2>
         <About standard={standard} tenantName={tenantName}
           meta={standard ? null : [draft.funder, money, draft.deadline ? `due ${new Date(draft.deadline + "T12:00:00").toLocaleDateString()}` : null].filter(Boolean).join(" · ")} />
+        {!standard && <span className={`status-pill ${draft.status ?? "drafting"}`}>{STATUS_NAME[(draft.status ?? "drafting") as DraftStatus]}</span>}
         <span className="spacer" />
+        {!standard && !readOnly && (draft.status === "completed"
+          ? <>
+              <button type="button" className="btn ghost ap-mini" disabled={locked} onClick={() => void run(() => setDraftStatusAction(draft.id, "drafting"), () => router.refresh())}>Back to drafting</button>
+              <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => setSubmitting(true)}>Mark submitted…</button>
+            </>
+          : <button type="button" className="btn secondary ap-mini" disabled={locked}
+              title="Finished and ready to send. Still editable; a version is saved."
+              onClick={() => void run(() => setDraftStatusAction(draft.id, "completed"), () => { say("Marked completed. A version was saved."); router.refresh(); })}>Mark completed</button>)}
+        {!standard && draft.status === "submitted" && (
+          <>
+            <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "won"), () => router.refresh())}>Mark awarded</button>
+            <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "lost"), () => router.refresh())}>Mark declined</button>
+          </>
+        )}
+        <button type="button" className="btn ghost ap-mini" onClick={() => setVersionsOpen(true)}>Versions</button>
         <span className="ws-flag">Admin · {tenantName} · For Granted only</span>
         <span className="ws-saved" aria-live="polite">{pending ? "Saving…" : savedAt ? "All changes saved" : ""}</span>
       </header>
+      {readOnly && (
+        <div className="ws-locked" role="status">
+          <span><strong>{draft.status === "submitted" ? "Submitted" : STATUS_NAME[draft.status as DraftStatus]}</strong>
+            {draft.submitted_at ? ` on ${new Date(draft.submitted_at).toLocaleDateString()}` : ""}. This is the copy the funder received, so it is locked.</span>
+          <button type="button" className="btn secondary ap-mini" disabled={pending > 0}
+            onClick={() => void run(() => newDraftFromAction(draft.id), id => router.push(`/drafts/${id}`))}>Start a new version from this one</button>
+        </div>
+      )}
 
-      <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
+      <DndContext sensors={readOnly ? noSensors : sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
         onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1}
-            wantedKinds={section.wantedKinds} locked={false} onAdd={id => addCard(id, blocks.length)}
+            wantedKinds={section.wantedKinds} locked={readOnly} onAdd={id => addCard(id, blocks.length)}
             open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
 
           <div className="ws-main">
@@ -488,7 +536,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               )}
 
               <div className="ws-foot">
-                {!standard && <button type="button" className="btn ghost" onClick={() => void reopen()}>Edit the questions</button>}
+                {!standard && !readOnly && <button type="button" className="btn ghost" onClick={() => void reopen()}>Edit the questions</button>}
                 {!standard && sourceText && (
                   <details className="ap-source">
                     <summary>The funder&rsquo;s application ({SOURCE_LABEL[draft.source_kind ?? "paste"] ?? "text"}, {sourceText.length.toLocaleString()} characters)</summary>
@@ -521,13 +569,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               <span className="ws-bar-group">
                 <button type="button" className="btn ghost ws-panel-toggle" onClick={() => setPanelOpen(true)}>Story Cards</button>
                 {blocks.length === 0 && (
-                  <button type="button" className="btn secondary" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
+                  <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
                     onClick={() => void run(() => arrangeForMeAction(section.id), r => {
                       putBlocks(section.id)(r.blocks);
                       say(`Placed ${r.placed} card${r.placed === 1 ? "" : "s"}: one of each kind this question asks for first, then more while about four-fifths of the ${standard ? "typical length" : "limit"} allowed. Nothing was written; edit, reorder or remove as you like.`);
                     })}>Arrange for me</button>
                 )}
-                <button type="button" className="btn secondary" disabled={locked} onClick={() => {
+                <button type="button" className="btn secondary ws-edit-only" disabled={locked} onClick={() => {
                   setEditing("__new");
                   void run(() => addHumanBlockAction(section.id, blocks.length), next => {
                     putBlocks(section.id)(next);
@@ -535,7 +583,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                     setEditing(added?.id ?? null);
                   });
                 }}>＋ Write your own text</button>
-                <button type="button" className="btn secondary" disabled={locked || blocks.length < 3}
+                <button type="button" className="btn secondary ws-edit-only" disabled={locked || blocks.length < 3}
                   title={blocks.length < 3 ? "Tidy needs at least three pieces" : "Ask for a suggested order, with a reason. Nothing changes unless you accept it."}
                   onClick={() => void run(() => tidyAction(section.id), r => {
                     if ("error" in r) say(r.error);
@@ -550,7 +598,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 <CopyButton text={text} />
               </span>
               <span className="spacer" />
-              <span className="ws-bar-group">
+              <span className="ws-bar-group ws-edit-only">
                 {statusBy[section.id] === "done"
                   ? <button type="button" className="btn ghost" disabled={locked}
                       onClick={() => void run(() => setSectionDoneAction(section.id, false), st => setStatusBy(m => ({ ...m, [section.id]: st })))}>Reopen this answer</button>
@@ -572,6 +620,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             </div>
           </div>
         </div>
+        {versionsOpen && (
+          <VersionsDrawer draftId={draft.id} readOnly={readOnly} onClose={() => setVersionsOpen(false)}
+            onRestored={(r) => { setVersionsOpen(false); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />
+        )}
+        {submitting && (
+          <SubmitDialog onCancel={() => setSubmitting(false)}
+            onSubmit={date => { setSubmitting(false); void run(() => setDraftStatusAction(draft.id, "submitted", date), () => router.refresh()); }} />
+        )}
         {confirming && (
           <RemoveDialog block={confirming.block} askAgain={askRemove}
             onKeep={() => setConfirming(null)}
@@ -738,7 +794,7 @@ function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; lock
           de-identify it, or rule it not sensitive in the <a href="/admin/card-library">Card Library</a> before placing it.</div>
       )}
       <div className="cl-card-acts">
-        <button type="button" className="btn inline cl-primary" disabled={locked || !ok} onClick={() => onAdd(c.id)}
+        <button type="button" className="btn inline cl-primary ws-edit-only" disabled={locked || !ok} onClick={() => onAdd(c.id)}
           title={ok ? undefined : "Sensitive: decide it in the Card Library first"}>Add</button>
         {used.length > 0 && <span className="ov-tag" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
         <button type="button" className="cl-link" onClick={() => setOpen(o => !o)}>{open ? "Hide" : "Sources"} ({c.evidence.length})</button>
@@ -825,7 +881,7 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
   // the buttons, so a blur fired while the editor closes never saves stale text.
   const live = useRef({ text: b.text, cancelled: false });
   const startEdit = () => {
-    if (temp) return;
+    if (temp || locked) return;
     setText(b.text); live.current = { text: b.text, cancelled: false };
     setEditing(b.id);
   };
@@ -854,7 +910,7 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
         {isCard && card && !placeable(card) && <span className="ov-tag ws-tag-sens" title={card.sensitiveReason ?? ""}>Sensitive, undecided</span>}
         <span className="cl-spacer" />
         {/* Controls in the grab area stay controls: they never start a drag. */}
-        <span className="ws-head-controls" onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+        <span className="ws-head-controls ws-edit-only" onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
         {index > 0 && (
           <label className="ws-break" title="Start a new paragraph with this block">
             <input type="checkbox" checked={b.breakBefore} disabled={temp || locked} onChange={e => void onBreak(b.id, e.target.checked)} /> ¶
@@ -982,6 +1038,110 @@ function RemoveDialog({ block, askAgain, onKeep, onRemove }: {
         <div className="ws-modal-acts">
           <button type="button" className="btn secondary" onClick={onKeep} autoFocus>Keep</button>
           <button type="button" className="btn inline ws-modal-remove" onClick={() => onRemove(offerSkip && dontAsk)}>{own ? "Delete" : "Remove"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Versions and submitting.
+// ---------------------------------------------------------------------------
+
+function VersionsDrawer({ draftId, readOnly, onClose, onRestored }: {
+  draftId: string; readOnly: boolean; onClose: () => void; onRestored: (r: { restored: number; skipped: number }) => void;
+}) {
+  const [items, setItems] = useState<VersionItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<{ id: string; label: string; takenAt: string; diffs: SectionDiff[] } | null>(null);
+  const load = useCallback(() => listVersionsAction(draftId).then(setItems).catch(e => (setItems([]), setError(e instanceof Error ? e.message : "Could not read the versions."))), [draftId]);
+  useEffect(() => { void load(); }, [load]);
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onClose}>
+      <aside className="ws-versions" role="dialog" aria-modal="true" aria-label="Versions" onClick={e => e.stopPropagation()}>
+        <div className="ws-versions-head">
+          <h3>{open ? open.label : "Versions"}</h3>
+          <button type="button" className="bn-x" onClick={open ? () => setOpen(null) : onClose} aria-label={open ? "Back to the list" : "Close"}>{open ? "←" : "×"}</button>
+        </div>
+        {error && <div className="ap-error">{error}</div>}
+        {!open && (
+          <>
+            {!readOnly && (
+              <div className="ws-version-save">
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this version (optional), e.g. Sent to Ashley" maxLength={120} />
+                <button type="button" className="btn secondary" disabled={busy} onClick={async () => {
+                  setBusy(true); setError(null);
+                  try { await saveVersionAction(draftId, name); setName(""); await load(); }
+                  catch (e) { setError(e instanceof Error ? e.message : "Could not save a version."); }
+                  finally { setBusy(false); }
+                }}>Save a version</button>
+              </div>
+            )}
+            <p className="ov-muted ws-version-note">Every change is already saved as you work. Versions are checkpoints: saved before each stage, when marked completed or submitted, every ten minutes of editing, and whenever you save one here.</p>
+            {items === null ? <p className="ov-muted">Loading…</p> : items.length === 0 ? <p className="ov-muted">No versions yet.</p> : (
+              <ul className="ws-version-list">
+                {items.map(v => (
+                  <li key={v.id}>
+                    <button type="button" className="ws-version-item" onClick={async () => {
+                      setError(null);
+                      try { const r = await compareVersionAction(draftId, v.id); setOpen({ id: v.id, ...r }); }
+                      catch (e) { setError(e instanceof Error ? e.message : "Could not open that version."); }
+                    }}>
+                      <strong>{v.label}</strong>
+                      <span>{when(v.takenAt)}{v.by ? ` · ${v.by}` : ""}{v.stage ? ` · ${v.stage[0].toUpperCase()}${v.stage.slice(1)}` : ""}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+        {open && (
+          <div className="ws-version-view">
+            <p className="ov-muted">Saved {when(open.takenAt)}. Each question as it was then, beside how it reads now. Changed questions are marked.</p>
+            {open.diffs.map(d => (
+              <div key={d.sectionId} className={`ws-diff${d.changed ? " ws-diff-changed" : ""}`}>
+                <div className="ws-diff-q">{d.prompt}{d.missing ? " (no longer in this application)" : d.changed ? " · changed" : " · same"}</div>
+                {d.changed ? (
+                  <div className="ws-diff-cols">
+                    <div><span className="ws-diff-h">Then</span><p>{d.before || <em>empty</em>}</p></div>
+                    <div><span className="ws-diff-h">Now</span><p>{d.missing ? <em>question removed</em> : d.now || <em>empty</em>}</p></div>
+                  </div>
+                ) : <p className="ws-diff-same">{d.before ? `${d.before.slice(0, 200)}${d.before.length > 200 ? "…" : ""}` : <em>empty</em>}</p>}
+              </div>
+            ))}
+            {!readOnly && (
+              <div className="ws-modal-acts">
+                <button type="button" className="btn inline ap-go" disabled={busy} onClick={async () => {
+                  if (!confirm(`Restore "${open.label}"? The application as it is now is saved as a version first, so this can be undone.`)) return;
+                  setBusy(true); setError(null);
+                  try { onRestored(await restoreVersionAction(draftId, open.id)); }
+                  catch (e) { setError(e instanceof Error ? e.message : "Could not restore that version."); setBusy(false); }
+                }}>Restore this version</button>
+              </div>
+            )}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function SubmitDialog({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (date: string) => void }) {
+  const [date, setDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onCancel}>
+      <div className="ws-modal" role="alertdialog" aria-modal="true" aria-labelledby="ws-sub-title" onClick={e => e.stopPropagation()}>
+        <h3 id="ws-sub-title">Mark this application submitted?</h3>
+        <p>A version is saved as the copy the funder received, and the application is locked. To change it afterwards, start a new version from it.</p>
+        <label className="ws-modal-check">Submitted on <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: "auto" }} /></label>
+        <div className="ws-modal-acts">
+          <button type="button" className="btn secondary" onClick={onCancel} autoFocus>Cancel</button>
+          <button type="button" className="btn inline ap-go" onClick={() => onSubmit(date)}>Mark submitted</button>
         </div>
       </div>
     </div>

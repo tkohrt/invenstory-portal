@@ -6,7 +6,7 @@ import type { DraftStatus, DraftWithBrackets } from "@/lib/types";
 
 const FLOW: DraftStatus[] = ["drafting", "client_review", "submitted", "won", "lost"];
 const LABEL: Record<DraftStatus, string> = {
-  drafting: "Drafting", client_review: "With client", submitted: "Submitted", won: "Won", lost: "Lost",
+  drafting: "Drafting", client_review: "With client", completed: "Completed", submitted: "Submitted", won: "Won", lost: "Lost",
 };
 const money = (c: number | null) => c == null ? null : "$" + (c / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
 

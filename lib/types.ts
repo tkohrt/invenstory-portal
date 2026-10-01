@@ -149,7 +149,7 @@ export interface NavArtifact { slug: string; nav_label: string; visible: boolean
 export interface TenantSummary extends Tenant { doc_count: number; by_layer: Record<Layer, number> }
 
 // ---- Grant Drafts (the Drafts page, formerly "In the Works") ----
-export type DraftStatus = "drafting" | "client_review" | "submitted" | "won" | "lost";
+export type DraftStatus = "drafting" | "client_review" | "completed" | "submitted" | "won" | "lost";
 export type DraftMode = "bracket" | "cards";
 export interface GrantDraft {
   id: string; tenant_id: string; title: string; funder: string | null;
@@ -169,6 +169,10 @@ export interface GrantDraft {
   parse_state?: { truncated?: boolean; stats?: Record<string, number> } | null;
   parsed_at?: string | null;
   confirmed_at?: string | null;
+  /** 0045 */
+  stage?: "arrange" | "weave" | "polish";
+  completed_at?: string | null;
+  submitted_at?: string | null;
 }
 /** One question from a funder's application (draft_section). */
 export interface DraftSection {

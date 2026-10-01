@@ -84,3 +84,23 @@ export async function getMatchPrefill(tenantId: string, ref: { grant?: string; f
   }
   return null;
 }
+
+export interface DraftProgress { done: number; total: number; lastEdited: string }
+
+/**
+ * For the Drafts list: questions marked done of all questions, and when any of
+ * them last changed, per card-mode draft. RLS keeps these rows to admins, so a
+ * client session simply gets an empty map.
+ */
+export async function getDraftProgress(tenantId: string): Promise<Record<string, DraftProgress>> {
+  const s = await userClient();
+  const { data } = await s.from("draft_section").select("draft_id, status, updated_at").eq("tenant_id", tenantId);
+  const out: Record<string, DraftProgress> = {};
+  for (const r of (data ?? []) as { draft_id: string; status: string; updated_at: string }[]) {
+    const p = out[r.draft_id] ??= { done: 0, total: 0, lastEdited: r.updated_at };
+    p.total += 1;
+    if (r.status === "done") p.done += 1;
+    if (r.updated_at > p.lastEdited) p.lastEdited = r.updated_at;
+  }
+  return out;
+}

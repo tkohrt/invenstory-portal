@@ -23,6 +23,7 @@ import { SLUG_KINDS } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
 import { assembleAnswer, parseTidy, shortFrom, type TidyProposal } from "@/lib/section-answer";
 import { placeable } from "@/lib/card-sensitivity";
+import { LOCKED_STATUSES, type DraftStatus } from "@/lib/draft-version";
 import { arrangeBudget, arrangePicks, rankCards, typicalWords } from "@/lib/story-card-rank";
 
 async function requireAdmin() {
@@ -40,11 +41,15 @@ interface SectionRow {
 
 async function loadSection(tenantId: string, sectionId: string): Promise<SectionRow> {
   const { data, error } = await db.from("draft_section")
-    .select("id, draft_id, status, prompt, guidance, question_slugs, grant_draft!inner(mode, purpose)")
+    .select("id, draft_id, status, prompt, guidance, question_slugs, grant_draft!inner(mode, purpose, status)")
     .eq("tenant_id", tenantId).eq("id", sectionId).maybeSingle();
   if (error) throw new Error(`Could not read the question: ${error.message}`);
-  const d = (data as unknown as { grant_draft?: { mode: string; purpose: string } } | null)?.grant_draft;
+  const d = (data as unknown as { grant_draft?: { mode: string; purpose: string; status: string } } | null)?.grant_draft;
   if (!data || d?.mode !== "cards") throw new Error("That question is not in one of this client's card drafts.");
+  // A submitted application is the copy the funder received: it does not change.
+  if (LOCKED_STATUSES.has(d.status as DraftStatus)) {
+    throw new Error("This application has been submitted, so it is locked. Start a new version from it to make changes.");
+  }
   const r = data as unknown as SectionRow;
   return { ...r, purpose: d.purpose };
 }

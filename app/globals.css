@@ -1304,3 +1304,66 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ds-actions{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
 .ds-skip{font-size:13px;color:var(--muted)}
 @media (max-width:640px){.ds-choices{grid-template-columns:1fr}}
+.status-pill.completed{background:#e6f2ea;color:#1f4d2e}
+
+/* Versions and statuses (0045). */
+.ws-locked{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#eef2fb;border:1px solid #c9d6e6;border-radius:10px;padding:8px 12px;font-size:13px}
+.ws-locked > span{flex:1}
+.ws-versions{position:fixed;top:0;right:0;bottom:0;width:min(560px,96vw);background:var(--panel);box-shadow:var(--shadow);padding:16px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.ws-versions-head{display:flex;align-items:center;justify-content:space-between}
+.ws-versions-head h3{margin:0}
+.ws-version-save{display:flex;gap:8px}
+.ws-version-note{font-size:12.5px;margin:0}
+.ws-version-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ws-version-item{width:100%;text-align:left;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:9px;background:#fff;padding:8px 10px;cursor:pointer;font:inherit}
+.ws-version-item span{font-size:12px;color:var(--muted)}
+.ws-version-item:hover{border-color:#1f4d2e}
+.ws-diff{border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.ws-diff-changed{border-color:#e0c98a;background:#fffdf6}
+.ws-diff-q{font-size:12.5px;font-weight:600;margin-bottom:4px}
+.ws-diff-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ws-diff-cols p,.ws-diff-same{margin:2px 0 0;font-size:13px;white-space:pre-wrap}
+.ws-diff-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+
+/* Drafts list (Phase 3.2). */
+.dl-standard{display:flex;gap:18px;align-items:stretch;width:100%;text-align:left;font:inherit;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-left:4px solid #1f4d2e;border-radius:12px;padding:14px 16px;margin:4px 0 16px}
+.dl-standard:hover{border-color:#1f4d2e}
+.dl-standard-txt{flex:1}
+.dl-standard-txt h4{margin:6px 0 4px}
+.dl-standard-txt p{margin:0;color:var(--muted);font-size:13px}
+.dl-standard-prog{width:220px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.dl-standard-prog strong{font-size:18px;color:var(--ink,#1a1a1a)}
+.dl-open{margin-top:auto;font-weight:600;color:#1f4d2e}
+.dl-tools{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.dl-tools .seg{display:flex;gap:6px;flex-wrap:wrap}
+.dl-tools .chip.on{background:#1f4d2e;color:#fff;border-color:#1f4d2e}
+.dl-count{opacity:.7;font-size:11.5px;margin-left:2px}
+.dl-sort{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dl-sort select{width:auto;padding:4px 8px}
+.dl-list{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.dl-row{display:grid;grid-template-columns:minmax(0,2.6fr) 110px 130px 150px 110px;gap:12px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);color:inherit;text-decoration:none;font-size:13px}
+.dl-row:first-child{border-top:0}
+a.dl-row:hover{background:#f6f8f5}
+.dl-head{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:#fafaf8}
+.dl-title{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dl-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-sub{display:flex;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.dl-older{border:1px dashed var(--line);border-radius:6px;padding:0 5px}
+.dl-due{display:flex;flex-direction:column}
+.dl-due em{font-style:normal;font-size:11.5px;color:var(--muted)}
+.dl-due.soon em{color:#9a6a00;font-weight:600}
+.dl-due.late em{color:#a33;font-weight:600}
+.dl-prog{display:flex;flex-direction:column;gap:4px}
+.dl-prog .draft-progress{display:block}
+.dl-edited{color:var(--muted)}
+@media (max-width:860px){
+  .dl-standard{flex-direction:column}
+  .dl-standard-prog{width:auto}
+  .dl-head{display:none}
+  .dl-row{grid-template-columns:1fr 1fr;row-gap:6px}
+  .dl-title{grid-column:1 / -1}
+}
+/* Flex children of the scroll column keep their height; the column scrolls instead. */
+.ws-scroll > *{flex-shrink:0}
+.ws-readonly .ws-edit-only{display:none !important}
+.ws-readonly .ws-grab{cursor:default}
