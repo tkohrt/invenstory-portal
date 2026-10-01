@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
-import { confirmSectionsAction, reopenSectionsAction, saveSectionsAction, type SectionInput } from "@/lib/server/application-actions";
+import { confirmSectionsAction, saveSectionsAction, type SectionInput } from "@/lib/server/application-actions";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { BankOption } from "@/lib/server/drafts";
 import type { DraftSection, GrantDraft } from "@/lib/types";
@@ -135,10 +135,9 @@ export default function ApplicationDraftView({ tenantName, draft, sections, bank
         </div>
       )}
 
-      {draft.parsed_at && !running && (
-        confirmed
-          ? <ConfirmedQuestions draftId={draft.id} sections={sections} bank={bank} attachments={draft.required_attachments ?? []} />
-          : <ConfirmQuestions
+      {/* Once confirmed, the page opens the drafting workspace instead (DraftWorkspace). */}
+      {draft.parsed_at && !running && !confirmed && (
+        <ConfirmQuestions
               key={sections.map(s => s.id + s.matched_prompt).join("|")}
               draftId={draft.id} sections={sections} bank={bank}
               attachments={draft.required_attachments ?? []} stats={stats}
@@ -316,49 +315,6 @@ function ConfirmQuestions({ draftId, sections, bank, attachments, stats, truncat
         </button>
         <span className="spacer" />
         <button type="button" className="btn ghost" disabled={!!busy} onClick={onReread}>Read the application again</button>
-      </div>
-    </div>
-  );
-}
-
-function ConfirmedQuestions({ draftId, sections, bank, attachments }: {
-  draftId: string; sections: DraftSection[]; bank: BankOption[]; attachments: string[];
-}) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const bySlug = new Map(bank.map(q => [q.slug, q]));
-  const matched = sections.filter(s => s.question_slugs[0]).length;
-  const reopen = async () => {
-    setBusy(true);
-    try { await reopenSectionsAction(draftId); router.refresh(); } finally { setBusy(false); }
-  };
-  return (
-    <div className="ap-confirm">
-      <div className="ap-summary ap-done">
-        <strong>{sections.length} question{sections.length === 1 ? "" : "s"} confirmed.</strong>
-        <span>{matched} match a question in the bank; {sections.length - matched} are new topics, logged so the bank can learn them.
-          Drafting from Story Cards opens here in the next release.</span>
-      </div>
-      <ol className="ap-list">
-        {sections.map((s, i) => (
-          <li key={s.id} className="ap-q ap-q-done">
-            <div className="ap-q-head">
-              <span className="ap-num">{i + 1}</span>
-              <span className="ap-prompt">{s.prompt}</span>
-              <span className="spacer" />
-              {s.limit_value && <span className="ov-tag">{s.limit_value.toLocaleString()} {s.limit_unit}</span>}
-            </div>
-            {s.guidance && <div className="ap-guidance">{s.guidance}</div>}
-            <div className="ap-kinds">
-              <span className="ov-muted">{s.question_slugs[0] ? `Bank: ${bySlug.get(s.question_slugs[0])?.category ?? s.question_slugs[0]}` : "New topic"} · </span>
-              <KindChips kinds={s.wanted_kinds} />
-            </div>
-          </li>
-        ))}
-      </ol>
-      {attachments.length > 0 && <div className="ap-attach"><strong>Attachments the application asks for:</strong> {attachments.join("; ")}</div>}
-      <div className="ap-actions">
-        <button type="button" className="btn secondary" disabled={busy} onClick={() => void reopen()}>Reopen the questions to edit</button>
       </div>
     </div>
   );

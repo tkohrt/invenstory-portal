@@ -1104,3 +1104,70 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .fm-draft{display:inline-block;margin-top:4px;font-size:12px;color:#1f4d2e}
 @media (max-width:760px){.ap-grid{grid-template-columns:1fr 1fr}.ap-row{grid-template-columns:1fr}}
 @media (max-width:480px){.ap-grid{grid-template-columns:1fr}}
+
+/* ---- Drafting workspace (Story Card Drafter, Phase 3: Arrange) ----
+   Same visual language as the Card Library: the outline colour is the card's
+   layer, a dashed outline is thin evidence. A writer's own words carry no layer
+   colour, so sourced and written text are told apart at a glance. */
+.ws-saved{font-size:12px;color:var(--muted);min-width:110px;text-align:right}
+.ws-stages{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 10px}
+.ws-stages .chip[disabled]{opacity:.45;cursor:not-allowed}
+.ws-progress{margin-left:auto;font-size:12px;color:var(--muted)}
+.ws-nav{display:flex;gap:8px;align-items:center;margin:0 0 12px}
+.ws-pills{display:flex;gap:5px;flex-wrap:wrap;flex:1}
+.ws-pill{min-width:30px;height:28px;border-radius:7px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+.ws-pill.ws-drafting{border-color:#c9b77e;color:#7a6320;background:#fffbef}
+.ws-pill.ws-done{border-color:#1f4d2e;color:#fff;background:#1f4d2e}
+.ws-pill.active{outline:2px solid var(--ink);outline-offset:1px}
+.ws-question{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 15px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+.ws-q-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ws-q-head .spacer{flex:1}
+.ws-q-num{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.ws-st-done{border-color:#1f4d2e;color:#1f4d2e}
+.ws-prompt{margin:0;font-size:15.5px;line-height:1.5;font-weight:600}
+.ws-guide summary{font-size:12px;color:var(--muted);cursor:pointer}
+.ws-count{font-size:13px;font-weight:600;border-radius:999px;padding:2px 10px;background:var(--bg)}
+.ws-count.ws-near{background:#fff6dc;color:#7a6320}
+.ws-count.ws-over{background:#fbeceb;color:#8a2f22}
+.ws-notice{background:#eef5ef;border:1px solid #cfe2d3;border-radius:9px;padding:9px 12px;font-size:13px;margin:10px 0}
+.ws-grid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start}
+.ws-panel{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:10px}
+.ws-panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;font-size:13px}
+.ws-filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.ws-search{width:100%}
+.ws-cards{display:flex;flex-direction:column;gap:10px}
+.ws-card{background:var(--panel);border:2px solid var(--line);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:6px}
+.ws-card.l1,.ws-block.l1{border-color:var(--l1)} .ws-card.l2,.ws-block.l2{border-color:var(--l2)} .ws-card.l3,.ws-block.l3{border-color:var(--l3)}
+.ws-card.cl-thin{border-style:dashed}
+.ws-card .cl-statement{font-size:13.5px}
+.ws-reason{font-size:12px;color:var(--muted);line-height:1.4}
+.ws-more{width:100%;margin-top:8px}
+.ws-handle{cursor:grab;color:var(--muted);font-size:15px;line-height:1;padding:2px 3px;border-radius:4px;touch-action:none;user-select:none}
+.ws-handle:focus-visible{outline:2px solid var(--accent)}
+.ws-ghost{opacity:.4}
+.ws-overlay{box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:360px;cursor:grabbing}
+.ws-answer{min-height:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px}
+.ws-answer.ws-over{border-color:#1f4d2e;background:#f6faf6}
+.ws-empty{color:var(--muted);font-size:13.5px;border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center}
+.ws-std{margin-top:12px;text-align:left;background:#eef5ef;border-radius:9px;padding:10px 12px;color:var(--ink)}
+.ws-std-text{font-size:13px;color:var(--muted);margin:6px 0 8px;white-space:pre-wrap}
+.ws-dropzone{font-size:12px;color:var(--muted);text-align:center;padding:4px}
+.ws-block{border:2px solid var(--line);border-radius:10px;padding:8px 11px;background:#fff;display:flex;flex-direction:column;gap:4px}
+.ws-block.ws-human{border-style:solid;border-color:#cfd3da;background:#fbfbfc}
+.ws-block.ws-para{margin-top:10px}
+.ws-block-head{display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap}
+.ws-text{margin:0;font-size:14.5px;line-height:1.55;cursor:text;white-space:pre-wrap;border-radius:6px}
+.ws-text:hover{background:#fafaf6}
+.ws-placeholder{color:var(--muted);font-style:italic}
+.ws-break{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--muted);cursor:pointer}
+.ws-break input{width:auto;margin:0}
+.ws-warn{font-size:12px;background:#fbeceb;color:#8a2f22;border-radius:6px;padding:4px 8px}
+.ws-warn.ws-soft{background:#fff6dc;color:#7a6320}
+.ws-revert{align-self:flex-start;margin-left:0}
+.ws-block .cl-link{margin-left:0;align-self:flex-start}
+.ws-tidy{background:#fbf8ef;border:1px solid #eadfc2;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px}
+.ws-tidy ol{margin:6px 0;padding-left:20px;color:var(--muted)}
+.ws-tools{margin-top:12px}
+.ws-approved{margin:0 0 10px;font-size:12.5px}
+.ws-foot{margin-top:18px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+@media (max-width:860px){.ws-grid{grid-template-columns:1fr}.ws-panel{position:static;max-height:none}}

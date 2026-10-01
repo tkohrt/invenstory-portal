@@ -157,6 +157,8 @@ export interface GrantDraft {
   // Card-mode drafts (0041). Optional so the page still renders against a
   // database the migration has not reached: a missing mode reads as bracket.
   mode?: DraftMode;
+  /** 0042: one built-in Standard Answers draft per client (spec 16.1). */
+  purpose?: "application" | "standard_answers";
   source_kind?: "url" | "pdf" | "docx" | "paste" | "match" | null;
   source_url?: string | null;
   source_filename?: string | null;

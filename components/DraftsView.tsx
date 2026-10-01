@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveDraftAction } from "@/lib/server/draft-actions";
+import { openStandardAnswersAction } from "@/lib/server/workspace-actions";
 import Drawer from "./Drawer";
 import type { DraftStatus, DraftWithBrackets } from "@/lib/types";
 
@@ -15,6 +16,13 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const openStandard = async () => {
+    setOpening(true); setOpenError(null);
+    try { router.push(`/drafts/${await openStandardAnswersAction()}`); }
+    catch (e) { setOpenError(e instanceof Error ? e.message : "Could not open Standard Answers."); setOpening(false); }
+  };
   return (
     <div>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName}</div>}
@@ -24,9 +32,13 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
         {isAdmin && <>
           <button className="btn inline" onClick={() => router.push("/drafts/new")}
             title="Bring in a funder's application and draft it from Story Cards. For Granted only.">＋ From a funder&rsquo;s application</button>
+          <button className="btn secondary" onClick={() => void openStandard()} disabled={opening}
+            title="The questions funders ask again and again, answered once from Story Cards and approved into the Answer Library. For Granted only.">
+            {opening ? "Opening…" : "Standard Answers"}</button>
           <button className="btn secondary" onClick={() => setCreating(true)}>＋ New draft</button>
         </>}
       </div>
+      {openError && <div className="ap-error" role="alert">{openError}</div>}
       {drafts.length === 0 && <div className="empty">No drafts yet.{isAdmin ? " Create one to get started." : " For Granted will post applications here as they're prepared."}</div>}
       <div className="draft-cols">
         {drafts.map(d => {
@@ -36,7 +48,8 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
               <span className={`status-pill ${d.status}`}>{STATUS_LABEL[d.status]}</span>
               {d.mode === "cards" && (
                 <span className="ov-tag" style={{ marginLeft: 6 }} title="Built from the funder's application. For Granted only; the client does not see it.">
-                  {d.confirmed_at ? "Questions confirmed" : d.parsed_at ? "Questions to confirm" : "Reading the application"}
+                  {d.purpose === "standard_answers" ? "Standard Answers"
+                    : d.confirmed_at ? "Drafting from cards" : d.parsed_at ? "Questions to confirm" : "Reading the application"}
                 </span>
               )}
               <h4 style={{ marginTop: 10 }}>{d.title}</h4>
