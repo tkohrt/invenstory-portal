@@ -3,8 +3,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveQuestionAction, deleteQuestionAction } from "@/lib/server/answer-actions";
 import type { GrantQuestion, Audience } from "@/lib/types";
+import { TYPICAL_WORDS } from "@/lib/story-card-rank";
 
-const BLANK = { category: "", prompt_text: "", guidance: "", audience: "both" as Audience, sort_order: 100, active: true };
+const BLANK = { category: "", prompt_text: "", guidance: "", audience: "both" as Audience, sort_order: 100, active: true, typical_limit: null as number | null, slug: "" };
 
 function Editor({ initial, onDone }: { initial: typeof BLANK & { id?: string }; onDone: () => void }) {
   const router = useRouter();
@@ -21,6 +22,10 @@ function Editor({ initial, onDone }: { initial: typeof BLANK & { id?: string }; 
           </select>
         </label>
         <label>Sort order<input type="number" value={f.sort_order} onChange={e => setF({ ...f, sort_order: Number(e.target.value) })} /></label>
+        <label>Typical length (words)
+          <input type="number" min={0} value={f.typical_limit ?? ""} placeholder={TYPICAL_WORDS[f.slug] ? `${TYPICAL_WORDS[f.slug]} (proposed)` : "none"}
+            onChange={e => setF({ ...f, typical_limit: e.target.value ? Number(e.target.value) : null })} />
+        </label>
         <label className="aq-check"><input type="checkbox" checked={f.active} onChange={e => setF({ ...f, active: e.target.checked })} /> Active</label>
       </div>
       <label>Question prompt<textarea rows={2} value={f.prompt_text} onChange={e => setF({ ...f, prompt_text: e.target.value })} /></label>
@@ -51,13 +56,16 @@ export default function AdminQuestionsView({ questions }: { questions: GrantQues
       </div>
       {adding && <Editor initial={BLANK} onDone={() => setAdding(false)} />}
       <table className="aq-table">
-        <thead><tr><th>Prompt</th><th>Category</th><th>Audience</th><th>Sort</th><th>Active</th><th></th></tr></thead>
+        <thead><tr><th>Prompt</th><th>Category</th><th>Audience</th><th>Typical length</th><th>Sort</th><th>Active</th><th></th></tr></thead>
         <tbody>
           {questions.map(q => editId === q.id ? (
-            <tr key={q.id}><td colSpan={6}><Editor initial={{ id: q.id, category: q.category, prompt_text: q.prompt_text, guidance: q.guidance ?? "", audience: q.audience, sort_order: q.sort_order, active: q.active }} onDone={() => setEditId(null)} /></td></tr>
+            <tr key={q.id}><td colSpan={7}><Editor initial={{ id: q.id, slug: q.slug, category: q.category, prompt_text: q.prompt_text, guidance: q.guidance ?? "", audience: q.audience, sort_order: q.sort_order, active: q.active, typical_limit: q.typical_limit ?? null }} onDone={() => setEditId(null)} /></td></tr>
           ) : (
             <tr key={q.id} className={q.active ? "" : "aq-inactive"}>
-              <td>{q.prompt_text}</td><td>{q.category}</td><td>{q.audience}</td><td>{q.sort_order}</td><td>{q.active ? "Yes" : "No"}</td>
+              <td>{q.prompt_text}</td><td>{q.category}</td><td>{q.audience}</td>
+              <td title={q.typical_limit ? "Set on this page" : "Proposed default; edit to change"}>
+                {q.typical_limit ? `${q.typical_limit} words` : TYPICAL_WORDS[q.slug] ? `${TYPICAL_WORDS[q.slug]} words (proposed)` : "none"}</td>
+              <td>{q.sort_order}</td><td>{q.active ? "Yes" : "No"}</td>
               <td className="aq-row-actions">
                 <button className="btn ghost" onClick={() => setEditId(q.id)}>Edit</button>
                 <button className="btn ghost" onClick={() => remove(q.id)}>Delete</button>

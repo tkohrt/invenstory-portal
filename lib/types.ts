@@ -208,6 +208,8 @@ export type Completeness = "strong" | "partial" | "missing";
 export interface GrantQuestion {
   id: string; slug: string; category: string; prompt_text: string;
   guidance: string | null; audience: Audience; sort_order: number; active: boolean;
+  /** Words a good answer usually runs to; null means the proposed default for its slug. */
+  typical_limit?: number | null;
 }
 export interface AnswerCite { document_id: string; title: string }
 export interface AnswerRow {

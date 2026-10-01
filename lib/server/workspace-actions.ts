@@ -23,7 +23,7 @@ import { SLUG_KINDS } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
 import { assembleAnswer, parseTidy, shortFrom, type TidyProposal } from "@/lib/section-answer";
 import { placeable } from "@/lib/card-sensitivity";
-import { arrangeBudget, arrangePicks, rankCards } from "@/lib/story-card-rank";
+import { arrangeBudget, arrangePicks, rankCards, typicalWords } from "@/lib/story-card-rank";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -454,7 +454,7 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
   const [{ data: bank, error: bErr }, { data: have }] = await Promise.all([
     db.from("grant_question").select("slug, prompt_text, guidance, audience, sort_order, wanted_kinds, typical_limit")
       .eq("active", true).order("sort_order"),
-    db.from("draft_section").select("question_slugs, sort_order").eq("tenant_id", s.tenantId).eq("draft_id", draftId),
+    db.from("draft_section").select("id, question_slugs, sort_order, limit_value").eq("tenant_id", s.tenantId).eq("draft_id", draftId),
   ]);
   if (bErr) throw new Error(`Could not read the question bank: ${bErr.message}`);
   const present = new Set(((have ?? []) as { question_slugs: string[] }[]).flatMap(r => r.question_slugs));
@@ -465,7 +465,7 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
     .map(q => ({
       tenant_id: s.tenantId, draft_id: draftId, sort_order: next++,
       prompt: q.prompt_text, guidance: q.guidance, criteria: null,
-      limit_value: q.typical_limit ?? null, limit_unit: q.typical_limit ? "words" : null,
+      limit_value: typicalWords(q.slug, q.typical_limit), limit_unit: typicalWords(q.slug, q.typical_limit) ? "words" : null,
       question_slugs: [q.slug],
       wanted_kinds: ((q.wanted_kinds?.length ? q.wanted_kinds : SLUG_KINDS[q.slug]) ?? []).filter(k => allowed.has(k)),
       origin: "manual", in_source: true, match_reason: "A question bank question.", matched_prompt: q.prompt_text,
@@ -474,6 +474,16 @@ export async function openStandardAnswersAction(): Promise<{ draftId: string; si
   if (add.length) {
     const { error } = await db.from("draft_section").insert(add);  // tenant-safe: every row carries tenant_id from the session
     if (error) throw new Error(`Could not add the bank's questions: ${error.message}`);
+  }
+  // Keep each section's typical length in step with the bank, which For
+  // Granted can change on the Question bank page.
+  const typical = new Map(((bank ?? []) as Q[]).map(q => [q.slug, typicalWords(q.slug, q.typical_limit)]));
+  for (const sec of (have ?? []) as { id: string; question_slugs: string[]; limit_value: number | null }[]) {
+    const want = typical.get(sec.question_slugs[0] ?? "") ?? null;
+    if (want !== sec.limit_value) {
+      await db.from("draft_section").update({ limit_value: want, limit_unit: want ? "words" : null })
+        .eq("tenant_id", s.tenantId).eq("id", sec.id);
+    }
   }
   await db.from("grant_draft").update({ seen_at: new Date().toISOString() }).eq("tenant_id", s.tenantId).eq("id", draftId);
   return { draftId, since, added: since ? add.length : 0 };

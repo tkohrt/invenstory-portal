@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  WEIGHTS, rankCards, scoreCard, reasonFor, overlap, SLUG_ITEMS, arrangeBudget, arrangePicks, recommendSection,
+  WEIGHTS, rankCards, scoreCard, reasonFor, overlap, SLUG_ITEMS, arrangeBudget, arrangePicks, recommendSection, TYPICAL_WORDS, typicalWords,
   type RankCard, type RankContext, type RankSection,
 } from "@/lib/story-card-rank";
 import { SLUG_KINDS } from "@/lib/application-parse";
@@ -166,5 +166,14 @@ describe("recommendSection", () => {
   test("learned questions need to have been seen several times", () => {
     expect(recommendSection({ origin: "observed", observed: 2 }, ["need_data"], have).recommended).toBe(false);
     expect(recommendSection({ origin: "observed", observed: 3 }, ["need_data"], have).recommended).toBe(true);
+  });
+});
+
+describe("typical lengths", () => {
+  test("every seeded slug has one, and the bank's own figure wins", () => {
+    for (const slug of Object.keys(SLUG_KINDS)) expect(TYPICAL_WORDS[slug], slug).toBeGreaterThan(0);
+    expect(typicalWords("need", null)).toBe(400);
+    expect(typicalWords("need", 320)).toBe(320);
+    expect(typicalWords("unknown", null)).toBeNull();
   });
 });

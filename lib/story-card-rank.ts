@@ -305,3 +305,30 @@ export function recommendSection(
     ? { recommended: true, why: `Asked in ${q.observed} funder applications so far.` }
     : { recommended: false, why: `Asked in ${q.observed} funder application${q.observed === 1 ? "" : "s"} so far.` };
 }
+
+// ---------------------------------------------------------------------------
+// Typical lengths for Standard Answers.
+// ---------------------------------------------------------------------------
+
+/**
+ * About how long a good answer to each seeded bank question runs, in words.
+ *
+ * Proposed 1 October 2026 for Shane and Tyler to approve; any of them can be
+ * changed on the Question bank page, which stores the change in
+ * grant_question.typical_limit and takes precedence over this table. A typical
+ * length is a target, not a limit: the count shows "of about", and Arrange for
+ * me fills to about four-fifths of it.
+ */
+export const TYPICAL_WORDS: Record<string, number> = {
+  "org-overview": 250, "leadership": 300, "use-of-funds": 300,
+  "need": 400, "who-you-serve": 250, "program": 500, "goals": 300, "outcomes": 400,
+  "history": 250, "financial": 250, "sustainability": 300, "partnerships": 250,
+  "problem": 300, "solution": 400, "market": 300, "traction": 250,
+  "business-model": 300, "competition": 300, "milestones": 250,
+};
+
+/** A question's typical length: the bank's own figure if set, else the table, else none. */
+export function typicalWords(slug: string | null | undefined, bankFigure: number | null | undefined): number | null {
+  if (bankFigure && bankFigure > 0) return bankFigure;
+  return slug ? TYPICAL_WORDS[slug] ?? null : null;
+}
