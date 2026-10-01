@@ -35,7 +35,8 @@ export default async function DraftDetailPage({ params, searchParams }: {
       const ws = await getWorkspace(session.tenantId, id);
       return <DraftWorkspace tenantName={tenant.name} draft={rest} ws={ws} sourceText={source_text ?? ""}
         initialQuestion={Math.max(1, Number.parseInt(q ?? "1", 10) || 1)}
-        since={since && !Number.isNaN(Date.parse(since)) ? since : null} />;
+        since={since && !Number.isNaN(Date.parse(since)) ? since : null}
+        confirmRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false} />;
     }
     const [sections, bank] = await Promise.all([getSections(session.tenantId, id), getBankOptions(session.tenantId)]);
     return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} bank={bank} sourceText={source_text ?? ""} />;

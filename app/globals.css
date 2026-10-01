@@ -1261,3 +1261,23 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
   .ws-split > .ws-panel.ws-panel-open{transform:none}
   .ws-panel-close,.ws-panel-toggle{display:inline-block}
 }
+
+/* Dragging by the header, dropping on the panel to remove (Phase 3.2). */
+.ws-grab{cursor:grab;user-select:none;touch-action:none}
+.ws-grab:active{cursor:grabbing}
+.ws-head-controls{display:flex;align-items:center;gap:4px;cursor:default}
+.ws-drop-before{box-shadow:0 -3px 0 0 #1f4d2e}
+.ws-drop-line{border-top:3px solid #1f4d2e;color:#1f4d2e}
+.ws-panel{position:relative}
+.ws-panel-removing{outline:2px dashed #b0402f;outline-offset:-2px}
+.ws-panel-over{background:#fbeceb}
+.ws-remove-zone{position:sticky;top:0;z-index:4;margin:-10px -10px 10px;padding:10px;text-align:center;font-weight:600;font-size:13px;color:#8a2f22;background:#fbeceb;border-bottom:1px solid #e6c2bd}
+.ws-undo{position:fixed;z-index:50;left:50%;bottom:24px;transform:translateX(-50%);display:flex;gap:12px;align-items:center;background:var(--ink);color:#fff;border-radius:10px;padding:9px 14px;font-size:13px;box-shadow:var(--shadow)}
+.ws-modal-back{position:fixed;inset:0;z-index:60;background:rgba(20,24,32,.35);display:flex;align-items:center;justify-content:center;padding:16px}
+.ws-modal{background:var(--panel);border-radius:14px;padding:18px 20px;max-width:440px;width:100%;box-shadow:var(--shadow)}
+.ws-modal h3{margin:0 0 8px;font-size:17px}
+.ws-modal p{margin:0 0 12px;font-size:14px;color:var(--ink)}
+.ws-modal-check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:12px}
+.ws-modal-check input{width:auto;margin:0}
+.ws-modal-acts{display:flex;gap:8px;justify-content:flex-end}
+.ws-modal-remove{background:#8a2f22}

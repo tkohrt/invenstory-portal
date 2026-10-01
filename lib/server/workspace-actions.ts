@@ -173,7 +173,7 @@ export async function addHumanBlockAction(sectionId: string, position: number, t
 }
 
 /** Take a block out. A card goes back to the panel. */
-export async function removeBlockAction(sectionId: string, blockId: string): Promise<WsBlock[]> {
+export async function removeBlockAction(sectionId: string, blockId: string, via: "button" | "drag" = "button"): Promise<WsBlock[]> {
   const s = await requireAdmin();
   const section = await loadSection(s.tenantId, sectionId);
   const rows = await rawBlocks(s.tenantId, sectionId);
@@ -186,8 +186,54 @@ export async function removeBlockAction(sectionId: string, blockId: string): Pro
   if (gone.kind === "card") {
     await logEvents(s, section, [{
       event: "removed", card_id: gone.card_id as string, block_id: blockId,
-      payload: { at: rows.indexOf(gone), edited: !!gone.edited },
+      payload: { at: rows.indexOf(gone), edited: !!gone.edited, via },
     }]);
+  }
+  return finish(s, section);
+}
+
+/** What Undo needs to put a removed block back exactly as it was. */
+export interface RemovedBlock {
+  kind: "card" | "bridge" | "human";
+  cardId: string | null; cardVersion: number | null;
+  /** The block's own stored text: the edit for an edited card, the writing for your own text. */
+  text: string | null; edited: boolean; breakBefore: boolean;
+  position: number;
+}
+
+/**
+ * Undo a removal: put the block back where it was, with its edits.
+ *
+ * A card is re-checked as it would be for any placement: still in this
+ * client's library, not retired, not sensitive and undecided. Logged as
+ * `added` with `via: "undo"`, so the learning sees the removal was taken back.
+ */
+export async function restoreBlockAction(sectionId: string, b: RemovedBlock): Promise<WsBlock[]> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  if (!["card", "bridge", "human"].includes(b.kind)) throw new Error("unknown block");
+  if (b.kind === "card") {
+    if (!b.cardId) throw new Error("That card is missing.");
+    const { data: card } = await db.from("story_card").select("id, version, status, sensitive, sensitive_cleared")
+      .eq("tenant_id", s.tenantId).eq("id", b.cardId).maybeSingle();
+    if (!card || card.status === "retired") throw new Error("That card is no longer in the library, so it cannot be put back.");
+    if (!placeable({ sensitive: card.sensitive, sensitiveCleared: card.sensitive_cleared })) throw new Error(SENSITIVE_REFUSAL);
+  }
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  if (b.kind === "card" && rows.some(r => r.card_id === b.cardId)) return finish(s, section);
+  const { data: ins, error } = await db.from("section_block").insert({
+    tenant_id: s.tenantId, section_id: sectionId, sort_order: rows.length, kind: b.kind,
+    card_id: b.kind === "card" ? b.cardId : null,
+    card_version: b.kind === "card" ? (Number.isInteger(b.cardVersion) ? b.cardVersion : null) : null,
+    text: b.text == null ? null : String(b.text).slice(0, 8000),
+    edited: b.kind === "card" && !!b.edited, break_before: !!b.breakBefore, created_by: s.user.id,
+  }).select("id").single();
+  if (error || !ins) throw new Error(`Could not put it back: ${error?.message ?? "no row"}`);
+  const ids = rows.map(r => r.id as string);
+  ids.splice(clampPos(b.position, ids.length), 0, ins.id as string);
+  await renumber(s.tenantId, [...rows, { id: ins.id, sort_order: rows.length }], ids);
+  if (b.kind === "card") {
+    await logEvents(s, section, [{ event: "added", card_id: b.cardId, block_id: ins.id as string, payload: { via: "undo" } }]);
   }
   return finish(s, section);
 }

@@ -26,3 +26,19 @@ export async function requestAccountClosureAction(reason: string): Promise<{ ok:
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: session.tenantId, action: "closure_request", detail: reason.slice(0, 200) });
   return { ok: true };
 }
+
+/**
+ * A small interface choice for the signed-in person, such as whether to warn
+ * before a card is removed from an answer. Only known keys, only booleans: this
+ * is a public endpoint, and the column is not a place for arbitrary data.
+ */
+const UI_PREF_KEYS = new Set(["confirm_card_remove"]);
+export async function setUiPrefAction(key: string, value: boolean) {
+  const s = await getSession();
+  if (!s) throw new Error("Please sign in again.");
+  if (!UI_PREF_KEYS.has(key) || typeof value !== "boolean") throw new Error("unknown preference");
+  const prefs = { ...((s.user.ui_prefs as Record<string, unknown> | null) ?? {}), [key]: value };
+  const { error } = await db.from("app_user").update({ ui_prefs: prefs })  // tenant-safe: the signed-in person's own row, by id from the session
+    .eq("id", s.user.id);
+  if (error) throw new Error(`Could not save that preference: ${error.message}`);
+}

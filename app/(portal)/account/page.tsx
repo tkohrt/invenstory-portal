@@ -23,6 +23,7 @@ export default async function AccountPage() {
       website={tenant?.website ?? null}
       contactName={contact}
       stats={stats}
+      confirmCardRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false}
     />
   );
 }

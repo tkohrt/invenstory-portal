@@ -17,8 +17,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
-  DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, useDraggable, useDroppable,
-  useSensor, useSensors, type DragEndEvent, type DragStartEvent,
+  DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, pointerWithin, useDraggable, useDroppable,
+  useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -26,8 +26,9 @@ import {
   addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
-  startFromStandardAction, tidyAction,
+  restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
 } from "@/lib/server/workspace-actions";
+import { setUiPrefAction } from "@/lib/server/account-actions";
 import { reopenSectionsAction } from "@/lib/server/application-actions";
 import { PANEL_SIZE, rankCards, reasonFor, recommendSection, type Ranked } from "@/lib/story-card-rank";
 import { placeable } from "@/lib/card-sensitivity";
@@ -42,10 +43,12 @@ const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF
 
 const layerClass = (l: string | null) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "");
 
-export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion, since }: {
+export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion, since, confirmRemove = true }: {
   tenantName: string; draft: GrantDraft; ws: Workspace; sourceText: string; initialQuestion: number;
   /** Standard Answers: when it was last opened, to mark questions added since. */
   since?: string | null;
+  /** Ask before removing a plain card (the person's "Don't ask me again" setting). */
+  confirmRemove?: boolean;
 }) {
   const router = useRouter();
   const standard = ws.purpose === "standard_answers";
@@ -71,6 +74,15 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [seams, setSeams] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Removing a block: which is being dragged, where a card would land, the
+  // question being asked, and the Undo on offer.
+  const [activeBlock, setActiveBlock] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [askRemove, setAskRemove] = useState(confirmRemove);
+  const [confirming, setConfirming] = useState<{ block: WsBlock; via: "button" | "drag" } | null>(null);
+  const [undo, setUndo] = useState<{ sectionId: string; removed: RemovedBlock; label: string } | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
   const [stripVisible, setStripVisible] = useState(false);
   const [splitHeight, setSplitHeight] = useState<number | null>(null);
   const splitRef = useRef<HTMLDivElement | null>(null);
@@ -213,7 +225,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     const r = ranked.find(x => x.card.id === cardId);
     const temp: WsBlock = {
       id: `tmp-${cardId}`, sectionId: section.id, kind: "card", cardId, cardVersion: cardById.get(cardId)?.version ?? 1,
-      text: cardById.get(cardId)?.statement ?? "", edited: false, breakBefore: false,
+      text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false,
     };
     setBlocksBy(m => {
       const list = [...(m[section.id] ?? [])];
@@ -231,15 +243,63 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     void run(() => reorderBlocksAction(section.id, order, via), putBlocks(section.id));
   }, [section, blocks, run, putBlocks]);
 
+  /**
+   * Where a drop lands. Over the Story Cards panel means "remove" (for a placed
+   * block) or "nowhere" (for a card from the panel). Inside the answer, the
+   * nearest block. Anywhere else, nothing: the drag is cancelled and the card
+   * snaps back, so a slipped release never deletes or moves anything.
+   */
+  const collision: CollisionDetection = useCallback(args => {
+    const within = pointerWithin(args);
+    const panel = within.find(c => c.id === "panel");
+    if (panel) return [panel];
+    if (!within.length) return [];
+    const inAnswer = args.droppableContainers.filter(c => c.id !== "panel");
+    return closestCenter({ ...args, droppableContainers: inAnswer });
+  }, []);
+
   const onDragStart = (e: DragStartEvent) => {
     const d = e.active.data.current as { type?: string; cardId?: string } | undefined;
     setDragging(d?.type === "card" && d.cardId ? cardById.get(d.cardId) ?? null : null);
+    setActiveBlock(d?.type === "card" ? null : String(e.active.id));
   };
+  const onDragOver = (e: DragOverEvent) => setOverId(e.over ? String(e.over.id) : null);
+  const endDrag = () => { setDragging(null); setActiveBlock(null); setOverId(null); };
+
+  // ---- Removing, with a question when it matters and Undo always ------------
+  const doRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
+    if (!section) return;
+    const position = blocks.findIndex(x => x.id === b.id);
+    const removed: RemovedBlock = {
+      kind: b.kind, cardId: b.cardId, cardVersion: b.cardVersion, text: b.ownText,
+      edited: b.edited, breakBefore: b.breakBefore, position: Math.max(0, position),
+    };
+    const sectionId = section.id;
+    setBlocksBy(m => ({ ...m, [sectionId]: (m[sectionId] ?? []).filter(x => x.id !== b.id) }));
+    void run(() => removeBlockAction(sectionId, b.id, via), next => {
+      putBlocks(sectionId)(next);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndo({ sectionId, removed, label: b.kind === "card" ? "Card removed." : "Text removed." });
+      undoTimer.current = setTimeout(() => setUndo(null), 8_000);
+    });
+  }, [section, blocks, run, putBlocks]);
+
+  /** Edited cards and your own writing always ask; a plain card asks until "Don't ask me again". */
+  const requestRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
+    const mustAsk = b.kind === "card" ? b.edited || askRemove : !!b.text.trim();
+    if (mustAsk) setConfirming({ block: b, via }); else doRemove(b, via);
+  }, [askRemove, doRemove]);
+
   const onDragEnd = (e: DragEndEvent) => {
-    setDragging(null);
     const { active, over } = e;
+    const blockDrag = activeBlock;
+    endDrag();
     if (!over || !section) return;
     const d = active.data.current as { type?: string; cardId?: string } | undefined;
+    if (over.id === "panel") {
+      if (blockDrag) { const b = blocks.find(x => x.id === blockDrag); if (b) requestRemove(b, "drag"); }
+      return;
+    }
     const overIdx = blocks.findIndex(b => b.id === over.id);
     if (d?.type === "card" && d.cardId) {
       if (overIdx < 0 && over.id !== "answer") return;
@@ -299,12 +359,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         <span className="ws-saved" aria-live="polite">{pending ? "Saving…" : savedAt ? "All changes saved" : ""}</span>
       </header>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}
-        onDragCancel={() => setDragging(null)}>
+      <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
+        onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1}
             wantedKinds={section.wantedKinds} locked={false} onAdd={id => addCard(id, blocks.length)}
-            open={panelOpen} onClose={() => setPanelOpen(false)} />
+            open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
 
           <div className="ws-main">
             {stripVisible && (
@@ -400,11 +460,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
 
               <AnswerColumn
                 blocks={blocks} cardById={cardById} locked={locked} editing={editing} setEditing={setEditing}
+                dropBefore={dragging && overId && overId !== "answer" && overId !== "panel" ? overId : null}
+                dropAtEnd={!!dragging && overId === "answer"}
                 onMove={(from, to) => reorder(moveItem(blocks, from, to).map(b => b.id), "buttons")}
-                onRemove={id => {
-                  setBlocksBy(m => ({ ...m, [section.id]: blocks.filter(b => b.id !== id) }));
-                  void run(() => removeBlockAction(section.id, id), putBlocks(section.id));
-                }}
+                onRemove={id => { const b = blocks.find(x => x.id === id); if (b) requestRemove(b, "button"); }}
                 onEdit={(id, t) => run(() => editBlockAction(section.id, id, t), putBlocks(section.id))}
                 onBreak={(id, v) => run(() => setBreakAction(section.id, id, v), putBlocks(section.id))}
                 onRefresh={id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
@@ -513,8 +572,36 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             </div>
           </div>
         </div>
+        {confirming && (
+          <RemoveDialog block={confirming.block} askAgain={askRemove}
+            onKeep={() => setConfirming(null)}
+            onRemove={dontAsk => {
+              const { block, via } = confirming;
+              setConfirming(null);
+              if (dontAsk) {
+                setAskRemove(false);
+                void setUiPrefAction("confirm_card_remove", false).catch(() => setError("Could not save \"Don't ask me again\"; it applies to this page only."));
+              }
+              doRemove(block, via);
+            }} />
+        )}
+        {undo && (
+          <div className="ws-undo" role="status">
+            <span>{undo.label} It is back among your Story Cards.</span>
+            <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => {
+              const u = undo; setUndo(null);
+              if (undoTimer.current) clearTimeout(undoTimer.current);
+              void run(() => restoreBlockAction(u.sectionId, u.removed), putBlocks(u.sectionId));
+            }}>Undo</button>
+          </div>
+        )}
         <DragOverlay dropAnimation={null}>
-          {dragging ? <div className={`ws-card ws-overlay ${layerClass(dragging.layer)}`}><p className="cl-statement">{dragging.statement}</p></div> : null}
+          {dragging ? <div className={`ws-card ws-overlay ${layerClass(dragging.layer)}`}><p className="cl-statement">{dragging.statement}</p></div>
+            : activeBlock ? (() => {
+                const b = blocks.find(x => x.id === activeBlock);
+                const c = b?.cardId ? cardById.get(b.cardId) : undefined;
+                return b ? <div className={`ws-card ws-overlay ${layerClass(c?.layer ?? null)}`}><p className="cl-statement">{b.text.slice(0, 220)}{b.text.length > 220 ? "…" : ""}</p></div> : null;
+              })() : null}
         </DragOverlay>
       </DndContext>
     </div>
@@ -552,12 +639,15 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
 // The card panel.
 // ---------------------------------------------------------------------------
 
-function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked, onAdd, open, onClose }: {
+function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked, onAdd, open, onClose, removing }: {
   sectionId: string; ranked: Ranked[]; usedWhere: Map<string, number[]>; current: number;
   wantedKinds: string[]; locked: boolean; onAdd: (cardId: string) => void;
   /** Small screens: the panel is a drawer, opened from the action bar. */
   open: boolean; onClose: () => void;
+  /** A placed block is being dragged: the panel is where it can be dropped to remove it. */
+  removing: boolean;
 }) {
+  const { setNodeRef: dropRef, isOver } = useDroppable({ id: "panel" });
   const [kind, setKind] = useState("");
   const [layer, setLayer] = useState("");
   const [q, setQ] = useState("");
@@ -590,7 +680,8 @@ function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked,
   const kinds = [...new Map(ranked.map(r => [r.card.kind, (r.card as WsCard).kindLabel])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
 
   return (
-    <aside className={`ws-panel${open ? " ws-panel-open" : ""}`} aria-label="Story Cards">
+    <aside ref={dropRef} className={`ws-panel${open ? " ws-panel-open" : ""}${removing ? " ws-panel-removing" : ""}${removing && isOver ? " ws-panel-over" : ""}`} aria-label="Story Cards">
+      {removing && <div className="ws-remove-zone" aria-hidden="true">{isOver ? "Release to remove" : "Drop here to remove"}</div>}
       <div className="ws-panel-head">
         <strong>Story Cards</strong>
         <span className="ov-muted">{ranked.length} available, best first</span>
@@ -632,8 +723,9 @@ function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; lock
   });
   return (
     <div ref={setNodeRef} className={`ws-card ${layerClass(c.layer)}${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
-      <div className="cl-card-head">
-        <span className="ws-handle" {...listeners} {...attributes} aria-label={`Drag: ${c.statement.slice(0, 60)}`} title="Drag into the answer">⠿</span>
+      <div className={`cl-card-head${ok ? " ws-grab" : ""}`} {...listeners} {...attributes}
+        aria-label={`Drag into the answer: ${c.statement.slice(0, 60)}`} title={ok ? "Drag into the answer" : undefined}>
+        <span className="ws-handle" aria-hidden="true">⠿</span>
         <span className="cl-kind">{c.kindLabel}</span>
         {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
         <span className="cl-spacer" />
@@ -674,8 +766,10 @@ function Evidence({ card }: { card: WsCard }) {
 // The answer.
 // ---------------------------------------------------------------------------
 
-function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, empty }: {
+function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, empty, dropBefore, dropAtEnd }: {
   blocks: WsBlock[]; cardById: Map<string, WsCard>; locked: boolean;
+  /** While a card from the panel is dragged: the block it would land before, or the end. */
+  dropBefore: string | null; dropAtEnd: boolean;
   editing: string | null; setEditing: (id: string | null) => void;
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
@@ -687,14 +781,14 @@ function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, o
       {blocks.length === 0 ? empty : (
         <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
           {blocks.map((b, i) => (
-            <BlockRow key={b.id} block={b} index={i} last={i === blocks.length - 1}
+            <BlockRow key={b.id} block={b} index={i} last={i === blocks.length - 1} dropBefore={dropBefore === b.id}
               card={b.cardId ? cardById.get(b.cardId) : undefined} locked={locked}
               editing={editing === b.id} setEditing={setEditing}
               onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} />
           ))}
         </SortableContext>
       )}
-      <div className="ws-dropzone">{blocks.length ? "Drop a card here to add it at the end" : null}</div>
+      <div className={`ws-dropzone${dropAtEnd && blocks.length ? " ws-drop-line" : ""}`}>{blocks.length ? "Drop a card here to add it at the end" : null}</div>
     </div>
   );
 }
@@ -716,8 +810,8 @@ function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }
   );
 }
 
-function BlockRow({ block: b, index, last, card, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh }: {
-  block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean;
+function BlockRow({ block: b, index, last, card, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, dropBefore }: {
+  block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean; dropBefore: boolean;
   editing: boolean; setEditing: (id: string | null) => void;
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
@@ -750,14 +844,17 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`ws-block ws-${b.kind} ${isCard ? layerClass(card?.layer ?? null) : ""}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}`}>
-      <div className="ws-block-head">
-        <span className="ws-handle" {...listeners} {...attributes} aria-label="Drag to reorder" title="Drag to reorder">⠿</span>
+      className={`ws-block ws-${b.kind} ${isCard ? layerClass(card?.layer ?? null) : ""}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}${dropBefore ? " ws-drop-before" : ""}`}>
+      <div className="ws-block-head ws-grab" {...listeners} {...attributes} aria-label="Drag to reorder, or onto Story Cards to remove"
+        title="Drag to reorder, or onto Story Cards to remove">
+        <span className="ws-handle" aria-hidden="true">⠿</span>
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
         {isCard && card?.status === "suggested" && <span className="ov-tag" title="Not yet verified in the Card Library">Unverified card</span>}
         {isCard && card && !placeable(card) && <span className="ov-tag ws-tag-sens" title={card.sensitiveReason ?? ""}>Sensitive, undecided</span>}
         <span className="cl-spacer" />
+        {/* Controls in the grab area stay controls: they never start a drag. */}
+        <span className="ws-head-controls" onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
         {index > 0 && (
           <label className="ws-break" title="Start a new paragraph with this block">
             <input type="checkbox" checked={b.breakBefore} disabled={temp || locked} onChange={e => void onBreak(b.id, e.target.checked)} /> ¶
@@ -766,6 +863,7 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
         <button type="button" className="btn ghost ap-mini" disabled={temp || locked || index === 0} onClick={() => onMove(index, index - 1)} aria-label="Move up">↑</button>
         <button type="button" className="btn ghost ap-mini" disabled={temp || locked || last} onClick={() => onMove(index, index + 1)} aria-label="Move down">↓</button>
         <button type="button" className="btn ghost ap-mini ap-del" disabled={temp || locked} onClick={() => onRemove(b.id)}>Remove</button>
+        </span>
       </div>
 
       {editing ? (
@@ -848,6 +946,44 @@ function SeamsView({ blocks }: { blocks: WsBlock[] }) {
           </span>
         ))}
       </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Asking before a removal.
+// ---------------------------------------------------------------------------
+
+function RemoveDialog({ block, askAgain, onKeep, onRemove }: {
+  block: WsBlock; askAgain: boolean; onKeep: () => void; onRemove: (dontAskAgain: boolean) => void;
+}) {
+  const [dontAsk, setDontAsk] = useState(false);
+  const own = block.kind !== "card";
+  // "Don't ask me again" is offered only for a plain card: edited cards and your
+  // own writing always ask, so offering it there would be a promise not kept.
+  const offerSkip = !own && !block.edited && askAgain;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onKeep(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onKeep]);
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onKeep}>
+      <div className="ws-modal" role="alertdialog" aria-modal="true" aria-labelledby="ws-rm-title" onClick={e => e.stopPropagation()}>
+        <h3 id="ws-rm-title">{own ? "Delete this text?" : "Remove this card from your answer?"}</h3>
+        {own
+          ? <p>Your own writing does not come back from the Story Cards panel. You can undo for a few seconds afterwards.</p>
+          : <p>It goes back to your Story Cards, ready to use again.{block.edited ? " Your edits to this card in this draft will be lost." : ""}</p>}
+        {offerSkip && (
+          <label className="ws-modal-check">
+            <input type="checkbox" checked={dontAsk} onChange={e => setDontAsk(e.target.checked)} /> Don&rsquo;t ask me again
+          </label>
+        )}
+        <div className="ws-modal-acts">
+          <button type="button" className="btn secondary" onClick={onKeep} autoFocus>Keep</button>
+          <button type="button" className="btn inline ws-modal-remove" onClick={() => onRemove(offerSkip && dontAsk)}>{own ? "Delete" : "Remove"}</button>
+        </div>
+      </div>
     </div>
   );
 }

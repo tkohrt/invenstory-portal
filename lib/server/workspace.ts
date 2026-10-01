@@ -36,6 +36,8 @@ export interface WsBlock {
   cardVersion: number | null;
   /** The text as it reads in this draft: the edit if edited, else the placed version's wording. */
   text: string;
+  /** What is stored on the block itself (null for an unedited card), so Undo can restore it exactly. */
+  ownText: string | null;
   edited: boolean;
   breakBefore: boolean;
 }
@@ -106,7 +108,7 @@ export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBl
     return {
       id: r.id as string, sectionId: r.section_id as string, kind: r.kind as WsBlock["kind"],
       cardId: (r.card_id as string | null) ?? null, cardVersion: (r.card_version as number | null) ?? null,
-      text, edited, breakBefore: !!r.break_before,
+      text, ownText: (r.text as string | null) ?? null, edited, breakBefore: !!r.break_before,
     };
   });
 }

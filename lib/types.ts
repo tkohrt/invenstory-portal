@@ -24,6 +24,8 @@ export interface AppUser {
   role: Role;
   auth_id: string;
   created_at: string;
+  /** 0044: small per-person interface choices, e.g. {confirm_card_remove: false}. */
+  ui_prefs?: Record<string, unknown> | null;
 }
 
 export interface Document {

@@ -1,15 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
 import { browserClient } from "@/lib/supabase-browser";
-import { changePasswordAction, requestAccountClosureAction } from "@/lib/server/account-actions";
+import { changePasswordAction, requestAccountClosureAction, setUiPrefAction } from "@/lib/server/account-actions";
 import type { ClientStats } from "@/lib/types";
 
 interface Factor { id: string; friendly_name?: string; status: string }
 
-export default function AccountView({ fullName, email, role, orgName, website, contactName, stats }: {
+export default function AccountView({ fullName, email, role, orgName, website, contactName, stats, confirmCardRemove = true }: {
   fullName: string; email: string; role: "client" | "admin";
   orgName: string | null; website: string | null; contactName: string | null; stats: ClientStats;
+  /** Whether the Storyboard asks before a card is removed from an answer. */
+  confirmCardRemove?: boolean;
 }) {
+  const [warnRemove, setWarnRemove] = useState(confirmCardRemove);
   const isClient = role === "client";
   const adminViewing = role === "admin";
   const money = (c: number) => "$" + Math.round(c / 100).toLocaleString();
@@ -163,6 +166,16 @@ export default function AccountView({ fullName, email, role, orgName, website, c
         )}
         {mfaMsg && <div className="gap-note" style={{ marginTop: 10 }}>{mfaMsg}</div>}
       </section>}
+
+      <section className="acct-card">
+        <h3>Storyboarding Tool</h3>
+        <label className="acct-note" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={warnRemove}
+            onChange={async e => { const v = e.target.checked; setWarnRemove(v); try { await setUiPrefAction("confirm_card_remove", v); } catch { setWarnRemove(!v); } }} />
+          Ask before removing a card from an answer
+        </label>
+        <p className="acct-note">Edited cards and your own writing always ask first, whatever this is set to, and every removal can be undone for a few seconds.</p>
+      </section>
 
       {isClient && (
         <section className="acct-card">
