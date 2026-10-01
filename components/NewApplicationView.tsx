@@ -1,6 +1,10 @@
 "use client";
 // Bringing a funder's application into the portal: step one of a card-mode draft.
 //
+// Where the application comes from first (Paste, Upload, Web address), then
+// the details, which are optional: the reader fills them from the application
+// and the confirmation screen shows them for checking.
+//
 // Paste first, because it always works: many funder portals put the questions
 // behind a login that no server can get past. Upload and web address are there
 // for when they work, and each failure says what to do instead.
@@ -51,11 +55,11 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
       <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName}</div>
       <div className="page-head">
         <div>
-          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/drafts")}>← Drafts</button>
+          <button className="btn ghost" style={{ padding: "2px 4px", marginBottom: 4 }} onClick={() => router.push("/draft")}>← Draft an Application</button>
           <h2>Build from a funder&rsquo;s application</h2>
           <p>Bring in the funder&rsquo;s questions. The portal reads them, you check the result, and each confirmed
             question is answered from {tenantName}&rsquo;s Story Cards. The funder&rsquo;s text stays with this draft
-            and is never added to the Inven(s)tory. For Granted only; clients do not see this draft.</p>
+            and is never added to the Inven(s)tory.</p>
         </div>
       </div>
 
@@ -65,13 +69,6 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
           The questions still need to come from the application itself, below.
         </div>
       )}
-
-      <div className="ap-grid">
-        <label>Opportunity<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Read from the application if left blank" /></label>
-        <label>Funder<input value={f.funder} onChange={e => setF({ ...f, funder: e.target.value })} placeholder="Read from the application if left blank" /></label>
-        <label>Deadline<input type="date" value={f.deadline} onChange={e => setF({ ...f, deadline: e.target.value })} /></label>
-        <label>Amount (USD)<input value={f.amountDollars} onChange={e => setF({ ...f, amountDollars: e.target.value })} placeholder="40000" inputMode="decimal" /></label>
-      </div>
 
       <div className="ap-tabs" role="tablist" aria-label="Where the application comes from">
         {([["paste", "Paste text"], ["file", "Upload PDF or Word"], ["url", "Web address"]] as [Source, string][]).map(([k, label]) => (
@@ -100,6 +97,14 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
           <span className="ov-muted">Works for public pages and PDF links. A page behind a sign-in cannot be read; you will be asked to paste instead.</span>
         </label>
       )}
+
+      <p className="ov-muted ap-optional">Optional. The opportunity, funder and deadline are read from the application if you leave them blank, and you confirm them on the next screen.</p>
+      <div className="ap-grid">
+        <label>Opportunity<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Read from the application if left blank" /></label>
+        <label>Funder<input value={f.funder} onChange={e => setF({ ...f, funder: e.target.value })} placeholder="Read from the application if left blank" /></label>
+        <label>Deadline<input type="date" value={f.deadline} onChange={e => setF({ ...f, deadline: e.target.value })} /></label>
+        <label>Amount (USD)<input value={f.amountDollars} onChange={e => setF({ ...f, amountDollars: e.target.value })} placeholder="40000" inputMode="decimal" /></label>
+      </div>
 
       {error && <div className="ap-error" role="alert">{error}</div>}
 

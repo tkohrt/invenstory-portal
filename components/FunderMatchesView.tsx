@@ -478,7 +478,7 @@ export default function FunderMatchesView({
                   {isAdmin && (
                     <td className="fm-decide">
                       <Triage kind="grant" id={m.grant_id} label={m.title || m.grant_id} />
-                      <a className="fm-draft" href={`/drafts/new?grant=${encodeURIComponent(m.grant_id)}`}
+                      <a className="fm-draft" href={`/draft/new?grant=${encodeURIComponent(m.grant_id)}`}
                          title="Start a draft from this opportunity's application. For Granted only.">Draft this</a>
                     </td>
                   )}
@@ -613,7 +613,7 @@ export default function FunderMatchesView({
                   {isAdmin && (
                     <td className="fm-decide">
                       <Triage kind="funder" id={f.funder_id} label={f.name} />
-                      <a className="fm-draft" href={`/drafts/new?funder=${encodeURIComponent(f.funder_id)}`}
+                      <a className="fm-draft" href={`/draft/new?funder=${encodeURIComponent(f.funder_id)}`}
                          title="Start a draft from this funder's application or guidelines. For Granted only.">Draft this</a>
                     </td>
                   )}

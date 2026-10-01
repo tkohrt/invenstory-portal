@@ -208,3 +208,23 @@ export async function reopenSectionsAction(draftId: string) {
   revalidatePath(`/drafts/${draftId}`);
   return { ok: true };
 }
+
+/**
+ * The application's details, confirmed or corrected on the confirmation
+ * screen: what the reader found (title, funder, deadline) and the amount.
+ */
+export async function saveDraftDetailsAction(draftId: string, d: { title: string; funder: string; deadline: string; amountDollars: string }) {
+  const s = await requireAdmin();
+  await draftFor(s.tenantId, draftId);
+  const title = (d.title ?? "").trim().slice(0, 200);
+  if (!title) throw new Error("Give the application a title.");
+  const amount = (d.amountDollars ?? "").replace(/[$,\s]/g, "");
+  const { error } = await db.from("grant_draft").update({
+    title, funder: (d.funder ?? "").trim().slice(0, 200) || null,
+    deadline: /^\d{4}-\d{2}-\d{2}$/.test(d.deadline ?? "") ? d.deadline : null,
+    amount_cents: amount && Number.isFinite(Number(amount)) ? Math.round(Number(amount) * 100) : null,
+    updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", draftId).eq("mode", "cards");
+  if (error) throw new Error(`Could not save the details: ${error.message}`);
+  revalidatePath(`/drafts/${draftId}`);
+}

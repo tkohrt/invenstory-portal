@@ -152,12 +152,13 @@ export function matchFields(m: SectionMatch, prompt: string) {
 interface DraftRow {
   id: string; title: string; funder: string | null; deadline: string | null;
   source_text: string | null; parse_state: ParseState | null; parsed_at: string | null;
+  source_filename?: string | null;
   confirmed_at: string | null; required_attachments: string[] | null;
 }
 
 async function loadDraft(tenantId: string, draftId: string): Promise<DraftRow> {
   const { data, error } = await db.from("grant_draft")
-    .select("id, title, funder, deadline, source_text, parse_state, parsed_at, confirmed_at, required_attachments")
+    .select("id, title, funder, deadline, source_text, source_filename, parse_state, parsed_at, confirmed_at, required_attachments")
     .eq("tenant_id", tenantId).eq("id", draftId).eq("mode", "cards").maybeSingle();
   if (error) throw new Error(`Could not read the draft: ${error.message}`);
   if (!data) throw new Error("That application draft does not exist for this client.");
@@ -278,6 +279,9 @@ export async function continueParse(
     };
     // Fill what the writer left blank; never overwrite what they typed.
     if (result.funder && !draft.funder) patch.funder = result.funder.slice(0, 200);
+    // The title too, when nobody typed one: it was a placeholder or the file's name.
+    const fromFile = draft.source_filename ? draft.source_filename.replace(/\.(pdf|docx)$/i, "") : null;
+    if (result.title && (draft.title === "Untitled application" || draft.title === fromFile)) patch.title = result.title.slice(0, 200);
     const due = isoDeadline(result.deadline);
     if (due && !draft.deadline) patch.deadline = due;
     await db.from("grant_draft").update(patch).eq("tenant_id", tenantId).eq("id", draftId);

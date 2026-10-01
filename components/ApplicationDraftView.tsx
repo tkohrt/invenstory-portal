@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
-import { confirmSectionsAction, saveSectionsAction, type SectionInput } from "@/lib/server/application-actions";
+import { confirmSectionsAction, saveDraftDetailsAction, saveSectionsAction, type SectionInput } from "@/lib/server/application-actions";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { BankOption } from "@/lib/server/drafts";
 import type { DraftSection, GrantDraft } from "@/lib/types";
@@ -137,7 +137,7 @@ export default function ApplicationDraftView({ tenantName, draft, sections, bank
 
       {/* Once confirmed, the page opens the drafting workspace instead (DraftWorkspace). */}
       {draft.parsed_at && !running && !confirmed && (
-        <ConfirmQuestions
+        <ConfirmQuestions draft={draft}
               key={sections.map(s => s.id + s.matched_prompt).join("|")}
               draftId={draft.id} sections={sections} bank={bank}
               attachments={draft.required_attachments ?? []} stats={stats}
@@ -161,12 +161,17 @@ function KindChips({ kinds }: { kinds: string[] }) {
   return <>{kinds.map(k => <span key={k} className="ov-tag ap-kind">{CARD_KIND_MAP[k]?.label ?? k}</span>)}</>;
 }
 
-function ConfirmQuestions({ draftId, sections, bank, attachments, stats, truncated, onReread }: {
-  draftId: string; sections: DraftSection[]; bank: BankOption[]; attachments: string[];
+function ConfirmQuestions({ draft, draftId, sections, bank, attachments, stats, truncated, onReread }: {
+  draft: GrantDraft; draftId: string; sections: DraftSection[]; bank: BankOption[]; attachments: string[];
   stats?: Record<string, number>; truncated: boolean; onReread: () => void;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(() => sections.map(toRow));
+  // The application's details, as read: confirm them rather than type them.
+  const [details, setDetails] = useState({
+    title: draft.title ?? "", funder: draft.funder ?? "", deadline: draft.deadline ?? "",
+    amountDollars: draft.amount_cents == null ? "" : String(Math.round(draft.amount_cents / 100)),
+  });
   const [busy, setBusy] = useState<"save" | "confirm" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -218,13 +223,13 @@ function ConfirmQuestions({ draftId, sections, bank, attachments, stats, truncat
 
   const save = async () => {
     setBusy("save"); setError(null);
-    try { await saveSectionsAction(draftId, inputs()); setDirty(false); router.refresh(); }
+    try { await saveDraftDetailsAction(draftId, details); await saveSectionsAction(draftId, inputs()); setDirty(false); router.refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not save."); }
     finally { setBusy(null); }
   };
   const confirmAll = async () => {
     setBusy("confirm"); setError(null);
-    try { await confirmSectionsAction(draftId, inputs()); router.refresh(); }
+    try { await saveDraftDetailsAction(draftId, details); await confirmSectionsAction(draftId, inputs()); router.refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not confirm."); setBusy(null); }
   };
 
@@ -233,6 +238,12 @@ function ConfirmQuestions({ draftId, sections, bank, attachments, stats, truncat
 
   return (
     <div className="ap-confirm">
+      <div className="ap-grid ap-details">
+        <label>Opportunity<input value={details.title} onChange={e => { setDirty(true); setDetails({ ...details, title: e.target.value }); }} /></label>
+        <label>Funder<input value={details.funder} onChange={e => { setDirty(true); setDetails({ ...details, funder: e.target.value }); }} placeholder="Not found in the application" /></label>
+        <label>Deadline<input type="date" value={details.deadline} onChange={e => { setDirty(true); setDetails({ ...details, deadline: e.target.value }); }} /></label>
+        <label>Amount (USD)<input value={details.amountDollars} inputMode="decimal" placeholder="40000" onChange={e => { setDirty(true); setDetails({ ...details, amountDollars: e.target.value }); }} /></label>
+      </div>
       <div className="ap-summary">
         <strong>{rows.length} question{rows.length === 1 ? "" : "s"} found. Check them against the application before drafting.</strong>
         <span>

@@ -33,7 +33,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin }: {
         <div><h2>Drafts</h2><p>Grant applications For Granted is preparing for {tenantName}. Answer the highlighted questions and they file straight into your Inven(s)tory.</p></div>
         <div className="spacer" />
         {isAdmin && <>
-          <button className="btn inline" onClick={() => router.push("/drafts/new")}
+          <button className="btn inline" onClick={() => router.push("/draft/new")}
             title="Bring in a funder's application and draft it from Story Cards. For Granted only.">＋ From a funder&rsquo;s application</button>
           <button className="btn secondary" onClick={() => void openStandard()} disabled={opening}
             title="The questions funders ask again and again, answered once from Story Cards and approved into the Answer Library. For Granted only.">
