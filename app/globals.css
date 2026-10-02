@@ -474,6 +474,12 @@ button.vis-dot.busy{opacity:.5}
 /* Readiness card header: pct · title ......... analyze · legend */
 .rc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .readiness-card{padding-top:8px}
+/* Collapse/expand toggle for the checklist body (header, %, button and bar stay visible) */
+.rc-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:0;padding:0;border:1px solid var(--line,#e6e6e6);border-radius:8px;background:#fff;color:#1f4d2e;cursor:pointer}
+.rc-toggle:hover{background:#f2f8f2;border-color:#cfe4cf}
+.rc-chevron{display:inline-block;font-size:15px;line-height:1;transition:transform .15s ease}
+.rc-chevron.collapsed{transform:rotate(-90deg)}
+@media (prefers-reduced-motion: reduce){.rc-chevron{transition:none}}
 
 /* Bordered tier columns, colored to their tier */
 .ck-col{border:1px solid var(--line,#e6e6e6);border-radius:12px;padding:10px 13px;background:#fff;position:relative}

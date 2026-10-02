@@ -54,22 +54,31 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(openKey ?? null);
-  useEffect(() => { if (openKey) setExpanded(openKey); }, [openKey]);
+  // Collapse state: remembered per browser; a deep link to an item always opens the list.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("rc-collapsed") === "1") setCollapsed(true); } catch {} }, []);
+  const toggleCollapsed = () => setCollapsed(c => { const n = !c; try { localStorage.setItem("rc-collapsed", n ? "1" : "0"); } catch {} return n; });
+  useEffect(() => { if (openKey) { setExpanded(openKey); setCollapsed(false); } }, [openKey]);
   const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
   const pctColor = readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e";
+  const expandedItem = readiness.items.find(i => i.key === expanded);
   const mark = (s: string) => s === "covered" ? "✓" : s === "thin" ? "◐" : "○";
 
   return (
     <section className="acct-card readiness-card">
       <div className="rc-head">
+        <button type="button" className="rc-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="rc-body"
+          aria-label={collapsed ? "Expand the checklist" : "Collapse the checklist"} title={collapsed ? "Expand" : "Collapse"}>
+          <span className={`rc-chevron${collapsed ? " collapsed" : ""}`} aria-hidden>▾</span>
+        </button>
         <b style={{ fontSize: 22, color: pctColor }}>{readiness.pct}%</b>
         <h3 style={{ margin: 0 }}>Inven(s)tory Readiness Checklist</h3>
-        <span className="acct-note" style={{ margin: 0 }}>✓ covered · ◐ thin · ○ missing.</span>
+        {!collapsed && <span className="acct-note" style={{ margin: 0 }}>✓ covered · ◐ thin · ○ missing.</span>}
         <button className={`btn rc-run-cta${computedAt ? "" : " rc-run-pulse"}`} style={{ flex: 1, alignSelf: "center" }} onClick={analyze} disabled={analyzing}>{analyzing ? "Running Readiness Check…" : computedAt ? "Re-Run Readiness Check" : "Run Readiness Check"}</button>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
 
-      <div className="ck-cols ck-cols-4">
+      {!collapsed && <div className="ck-cols ck-cols-4" id="rc-body">
         {(() => {
           const CAP = 6;
           const byTier = (t: "essential" | "important" | "enriching") => readiness.items.filter(i => i.tier === t);
@@ -91,7 +100,6 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
               </div>
             </div>
           );
-          const expandedItem = readiness.items.find(i => i.key === expanded);
           return (
             <>
               <div className="ck-group essential">
@@ -109,18 +117,18 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
                 <div className="section-label">{TIER_LABEL.enriching}</div>
                 {renderBody(byTier("enriching"))}
               </div>
-              {expandedItem && (
-                <div className="ck-modal-backdrop" onClick={() => setExpanded(null)}>
-                  <div className="ck-modal" onClick={e => e.stopPropagation()}>
-                    <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
-                      onSaved={() => { setExpanded(null); router.refresh(); }} />
-                  </div>
-                </div>
-              )}
             </>
           );
         })()}
-      </div>
+      </div>}
+      {expandedItem && (
+        <div className="ck-modal-backdrop" onClick={() => setExpanded(null)}>
+          <div className="ck-modal" onClick={e => e.stopPropagation()}>
+            <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+              onSaved={() => { setExpanded(null); router.refresh(); }} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
