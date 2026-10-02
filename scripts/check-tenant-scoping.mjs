@@ -21,6 +21,8 @@ const TENANT_SCOPED = new Set([
   "draft_section","section_block","draft_snapshot","question_observation",
   // Drafting workspace (0042). Append-only event log.
   "card_event",
+  // Inven(s)tory Analysis, Phase A (0048).
+  "analysis_doc","analysis_review","analysis_dup_review",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

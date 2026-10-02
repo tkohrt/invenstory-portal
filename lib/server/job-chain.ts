@@ -21,13 +21,19 @@ function secret(): string {
   return k;
 }
 
-export function signChain(tenantId: string, jobId: string): string {
-  return createHmac("sha256", secret()).update(`card-chain:v1:${tenantId}:${jobId}`).digest("hex");
+/**
+ * Which chain a signature is for. A Card Library signature cannot continue an
+ * analysis, or the reverse: the scope is part of what is signed.
+ */
+export type ChainScope = "card-chain" | "analysis-chain";
+
+export function signChain(tenantId: string, jobId: string, scope: ChainScope = "card-chain"): string {
+  return createHmac("sha256", secret()).update(`${scope}:v1:${tenantId}:${jobId}`).digest("hex");
 }
 
-export function verifyChain(tenantId: string, jobId: string, sig: string): boolean {
+export function verifyChain(tenantId: string, jobId: string, sig: string, scope: ChainScope = "card-chain"): boolean {
   if (typeof sig !== "string" || !/^[0-9a-f]{64}$/.test(sig)) return false;
-  const want = Buffer.from(signChain(tenantId, jobId), "hex");
+  const want = Buffer.from(signChain(tenantId, jobId, scope), "hex");
   const got = Buffer.from(sig, "hex");
   return want.length === got.length && timingSafeEqual(want, got);
 }
@@ -56,6 +62,24 @@ export async function scheduleCardPass(origin: string, tenantId: string, jobId: 
     return res.ok;
   } catch (e) {
     console.error("[chain] could not schedule the next stage", e);
+    return false;
+  }
+}
+
+/** The same, for an Inven(s)tory Analysis run (lib/server/analysis-build.ts). */
+export async function scheduleAnalysisPass(origin: string, tenantId: string, jobId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${origin}/api/jobs/analysis/continue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantId, jobId, sig: signChain(tenantId, jobId, "analysis-chain") }),
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+    if (!res.ok) console.error(`[chain] analysis continuation refused: ${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error("[chain] could not schedule the next analysis stage", e);
     return false;
   }
 }

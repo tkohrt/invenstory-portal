@@ -170,6 +170,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             </Link>
             <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>
             <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library"><span className="ic">▣</span> Card Library</Link>
+            <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis"><span className="ic">◎</span> Analysis (trial)</Link>
           </div>
         )}
       </div>

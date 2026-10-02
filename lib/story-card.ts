@@ -62,6 +62,10 @@ export const CARD_KINDS: CardKind[] = [
     describe: "a named partner and what the partnership does" },
   { key: "finance_budget", label: "Finances", audience: "all", itemKey: "budget", allowsThirdParty: false,
     describe: "its budget, revenue, costs or funding, with figures" },
+  // Added 2 October 2026 for Inven(s)tory Analysis: "Other funding sources" was
+  // the one readiness item no card kind evidenced.
+  { key: "funding_source", label: "Funding sources", audience: "all", itemKey: "other_funding", allowsThirdParty: false,
+    describe: "a named source of its money beyond any one grant (a funder, contract, earned revenue, donors, matching funds), with the amount when stated" },
   { key: "sustainability", label: "Sustainability", audience: "all", itemKey: "sustainability", allowsThirdParty: false,
     describe: "how the work continues beyond a single grant" },
   { key: "equity_approach", label: "Equity approach", audience: "all", itemKey: "equity", allowsThirdParty: false,

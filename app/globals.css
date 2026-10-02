@@ -1262,3 +1262,39 @@ a.dl-row:hover{background:#f6f8f5}
 .ws-scroll > *{flex-shrink:0}
 .ws-readonly .ws-edit-only{display:none !important}
 .ws-readonly .ws-grab{cursor:default}
+
+/* Inven(s)tory Analysis trial (Phase A, 0048) */
+.an-trial{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:2px 7px;vertical-align:middle;margin-left:6px}
+.an-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;font-size:13px;margin:8px 0}
+.an-table th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+.an-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.an-table tbody tr:not(.an-detail){cursor:pointer}
+.an-table tr.an-open td{background:var(--accent-soft)}
+.an-detail td{background:#fafbfc}
+.an-detail h4{margin:10px 0 4px;font-size:13px}
+.an-list{margin:0;padding-left:18px}
+.an-list li{margin:6px 0}
+.an-refused{color:var(--muted)}
+.an-proof{margin-left:6px;font-size:11px;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--muted)}
+.an-proof.ok{border-color:#1f4d2e;color:#1f4d2e}
+.an-bad{color:#a33a2a;font-size:12px}
+.an-warn{color:#8a5a00}
+.an-conflict td{background:#fdf6ec}
+.an-gate{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0 14px}
+.an-gate.an-pass{border-color:#1f4d2e}
+.an-gate ul{margin:8px 0;padding-left:18px}
+.an-gate li.an-pass{color:#1f4d2e}
+.an-gate li.an-fail{color:#a33a2a}
+.an-review{padding-left:22px}
+.an-rev{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px}
+.an-rev-supported{border-left:4px solid #1f4d2e}
+.an-rev-partly{border-left:4px solid #c9a227}
+.an-rev-unsupported{border-left:4px solid #a33a2a}
+.an-rev-acts{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:8px 0;font-size:13px}
+.an-rev-acts label{display:flex;gap:6px;align-items:center}
+.an-rev-acts input[type=checkbox]{width:auto}
+.an-rev-acts .cl-search{flex:1;min-width:180px}
+.an-pairs{margin:6px 0 18px}
+.an-pair{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px}
+.an-pair-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:700px){.an-pair-cols{grid-template-columns:1fr}}
