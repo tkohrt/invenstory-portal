@@ -13,7 +13,7 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { db } from "@/lib/server/db";
 import { clearAnalysisDocs, analysisProgress } from "@/lib/server/analysis-extract";
-import { createJob, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
+import { createJob, supersedeRunning, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
 import { scheduleAnalysisPass } from "@/lib/server/job-chain";
 
 export const maxDuration = 60;
@@ -39,6 +39,7 @@ export async function POST(req: Request) {
 
   const jobId = existing?.id ?? await createJob(
     tenantId, "analysis", `Analysing ${orgName}'s Inven(s)tory`, session.user.id);
+  if (!existing) await supersedeRunning(tenantId, "analysis", jobId);
 
   const opening = () => recordEvent(tenantId, jobId, {
     kind: "phase",

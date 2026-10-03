@@ -205,3 +205,16 @@ export async function releaseJob(tenantId: string, id: string): Promise<void> {
     .eq("tenant_id", tenantId).eq("id", id);
   if (error) console.error("[job] release failed", error);
 }
+
+/**
+ * Close any older run of this kind that a lost chain left marked running, so
+ * a new run is the only one. Called when a new run is created. The older run's
+ * work is kept (every stage saves as it goes); only its status changes.
+ */
+export async function supersedeRunning(tenantId: string, kind: JobKind, keepId: string): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await db.from("job")
+    .update({ status: "failed", error: "Superseded by a newer run. Everything this run read is kept.", finished_at: now, updated_at: now, claimed_at: null })
+    .eq("tenant_id", tenantId).eq("kind", kind).eq("status", "running").neq("id", keepId);
+  if (error) console.error("[job] supersede failed", error);
+}

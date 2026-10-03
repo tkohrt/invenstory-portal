@@ -31,7 +31,7 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
     try {
       const res = await fetch("/api/jobs/active", { cache: "no-store" });
       if (!res.ok) return null;
-      const body = await res.json() as { running: Running | null; finished: Finished | null };
+      const body = await res.json() as { running: Running | null; finished: Finished | null; analysis?: boolean };
       setRunning(body.running);
       setFinished(body.finished);
       return body;
@@ -45,7 +45,9 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
     const tick = async () => {
       const body = await load();
       if (!live) return;
-      timer = setTimeout(tick, body?.running ? 8_000 : 60_000);
+      // Quickly while anything is building: each poll also restarts a build
+      // whose server-carried chain has stopped (lib/server/job-chain.ts).
+      timer = setTimeout(tick, body?.running || body?.analysis ? 8_000 : 60_000);
     };
     void tick();
     return () => { live = false; if (timer) clearTimeout(timer); };

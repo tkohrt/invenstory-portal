@@ -319,3 +319,16 @@ export function roughly(ms: number | null): string | null {
   const m = Math.round(ms / 60_000);
   return m === 1 ? "about a minute" : `about ${m} minutes`;
 }
+
+/**
+ * Has a server-carried build stopped between stages? (See reviveStalledChains
+ * in lib/server/job-chain.ts.) Stopped when no stage holds the lease and
+ * nothing has happened for `idleMs` (a stage hands on within a second or two),
+ * or when a stage holds a lease older than `leaseMs` (killed at the limit).
+ */
+export function chainStalled(
+  j: { updatedAt: string; claimedAt: string | null }, now: number, idleMs = 15_000, leaseMs = 95_000,
+): boolean {
+  if (j.claimedAt) return now - new Date(j.claimedAt).getTime() > leaseMs;
+  return now - new Date(j.updatedAt).getTime() > idleMs;
+}

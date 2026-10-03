@@ -14,6 +14,8 @@ import "server-only";
 // exceeded its stage ceiling, so a leaked signature can at most continue the
 // build it was made for.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { db } from "./db";
+import { chainStalled } from "@/lib/job";
 
 function secret(): string {
   const k = process.env.JOB_CHAIN_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -82,4 +84,71 @@ export async function scheduleAnalysisPass(origin: string, tenantId: string, job
     console.error("[chain] could not schedule the next analysis stage", e);
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Picking a chain back up.
+// ---------------------------------------------------------------------------
+
+/**
+ * Found on 3 October 2026: Vercel refuses a request that a function makes to
+ * its own deployment once the chain of such requests is a few hops deep. It
+ * answers 508 (loop detected), so a build carried stage to stage by the server
+ * alone stops after about three stages. A request that starts in a browser
+ * starts a fresh chain, so every portal page that polls /api/jobs/active also
+ * restarts any chain that has stopped, through this.
+ *
+ * Stopped means: running, no stage holds the lease, and nothing has happened
+ * for a while (a stage hands on within a second or two of releasing), or a
+ * stage holds a lease that has expired (it was killed at the time limit). The
+ * job's updated_at is bumped with a compare-and-set first, so several pages
+ * polling at once restart it once, not several times.
+ */
+
+export async function reviveStalledChains(origin: string, scope: { tenantId: string } | { allTenants: true }): Promise<number> {
+  try {
+    const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+    let q = db.from("job")  // tenant-safe: scoped to one tenant below, or every tenant only for an admin session (the caller decides)
+      .select("id, tenant_id, kind, updated_at, claimed_at, chain_passes")
+      .in("kind", ["cards", "analysis"]).eq("status", "running").gte("started_at", since)
+      .order("started_at", { ascending: false });
+    if ("tenantId" in scope) q = q.eq("tenant_id", scope.tenantId);
+    const { data, error } = await q.limit(20);
+    if (error) { console.error("[chain] revive read failed", error.message); return 0; }
+    const now = Date.now();
+    let revived = 0;
+    // Only the newest running job of each kind per client. An older one left
+    // "running" by a lost chain was superseded when a new run started, and
+    // reviving it too would read the same documents twice.
+    const newest = new Set<string>();
+    for (const j of (data ?? []) as { id: string; tenant_id: string; kind: string; updated_at: string; claimed_at: string | null; chain_passes: number }[]) {
+      const key = `${j.tenant_id}|${j.kind}`;
+      if (newest.has(key)) continue;
+      newest.add(key);
+      if ((j.chain_passes ?? 0) >= MAX_CHAIN_PASSES) continue;
+      if (!chainStalled({ updatedAt: j.updated_at, claimedAt: j.claimed_at }, now)) continue;
+      // Compare-and-set, so only one poller restarts it.
+      const { data: won } = await db.from("job").update({ updated_at: new Date().toISOString() })
+        .eq("tenant_id", j.tenant_id).eq("id", j.id).eq("status", "running").eq("updated_at", j.updated_at).select("id");
+      if (!(won ?? []).length) continue;
+      const ok = j.kind === "analysis"
+        ? await scheduleAnalysisPass(origin, j.tenant_id, j.id)
+        : await scheduleCardPass(origin, j.tenant_id, j.id);
+      if (ok) revived += 1;
+    }
+    return revived;
+  } catch (e) {
+    console.error("[chain] revive failed", e);
+    return 0;
+  }
+}
+
+/** Is an analysis running for this client (or, for an admin, any client)? For the notice's poll rate. */
+export async function analysisRunning(scope: { tenantId: string } | { allTenants: true }): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+  let q = db.from("job")  // tenant-safe: scoped to one tenant below, or every tenant only for an admin session
+    .select("id", { count: "exact", head: true }).eq("kind", "analysis").eq("status", "running").gte("started_at", since);
+  if ("tenantId" in scope) q = q.eq("tenant_id", scope.tenantId);
+  const { count } = await q;
+  return (count ?? 0) > 0;
 }

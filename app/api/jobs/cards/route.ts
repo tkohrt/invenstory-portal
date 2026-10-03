@@ -21,7 +21,7 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { db } from "@/lib/server/db";
 import { clearCardDocs, cardBuildProgress, remergeLibrary } from "@/lib/server/card-extract";
-import { createJob, finishJob, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
+import { createJob, supersedeRunning, finishJob, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
 import { describeMerge } from "@/lib/server/card-build";
 import { scheduleCardPass } from "@/lib/server/job-chain";
 
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
   const existing = await latestJob(tenantId, "cards");
   const jobId = existing?.id ?? await createJob(
     tenantId, "cards", `Building ${orgName}'s Card Library`, session.user.id);
+  if (!existing) await supersedeRunning(tenantId, "cards", jobId);
 
   // Free: re-merge from stored candidates without reading anything.
   if (body?.remerge) {

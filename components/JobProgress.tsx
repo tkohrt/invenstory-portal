@@ -249,8 +249,9 @@ export default function JobProgress({ job, events = [], onDismiss, lostContact }
   const v = lostContact
     ? {
         title: "Lost track of this run", tone: "stalled" as const, percent: null, poll: false,
-        detail: "The page can no longer read its progress, which usually means the session "
-          + "changed. The work may still have finished. Reload to see where it got to.",
+        detail: "This page can no longer see the run. That usually means you switched to another "
+          + "client in this browser, or signed out. The run carries on regardless: switch back to "
+          + "that client and reload to see where it got to.",
       }
     : describeJob(job);
 

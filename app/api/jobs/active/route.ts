@@ -15,7 +15,7 @@ import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import { getFeatureVisible } from "@/lib/server/data";
 import { estimateRemainingMs, STALL_AFTER_MS } from "@/lib/job";
-import { MAX_CHAIN_PASSES, scheduleCardPass, scheduleAnalysisPass } from "@/lib/server/job-chain";
+import { analysisRunning, reviveStalledChains } from "@/lib/server/job-chain";
 
 /** Quiet this long, and the hand-off is presumed lost: longer than one stage plus its hand-off. */
 const REVIVE_AFTER_MS = 100_000;
@@ -24,11 +24,18 @@ export async function GET(req: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "not signed in" }, { status: 401 });
   const tenantId = session.tenantId;
-  // An Inven(s)tory Analysis trial run (admin-only in Phase A) is kept alive the
-  // same way, without being reported here: its own page shows its progress.
-  if (session.role === "admin") await reviveAnalysis(req, tenantId);
+  // Restart any build whose server-carried chain has stopped (Vercel refuses a
+  // chain a few hops deep; see reviveStalledChains). An admin restarts every
+  // client's, since For Granted switches between clients while builds run; a
+  // client only their own.
+  const admin = session.role === "admin";
+  const origin = new URL(req.url).origin;
+  after(async () => { await reviveStalledChains(origin, admin ? { allTenants: true } : { tenantId }); });
+  // An analysis running anywhere keeps an admin's notice polling quickly, so a
+  // stopped chain is picked up within seconds rather than a minute.
+  const analysis = admin ? await analysisRunning({ allTenants: true }).catch(() => false) : false;
   if (session.role !== "admin" && !(await getFeatureVisible(tenantId, "card_review"))) {
-    return NextResponse.json({ running: null, finished: null });
+    return NextResponse.json({ running: null, finished: null, analysis: false });
   }
 
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
@@ -55,10 +62,6 @@ export async function GET(req: Request) {
       unitTimes: times.length > 1 ? times.slice(1) : times,
     });
     const quietMs = now - new Date(live.updated_at).getTime();
-    if (quietMs > REVIVE_AFTER_MS && live.chain_passes < MAX_CHAIN_PASSES) {
-      const origin = new URL(req.url).origin;
-      after(async () => { await scheduleCardPass(origin, tenantId, live.id); });
-    }
     running = { jobId: live.id, done: live.done, total: live.total, startedAt: live.started_at, etaMs, resuming: quietMs > REVIVE_AFTER_MS };
   }
 
@@ -71,22 +74,5 @@ export async function GET(req: Request) {
     error: session.role === "admin" ? last.error : null,
   } : null;
 
-  return NextResponse.json({ running, finished });
-}
-
-/** Pick up a running analysis whose hand-off was lost. Never throws. */
-async function reviveAnalysis(req: Request, tenantId: string): Promise<void> {
-  try {
-    const { data } = await db.from("job").select("id, updated_at, chain_passes")
-      .eq("tenant_id", tenantId).eq("kind", "analysis").eq("status", "running")
-      .order("started_at", { ascending: false }).limit(1).maybeSingle();
-    if (!data) return;
-    const quietMs = Date.now() - new Date(data.updated_at as string).getTime();
-    if (quietMs > REVIVE_AFTER_MS && quietMs < STALL_AFTER_MS && (data.chain_passes as number) < MAX_CHAIN_PASSES) {
-      const origin = new URL(req.url).origin;
-      after(async () => { await scheduleAnalysisPass(origin, tenantId, data.id as string); });
-    }
-  } catch (e) {
-    console.error("[active] analysis revive check failed", e);
-  }
+  return NextResponse.json({ running, finished, analysis });
 }
