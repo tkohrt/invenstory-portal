@@ -955,6 +955,7 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ws-blocker-list{list-style:none;margin:10px 0;padding:0}
 .ws-blocker-list li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
 .ws-blocker-text{flex:1}
+.ws-blocker-acts{display:flex;gap:6px;flex-wrap:wrap}
 .ws-badge-review,.ws-tag-review{background:#fdf3dc;color:#8a5a00;border-color:#efd9a6}
 .ws-verified-only{display:flex;gap:6px;align-items:center;font-size:12px;white-space:nowrap}
 .ws-verified-only input{width:auto}

@@ -25,7 +25,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
-  refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
+  keepWordingAction, refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
 } from "@/lib/server/workspace-actions";
 import { setUiPrefAction } from "@/lib/server/account-actions";
@@ -588,6 +588,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 onEdit={(id, t) => run(() => editBlockAction(section.id, id, t), putBlocks(section.id))}
                 onBreak={(id, v) => run(() => setBreakAction(section.id, id, v), putBlocks(section.id))}
                 onRefresh={id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
+                onKeep={id => run(() => keepWordingAction(section.id, id), putBlocks(section.id))}
                 empty={
                   <EmptyAnswer
                     std={!standard && std?.sectionId ? std : undefined}
@@ -723,6 +724,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             what={blockers.scope === "draft" ? "this application" : "this answer"}
             then={blockers.then}
             onReview={b => setReview({ mode: "review", queue: [{ cardId: b.cardId, position: null }] })}
+            onWording={(b, keep) => { if (b.blockId) void run(() => (keep ? keepWordingAction : refreshBlockWordingAction)(b.sectionId, b.blockId!), putBlocks(b.sectionId)); }}
             onGo={b => { setBlockers(null); const i = sections.findIndex(x => x.id === b.sectionId); if (i >= 0) go(i); }}
             onContinue={() => {
               const t = blockers.then; setBlockers(null);
@@ -933,14 +935,14 @@ function Evidence({ card }: { card: WsCard }) {
 // The answer.
 // ---------------------------------------------------------------------------
 
-function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, empty, dropBefore, dropAtEnd }: {
+function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, empty, dropBefore, dropAtEnd }: {
   blocks: WsBlock[]; cardById: Map<string, WsCard>; gateCard: (id: string) => GateCard | null; locked: boolean;
   /** While a card from the panel is dragged: the block it would land before, or the end. */
   dropBefore: string | null; dropAtEnd: boolean;
   editing: string | null; setEditing: (id: string | null) => void;
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
-  onRefresh: (id: string) => Promise<unknown>; empty: ReactNode;
+  onRefresh: (id: string) => Promise<unknown>; onKeep: (id: string) => Promise<unknown>; empty: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: "answer" });
   return (
@@ -952,7 +954,7 @@ function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing,
               card={b.cardId ? cardById.get(b.cardId) : undefined} locked={locked}
               blocked={b.kind === "card" && b.cardId ? placeIssue(gateCard(b.cardId)) : null}
               editing={editing === b.id} setEditing={setEditing}
-              onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} />
+              onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} onKeep={onKeep} />
           ))}
         </SortableContext>
       )}
@@ -978,14 +980,14 @@ function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }
   );
 }
 
-function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, dropBefore }: {
+function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, dropBefore }: {
   block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean; dropBefore: boolean;
   /** What stops this card leaving in an answer, from lib/card-gate.ts. */
   blocked: string | null;
   editing: boolean; setEditing: (id: string | null) => void;
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
-  onRefresh: (id: string) => Promise<unknown>;
+  onRefresh: (id: string) => Promise<unknown>; onKeep: (id: string) => Promise<unknown>;
 }) {
   const temp = b.id.startsWith("tmp-");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: b.id, disabled: temp || locked });
@@ -1061,8 +1063,9 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
       )}
       {reworded && (
         <div className="ws-warn ws-soft">
-          This card was reworded in the library since you placed it.{" "}
-          <button type="button" className="cl-link" onClick={() => void onRefresh(b.id)}>Use the new wording</button>
+          This card was reworded in the library since you placed it, so this answer cannot leave until you choose.{" "}
+          <button type="button" className="cl-link" onClick={() => void onRefresh(b.id)}>Use the new wording</button>{" "}
+          or <button type="button" className="cl-link" onClick={() => void onKeep(b.id)}>keep this wording</button>
         </div>
       )}
       {isCard && b.edited && !editing && (
@@ -1327,9 +1330,11 @@ function ReviewDialog({ cardId, mode, note, left, onAction, onSkip, onClose }: {
 }
 
 /** What stands between this application (or answer) and the funder, one card at a time. */
-function BlockersDialog({ list, what, then, onReview, onGo, onContinue, onClose }: {
+function BlockersDialog({ list, what, then, onReview, onWording, onGo, onContinue, onClose }: {
   list: Blocker[]; what: string; then: "completed" | "submit" | "approve" | null;
   onReview: (b: Blocker) => void; onGo: (b: Blocker) => void; onContinue: () => void; onClose: () => void;
+  /** A reworded card: use the library's new wording, or keep the old wording on purpose. */
+  onWording: (b: Blocker, keepOld: boolean) => void;
 }) {
   const clear = list.length === 0;
   const action = then === "completed" ? "Mark completed" : then === "submit" ? "Mark submitted…" : then === "approve" ? "Approve this answer" : null;
@@ -1339,7 +1344,7 @@ function BlockersDialog({ list, what, then, onReview, onGo, onContinue, onClose 
         <h3 id="ws-bl-title">{clear ? "Every card is ready" : "Some cards need review first"}</h3>
         <p className="ov-muted">{clear
           ? "Every card here is verified and live."
-          : `${describeBlockers(list, what)} Every card in a grant must be verified by a person, any sensitive card decided, and any retired card removed.`}</p>
+          : `${describeBlockers(list, what)} Every card in a grant must be verified by a person, any sensitive card decided, any retired card removed, and any card reworded since it was placed brought up to date or kept on purpose.`}</p>
         {!clear && (
           <ul className="ws-blocker-list">
             {list.map((b, i) => (
@@ -1347,7 +1352,14 @@ function BlockersDialog({ list, what, then, onReview, onGo, onContinue, onClose 
                 <span className="ws-q-num">Q{b.question}</span>
                 <span className="ws-blocker-text">{(b.text || "").slice(0, 160)}{b.text.length > 160 ? "…" : ""}
                   <span className="ov-muted"> · {ISSUE_LABEL[b.issue]}</span></span>
-                {b.issue !== "retired"
+                {b.issue === "reworded" && b.blockId ? (
+                  <span className="ws-blocker-acts">
+                    <button type="button" className="btn secondary ap-mini" onClick={() => onWording(b, false)}
+                      title="Replace it with the card's current wording from the library">Use new wording</button>
+                    <button type="button" className="btn ghost ap-mini" onClick={() => onWording(b, true)}
+                      title="Keep the wording as placed. It becomes this draft's own edit; the library card is unchanged.">Keep this wording</button>
+                  </span>
+                ) : b.issue !== "retired"
                   ? <button type="button" className="btn secondary ap-mini" onClick={() => onReview(b)}>Review</button>
                   : <button type="button" className="btn ghost ap-mini" onClick={() => onGo(b)} title="Go to the question to remove it">Go to Q{b.question}</button>}
               </li>

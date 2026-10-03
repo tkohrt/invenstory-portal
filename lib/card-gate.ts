@@ -12,17 +12,22 @@
 //      a Standard Answer, and copying an answer out are refused while any card in
 //      it is unverified, retired, or sensitive and undecided. This catches cards
 //      placed before the rule existed, and cards whose status changed afterwards.
+//      It also stops a card whose wording changed in the library after it was
+//      placed (decided 2 October 2026): the writer uses the new wording, or
+//      keeps the old one on purpose, which makes it this draft's own edit.
 //
 // Pure and free of `server-only`, so the page and the server apply exactly the
 // same rule, and it is tested without a database.
 import { placeable } from "./card-sensitivity";
 
-export type GateIssue = "unverified" | "sensitive" | "retired";
+export type GateIssue = "unverified" | "sensitive" | "retired" | "reworded";
 
 export interface GateCard {
   status: "suggested" | "verified" | "retired" | string;
   sensitive?: boolean | null;
   sensitiveCleared?: string | null;
+  /** The card's current version, for spotting an answer that holds older wording. */
+  version?: number | null;
 }
 
 /**
@@ -45,9 +50,15 @@ export const ISSUE_LABEL: Record<GateIssue, string> = {
   unverified: "not yet verified",
   sensitive: "sensitive, awaiting a decision",
   retired: "retired from the library",
+  reworded: "reworded in the library since it was placed",
 };
 
-export interface GateBlock { sectionId: string; kind: string; cardId: string | null; text: string }
+export interface GateBlock {
+  id?: string;
+  sectionId: string; kind: string; cardId: string | null; text: string;
+  /** The card version the block was placed at, and whether this draft has its own wording. */
+  cardVersion?: number | null; edited?: boolean;
+}
 export interface GateSection { id: string; prompt: string }
 
 export interface Blocker {
@@ -56,8 +67,19 @@ export interface Blocker {
   question: number;
   prompt: string;
   cardId: string;
+  /** The block, so the page can act on it (use the new wording, keep the old). */
+  blockId: string | null;
   text: string;
   issue: GateIssue;
+}
+
+/**
+ * Does this block hold wording the card no longer has? Only for an unedited card
+ * block: an edited block is the draft's own wording, chosen by a person.
+ */
+export function isReworded(b: GateBlock, card: GateCard | null | undefined): boolean {
+  if (b.kind !== "card" || b.edited || !card) return false;
+  return b.cardVersion != null && card.version != null && card.version > b.cardVersion;
 }
 
 /**
@@ -74,8 +96,11 @@ export function finishBlockers(
     if (b.kind !== "card" || !b.cardId) continue;
     const at = order.get(b.sectionId);
     if (at == null) continue;
-    const issue = placeIssue(card(b.cardId));
-    if (issue) out.push({ sectionId: b.sectionId, question: at + 1, prompt: sections[at].prompt, cardId: b.cardId, text: b.text, issue });
+    const c = card(b.cardId);
+    const issue = placeIssue(c) ?? (isReworded(b, c) ? "reworded" : null);
+    if (issue) {
+      out.push({ sectionId: b.sectionId, question: at + 1, prompt: sections[at].prompt, cardId: b.cardId, blockId: b.id ?? null, text: b.text, issue });
+    }
   }
   return out.sort((a, b) => a.question - b.question);
 }
@@ -84,7 +109,7 @@ export function finishBlockers(
 export function describeBlockers(list: Blocker[], what = "this application"): string {
   if (!list.length) return "";
   const count = (i: GateIssue) => list.filter(b => b.issue === i).length;
-  const parts = (["unverified", "sensitive", "retired"] as GateIssue[])
+  const parts = (["unverified", "sensitive", "retired", "reworded"] as GateIssue[])
     .filter(i => count(i)).map(i => `${count(i)} ${ISSUE_LABEL[i]}`);
   const qs = [...new Set(list.map(b => b.question))];
   return `${list.length} card${list.length === 1 ? "" : "s"} in ${what} ${list.length === 1 ? "needs" : "need"} attention first `

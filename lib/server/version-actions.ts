@@ -159,19 +159,19 @@ async function finishLineRefusal(tenantId: string, draftId: string): Promise<str
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
   const sections = (secs ?? []) as { id: string; prompt: string }[];
   if (!sections.length) return null;
-  const { data: rows, error: bErr } = await db.from("section_block").select("section_id, kind, card_id")
+  const { data: rows, error: bErr } = await db.from("section_block").select("id, section_id, kind, card_id, card_version, edited")
     .eq("tenant_id", tenantId).in("section_id", sections.map(x => x.id));
   if (bErr) throw new Error(`Could not read the answers: ${bErr.message}`);
-  const blocks = ((rows ?? []) as { section_id: string; kind: string; card_id: string | null }[])
-    .map(r => ({ sectionId: r.section_id, kind: r.kind, cardId: r.card_id, text: "" }));
+  const blocks = ((rows ?? []) as { id: string; section_id: string; kind: string; card_id: string | null; card_version: number | null; edited: boolean }[])
+    .map(r => ({ id: r.id, sectionId: r.section_id, kind: r.kind, cardId: r.card_id, text: "", cardVersion: r.card_version, edited: !!r.edited }));
   const ids = [...new Set(blocks.map(b => b.cardId).filter((x): x is string => !!x))];
   const cards = new Map<string, GateCard>();
   if (ids.length) {
-    const { data: cs, error: cErr } = await db.from("story_card").select("id, status, sensitive, sensitive_cleared")
+    const { data: cs, error: cErr } = await db.from("story_card").select("id, status, sensitive, sensitive_cleared, version")
       .eq("tenant_id", tenantId).in("id", ids);
     if (cErr) throw new Error(`Could not check the cards: ${cErr.message}`);
-    for (const c of (cs ?? []) as { id: string; status: string; sensitive: boolean; sensitive_cleared: string | null }[]) {
-      cards.set(c.id, { status: c.status, sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared });
+    for (const c of (cs ?? []) as { id: string; status: string; sensitive: boolean; sensitive_cleared: string | null; version: number }[]) {
+      cards.set(c.id, { status: c.status, sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared, version: c.version });
     }
   }
   const list = finishBlockers(sections, blocks, id => cards.get(id));

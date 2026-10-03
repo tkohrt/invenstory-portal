@@ -352,6 +352,31 @@ export async function refreshBlockWordingAction(sectionId: string, blockId: stri
   return finish(s, section);
 }
 
+/**
+ * Keep the wording this block was placed with, after the card was reworded in
+ * the library. The old wording becomes this draft's own edit of the card, so it
+ * is a choice a person made, and the finish line stops asking about it. The
+ * library card is untouched.
+ */
+export async function keepWordingAction(sectionId: string, blockId: string): Promise<WsBlock[]> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const row = rows.find(r => r.id === blockId);
+  if (!row || row.kind !== "card") throw new Error("That block is no longer in this answer.");
+  if (row.edited) return finish(s, section);
+  const [resolved] = await resolveBlocks(s.tenantId, [row]);
+  const { error } = await db.from("section_block").update({
+    text: resolved.text.slice(0, 8000), edited: true, updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", blockId);
+  if (error) throw new Error(`Could not keep the wording: ${error.message}`);
+  await logEvents(s, section, [{
+    event: "edited", card_id: row.card_id as string, block_id: blockId,
+    payload: { before: resolved.text, after: resolved.text, kept_old_wording: true, placed_version: row.card_version },
+  }]);
+  return finish(s, section);
+}
+
 /** Start a new paragraph before this block, or join it to the one before. */
 export async function setBreakAction(sectionId: string, blockId: string, breakBefore: boolean): Promise<WsBlock[]> {
   const s = await requireAdmin();
@@ -544,6 +569,18 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
   if (issues.size) {
     throw new Error(`${issues.size} card${issues.size === 1 ? " in this answer needs" : "s in this answer need"} review before it can be approved: `
       + "verify or edit each one, decide any sensitive card, and remove any retired one.");
+  }
+  // And no card still in wording the library has since replaced.
+  const placedCards = blocks.filter(b => b.kind === "card" && b.cardId && !b.edited);
+  if (placedCards.length) {
+    const { data: vs } = await db.from("story_card").select("id, version")
+      .eq("tenant_id", s.tenantId).in("id", [...new Set(placedCards.map(b => b.cardId as string))]);
+    const now = new Map(((vs ?? []) as { id: string; version: number }[]).map(v => [v.id, v.version]));
+    const stale = placedCards.filter(b => b.cardVersion != null && (now.get(b.cardId as string) ?? 0) > b.cardVersion).length;
+    if (stale) {
+      throw new Error(`${stale} card${stale === 1 ? " in this answer was" : "s in this answer were"} reworded in the library after being placed. `
+        + "Use the new wording, or keep the old wording, before approving.");
+    }
   }
 
   const now = new Date().toISOString();
