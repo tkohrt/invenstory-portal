@@ -56,39 +56,7 @@ export async function getCardLibrary(tenantId: string): Promise<CardLibraryData>
   ]);
   if (cErr) throw new Error(`Card Library read failed: ${cErr.message}`);
 
-  type EvRow = { document_id: string; quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string } | null };
-  const cards: LibraryCard[] = ((cardRows ?? []) as Record<string, unknown>[]).map(r => ({
-    id: r.id as string,
-    kind: r.kind as string,
-    kindLabel: CARD_KIND_MAP[r.kind as string]?.label ?? (r.kind as string),
-    statement: r.statement as string,
-    statementOrigin: r.statement_origin as "machine" | "human",
-    itemKey: (r.item_key as string | null) ?? null,
-    layer: (r.layer as "I" | "II" | "III" | null) ?? null,
-    subject: r.subject as "organization" | "third_party",
-    strength: r.strength as "covered" | "thin",
-    hasFigures: !!r.has_figures,
-    status: r.status as LibraryCard["status"],
-    retiredReason: (r.retired_reason as string | null) ?? null,
-    mergedInto: (r.merged_into as string | null) ?? null,
-    possibleDuplicateOf: (r.possible_duplicate_of as string | null) ?? null,
-    createdFrom: r.created_from as string,
-    version: r.version as number,
-    verifiedAt: (r.verified_at as string | null) ?? null,
-    createdAt: r.created_at as string,
-    verifiedByRole: (r.verified_by_role as LibraryCard["verifiedByRole"]) ?? null,
-    retiredNote: (r.retired_note as string | null) ?? null,
-    sensitive: !!r.sensitive,
-    sensitiveReason: (r.sensitive_reason as string | null) ?? null,
-    sensitiveCleared: (r.sensitive_cleared as LibraryCard["sensitiveCleared"]) ?? null,
-    sensitiveNote: (r.sensitive_note as string | null) ?? null,
-    evidence: ((r.story_card_evidence as EvRow[]) ?? [])
-      .filter(e => e.document?.status === "ready")
-      .map(e => ({
-        documentId: e.document_id, title: e.document?.title ?? "Untitled", layer: e.document?.layer ?? null,
-        quote: e.quote, speaker: e.speaker,
-      })),
-  }));
+  const cards: LibraryCard[] = ((cardRows ?? []) as Record<string, unknown>[]).map(toLibraryCard);
 
   const ready = (docRows ?? []) as { id: string; title: string }[];
   const read = new Map(((readRows ?? []) as { document_id: string }[]).map(r => [r.document_id, true]));
@@ -121,4 +89,55 @@ export async function getCardLibrary(tenantId: string): Promise<CardLibraryData>
     unread,
     refusals: [...byReason.values()].sort((a, b) => b.count - a.count),
   };
+}
+
+type EvRow = { document_id: string; quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string } | null };
+/** One story_card row, with its evidence, as the library shows it. */
+function toLibraryCard(r: Record<string, unknown>): LibraryCard {
+  return {
+    id: r.id as string,
+    kind: r.kind as string,
+    kindLabel: CARD_KIND_MAP[r.kind as string]?.label ?? (r.kind as string),
+    statement: r.statement as string,
+    statementOrigin: r.statement_origin as "machine" | "human",
+    itemKey: (r.item_key as string | null) ?? null,
+    layer: (r.layer as "I" | "II" | "III" | null) ?? null,
+    subject: r.subject as "organization" | "third_party",
+    strength: r.strength as "covered" | "thin",
+    hasFigures: !!r.has_figures,
+    status: r.status as LibraryCard["status"],
+    retiredReason: (r.retired_reason as string | null) ?? null,
+    mergedInto: (r.merged_into as string | null) ?? null,
+    possibleDuplicateOf: (r.possible_duplicate_of as string | null) ?? null,
+    createdFrom: r.created_from as string,
+    version: r.version as number,
+    verifiedAt: (r.verified_at as string | null) ?? null,
+    createdAt: r.created_at as string,
+    verifiedByRole: (r.verified_by_role as LibraryCard["verifiedByRole"]) ?? null,
+    retiredNote: (r.retired_note as string | null) ?? null,
+    sensitive: !!r.sensitive,
+    sensitiveReason: (r.sensitive_reason as string | null) ?? null,
+    sensitiveCleared: (r.sensitive_cleared as LibraryCard["sensitiveCleared"]) ?? null,
+    sensitiveNote: (r.sensitive_note as string | null) ?? null,
+    evidence: ((r.story_card_evidence as EvRow[]) ?? [])
+      .filter(e => e.document?.status === "ready")
+      .map(e => ({
+        documentId: e.document_id, title: e.document?.title ?? "Untitled", layer: e.document?.layer ?? null,
+        quote: e.quote, speaker: e.speaker,
+      })),
+  };
+}
+
+/**
+ * One card, for reviewing it where it is about to be used (the Storyboard opens
+ * this when an unverified card is dropped in). Same shape as the library's, so
+ * the same review card shows it. Null when it is not this client's card.
+ */
+export async function getLibraryCard(tenantId: string, id: string): Promise<LibraryCard | null> {
+  const s = await userClient();
+  const { data, error } = await s.from("story_card")
+    .select("*, story_card_evidence(document_id, quote, speaker, document:document_id(title, layer, status))")
+    .eq("tenant_id", tenantId).eq("id", id).maybeSingle();
+  if (error) throw new Error(`card read failed: ${error.message}`);
+  return data ? toLibraryCard(data as Record<string, unknown>) : null;
 }

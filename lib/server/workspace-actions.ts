@@ -23,6 +23,7 @@ import { SLUG_KINDS } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
 import { assembleAnswer, parseTidy, shortFrom, type TidyProposal } from "@/lib/section-answer";
 import { placeable } from "@/lib/card-sensitivity";
+import { canPlace, placeIssue, type GateIssue } from "@/lib/card-gate";
 import { LOCKED_STATUSES, type DraftStatus } from "@/lib/draft-version";
 import { arrangeBudget, arrangePicks, rankCards, typicalWords } from "@/lib/story-card-rank";
 
@@ -107,14 +108,29 @@ async function finish(s: Session, section: SectionRow): Promise<WsBlock[]> {
 const SENSITIVE_REFUSAL = "That card ties an identifiable person to protected information. Record consent, "
   + "de-identify it, or rule it not sensitive in the Card Library before it can go into an answer.";
 
-/** Ids among these cards that are sensitive and not yet decided. */
-async function undecidedSensitive(tenantId: string, cardIds: string[]): Promise<string[]> {
-  if (!cardIds.length) return [];
-  const { data, error } = await db.from("story_card").select("id, sensitive, sensitive_cleared")
-    .eq("tenant_id", tenantId).in("id", cardIds);
+const UNVERIFIED_REFUSAL = "That card has not been verified yet. Review it first: verifying it, or editing it, "
+  + "places it in the answer.";
+
+/**
+ * What stands in the way of each of these cards going into an answer
+ * (lib/card-gate.ts): not verified, sensitive and undecided, or retired. A card
+ * id that is not this client's live card counts as retired.
+ */
+async function cardIssues(tenantId: string, cardIds: string[]): Promise<Map<string, GateIssue>> {
+  const ids = [...new Set(cardIds)];
+  const out = new Map<string, GateIssue>();
+  if (!ids.length) return out;
+  const { data, error } = await db.from("story_card").select("id, status, sensitive, sensitive_cleared")
+    .eq("tenant_id", tenantId).in("id", ids);
   if (error) throw new Error(`Could not check the cards: ${error.message}`);
-  return ((data ?? []) as { id: string; sensitive: boolean; sensitive_cleared: string | null }[])
-    .filter(c => !placeable({ sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared as never })).map(c => c.id);
+  const byId = new Map(((data ?? []) as { id: string; status: string; sensitive: boolean; sensitive_cleared: string | null }[])
+    .map(c => [c.id, c]));
+  for (const id of ids) {
+    const c = byId.get(id);
+    const issue = placeIssue(c ? { status: c.status, sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared } : null);
+    if (issue) out.set(id, issue);
+  }
+  return out;
 }
 
 const clampPos = (p: number, n: number) => Math.max(0, Math.min(Number.isInteger(p) ? p : n, n));
@@ -141,6 +157,9 @@ export async function addCardBlockAction(sectionId: string, cardId: string, posi
   if (!card) throw new Error("That card is not in this client's library.");
   if (card.status === "retired") throw new Error("That card has been retired from the library.");
   if (!placeable({ sensitive: card.sensitive, sensitiveCleared: card.sensitive_cleared })) throw new Error(SENSITIVE_REFUSAL);
+  // Only a verified card goes into an answer. The page opens the card's review
+  // instead of calling this, so this refusal is the backstop, not the path.
+  if (card.status !== "verified") throw new Error(UNVERIFIED_REFUSAL);
 
   const rows = await rawBlocks(s.tenantId, sectionId);
   if (rows.some(r => r.card_id === cardId && r.kind === "card")) throw new Error("That card is already in this answer.");
@@ -209,8 +228,10 @@ export interface RemovedBlock {
 /**
  * Undo a removal: put the block back where it was, with its edits.
  *
- * A card is re-checked as it would be for any placement: still in this
- * client's library, not retired, not sensitive and undecided. Logged as
+ * A card is re-checked: still in this client's library, not retired, not
+ * sensitive and undecided. It is NOT required to be verified: it was already in
+ * the answer a moment ago, and the finish line (lib/card-gate.ts) still stops an
+ * unverified card leaving. Logged as
  * `added` with `via: "undo"`, so the learning sees the removal was taken back.
  */
 export async function restoreBlockAction(sectionId: string, b: RemovedBlock): Promise<WsBlock[]> {
@@ -517,8 +538,12 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
   const blocks = await resolveBlocks(s.tenantId, rows);
   const text = assembleAnswer(blocks);
   if (!text) throw new Error("There is nothing in this answer to approve yet.");
-  if ((await undecidedSensitive(s.tenantId, blocks.filter(b => b.cardId).map(b => b.cardId as string))).length) {
-    throw new Error("This answer holds a sensitive card that has not been decided. Decide it in the Card Library, or remove it, before approving.");
+  // The finish line for a standard answer: every card in it verified, decided
+  // and live. The page checks first and opens the reviews; this is the backstop.
+  const issues = await cardIssues(s.tenantId, blocks.filter(b => b.kind === "card" && b.cardId).map(b => b.cardId as string));
+  if (issues.size) {
+    throw new Error(`${issues.size} card${issues.size === 1 ? " in this answer needs" : "s in this answer need"} review before it can be approved: `
+      + "verify or edit each one, decide any sensitive card, and remove any retired one.");
   }
 
   const now = new Date().toISOString();
@@ -556,7 +581,7 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
  * can be rearranged for this funder. Only into an empty answer: merging two
  * arrangements is a decision for a person, not a button.
  */
-export async function startFromStandardAction(sectionId: string): Promise<WsBlock[]> {
+export async function startFromStandardAction(sectionId: string): Promise<{ blocks: WsBlock[]; needsReview: string[] }> {
   const s = await requireAdmin();
   const section = await loadSection(s.tenantId, sectionId);
   if (section.purpose === "standard_answers") throw new Error("This is the standard answer itself.");
@@ -573,8 +598,15 @@ export async function startFromStandardAction(sectionId: string): Promise<WsBloc
   }
   const source = await rawBlocks(s.tenantId, ans.draft_section_id as string);
   if (!source.length) throw new Error("The standard answer has no blocks to start from.");
-  if ((await undecidedSensitive(s.tenantId, source.filter(b => b.card_id).map(b => b.card_id as string))).length) {
-    throw new Error("The standard answer holds a sensitive card whose decision was reopened. Decide it in the Card Library first.");
+  // Approved answers were checked when approved, but a card's status can change
+  // afterwards (un-verified, reopened as sensitive, retired), and answers
+  // approved before 2 October 2026 were never checked for verification.
+  const issues = await cardIssues(s.tenantId, source.filter(b => b.kind === "card" && b.card_id).map(b => b.card_id as string));
+  const retired = [...issues].filter(([, i]) => i === "retired").length;
+  if (retired) throw new Error("The standard answer holds a card that has since been retired. Open Standard Answers and replace it first.");
+  if (issues.size) {
+    // Nothing is copied. The page opens these cards for review, then the writer starts again.
+    return { blocks: await finish(s, section), needsReview: [...issues.keys()] };
   }
   const { error } = await db.from("section_block").insert(source.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the session
     tenant_id: s.tenantId, section_id: sectionId, sort_order: i, kind: b.kind,
@@ -585,7 +617,7 @@ export async function startFromStandardAction(sectionId: string): Promise<WsBloc
   await logEvents(s, section, source.filter(b => b.kind === "card").map(b => ({
     event: "added" as const, card_id: b.card_id as string, payload: { via: "standard_answer" },
   })));
-  return finish(s, section);
+  return { blocks: await finish(s, section), needsReview: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -598,12 +630,13 @@ export async function startFromStandardAction(sectionId: string): Promise<WsBloc
  * Cards only, chosen by the same ranking the panel shows (lib/story-card-rank.ts,
  * arrangePicks): one of each kind the question asks for, then more while about
  * four-fifths of the limit allows. Nothing is written, so every sentence still
- * traces to a quote. Never a sensitive card that has not been decided, never one
- * already used in another answer here. Logged as `added` with the rank each was
+ * traces to a quote. Only verified cards (lib/card-gate.ts), never one already
+ * used in another answer here. When unverified cards would have been chosen,
+ * their ids come back in `needsReview` so the page can offer to review them. Logged as `added` with the rank each was
  * shown at and `via: "arrange"`, so the learning can tell these from a person's
  * own choices.
  */
-export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: WsBlock[]; placed: number }> {
+export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: WsBlock[]; placed: number; needsReview: string[] }> {
   const s = await requireAdmin();
   const section = await loadSection(s.tenantId, sectionId);
   if ((await rawBlocks(s.tenantId, sectionId)).length) throw new Error("Arrange for me starts an empty answer. Clear this one first.");
@@ -624,9 +657,15 @@ export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: W
     prompt: section.prompt, guidance: section.guidance, wantedKinds: wanted, slugs: section.question_slugs,
   }, { now: new Date(), usedElsewhere, inSection: new Set(), sectionHasVoice: false });
   const byId = new Map(cards.map(c => [c.id, c]));
-  const picks = arrangePicks(ranked, wanted,
-    arrangeBudget((sec?.limit_value as number | null) ?? null, (sec?.limit_unit as "words" | "characters" | null) ?? null),
-    c => placeable(byId.get(c.id) ?? {}));
+  const budget = arrangeBudget((sec?.limit_value as number | null) ?? null, (sec?.limit_unit as "words" | "characters" | null) ?? null);
+  const picks = arrangePicks(ranked, wanted, budget, c => canPlace(byId.get(c.id)));
+  // What it would have chosen if verification were not required: the cards worth reviewing.
+  const wouldPick = arrangePicks(ranked, wanted, budget, c => placeable(byId.get(c.id) ?? {}));
+  const picked = new Set(picks.map(p => p.card.id));
+  const needsReview = wouldPick.map(p => p.card.id).filter(id => !picked.has(id) && byId.get(id)?.status !== "verified");
+  if (!picks.length && needsReview.length) {
+    return { blocks: await finish(s, section), placed: 0, needsReview };
+  }
   if (!picks.length) {
     throw new Error(wanted.length
       ? "No unused cards of the kinds this question asks for are ready to place. Add cards by hand, or write your own text."
@@ -643,7 +682,7 @@ export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: W
     event: "added" as const, card_id: r.card.id, block_id: blockOf.get(r.card.id) ?? null,
     position: r.position, rank_score: r.score, payload: { via: "arrange" },
   })));
-  return { blocks: await finish(s, section), placed: picks.length };
+  return { blocks: await finish(s, section), placed: picks.length, needsReview };
 }
 
 /**
@@ -655,7 +694,7 @@ export async function arrangeForMeAction(sectionId: string): Promise<{ blocks: W
  * question, and standard answers holding an undecided sensitive card are left
  * alone and counted, so the writer knows what is still to do.
  */
-export async function fillFromStandardsAction(draftId: string): Promise<{ filled: number; skipped: number }> {
+export async function fillFromStandardsAction(draftId: string): Promise<{ filled: number; skipped: number; needsReview: number }> {
   const s = await requireAdmin();
   const { data: draft } = await db.from("grant_draft").select("id, mode, purpose")
     .eq("tenant_id", s.tenantId).eq("id", draftId).maybeSingle();
@@ -669,19 +708,22 @@ export async function fillFromStandardsAction(draftId: string): Promise<{ filled
   const stdBySlug = new Map(((answers ?? []) as unknown as { draft_section_id: string; question: { slug: string } | null }[])
     .filter(a => a.question?.slug).map(a => [a.question!.slug, a.draft_section_id]));
   const sections = (secs ?? []) as { id: string; question_slugs: string[] }[];
-  if (!sections.length) return { filled: 0, skipped: 0 };
+  if (!sections.length) return { filled: 0, skipped: 0, needsReview: 0 };
 
   const { data: existing } = await db.from("section_block").select("section_id")
     .eq("tenant_id", s.tenantId).in("section_id", sections.map(x => x.id));
   const started = new Set(((existing ?? []) as { section_id: string }[]).map(r => r.section_id));
 
-  let filled = 0, skipped = 0;
+  let filled = 0, skipped = 0, needsReview = 0;
   for (const sec of sections) {
     const from = sec.question_slugs[0] ? stdBySlug.get(sec.question_slugs[0]) : undefined;
     if (!from || started.has(sec.id)) continue;
     const source = await rawBlocks(s.tenantId, from);
-    if (!source.length || (await undecidedSensitive(s.tenantId, source.filter(b => b.card_id).map(b => b.card_id as string))).length) {
-      skipped += 1; continue;
+    if (!source.length) { skipped += 1; continue; }
+    const issues = await cardIssues(s.tenantId, source.filter(b => b.kind === "card" && b.card_id).map(b => b.card_id as string));
+    if (issues.size) {
+      if ([...issues.values()].every(i => i === "unverified")) needsReview += 1; else skipped += 1;
+      continue;
     }
     const { error } = await db.from("section_block").insert(source.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the session
       tenant_id: s.tenantId, section_id: sec.id, sort_order: i, kind: b.kind,
@@ -697,5 +739,5 @@ export async function fillFromStandardsAction(draftId: string): Promise<{ filled
     })));
     filled += 1;
   }
-  return { filled, skipped };
+  return { filled, skipped, needsReview };
 }

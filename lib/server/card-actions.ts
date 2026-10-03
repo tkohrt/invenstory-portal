@@ -16,6 +16,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { remergeLibrary } from "./card-extract";
 import { writeCardEdit } from "./card-edit";
+import { getLibraryCard, type LibraryCard } from "./card-library";
 
 const PATH = "/admin/card-library";
 
@@ -74,10 +75,19 @@ export async function unverifyCardAction(id: string) {
  */
 export async function editCardAction(id: string, statement: string) {
   const s = await adminSession();
-  const version = await writeCardEdit(s.tenantId, s.user.id, id, statement);
-  if (version == null) return;
-  await audit(s.tenantId, s.user.id, "card_edit", `${id} v${version}`);
+  // Editing counts as verifying, so even an unchanged save leaves the card verified.
+  const version = await writeCardEdit(s.tenantId, s.user.id, id, statement, "admin");
+  await audit(s.tenantId, s.user.id, version == null ? "card_verify" : "card_edit", version == null ? `${id} (saved unchanged)` : `${id} v${version}`);
   revalidatePath(PATH);
+}
+
+/**
+ * One card with its sources, for reviewing it where it is about to be used.
+ * The Storyboard calls this when an unverified card is dropped into an answer.
+ */
+export async function getReviewCardAction(id: string): Promise<LibraryCard | null> {
+  const s = await adminSession();
+  return getLibraryCard(s.tenantId, id);
 }
 
 /**

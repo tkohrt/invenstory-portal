@@ -56,7 +56,7 @@ export async function confirmMyCardAction(id: string) {
 export async function editMyCardAction(id: string, statement: string) {
   const s = await reviewer();
   await live(s.tenantId, id);
-  const version = await writeCardEdit(s.tenantId, s.user.id, id, statement);
+  const version = await writeCardEdit(s.tenantId, s.user.id, id, statement, s.role === "admin" ? "admin" : "client");
   if (version != null) await audit(s.tenantId, s.user.id, "card_edit_client", `${id} v${version}`);
   revalidatePath(PATH);
 }

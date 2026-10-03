@@ -37,6 +37,10 @@ import { LOCKED_STATUSES, STATUS_NAME, type DraftStatus, type SectionDiff } from
 import { reopenSectionsAction } from "@/lib/server/application-actions";
 import { PANEL_SIZE, rankCards, reasonFor, recommendSection, type Ranked } from "@/lib/story-card-rank";
 import { placeable } from "@/lib/card-sensitivity";
+import { describeBlockers, finishBlockers, ISSUE_LABEL, placeIssue, type Blocker, type GateCard } from "@/lib/card-gate";
+import { getReviewCardAction } from "@/lib/server/card-actions";
+import type { LibraryCard } from "@/lib/server/card-library";
+import CardReview, { type ReviewOutcome } from "./CardReview";
 import { assembleAnswer, countFor, limitState, moveItem } from "@/lib/section-answer";
 import { CARD_KIND_MAP, untracedFigures } from "@/lib/story-card";
 import type { Workspace, WsBlock, WsCard, WsSection, WsStandard } from "@/lib/server/workspace";
@@ -81,6 +85,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [panelOpen, setPanelOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Reviewing cards before they are used (decided 2 October 2026). `place` puts
+  // each card into the answer once verified; `review` only verifies.
+  const [review, setReview] = useState<{ mode: "place" | "review"; queue: { cardId: string; position: number | null }[]; note?: string } | null>(null);
+  // Statuses changed in this page since it loaded, until the refresh catches up.
+  const [statusNow, setStatusNow] = useState<Record<string, "verified" | "retired">>({});
+  // The finish line: what stands in the way, and what to do once it is clear.
+  const [blockers, setBlockers] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | null } | null>(null);
+  const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
   // Removing a block: which is being dragged, where a card would land, the
   // question being asked, and the Undo on offer.
   const [activeBlock, setActiveBlock] = useState<string | null>(null);
@@ -181,7 +193,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   }, [idx, section]);
 
   const go = (i: number) => {
-    setIdx(i); setTidy(null); setEditing(null); setNotice(null); setPanelOpen(false);
+    setIdx(i); setTidy(null); setEditing(null); setNotice(null); setPanelOpen(false); setArrangeReview(null);
     scrollRef.current?.scrollTo({ top: 0 });
   };
   const recommendedIdx = sections.map((_, i) => i).filter(i => advice[i].recommended);
@@ -244,8 +256,16 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const noSensors = useSensors();
   const locked = pending > 0 || readOnly;
 
-  const addCard = useCallback((cardId: string, position: number) => {
-    if (!section) return;
+  /** The card as the gate sees it now, including what was decided on this page since it loaded. */
+  const gateCard = useCallback((id: string): GateCard | null => {
+    const c = cardById.get(id);
+    const now = statusNow[id];
+    if (!c) return null;
+    return now ? { ...c, status: now } : c;
+  }, [cardById, statusNow]);
+
+  const placeNow = useCallback((cardId: string, position: number) => {
+    if (!section) return Promise.resolve();
     const r = ranked.find(x => x.card.id === cardId);
     const temp: WsBlock = {
       id: `tmp-${cardId}`, sectionId: section.id, kind: "card", cardId, cardVersion: cardById.get(cardId)?.version ?? 1,
@@ -256,9 +276,37 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       list.splice(Math.min(position, list.length), 0, temp);
       return { ...m, [section.id]: list };
     });
-    void run(() => addCardBlockAction(section.id, cardId, position, r ? { position: r.position, score: r.score } : null),
+    return run(() => addCardBlockAction(section.id, cardId, position, r ? { position: r.position, score: r.score } : null),
       putBlocks(section.id));
   }, [section, ranked, cardById, run, putBlocks]);
+
+  /**
+   * Put a card into the answer, or, when it has not been verified yet, open its
+   * review where it was dropped: verifying it (or editing it) places it there.
+   */
+  const addCard = useCallback((cardId: string, position: number) => {
+    if (!section) return;
+    const issue = placeIssue(gateCard(cardId));
+    if (issue === "unverified") { setReview({ mode: "place", queue: [{ cardId, position }] }); return; }
+    if (issue) { setError(`That card is ${ISSUE_LABEL[issue]}, so it cannot go into an answer.`); return; }
+    void placeNow(cardId, position);
+  }, [section, gateCard, placeNow]);
+
+  /** What the reviewer did to the card at the front of the queue. */
+  const onReviewed = useCallback((what: ReviewOutcome) => {
+    if (!review || !section) return;
+    const [head, ...rest] = review.queue;
+    if (!head) return;
+    if (what === "verified" || what === "retired" || what === "merged") {
+      setStatusNow(m => ({ ...m, [head.cardId]: what === "verified" ? "verified" : "retired" }));
+      const placed = what === "verified" && review.mode === "place"
+        ? placeNow(head.cardId, head.position ?? (blocksBy[section.id] ?? []).length)
+        : Promise.resolve();
+      if (what !== "verified") say("Card taken out of use. It will not be offered again unless it is reinstated in the Card Library.");
+      if (rest.length) setReview({ ...review, queue: rest });
+      else { setReview(null); void placed.then(() => router.refresh()); }
+    }
+  }, [review, section, placeNow, blocksBy, say, router]);
 
   const reorder = useCallback((order: string[], via: "drag" | "buttons" | "tidy") => {
     if (!section) return;
@@ -356,9 +404,25 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const fillable = standard ? 0 : sections.filter(s => (blocksBy[s.id] ?? []).length === 0
     && s.slugs[0] && standards.some(x => x.slug === s.slugs[0] && x.sectionId)).length;
   const noStandards = !standard && !standards.some(x => x.sectionId);
-  const blockedHere = blocks.filter(b => b.cardId && !placeable(cardById.get(b.cardId) ?? {})).length;
+  // The finish line, for this question and for the whole application.
+  const allBlocks = sections.flatMap(s => blocksBy[s.id] ?? []);
+  const draftBlockers = finishBlockers(sections, allBlocks, gateCard);
+  const sectionBlockers = draftBlockers.filter(b => b.sectionId === section.id);
+  /** Run `then` once the finish line is clear, or show what stands in the way. */
+  const atFinishLine = (scope: "draft" | "section", then: "completed" | "submit" | "approve", next: () => void) => {
+    const list = scope === "draft" ? draftBlockers : sectionBlockers;
+    if (list.length) setBlockers({ scope, then }); else next();
+  };
 
   const money = draft.amount_cents == null ? null : "$" + (draft.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+  const markCompleted = () => void run(() => setDraftStatusAction(draft.id, "completed"), () => { say("Marked completed. A version was saved."); router.refresh(); });
+  const approveNow = () => void run(() => approveStandardAnswerAction(section.id), r => {
+    if (!slug) return;
+    setStandards(list => [...list.filter(x => x.slug !== slug), { slug, answerId: "", sectionId: section.id, text, approvedAt: r.approvedAt }]);
+    setStatusBy(m => ({ ...m, [section.id]: "done" }));
+    say("Approved. Applications asking this question will start from it.");
+  });
 
   const reopen = async () => {
     if (!confirm("Reopen the questions to edit them? Questions you delete, or merge into another, lose the cards placed in them. Questions you only reword keep their answers.")) return;
@@ -383,11 +447,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         {!standard && !readOnly && (draft.status === "completed"
           ? <>
               <button type="button" className="btn ghost ap-mini" disabled={locked} onClick={() => void run(() => setDraftStatusAction(draft.id, "drafting"), () => router.refresh())}>Back to drafting</button>
-              <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => setSubmitting(true)}>Mark submitted…</button>
+              <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => atFinishLine("draft", "submit", () => setSubmitting(true))}>Mark submitted…</button>
             </>
           : <button type="button" className="btn secondary ap-mini" disabled={locked}
               title="Finished and ready to send. Still editable; a version is saved."
-              onClick={() => void run(() => setDraftStatusAction(draft.id, "completed"), () => { say("Marked completed. A version was saved."); router.refresh(); })}>Mark completed</button>)}
+              onClick={() => atFinishLine("draft", "completed", markCompleted)}>Mark completed</button>)}
         {!standard && draft.status === "submitted" && (
           <>
             <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "won"), () => router.refresh())}>Mark awarded</button>
@@ -410,7 +474,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       <DndContext sensors={readOnly ? noSensors : sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
         onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
-          <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1}
+          <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
             wantedKinds={section.wantedKinds} locked={readOnly} onAdd={id => addCard(id, blocks.length)}
             open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
 
@@ -491,14 +555,23 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   <button type="button" className="btn secondary ap-mini" disabled={locked}
                     onClick={() => void run(() => fillFromStandardsAction(draft.id), r => {
                       say(`${r.filled} question${r.filled === 1 ? "" : "s"} started from Standard Answers`
-                        + (r.skipped ? `; ${r.skipped} left empty because their standard answer holds a sensitive card awaiting a decision.` : ".")
-                        + " Rearrange each for this funder.");
+                        + (r.needsReview ? `; ${r.needsReview} left empty because their standard answer holds cards not yet verified (open one and press Start from the standard answer to review them)` : "")
+                        + (r.skipped ? `; ${r.skipped} left empty because their standard answer holds a sensitive or retired card` : "")
+                        + ". Rearrange each for this funder.");
                       router.refresh();
                     })}>Fill {fillable} from Standard Answers</button>
                 </div>
               )}
 
               {error && <div className="ap-error" role="alert">{error} <button className="btn ghost ap-mini" onClick={() => setError(null)}>Dismiss</button></div>}
+              {arrangeReview && arrangeReview.length > 0 && (
+                <div className="ws-notice ws-notice-x" role="status">
+                  <span>{arrangeReview.length} more card{arrangeReview.length === 1 ? "" : "s"} would fit this question but {arrangeReview.length === 1 ? "is" : "are"} not verified yet.{" "}
+                    <button type="button" className="btn secondary ap-mini" disabled={locked}
+                      onClick={() => { setReview({ mode: "place", queue: arrangeReview.map(cardId => ({ cardId, position: null })) }); setArrangeReview(null); }}>Review {arrangeReview.length === 1 ? "it" : "them"}</button></span>
+                  <button type="button" className="bn-x" onClick={() => setArrangeReview(null)} aria-label="Dismiss">×</button>
+                </div>
+              )}
               {notice && (
                 <div className="ws-notice ws-notice-x" role="status">
                   <span>{notice}</span>
@@ -507,7 +580,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               )}
 
               <AnswerColumn
-                blocks={blocks} cardById={cardById} locked={locked} editing={editing} setEditing={setEditing}
+                blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked} editing={editing} setEditing={setEditing}
                 dropBefore={dragging && overId && overId !== "answer" && overId !== "panel" ? overId : null}
                 dropAtEnd={!!dragging && overId === "answer"}
                 onMove={(from, to) => reorder(moveItem(blocks, from, to).map(b => b.id), "buttons")}
@@ -518,13 +591,22 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 empty={
                   <EmptyAnswer
                     std={!standard && std?.sectionId ? std : undefined}
-                    onStart={() => void run(() => startFromStandardAction(section.id), putBlocks(section.id))}
+                    onStart={() => void run(() => startFromStandardAction(section.id), r => {
+                      putBlocks(section.id)(r.blocks);
+                      if (r.needsReview.length) {
+                        setReview({ mode: "review", queue: r.needsReview.map(cardId => ({ cardId, position: null })),
+                          note: "The standard answer holds cards not yet verified. Review each, then press Start from the standard answer again." });
+                      }
+                    })}
                   />
                 }
               />
 
-              {blockedHere > 0 && (
-                <div className="ws-warn">{blockedHere} card{blockedHere === 1 ? " here is" : "s here are"} now flagged as sensitive and undecided. Decide {blockedHere === 1 ? "it" : "them"} in the Card Library, or remove {blockedHere === 1 ? "it" : "them"}, before this answer is used.</div>
+              {sectionBlockers.length > 0 && !readOnly && (
+                <div className="ws-warn">
+                  {describeBlockers(sectionBlockers, "this answer")} It cannot be copied, approved or sent until then.{" "}
+                  <button type="button" className="cl-link" onClick={() => setBlockers({ scope: "section", then: null })}>Review them</button>
+                </div>
               )}
 
               {standard && std && (
@@ -572,7 +654,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
                     onClick={() => void run(() => arrangeForMeAction(section.id), r => {
                       putBlocks(section.id)(r.blocks);
-                      say(`Placed ${r.placed} card${r.placed === 1 ? "" : "s"}: one of each kind this question asks for first, then more while about four-fifths of the ${standard ? "typical length" : "limit"} allowed. Nothing was written; edit, reorder or remove as you like.`);
+                      if (!r.placed && r.needsReview.length) {
+                        setReview({ mode: "place", queue: r.needsReview.map(cardId => ({ cardId, position: null })),
+                          note: "None of the best cards for this question is verified yet. Review each; verifying one places it." });
+                        return;
+                      }
+                      say(`Placed ${r.placed} verified card${r.placed === 1 ? "" : "s"}: one of each kind this question asks for first, then more while about four-fifths of the ${standard ? "typical length" : "limit"} allowed. Nothing was written; edit, reorder or remove as you like.`);
+                      setArrangeReview(r.needsReview.length ? r.needsReview : null);
                     })}>Arrange for me</button>
                 )}
                 <button type="button" className="btn secondary ws-edit-only" disabled={locked} onClick={() => {
@@ -595,7 +683,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
                   onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
                   title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
-                <CopyButton text={text} />
+                <CopyButton text={text} blocked={sectionBlockers.length > 0}
+                  onBlocked={() => setBlockers({ scope: "section", then: null })} />
               </span>
               <span className="spacer" />
               <span className="ws-bar-group ws-edit-only">
@@ -607,12 +696,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 {standard && (
                   <button type="button" className="btn inline ap-go" disabled={locked || !text || (std?.sectionId === section.id && !changedSinceApproval)}
                     title="Make this the approved Standard Answer, linked to the cards it was built from. Applications start from approved answers."
-                    onClick={() => void run(() => approveStandardAnswerAction(section.id), r => {
-                      if (!slug) return;
-                      setStandards(list => [...list.filter(x => x.slug !== slug), { slug, answerId: "", sectionId: section.id, text, approvedAt: r.approvedAt }]);
-                      setStatusBy(m => ({ ...m, [section.id]: "done" }));
-                      say("Approved. Applications asking this question will start from it.");
-                    })}>
+                    onClick={() => atFinishLine("section", "approve", approveNow)}>
                     {std?.sectionId === section.id ? (changedSinceApproval ? "Approve the changes" : "Approved") : "Approve this answer"}
                   </button>
                 )}
@@ -627,6 +711,24 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         {submitting && (
           <SubmitDialog onCancel={() => setSubmitting(false)}
             onSubmit={date => { setSubmitting(false); void run(() => setDraftStatusAction(draft.id, "submitted", date), () => router.refresh()); }} />
+        )}
+        {review && review.queue[0] && (
+          <ReviewDialog key={review.queue[0].cardId} cardId={review.queue[0].cardId} mode={review.mode} note={review.note}
+            left={review.queue.length - 1} onAction={onReviewed}
+            onSkip={() => { const rest = review.queue.slice(1); if (rest.length) setReview({ ...review, queue: rest }); else { setReview(null); router.refresh(); } }}
+            onClose={() => { setReview(null); router.refresh(); }} />
+        )}
+        {blockers && !review && (
+          <BlockersDialog list={blockers.scope === "draft" ? draftBlockers : sectionBlockers}
+            what={blockers.scope === "draft" ? "this application" : "this answer"}
+            then={blockers.then}
+            onReview={b => setReview({ mode: "review", queue: [{ cardId: b.cardId, position: null }] })}
+            onGo={b => { setBlockers(null); const i = sections.findIndex(x => x.id === b.sectionId); if (i >= 0) go(i); }}
+            onContinue={() => {
+              const t = blockers.then; setBlockers(null);
+              if (t === "completed") markCompleted(); else if (t === "submit") setSubmitting(true); else if (t === "approve") approveNow();
+            }}
+            onClose={() => setBlockers(null)} />
         )}
         {confirming && (
           <RemoveDialog block={confirming.block} askAgain={askRemove}
@@ -695,8 +797,9 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
 // The card panel.
 // ---------------------------------------------------------------------------
 
-function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked, onAdd, open, onClose, removing }: {
+function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKinds, locked, onAdd, open, onClose, removing }: {
   sectionId: string; ranked: Ranked[]; usedWhere: Map<string, number[]>; current: number;
+  statusNow: Record<string, "verified" | "retired">;
   wantedKinds: string[]; locked: boolean; onAdd: (cardId: string) => void;
   /** Small screens: the panel is a drawer, opened from the action bar. */
   open: boolean; onClose: () => void;
@@ -708,10 +811,14 @@ function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked,
   const [layer, setLayer] = useState("");
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(PANEL_SIZE);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const logged = useRef(new Set<string>());
 
-  const filtering = !!(kind || layer || q.trim());
+  const statusOf = (c: WsCard) => statusNow[c.id] ?? c.status;
+  const filtering = !!(kind || layer || q.trim() || verifiedOnly);
   const list = ranked.filter(r => {
+    if (statusNow[r.card.id] === "retired") return false;
+    if (verifiedOnly && statusOf(r.card as WsCard) !== "verified") return false;
     if (kind === "__wanted" && !wantedKinds.includes(r.card.kind)) return false;
     if (kind && kind !== "__wanted" && r.card.kind !== kind) return false;
     if (layer && r.card.layer !== layer) return false;
@@ -754,11 +861,15 @@ function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked,
             onClick={() => { setLayer(v => (v === l ? "" : l)); setLimit(PANEL_SIZE); }}>{l}</button>
         ))}
         <input className="cl-search ws-search" placeholder="Search cards and quotes" value={q} onChange={e => setQ(e.target.value)} />
+        <label className="ws-verified-only" title="Only cards a person has verified. Others can still be used: dropping one opens its review.">
+          <input type="checkbox" checked={verifiedOnly} onChange={e => { setVerifiedOnly(e.target.checked); setLimit(PANEL_SIZE); }} /> Verified only
+        </label>
       </div>
       {shown.length === 0 && <p className="cl-note">{ranked.length ? "Nothing matches these filters." : "No cards left to place. Build the Card Library, or remove a card from the answer to bring it back."}</p>}
       <div className="ws-cards">
         {shown.map(r => (
-          <PanelCard key={r.card.id} r={r} used={(usedWhere.get(r.card.id) ?? []).filter(n => n !== current)} locked={locked} onAdd={onAdd} />
+          <PanelCard key={r.card.id} r={r} verified={statusOf(r.card as WsCard) === "verified"}
+            used={(usedWhere.get(r.card.id) ?? []).filter(n => n !== current)} locked={locked} onAdd={onAdd} />
         ))}
       </div>
       {list.length > shown.length && (
@@ -770,7 +881,7 @@ function CardPanel({ sectionId, ranked, usedWhere, current, wantedKinds, locked,
   );
 }
 
-function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; locked: boolean; onAdd: (id: string) => void }) {
+function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: boolean; used: number[]; locked: boolean; onAdd: (id: string) => void }) {
   const c = r.card as WsCard;
   const [open, setOpen] = useState(false);
   const ok = placeable(c);
@@ -785,7 +896,7 @@ function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; lock
         <span className="cl-kind">{c.kindLabel}</span>
         {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
         <span className="cl-spacer" />
-        {c.status === "verified" ? <span className="cl-badge cl-badge-ok">Verified</span> : <span className="cl-badge">Suggested</span>}
+        {verified ? <span className="cl-badge cl-badge-ok">Verified</span> : <span className="cl-badge ws-badge-review" title="Not yet verified. Dropping it in, or pressing Review and add, opens its review first.">Needs review</span>}
       </div>
       <p className="cl-statement">{c.statement}</p>
       <div className="ws-reason">{reasonFor(r, c.kindLabel, c.newestSource)}</div>
@@ -795,7 +906,7 @@ function PanelCard({ r, used, locked, onAdd }: { r: Ranked; used: number[]; lock
       )}
       <div className="cl-card-acts">
         <button type="button" className="btn inline cl-primary ws-edit-only" disabled={locked || !ok} onClick={() => onAdd(c.id)}
-          title={ok ? undefined : "Sensitive: decide it in the Card Library first"}>Add</button>
+          title={ok ? (verified ? undefined : "Opens the card's review; verifying it adds it") : "Sensitive: decide it in the Card Library first"}>{verified || !ok ? "Add" : "Review and add"}</button>
         {used.length > 0 && <span className="ov-tag" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
         <button type="button" className="cl-link" onClick={() => setOpen(o => !o)}>{open ? "Hide" : "Sources"} ({c.evidence.length})</button>
       </div>
@@ -822,8 +933,8 @@ function Evidence({ card }: { card: WsCard }) {
 // The answer.
 // ---------------------------------------------------------------------------
 
-function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, empty, dropBefore, dropAtEnd }: {
-  blocks: WsBlock[]; cardById: Map<string, WsCard>; locked: boolean;
+function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, empty, dropBefore, dropAtEnd }: {
+  blocks: WsBlock[]; cardById: Map<string, WsCard>; gateCard: (id: string) => GateCard | null; locked: boolean;
   /** While a card from the panel is dragged: the block it would land before, or the end. */
   dropBefore: string | null; dropAtEnd: boolean;
   editing: string | null; setEditing: (id: string | null) => void;
@@ -839,6 +950,7 @@ function AnswerColumn({ blocks, cardById, locked, editing, setEditing, onMove, o
           {blocks.map((b, i) => (
             <BlockRow key={b.id} block={b} index={i} last={i === blocks.length - 1} dropBefore={dropBefore === b.id}
               card={b.cardId ? cardById.get(b.cardId) : undefined} locked={locked}
+              blocked={b.kind === "card" && b.cardId ? placeIssue(gateCard(b.cardId)) : null}
               editing={editing === b.id} setEditing={setEditing}
               onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} />
           ))}
@@ -866,8 +978,10 @@ function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }
   );
 }
 
-function BlockRow({ block: b, index, last, card, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, dropBefore }: {
+function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, dropBefore }: {
   block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean; dropBefore: boolean;
+  /** What stops this card leaving in an answer, from lib/card-gate.ts. */
+  blocked: string | null;
   editing: boolean; setEditing: (id: string | null) => void;
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
@@ -906,7 +1020,8 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
         <span className="ws-handle" aria-hidden="true">⠿</span>
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
-        {isCard && card?.status === "suggested" && <span className="ov-tag" title="Not yet verified in the Card Library">Unverified card</span>}
+        {isCard && blocked === "unverified" && <span className="ov-tag ws-tag-review" title="Placed before verification was required, or un-verified since. Review it before this answer is used.">Needs review</span>}
+        {isCard && blocked === "retired" && <span className="ov-tag ws-tag-sens" title="Retired from the library. Remove it before this answer is used.">Retired card</span>}
         {isCard && card && !placeable(card) && <span className="ov-tag ws-tag-sens" title={card.sensitiveReason ?? ""}>Sensitive, undecided</span>}
         <span className="cl-spacer" />
         {/* Controls in the grab area stay controls: they never start a drag. */}
@@ -964,10 +1079,13 @@ function BlockRow({ block: b, index, last, card, locked, editing, setEditing, on
   );
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, blocked, onBlocked }: { text: string; blocked: boolean; onBlocked: () => void }) {
   const [done, setDone] = useState(false);
   return (
-    <button type="button" className="btn secondary" disabled={!text} onClick={async () => {
+    <button type="button" className="btn secondary" disabled={!text}
+      title={blocked ? "This answer holds cards that need review before it is copied out" : undefined}
+      onClick={async () => {
+      if (blocked) { onBlocked(); return; }
       try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 2000); }
       catch { prompt("Copy the answer:", text); }
     }}>{done ? "Copied" : "Copy answer"}</button>
@@ -1142,6 +1260,103 @@ function SubmitDialog({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: 
         <div className="ws-modal-acts">
           <button type="button" className="btn secondary" onClick={onCancel} autoFocus>Cancel</button>
           <button type="button" className="btn inline ap-go" onClick={() => onSubmit(date)}>Mark submitted</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reviewing a card before it is used, and the finish line.
+// ---------------------------------------------------------------------------
+
+/**
+ * The Card Library's own review card, opened where the card is about to be
+ * used. In `place` mode, verifying it (or editing it, which counts as
+ * verifying) puts it into the answer where it was dropped; retiring it sends it
+ * away. Cancel places nothing.
+ */
+function ReviewDialog({ cardId, mode, note, left, onAction, onSkip, onClose }: {
+  cardId: string; mode: "place" | "review"; note?: string; left: number;
+  onAction: (what: ReviewOutcome) => void; onSkip: () => void; onClose: () => void;
+}) {
+  const [card, setCard] = useState<LibraryCard | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    let live = true;
+    getReviewCardAction(cardId)
+      .then(c => { if (live) setCard(c); })
+      .catch(e => { if (live) { setCard(null); setError(e instanceof Error ? e.message : "Could not open the card."); } });
+    return () => { live = false; };
+  }, [cardId, reload]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handle = (what: ReviewOutcome) => {
+    // Verified, retired and merged move on. Anything else (a sensitive decision
+    // recorded, say) leaves the card on screen, read again, still to verify.
+    if (what === "verified" || what === "retired" || what === "merged") onAction(what);
+    else setReload(n => n + 1);
+  };
+
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onClose}>
+      <div className="ws-modal ws-review" role="dialog" aria-modal="true" aria-labelledby="ws-rv-title" onClick={e => e.stopPropagation()}>
+        <h3 id="ws-rv-title">{mode === "place" ? "Review this card before it goes in" : "Review this card"}</h3>
+        <p className="ov-muted">{note ?? (mode === "place"
+          ? "Only verified cards go into a grant. Read the card against its quote: verify it if the quote fully supports it, edit it if the wording needs fixing (that verifies it too), or take it out of use."
+          : "Read the card against its quote: verify it, edit it (that verifies it too), or take it out of use.")}</p>
+        {card === undefined && <p className="ov-muted">Opening the card…</p>}
+        {card === null && <div className="ap-error">{error ?? "That card is no longer in this client's library."}</div>}
+        {card && (card.status === "verified" && mode === "review"
+          ? <p className="ov-muted">This card is already verified.</p>
+          : <CardReview card={card} onAction={handle}
+              verifyLabel={mode === "place" ? "Verify and place" : "Verify"}
+              editSaveLabel={mode === "place" ? "Save, verify and place" : "Save and verify"} />)}
+        <div className="ws-modal-acts">
+          {left > 0 && <button type="button" className="btn ghost" onClick={onSkip}>Skip this one ({left} more)</button>}
+          <button type="button" className="btn secondary" onClick={onClose} autoFocus>{mode === "place" ? "Cancel, place nothing" : "Close"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** What stands between this application (or answer) and the funder, one card at a time. */
+function BlockersDialog({ list, what, then, onReview, onGo, onContinue, onClose }: {
+  list: Blocker[]; what: string; then: "completed" | "submit" | "approve" | null;
+  onReview: (b: Blocker) => void; onGo: (b: Blocker) => void; onContinue: () => void; onClose: () => void;
+}) {
+  const clear = list.length === 0;
+  const action = then === "completed" ? "Mark completed" : then === "submit" ? "Mark submitted…" : then === "approve" ? "Approve this answer" : null;
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onClose}>
+      <div className="ws-modal ws-blockers" role="dialog" aria-modal="true" aria-labelledby="ws-bl-title" onClick={e => e.stopPropagation()}>
+        <h3 id="ws-bl-title">{clear ? "Every card is ready" : "Some cards need review first"}</h3>
+        <p className="ov-muted">{clear
+          ? "Every card here is verified and live."
+          : `${describeBlockers(list, what)} Every card in a grant must be verified by a person, any sensitive card decided, and any retired card removed.`}</p>
+        {!clear && (
+          <ul className="ws-blocker-list">
+            {list.map((b, i) => (
+              <li key={`${b.cardId}-${i}`}>
+                <span className="ws-q-num">Q{b.question}</span>
+                <span className="ws-blocker-text">{(b.text || "").slice(0, 160)}{b.text.length > 160 ? "…" : ""}
+                  <span className="ov-muted"> · {ISSUE_LABEL[b.issue]}</span></span>
+                {b.issue !== "retired"
+                  ? <button type="button" className="btn secondary ap-mini" onClick={() => onReview(b)}>Review</button>
+                  : <button type="button" className="btn ghost ap-mini" onClick={() => onGo(b)} title="Go to the question to remove it">Go to Q{b.question}</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="ws-modal-acts">
+          <button type="button" className="btn secondary" onClick={onClose}>Close</button>
+          {clear && action && <button type="button" className="btn inline ap-go" onClick={onContinue}>{action}</button>}
         </div>
       </div>
     </div>

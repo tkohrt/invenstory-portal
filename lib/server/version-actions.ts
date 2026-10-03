@@ -15,6 +15,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { BLOCK_COLS, resolveBlocks } from "./workspace";
 import { assembleAnswer } from "@/lib/section-answer";
+import { describeBlockers, finishBlockers, type GateCard } from "@/lib/card-gate";
 import {
   autosavesToThin, canMoveStatus, compareVersion, contentHash, versionLabel,
   type DraftStatus, type SectionDiff, type VersionContent, type VersionReason,
@@ -148,14 +149,49 @@ export async function enterStageAction(draftId: string, stage: "arrange" | "weav
 }
 
 /**
+ * The finish line (lib/card-gate.ts): every card in the application verified,
+ * decided and still live. The page runs the same check first and opens the
+ * cards for review; this is the backstop, so it holds whatever the page does.
+ */
+async function finishLineRefusal(tenantId: string, draftId: string): Promise<string | null> {
+  const { data: secs, error: sErr } = await db.from("draft_section").select("id, prompt, sort_order")
+    .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order");
+  if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
+  const sections = (secs ?? []) as { id: string; prompt: string }[];
+  if (!sections.length) return null;
+  const { data: rows, error: bErr } = await db.from("section_block").select("section_id, kind, card_id")
+    .eq("tenant_id", tenantId).in("section_id", sections.map(x => x.id));
+  if (bErr) throw new Error(`Could not read the answers: ${bErr.message}`);
+  const blocks = ((rows ?? []) as { section_id: string; kind: string; card_id: string | null }[])
+    .map(r => ({ sectionId: r.section_id, kind: r.kind, cardId: r.card_id, text: "" }));
+  const ids = [...new Set(blocks.map(b => b.cardId).filter((x): x is string => !!x))];
+  const cards = new Map<string, GateCard>();
+  if (ids.length) {
+    const { data: cs, error: cErr } = await db.from("story_card").select("id, status, sensitive, sensitive_cleared")
+      .eq("tenant_id", tenantId).in("id", ids);
+    if (cErr) throw new Error(`Could not check the cards: ${cErr.message}`);
+    for (const c of (cs ?? []) as { id: string; status: string; sensitive: boolean; sensitive_cleared: string | null }[]) {
+      cards.set(c.id, { status: c.status, sensitive: c.sensitive, sensitiveCleared: c.sensitive_cleared });
+    }
+  }
+  const list = finishBlockers(sections, blocks, id => cards.get(id));
+  return list.length ? describeBlockers(list) : null;
+}
+
+/**
  * Change a draft's status. Completed and Submitted each save a version;
- * Submitted records the date and locks the draft.
+ * Submitted records the date and locks the draft. Both are refused while any
+ * card in the application is unverified, sensitive and undecided, or retired.
  */
 export async function setDraftStatusAction(draftId: string, status: DraftStatus, submittedOn?: string | null) {
   const s = await requireAdmin();
   const d = await loadDraft(s.tenantId, draftId);
   if (d.purpose === "standard_answers") throw new Error("Standard Answers is not an application, so it has no status.");
   if (!canMoveStatus(d.status, status)) throw new Error("That change of status is not allowed. A submitted application only takes its outcome.");
+  if (status === "completed" || status === "submitted") {
+    const refusal = await finishLineRefusal(s.tenantId, draftId);
+    if (refusal) throw new Error(`${refusal} Review them in this application before marking it ${status}.`);
+  }
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status, updated_at: now };
   if (status === "completed") {
