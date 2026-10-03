@@ -17,8 +17,9 @@ import { FACT_KEY_MAP } from "@/lib/analysis";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction } from "@/lib/server/analysis-actions";
 import { REVIEW_ALL_UP_TO } from "@/lib/analysis";
+import AnalysisCompare, { type CompareResult } from "./AnalysisCompare";
 
-type Tab = "documents" | "cards" | "facts" | "review";
+type Tab = "documents" | "cards" | "facts" | "review" | "compare";
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 
 function possessive(name: string) {
@@ -27,8 +28,10 @@ function possessive(name: string) {
   return /s$/i.test(n) ? `${n}’` : `${n}’s`;
 }
 
-export default function AnalysisTrialView({ orgName, data, job: initialJob }: {
+export default function AnalysisTrialView({ orgName, data, job: initialJob, compare }: {
   orgName: string; data: AnalysisTrialData; job: Job | null;
+  /** Phase B: what the read implies, beside what the portal shows today. */
+  compare?: CompareResult;
 }) {
   const router = useRouter();
   const { job, events, syncJob, resetEvents, starting, running, error: jobError, gaveUp } = useJob(initialJob);
@@ -159,7 +162,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob }: {
       ) : (
         <>
           <div className="cl-filters">
-            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"]] as [Tab, string][]).map(([t, label]) => (
+            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"], ["compare", "Compare"]] as [Tab, string][]).map(([t, label]) => (
               <button key={t} type="button" className={`chip${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
                 {label}{t === "review" ? <> <span className="cl-count">{data.tally.reviewed}/{data.tally.target}{data.tally.pairs.total ? ` · ${data.tally.pairs.decided}/${data.tally.pairs.total} pairs` : ""}</span></> : null}
               </button>
@@ -169,6 +172,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob }: {
           {tab === "cards" && <CardsTab cards={data.library} titleById={titleById} />}
           {tab === "facts" && <FactsTab facts={data.facts} titleById={titleById} />}
           {tab === "review" && <ReviewTab data={data} titleById={titleById} />}
+          {tab === "compare" && <AnalysisCompare result={compare} titleById={titleById} />}
         </>
       )}
     </div>

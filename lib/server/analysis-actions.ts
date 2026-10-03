@@ -77,3 +77,36 @@ export async function clearDupDecisionAction(cardFp: string, otherFp: string) {
   if (error) throw new Error(`could not clear the decision: ${error.message}`);
   revalidatePath(PATH);
 }
+
+const VERDICTS = new Set(["new_correct", "old_correct", "both_acceptable", "neither"]);
+
+/**
+ * A person's judgement of one disagreement between the current read and the new
+ * one. Records the two states it was given for, so a re-read that changes
+ * either side brings the item back for another look.
+ */
+export async function saveVerdictAction(input: {
+  area: "readiness" | "eligibility"; itemKey: string; verdict: string;
+  oldState: string; newState: string; note?: string | null;
+}) {
+  const s = await adminSession();
+  if (input.area !== "readiness" && input.area !== "eligibility") throw new Error("Unknown comparison.");
+  if (!VERDICTS.has(input.verdict)) throw new Error("Choose one of the four judgements.");
+  if (!input.itemKey || input.itemKey.length > 80) throw new Error("That item could not be identified.");
+  const { error } = await db.from("analysis_verdict").upsert({
+    tenant_id: s.tenantId, area: input.area, item_key: input.itemKey, verdict: input.verdict,
+    old_state: input.oldState.slice(0, 500), new_state: input.newState.slice(0, 500),
+    note: input.note?.trim() ? input.note.trim().slice(0, 1000) : null,
+    reviewed_by: s.user.id, reviewed_at: new Date().toISOString(),
+  }, { onConflict: "tenant_id,area,item_key" });
+  if (error) throw new Error(`could not save the judgement: ${error.message}`);
+  revalidatePath(PATH);
+}
+
+export async function clearVerdictAction(area: "readiness" | "eligibility", itemKey: string) {
+  const s = await adminSession();
+  const { error } = await db.from("analysis_verdict").delete()
+    .eq("tenant_id", s.tenantId).eq("area", area).eq("item_key", itemKey);
+  if (error) throw new Error(`could not clear the judgement: ${error.message}`);
+  revalidatePath(PATH);
+}
