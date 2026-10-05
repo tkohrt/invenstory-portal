@@ -7,12 +7,13 @@
 //   begin     create or rejoin the job and answer at once, reading nothing
 //   kick      start the server-carried chain from where reading stopped
 //             (with restart: forget what was read and read everything again, paid)
+//             (with documentId: read that one document again, and only it)
 //   stop      mark the run ended, keeping everything read
 import { NextResponse, after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { db } from "@/lib/server/db";
-import { clearAnalysisDocs, analysisProgress } from "@/lib/server/analysis-extract";
+import { clearAnalysisDocs, analysisProgress, REREAD_MARK } from "@/lib/server/analysis-extract";
 import { createJob, supersedeRunning, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
 import { scheduleAnalysisPass } from "@/lib/server/job-chain";
 
@@ -51,6 +52,17 @@ export async function POST(req: Request) {
   if (body?.begin) {
     if (!existing || body?.restart) await opening();
     return NextResponse.json({ jobId, begun: true, ...await analysisProgress(tenantId) });
+  }
+
+  const documentId = typeof body?.documentId === "string" && /^[0-9a-f-]{36}$/i.test(body.documentId) ? body.documentId : null;
+  if (documentId && !body?.restart) {
+    // Keep what was read on screen until the new read replaces it; the mark only
+    // makes this one document stale, so the chain reads it and nothing else new.
+    const { data: marked, error: markErr } = await db.from("analysis_doc").update({ content_hash: REREAD_MARK })
+      .eq("tenant_id", tenantId).eq("document_id", documentId).select("document_id");
+    if (markErr) return NextResponse.json({ error: `Could not mark that document: ${markErr.message}` }, { status: 500 });
+    if (!marked?.length) return NextResponse.json({ error: "That document has not been read yet; Check for changes reads it." }, { status: 400 });
+    await recordEvent(tenantId, jobId, { kind: "phase", text: "Reading one document again, on request." });
   }
 
   if (body?.restart) {

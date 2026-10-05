@@ -33,6 +33,24 @@ import type { JobEventKind } from "@/lib/job";
 
 type Layer = "I" | "II" | "III" | null;
 
+/**
+ * The version of the reading rules (prompt, document types, checks). Raise it in
+ * any patch that changes how a document is read: Check for changes then re-reads
+ * every document read under older rules, and only those, so a full paid re-read
+ * is rarely needed. Version 1 is the rules of 5 October 2026, and rows written
+ * before versions existed count as version 1.
+ */
+export const READER_VERSION = 1;
+
+/** What a read is stored against: the text it read, under the rules that read it. */
+function readHash(text: string): string {
+  const h = contentHash(text);
+  return READER_VERSION === 1 ? h : `r${READER_VERSION}:${h}`;
+}
+
+/** Marks a document for one more read on the next run (the Read again button). */
+export const REREAD_MARK = "reread";
+
 // Narrower than the Card Library's rule (decided 5 October 2026): a "draft" is
 // often a real application with real answers, so only templates, samples and
 // unsigned copies are skipped by title.
@@ -160,7 +178,7 @@ async function analyzeOne(
 
   const { error } = await db.from("analysis_doc").upsert({
     tenant_id: tenantId, document_id: d.id,
-    content_hash: contentHash(text),
+    content_hash: readHash(text),
     doc_type: out.docType?.type ?? null,
     doc_type_reason: out.docType?.reason ?? null,
     doc_type_quote: out.docType?.quote || null,
@@ -231,7 +249,8 @@ export async function continueAnalysis(
     // or the narrower rule of 5 October 2026).
     if (h === "boilerplate") return !isBoilerplate(d.title);
     if (h === "empty") return !!t.trim();
-    return h !== contentHash(t);
+    // A changed text, rules newer than the ones that read it, or a Read again.
+    return h !== readHash(t);
   };
 
   const todo = docList.filter(stale);

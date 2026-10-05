@@ -43,7 +43,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
 
   const titleById = useMemo(() => new Map(data.docs.map(d => [d.id, d.title])), [data.docs]);
 
-  const run = useCallback(async (restart: boolean) => {
+  const run = useCallback(async (restart: boolean, documentId?: string) => {
     setDismissed(false); setChainError(null); setWorking(true);
     if (restart) resetEvents();
     const post = (body: unknown) => fetch("/api/jobs/analysis", {
@@ -55,7 +55,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
       const br = await b.json().catch(() => ({}));
       if (!b.ok) throw new Error(br.error ?? "Could not start the analysis.");
       if (br.jobId) await syncJob(br.jobId).catch(() => null);
-      const k = await post({ kick: true, restart, begun: true });
+      const k = await post({ kick: true, restart, begun: true, ...(documentId ? { documentId } : {}) });
       const kr = await k.json().catch(() => ({}));
       if (!k.ok) throw new Error(kr.error ?? "Could not start the analysis.");
       if (kr.jobId) await syncJob(kr.jobId).catch(() => null);
@@ -114,12 +114,12 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
                 </button>
               )}
               <button type="button" className="btn secondary" disabled={busy} onClick={() => void run(false)}
-                title="Reads any document added or changed since the last run. Unchanged documents are not re-read.">
+                title="Reads any document that is new, has changed, or was read under older reading rules. Nothing else is re-read.">
                 Check for changes
               </button>
               <button type="button" className="btn ghost" disabled={busy}
                 onClick={() => { if (confirm("Re-read every document? This costs model time (minutes, and real money). Reviews are kept.")) void run(true); }}
-                title="Paid. Re-reads every document. Use after a change to the prompt or the document types.">
+                title="Paid. Re-reads every document. Rarely needed: Check for changes already re-reads documents read under older rules.">
                 Re-read everything
               </button>
             </>
@@ -168,7 +168,8 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
               </button>
             ))}
           </div>
-          {tab === "documents" && <DocumentsTab docs={data.docs} refusals={data.refusals} />}
+          {tab === "documents" && <DocumentsTab docs={data.docs} refusals={data.refusals} busy={busy}
+            onReread={id => void run(false, id)} />}
           {tab === "cards" && <CardsTab cards={data.library} titleById={titleById} />}
           {tab === "facts" && <FactsTab facts={data.facts} titleById={titleById} />}
           {tab === "review" && <ReviewTab data={data} titleById={titleById} />}
@@ -179,12 +180,16 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
   );
 }
 
-function DocumentsTab({ docs, refusals }: { docs: TrialDoc[]; refusals: AnalysisTrialData["refusals"] }) {
+function DocumentsTab({ docs, refusals, busy, onReread }: {
+  docs: TrialDoc[]; refusals: AnalysisTrialData["refusals"];
+  /** Read one document again (seconds of model time), e.g. when its type looks wrong. */
+  busy: boolean; onReread: (documentId: string) => void;
+}) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div>
       <table className="an-table">
-        <thead><tr><th>Document</th><th>Type</th><th>Cards</th><th>Facts</th><th>Refused</th></tr></thead>
+        <thead><tr><th>Document</th><th>Type</th><th>Cards</th><th>Facts</th><th>Refused</th><th /></tr></thead>
         <tbody>
           {docs.map(d => {
             const r = d.read;
@@ -207,9 +212,14 @@ function DocumentsTab({ docs, refusals }: { docs: TrialDoc[]; refusals: Analysis
                   <td>{r && !r.skipped ? r.cards.length : ""}</td>
                   <td>{r && !r.skipped ? r.facts.length : ""}</td>
                   <td>{r && !r.skipped ? r.rejected.length : ""}</td>
+                  <td>{r && r.skipped !== "empty" && (
+                    <button type="button" className="btn ghost ap-mini" disabled={busy}
+                      title="Reads this one document again under the current rules. Seconds of model time; reviews of cards that come back unchanged are kept."
+                      onClick={e => { e.stopPropagation(); onReread(d.id); }}>Read again</button>
+                  )}</td>
                 </tr>
                 {isOpen && r && (
-                  <tr className="an-detail"><td colSpan={5}>
+                  <tr className="an-detail"><td colSpan={6}>
                     {r.docTypeReason && <p className="cl-note">Type: {r.docTypeReason}</p>}
                     <h4>Cards</h4>
                     {r.cards.length === 0 ? <p className="cl-note">None.</p> : (
