@@ -219,3 +219,19 @@ describe("assembly helpers", () => {
     expect(normalizeText(once)).toBe(once);
   });
 });
+
+describe("Markdown marks in quotes (5 October 2026)", () => {
+  test("bold and code marks do not decide whether a quote is real", () => {
+    const text = "Dated 7, 2026\n**Prepared by:** For Granted (Shane Winnyk session)\n**Org slug:** re-assist";
+    expect(quoteInText("Prepared by: For Granted (Shane Winnyk session)", text)).toBe(true);
+    expect(quoteInText("**Prepared by:** For Granted (Shane Winnyk session)", "Prepared by: For Granted (Shane Winnyk session)")).toBe(true);
+  });
+  test("the words still have to match", () => {
+    const text = "**Prepared by:** For Granted (Shane Winnyk session)";
+    expect(quoteInText("Prepared by: For Granted (Tyler Kohrt session)", text)).toBe(false);
+  });
+  test("underscores inside a word are kept", () => {
+    expect(quoteInText("the snake_case_name field is required here", "The snake_case_name field is required here.")).toBe(true);
+    expect(quoteInText("the snakecasename field is required here", "The snake_case_name field is required here.")).toBe(false);
+  });
+});

@@ -21,7 +21,7 @@
 // tested without a database or a model.
 
 import {
-  parseCandidates, checkCandidate, quoteInText, normalizeText, figuresIn, untracedFigures,
+  parseCandidates, checkCandidate, quoteInText, normalizeText, stripMarkup, figuresIn, untracedFigures,
   cardFingerprint, CARD_KIND_MAP,
   type CardCandidate, type AcceptedCandidate, type CardSubject, type RejectReason,
 } from "./story-card";
@@ -244,9 +244,9 @@ export const MAX_FACT_WORDS = 25;
  */
 export const MIN_FACT_QUOTE_CHARS = 6;
 export function factQuoteInText(quote: string, text: string): boolean {
-  const q = normalizeText(quote).replace(/^["']+|["']+$/g, "").replace(/[.;,]+$/, "").trim();
+  const q = normalizeText(stripMarkup(quote)).replace(/^["']+|["']+$/g, "").replace(/[.;,]+$/, "").trim();
   if (q.length < MIN_FACT_QUOTE_CHARS) return false;
-  return normalizeText(text).includes(q) || quoteInText(quote, text);
+  return normalizeText(stripMarkup(text)).includes(q) || quoteInText(quote, text);
 }
 
 /**

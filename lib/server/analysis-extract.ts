@@ -37,10 +37,11 @@ type Layer = "I" | "II" | "III" | null;
  * The version of the reading rules (prompt, document types, checks). Raise it in
  * any patch that changes how a document is read: Check for changes then re-reads
  * every document read under older rules, and only those, so a full paid re-read
- * is rarely needed. Version 1 is the rules of 5 October 2026, and rows written
- * before versions existed count as version 1.
+ * is rarely needed. Version 1 is the rules of 5 October 2026 (morning), and rows
+ * written before versions existed count as version 1.
  */
-export const READER_VERSION = 1;
+export const READER_VERSION: number = 2;
+// 2 (5 October 2026): quotes are compared without Markdown bold and code marks.
 
 /** What a read is stored against: the text it read, under the rules that read it. */
 function readHash(text: string): string {

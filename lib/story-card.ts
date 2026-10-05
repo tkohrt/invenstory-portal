@@ -125,10 +125,24 @@ export function normalizeText(s: string): string {
 export const MIN_QUOTE_CHARS = 20;
 const MIN_PIECE_CHARS = 12;
 
+/**
+ * Markdown emphasis, stripped from both sides before a quote is compared.
+ *
+ * Documents written in Markdown (the deep research reports) carry **bold** and
+ * `code` marks the reader drops when it quotes, as a person would. The marks are
+ * formatting, not words, so they may not decide whether a quote is real: on 5
+ * October 2026, 7 of RE-Assist's 52 "quote not in the document" refusals were
+ * real quotes failing only on asterisks. Only these characters go; every word
+ * still has to match, in order.
+ */
+export function stripMarkup(s: string): string {
+  return s.replace(/\*+|`+|(?<!\w)__|__(?!\w)/g, "");
+}
+
 export function quoteInText(quote: string, text: string): boolean {
-  const q = normalizeText(quote).replace(/^["']+|["']+$/g, "").trim();
+  const q = normalizeText(stripMarkup(quote)).replace(/^["']+|["']+$/g, "").trim();
   if (q.length < MIN_QUOTE_CHARS) return false;
-  const t = normalizeText(text);
+  const t = normalizeText(stripMarkup(text));
   if (t.includes(q)) return true;
 
   const pieces = q.split(/\s*(?:\.\.\.|\u2026|\[\.\.\.\])\s*/).map(p => p.trim()).filter(Boolean);
