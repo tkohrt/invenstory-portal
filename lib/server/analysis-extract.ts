@@ -33,8 +33,11 @@ import type { JobEventKind } from "@/lib/job";
 
 type Layer = "I" | "II" | "III" | null;
 
+// Narrower than the Card Library's rule (decided 5 October 2026): a "draft" is
+// often a real application with real answers, so only templates, samples and
+// unsigned copies are skipped by title.
 function isBoilerplate(title: string): boolean {
-  return /\b(template|unsigned|sample|draft|boilerplate)\b/i.test(title);
+  return /\b(template|unsigned|sample)\b/i.test(title);
 }
 
 // Copies of card-extract's, for the reason given there: private helpers of a
@@ -66,7 +69,8 @@ const SYS = (orgName: string, kinds: CardKind[]) =>
   "funding and write grant applications. Do three things in one reading.\n\n" +
   "A. DOCUMENT TYPE. Say what kind of document this is, from this list (key: what it is):\n" +
   DOC_TYPES.map(t => `  ${t.key}: ${t.describe}`).join("\n") + "\n" +
-  "Give a one-line `reason` and, where the document shows it (a form number, a title, a letterhead), a short verbatim `quote`. " +
+  "Give a one-line `reason` and, where the document shows it (a form number, a heading, a letterhead, a speaker label), a short verbatim `quote` " +
+  "copied from the DOCUMENT TEXT. The DOCUMENT TITLE is not part of the text and never counts as the quote. " +
   "A document the organization wrote is never funder_form, even if it answers a funder's questions: that is past_application.\n\n" +
   "B. STORY CARDS: short statements a grant writer could place in an application as they stand, each proven by a verbatim quote.\n" +
   "CARD KINDS (key: what a card of that kind says):\n" +
@@ -223,7 +227,9 @@ export async function continueAnalysis(
     const h = done.get(d.id);
     if (!h) return true;
     const t = textByDoc.get(d.id) ?? "";
-    if (h === "boilerplate") return false;
+    // Skipped by its title: read it once the title no longer marks it (a rename,
+    // or the narrower rule of 5 October 2026).
+    if (h === "boilerplate") return !isBoilerplate(d.title);
     if (h === "empty") return !!t.trim();
     return h !== contentHash(t);
   };
@@ -256,7 +262,7 @@ export async function continueAnalysis(
       if (skipErr) throw new Error(`Could not record skipping "${d.title}": ${skipErr.message}`);
       read += 1;
       say(hash === "empty" ? "warn" : "skip", hash === "boilerplate"
-        ? `Skipped ${d.title}: the title marks it as a template or draft.`
+        ? `Skipped ${d.title}: the title marks it as a template, sample or unsigned copy.`
         : `Could not read ${d.title}: no text was extracted from it`
           + (d.doc_kind === "pdf" ? ", which usually means a scanned PDF. It needs text recognition (the Textract plan)." : "."),
         already + read, total);

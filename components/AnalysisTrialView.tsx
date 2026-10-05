@@ -195,7 +195,7 @@ function DocumentsTab({ docs, refusals }: { docs: TrialDoc[]; refusals: Analysis
                   <td>{d.title}<div className="cl-src">{d.layer ? LAYER_NAME[d.layer] : ""}{d.docKind ? ` · ${d.docKind}` : ""}</div></td>
                   <td>
                     {!r ? <em>Not read yet</em>
-                      : r.skipped === "boilerplate" ? <em>Skipped: template or draft</em>
+                      : r.skipped === "boilerplate" ? <em>Skipped: template, sample or unsigned</em>
                       : r.skipped === "empty" ? <em className="an-bad">No readable text</em>
                       : <>
                           {r.docTypeLabel}

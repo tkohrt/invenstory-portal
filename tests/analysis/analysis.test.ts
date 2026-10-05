@@ -287,3 +287,10 @@ describe("across documents", () => {
 test("DOC_TYPE_MAP has every type", () => {
   for (const t of DOC_TYPES) expect(DOC_TYPE_MAP[t.key]).toBe(t);
 });
+
+describe("research report type (5 October 2026)", () => {
+  test("is offered, and evidences no readiness item on its own", () => {
+    expect(DOC_TYPE_MAP.research_report?.label).toBe("Research report");
+    expect(DOC_TYPE_MAP.research_report?.itemKey).toBeNull();
+  });
+});

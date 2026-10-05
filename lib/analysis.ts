@@ -85,6 +85,8 @@ export const DOC_TYPES: DocType[] = [
     describe: "a periodic update or newsletter to investors or supporters" },
   { key: "financial_model", label: "Financial model", itemKey: "financial_model",
     describe: "projections or a forecast of revenue, costs and growth" },
+  { key: "research_report", label: "Research report", itemKey: null,
+    describe: "a research report or profile ABOUT the organization compiled by someone else (a consultant, For Granted, an analyst) from public sources, calls or interviews, rather than a transcript of the conversation itself" },
   { key: "interview", label: "Interview", itemKey: null,
     describe: "an interview, Q&A or recorded conversation in which someone FROM the organization speaks about it at length. Phase B counts it as the founder interview when a founder or leader is a speaker" },
   { key: "meeting_transcript", label: "Meeting transcript", itemKey: null,
