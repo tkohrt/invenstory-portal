@@ -1312,3 +1312,23 @@ a.dl-row:hover{background:#f6f8f5}
 .an-verdict .cl-search{width:100%;max-width:none}
 .an-facet{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:0 0 8px}
 .an-facet summary{cursor:pointer;font-size:13px}
+
+/* Analyze my Inven(s)tory, the client's page (Inven(s)tory Analysis, Phase C) */
+.ca-run{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:0 0 16px}
+.ca-run .cl-note{margin:8px 0 0}
+.ca-request{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ca-request .cl-note{flex-basis:100%;margin:0}
+.ca-request .cl-search{flex:1;min-width:200px}
+.ca-sec{margin:0 0 20px}
+.ca-sec h3{margin:0 0 4px;font-size:17px}
+.ca-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ca-chips .chip{cursor:default}
+.ca-items{list-style:none;margin:8px 0;padding:0}
+.ca-item{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin:0 0 6px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.ca-item .cl-note{flex-basis:100%;margin:0}
+.ca-sugs{padding-left:20px;margin:8px 0}
+.ca-sug{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px}
+.ca-val{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.ca-val-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.ca-val-text{font-weight:600}
+.ca-confirm{display:flex;flex-wrap:wrap;gap:10px;align-items:center}

@@ -25,6 +25,8 @@ const TENANT_SCOPED = new Set([
   "analysis_doc","analysis_review","analysis_dup_review",
   // Phase B comparison (0049).
   "analysis_verdict",
+  // Phase C, the client's path (0050).
+  "analysis_usage","analysis_request","analysis_suggestion_decision","analysis_client_state",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

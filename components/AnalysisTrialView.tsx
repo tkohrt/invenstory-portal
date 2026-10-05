@@ -18,6 +18,9 @@ import { CARD_KIND_MAP } from "@/lib/story-card";
 import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction } from "@/lib/server/analysis-actions";
 import { REVIEW_ALL_UP_TO } from "@/lib/analysis";
 import AnalysisCompare, { type CompareResult } from "./AnalysisCompare";
+import { decideAnalysisRequestAction } from "@/lib/server/analysis-client-actions";
+
+export interface AnalysisRequestRow { id: string; note: string | null; at: string; by: string }
 
 type Tab = "documents" | "cards" | "facts" | "review" | "compare";
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
@@ -28,8 +31,10 @@ function possessive(name: string) {
   return /s$/i.test(n) ? `${n}’` : `${n}’s`;
 }
 
-export default function AnalysisTrialView({ orgName, data, job: initialJob, compare }: {
+export default function AnalysisTrialView({ orgName, data, job: initialJob, compare, requests = [] }: {
   orgName: string; data: AnalysisTrialData; job: Job | null;
+  /** Phase C: the client's requests to run an analysis past the fair-use cap. */
+  requests?: AnalysisRequestRow[];
   /** Phase B: what the read implies, beside what the portal shows today. */
   compare?: CompareResult;
 }) {
@@ -43,7 +48,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
 
   const titleById = useMemo(() => new Map(data.docs.map(d => [d.id, d.title])), [data.docs]);
 
-  const run = useCallback(async (restart: boolean, documentId?: string) => {
+  const run = useCallback(async (restart: boolean, documentId?: string, requestId?: string) => {
     setDismissed(false); setChainError(null); setWorking(true);
     if (restart) resetEvents();
     const post = (body: unknown) => fetch("/api/jobs/analysis", {
@@ -51,7 +56,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
     });
     setLaunching(true);
     try {
-      const b = await post({ begin: true, restart });
+      const b = await post({ begin: true, restart, ...(requestId ? { request: requestId } : {}) });
       const br = await b.json().catch(() => ({}));
       if (!b.ok) throw new Error(br.error ?? "Could not start the analysis.");
       if (br.jobId) await syncJob(br.jobId).catch(() => null);
@@ -128,6 +133,9 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
         </div>
       </div>
 
+      {requests.length > 0 && (
+        <RequestsPanel orgName={orgName} requests={requests} busy={busy} onRun={id => void run(false, undefined, id)} />
+      )}
       {launching && (
         <div className="jp jp-working" role="status" aria-live="polite">
           <div className="jp-head"><span className="jp-spin" aria-hidden="true" /><strong>Starting the analysis</strong></div>
@@ -447,5 +455,45 @@ function ReviewRow({ card: c, review, titleById }: {
       </div>
       {err && <div className="cl-error">{err}</div>}
     </li>
+  );
+}
+
+/**
+ * Phase C: a client asked for an analysis past the fair-use cap. Approving runs
+ * it now, as For Granted, and uses the approval up; it never counts against the
+ * client's allowance. Declining tells the client on their page.
+ */
+function RequestsPanel({ orgName, requests, busy, onRun }: {
+  orgName: string; requests: AnalysisRequestRow[]; busy: boolean; onRun: (requestId: string) => void;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="an-gate">
+      <strong>{orgName} asked for an analysis</strong>
+      <ul>
+        {requests.map(r => (
+          <li key={r.id}>
+            {r.by}, {new Date(r.at).toLocaleString()}{r.note ? `: “${r.note}”` : ""}
+            <span className="cl-card-acts" style={{ display: "inline-flex", marginLeft: 8 }}>
+              <button type="button" className="btn inline cl-primary ap-mini" disabled={busy || pending}
+                onClick={() => start(async () => {
+                  setErr(null);
+                  try { await decideAnalysisRequestAction(r.id, true); onRun(r.id); router.refresh(); }
+                  catch (e) { setErr(e instanceof Error ? e.message : "That did not save."); }
+                })}>Approve and run now</button>
+              <button type="button" className="btn secondary ap-mini" disabled={busy || pending}
+                onClick={() => start(async () => {
+                  setErr(null);
+                  try { await decideAnalysisRequestAction(r.id, false); router.refresh(); }
+                  catch (e) { setErr(e instanceof Error ? e.message : "That did not save."); }
+                })}>Decline</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {err && <div className="cl-error">{err}</div>}
+    </div>
   );
 }

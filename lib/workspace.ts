@@ -30,6 +30,12 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   // like Funder Matches: Decision 1 of the drafter spec kept cards For Granted's
   // view in version 1, and this is the deliberate step past it.
   { key: "card_review",    href: "/story-cards",    label: "Story Cards",      icon: "▣", defaultVisible: false },
+  // Inven(s)tory Analysis, Phase C: the client's own Analyze button, with the
+  // fair-use cap and the request path, and the eligibility answers to confirm.
+  // Hidden for every client until For Granted turns it on, which should wait
+  // for that client's Review and Compare gates and for Phase D (until then the
+  // rest of the portal still shows the current readiness).
+  { key: "analysis",       href: "/analysis",       label: "Analyze my Inven(s)tory", icon: "◎", defaultVisible: false },
 ];
 
 export const WORKSPACE_FEATURE_MAP: Record<string, WorkspaceFeature> =

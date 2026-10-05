@@ -52,3 +52,28 @@ export async function notifyAccountClosure(d: { org: string; requester: string; 
     } catch { /* best-effort */ }
   }
 }
+
+/** A client asked For Granted to run an analysis past the fair-use cap (Phase C). */
+export async function notifyAnalysisRequest(d: { org: string; requester: string; note: string | null }) {
+  const line = `${d.requester} (${d.org}) asked For Granted to run an Inven(s)tory analysis.` + (d.note ? ` Note: ${d.note}` : "");
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
+          subject: `Analysis request: ${d.org}`,
+          html: `<p>${esc(line)}</p><p>Switch to ${esc(d.org)} in the portal, then open Admin, Analysis (trial) to approve or decline it.</p><p><a href="${APP_URL}/admin/analysis">Open the portal</a></p>`,
+        }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `:mag: *Analysis request* ${line}  <${APP_URL}/admin/analysis|Open portal>` }) });
+    } catch { /* best-effort */ }
+  }
+}

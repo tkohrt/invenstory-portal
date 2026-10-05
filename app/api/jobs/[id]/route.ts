@@ -3,9 +3,10 @@
 // Polled by whichever page started the work. Scoped to the caller's tenant, so
 // a job id from another engagement reads as absent rather than as somebody
 // else's progress.
-import { NextResponse } from "next/server";
+import { NextResponse, after as afterResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getJob, jobEvents } from "@/lib/server/jobs";
+import { reviveStalledChains } from "@/lib/server/job-chain";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -13,6 +14,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const job = await getJob(session.tenantId, id);
   if (!job) return NextResponse.json({ error: "no such job" }, { status: 404 });
+  // Watching a server-carried run is enough to keep it going: a page polling
+  // its own analysis (a client's Analyze page has no other poll) restarts the
+  // chain if Vercel stopped it (see reviveStalledChains). Cheap when nothing stalled.
+  if (job.status === "running" && (job.kind === "analysis" || job.kind === "cards")) {
+    const origin = new URL(req.url).origin;
+    const tenantId = session.tenantId;
+    afterResponse(async () => { await reviveStalledChains(origin, { tenantId }).catch(() => undefined); });
+  }
   // A Search Profile job's detail is For Granted's working view of a client's
   // Inven(s)tory, which the page deliberately never sends to a client. Reading
   // it by id would be a way around that.

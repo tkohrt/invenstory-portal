@@ -63,6 +63,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
     { key: "funder_matches", href: "/funder-matches",  ic: "◈", label: "Funder Matches",        toggle: true },
     { key: "card_review",    href: "/story-cards",     ic: "▣", label: "Story Cards",           toggle: true },
+    { key: "analysis",       href: "/analysis",        ic: "◎", label: "Analyze my Inven(s)tory", toggle: true },
   ];
   const closeNav = () => setNavOpen(false);
 

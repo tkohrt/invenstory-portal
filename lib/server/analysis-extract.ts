@@ -239,33 +239,8 @@ export async function continueAnalysis(
   };
   const kinds = kindsFor(orgType);
 
-  const { data: docs, error } = await db.from("document")
-    .select("id, title, layer, doc_kind, speaker_roster").eq("tenant_id", tenantId).eq("status", "ready");
-  if (error) throw new Error(`document read failed: ${error.message}`);
-  const docList = (docs ?? []) as DocRow[];
+  const { docList, todo, textByDoc } = await readingPlan(tenantId);
 
-  const { data: doneRows } = await db.from("analysis_doc")
-    .select("document_id, content_hash").eq("tenant_id", tenantId);
-  const done = new Map(((doneRows ?? []) as { document_id: string; content_hash: string }[])
-    .map(r => [r.document_id, r.content_hash]));
-
-  const textByDoc = await documentTexts(tenantId);
-
-  // Stale when never read, or when the text no longer matches what was read.
-  // An empty document is re-checked: text may arrive later (OCR, a re-upload).
-  const stale = (d: DocRow) => {
-    const h = done.get(d.id);
-    if (!h) return true;
-    const t = textByDoc.get(d.id) ?? "";
-    // Skipped by its title: read it once the title no longer marks it (a rename,
-    // or the narrower rule of 5 October 2026).
-    if (h === "boilerplate") return !isBoilerplate(d.title);
-    if (h === "empty") return !!t.trim();
-    // A changed text, rules newer than the ones that read it, or a Read again.
-    return h !== readHash(t);
-  };
-
-  const todo = docList.filter(stale);
   const total = docList.length;
   const already = total - todo.length;
   say("phase", already
@@ -325,6 +300,49 @@ export async function continueAnalysis(
     return { read, remaining, complete: false };
   }
   return { read, remaining: 0, complete: true };
+}
+
+/**
+ * What an analysis would read now: every ready document, and the ones still to
+ * read (new, changed, read under older rules, or marked to read again). Shared
+ * by the read itself and by the client's fair-use cap, so the cap measures
+ * exactly what the run will read.
+ */
+async function readingPlan(tenantId: string) {
+  const { data: docs, error } = await db.from("document")
+    .select("id, title, layer, doc_kind, speaker_roster").eq("tenant_id", tenantId).eq("status", "ready");
+  if (error) throw new Error(`document read failed: ${error.message}`);
+  const docList = (docs ?? []) as DocRow[];
+
+  const { data: doneRows } = await db.from("analysis_doc")
+    .select("document_id, content_hash").eq("tenant_id", tenantId);
+  const done = new Map(((doneRows ?? []) as { document_id: string; content_hash: string }[])
+    .map(r => [r.document_id, r.content_hash]));
+
+  const textByDoc = await documentTexts(tenantId);
+
+  // Stale when never read, or when the text no longer matches what was read.
+  // An empty document is re-checked: text may arrive later (OCR, a re-upload).
+  const stale = (d: DocRow) => {
+    const h = done.get(d.id);
+    if (!h) return true;
+    const t = textByDoc.get(d.id) ?? "";
+    // Skipped by its title: read it once the title no longer marks it (a rename,
+    // or the narrower rule of 5 October 2026).
+    if (h === "boilerplate") return !isBoilerplate(d.title);
+    if (h === "empty") return !!t.trim();
+    // A changed text, rules newer than the ones that read it, or a Read again.
+    return h !== readHash(t);
+  };
+
+  const todo = docList.filter(stale);
+  return { docList, todo, textByDoc };
+}
+
+/** How much a run would read now, for the client's fair-use cap. No model call. */
+export async function pendingReading(tenantId: string): Promise<{ docs: number; chars: number }> {
+  const { todo, textByDoc } = await readingPlan(tenantId);
+  return { docs: todo.length, chars: todo.reduce((n, d) => n + (textByDoc.get(d.id)?.length ?? 0), 0) };
 }
 
 /** Each ready document's text, built exactly as the reader builds it. */
