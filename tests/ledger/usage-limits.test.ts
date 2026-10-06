@@ -57,6 +57,9 @@ describe("documents", () => {
     // October starts at 04:00 UTC (EDT); December at 05:00 UTC (EST).
     expect(monthStart(new Date("2026-10-15T12:00:00Z")).toISOString()).toBe("2026-10-01T04:00:00.000Z");
     expect(monthStart(new Date("2026-12-15T12:00:00Z")).toISOString()).toBe("2026-12-01T05:00:00.000Z");
+    // Daylight saving ends on 1 November 2026: that midnight is still EDT.
+    expect(monthStart(new Date("2026-11-15T12:00:00Z")).toISOString()).toBe("2026-11-01T04:00:00.000Z");
+    expect(monthStart(new Date("2027-03-15T12:00:00Z")).toISOString()).toBe("2027-03-01T05:00:00.000Z");
   });
 });
 

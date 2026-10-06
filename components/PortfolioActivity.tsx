@@ -1,0 +1,61 @@
+"use client";
+// All Clients, the month's activity: one row per client, against the limits.
+// A row opens that client's activity page for the same month.
+import Link from "next/link";
+import MonthPicker from "./MonthPicker";
+import type { PortfolioActivity as Data } from "@/lib/server/activity-read";
+import { monthLabel } from "@/lib/activity";
+import { LIMITS } from "@/lib/usage-limits";
+
+const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+const ago = (iso: string | null) => {
+  if (!iso) return "No client activity yet";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400_000);
+  return days <= 0 ? "Today" : days === 1 ? "Yesterday" : `${days} days ago`;
+};
+
+export default function PortfolioActivity({ data }: { data: Data }) {
+  const pending = data.rows.reduce((n, r) => n + r.pendingRequests, 0);
+  const stalled = data.rows.reduce((n, r) => n + r.stalled, 0);
+  return (
+    <section className="pa">
+      <div className="pa-head">
+        <div className="section-label" style={{ margin: 0 }}>Activity, {monthLabel(data.month)}</div>
+        <div className="spacer" />
+        <MonthPicker month={data.month} months={data.months} />
+      </div>
+      <div className="cl-summary">
+        <span><b>{usd(data.spendTotal)}</b> AI spend</span>
+        <span className={stalled ? "an-warn" : ""}><b>{stalled}</b> stalled draft{stalled === 1 ? "" : "s"} near a deadline</span>
+        <span><b>{pending}</b> request{pending === 1 ? "" : "s"} for more questions</span>
+      </div>
+      <div className="pa-scroll">
+        <table className="an-table pa-table">
+          <thead><tr>
+            <th>Client</th><th>People</th><th>Last client activity</th>
+            <th>Chat questions</th><th>AI spend (client / all)</th><th>Documents added</th><th>Drafts</th><th />
+          </tr></thead>
+          <tbody>{data.rows.map(r => {
+            const nearChat = r.chat >= r.chatLimit * LIMITS.warnAt;
+            const nearSpend = r.spendClient >= r.allowance * LIMITS.warnAt;
+            return (
+              <tr key={r.tenantId} className={r.stalled || r.pendingRequests ? "an-conflict" : ""}>
+                <td><Link href={`/admin/clients/${r.tenantId}?m=${data.month}`}><b>{r.name}</b></Link></td>
+                <td>{r.activePeople} of {r.people}<div className="ov-muted">asked a question</div></td>
+                <td>{ago(r.lastClientActivity)}</td>
+                <td className={nearChat ? "an-warn" : ""}>{r.chat} of {r.chatLimit}</td>
+                <td className={nearSpend ? "an-warn" : ""}>{usd(r.spendClient)} of ${r.allowance}<div className="ov-muted">{usd(r.spendTotal)} all</div></td>
+                <td>{r.docsClient} by client<div className="ov-muted">{r.docsFG} by For Granted</div></td>
+                <td>{r.draftsOpen} open{r.stalled ? <div className="an-bad">{r.stalled} stalled</div> : null}</td>
+                <td><Link className="fc-link" href={`/admin/clients/${r.tenantId}?m=${data.month}`}>Activity</Link></td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      <p className="cl-note">Months are Eastern time. The $20 allowance is shown for reference until Phase D enforces it.
+        {data.meterSince ? ` AI spend is measured from ${new Date(data.meterSince).toLocaleDateString()}.` : " AI spend is measured from the first AI call after the usage update."}
+        {" "}&ldquo;People&rdquo; counts who asked a question this month, until sign-ins are recorded.</p>
+    </section>
+  );
+}

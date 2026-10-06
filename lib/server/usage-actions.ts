@@ -20,7 +20,7 @@ export async function requestMoreUsageAction(kind: "chat_month") {
   if (error) throw new Error(`Could not send the request: ${error.message}`);
   const tenant = await getTenant(s.tenantId);
   await notifyUsageRequest({ org: tenant?.name ?? "A client", requester: s.user.full_name ?? "A client user", kind });
-  revalidatePath("/admin/usage");
+  revalidatePath("/admin/clients", "layout");
   return { ok: true, already: false };
 }
 
@@ -43,7 +43,7 @@ export async function grantChatAction(tenantId: string, extra: number, note?: st
   await db.from("usage_request").update({ status: "granted", decided_by: s.user.id, decided_at: new Date().toISOString() })
     .eq("tenant_id", tenantId).eq("status", "pending");
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: tenantId, action: "usage_grant", detail: `chat_month+${n}` });
-  revalidatePath("/admin/usage");
+  revalidatePath("/admin/clients", "layout");
 }
 
 export async function dismissUsageRequestAction(tenantId: string, id: string) {
@@ -51,5 +51,5 @@ export async function dismissUsageRequestAction(tenantId: string, id: string) {
   const { error } = await db.from("usage_request").update({ status: "dismissed", decided_by: s.user.id, decided_at: new Date().toISOString() })
     .eq("tenant_id", tenantId).eq("id", id).eq("status", "pending");
   if (error) throw new Error(`Could not save that: ${error.message}`);
-  revalidatePath("/admin/usage");
+  revalidatePath("/admin/clients", "layout");
 }

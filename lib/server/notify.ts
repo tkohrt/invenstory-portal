@@ -91,7 +91,7 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
         body: JSON.stringify({
           from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
           subject: `More questions requested: ${d.org}`,
-          html: `<p>${esc(line)}</p><p>Grant more on Admin, AI usage.</p><p><a href="${APP_URL}/admin/usage">Open the portal</a></p>`,
+          html: `<p>${esc(line)}</p><p>Grant more on Admin, All Clients, then the client's activity page.</p><p><a href="${APP_URL}/admin/clients">Open the portal</a></p>`,
         }),
       });
     } catch { /* best-effort */ }
@@ -99,7 +99,7 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:speech_balloon: *More questions requested* ${line}  <${APP_URL}/admin/usage|Open portal>` }) });
+        body: JSON.stringify({ text: `:speech_balloon: *More questions requested* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
     } catch { /* best-effort */ }
   }
 }

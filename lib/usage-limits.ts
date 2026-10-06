@@ -120,7 +120,9 @@ export function monthKey(d: Date): string {
 /** The instant the month containing `d` began: midnight Eastern on the 1st. */
 export function monthStart(d: Date): Date {
   const { y, m } = zoned(d);
-  // The offset in force at that midnight (early in the day it is already the new offset).
-  const probe = new Date(Date.UTC(y, m - 1, 1, 12));
+  // The offset in force at that midnight. Probe near it (04:30 UTC is around
+  // midnight in New York either side of daylight saving), never at midday: when
+  // daylight saving ends on 1 November, midnight is still EDT but noon is EST.
+  const probe = new Date(Date.UTC(y, m - 1, 1, 4, 30));
   return new Date(Date.UTC(y, m - 1, 1) - zoned(probe).offsetMin * 60_000);
 }
