@@ -26,7 +26,10 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 class Plain extends Error {}
 
-async function fromUrl(raw: string): Promise<{ text: string; url: string; kind: "url" }> {
+/** The original file, kept with the draft so For Granted can open it later (patch 2, 6 October 2026). */
+interface Original { bytes: Uint8Array; mime: string; name: string }
+
+async function fromUrl(raw: string): Promise<{ text: string; url: string; kind: "url"; original?: Original }> {
   const check = fetchableUrl(raw);
   if (!check.ok) throw new Plain(check.reason);
   let res: Response;
@@ -47,11 +50,14 @@ async function fromUrl(raw: string): Promise<{ text: string; url: string; kind: 
   const buf = new Uint8Array(await res.arrayBuffer());
   if (buf.byteLength > MAX_FETCH_BYTES) throw new Plain("That file is too large to read from a link. Paste the questions instead.");
   const type = (res.headers.get("content-type") ?? "").toLowerCase();
+  const base = (check.url.pathname.split("/").pop() || "application").slice(0, 120);
   if (type.includes("pdf") || uploadKind(check.url.pathname, buf) === "pdf") {
-    return { text: await pdfToText(buf), url: res.url || check.url.href, kind: "url" };
+    return { text: await pdfToText(buf), url: res.url || check.url.href, kind: "url",
+      original: { bytes: buf, mime: "application/pdf", name: /\.pdf$/i.test(base) ? base : `${base}.pdf` } };
   }
   if (type.includes("officedocument.wordprocessingml") || uploadKind(check.url.pathname, buf) === "docx") {
-    return { text: await docxToText(buf), url: res.url || check.url.href, kind: "url" };
+    return { text: await docxToText(buf), url: res.url || check.url.href, kind: "url",
+      original: { bytes: buf, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", name: /\.docx$/i.test(base) ? base : `${base}.docx` } };
   }
   const body = new TextDecoder("utf-8", { fatal: false }).decode(buf);
   const text = type.includes("html") || /<html|<body|<p[\s>]/i.test(body.slice(0, 5000)) ? htmlToText(body) : tidyText(body);
@@ -78,6 +84,7 @@ export async function POST(req: Request) {
   try {
     const source = field("source");
     let text = "", kind: "paste" | "pdf" | "docx" | "url", url: string | null = null, filename: string | null = null;
+    let original: Original | null = null;
 
     if (source === "paste") {
       text = tidyText(field("text"));
@@ -91,9 +98,10 @@ export async function POST(req: Request) {
       if (!k) throw new Plain("Only PDF and Word (.docx) files can be read. For anything else, paste the questions.");
       text = k === "pdf" ? await pdfToText(buf) : await docxToText(buf);
       kind = k; filename = f.name.slice(0, 200);
+      original = { bytes: buf, mime: k === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", name: filename };
     } else if (source === "url") {
       const r = await fromUrl(field("url"));
-      text = r.text; kind = "url"; url = r.url;
+      text = r.text; kind = "url"; url = r.url; original = r.original ?? null;
     } else {
       throw new Plain("Choose where the application comes from.");
     }
@@ -126,11 +134,25 @@ export async function POST(req: Request) {
     }).select("id").single();
     if (error || !data) throw new Error(`Could not create the draft: ${error?.message ?? "no row returned"}`);
 
+    const draftId = (data as { id: string }).id;
+    // Keep the original file. Best-effort: the draft stands on its text either way.
+    if (original) {
+      try {
+        const safe = original.name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || "application";
+        const key = `${tenantId}/applications/${draftId}/${safe}`;
+        const { error: upErr } = await db.storage.from("documents").upload(key, original.bytes, { contentType: original.mime, upsert: true });
+        if (upErr) throw upErr;
+        await db.from("grant_draft").update({ source_storage_key: key, source_mime: original.mime }).eq("tenant_id", tenantId).eq("id", draftId);
+      } catch (e) {
+        console.error("[drafts/ingest] original file not kept", e instanceof Error ? e.message : e);
+      }
+    }
+
     await db.from("audit_log").insert({
       actor_user_id: session.user.id, tenant_id: tenantId, action: "draft_from_application",
       detail: `${title.slice(0, 120)} (${kind}, ${text.length} chars)`,
     });
-    return NextResponse.json({ id: (data as { id: string }).id, chars: text.length });
+    return NextResponse.json({ id: draftId, chars: text.length });
   } catch (e) {
     if (e instanceof Plain) return NextResponse.json({ error: e.message }, { status: 400 });
     // Extraction errors from pdfToText/docxToText are written for people already.

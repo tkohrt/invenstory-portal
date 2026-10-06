@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import ActivityBeacon from "./ActivityBeacon";
 import { signOutAction, switchTenantAction } from "@/lib/server/actions";
 import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/server/artifact-actions";
 import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
@@ -69,6 +70,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
 
   return (
     <div className="shell">
+      <ActivityBeacon enabled={!admin} />
       <div className="topbar">
         <button className="menu-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Menu">☰</button>
         <div className="brand"><img src="/forgranted-logo.png" alt="For Granted" className="brand-logo" /><h1>Inven(s)tory Portal</h1></div>

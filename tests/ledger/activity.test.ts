@@ -1,6 +1,6 @@
 // Admin, Client activity: months, chat topics and stalled drafts (6 October 2026).
 import { describe, expect, test } from "vitest";
-import { monthRange, recentMonths, dayKey, isMonthKey, chatTopic, topicCounts, stallState } from "@/lib/activity";
+import { monthRange, recentMonths, dayKey, isMonthKey, chatTopic, topicCounts, stallState, cleanPath, featureForPath } from "@/lib/activity";
 
 describe("Eastern months", () => {
   test("a month runs from midnight Eastern on the 1st to the next", () => {
@@ -53,5 +53,19 @@ describe("stalled drafts", () => {
   test("past due and still open is flagged as past due", () => {
     const s = stallState({ status: "client_review", deadline: "2026-10-01", lastEdit: "2026-09-20T12:00:00Z" }, now);
     expect(s.stalled && s.pastDue).toBe(true);
+  });
+});
+
+describe("visits", () => {
+  test("paths are recorded without ids or query strings", () => {
+    expect(cleanPath("/drafts/0b7695e3-9340-6eab-f2f1-964410f0f989?q=abc#x")).toBe("/drafts/:id");
+    expect(cleanPath("/story-intelligence/themes")).toBe("/story-intelligence/themes");
+  });
+  test("pages map to parts of the portal; admin and sign-in pages are not recorded", () => {
+    expect(featureForPath("/drafts/:id")).toBe("drafts");
+    expect(featureForPath("/funding-eligibility")).toBe("eligibility");
+    expect(featureForPath("/admin/clients")).toBeNull();
+    expect(featureForPath("/")).toBeNull();
+    expect(featureForPath("/something-new")).toBe("other");
   });
 });

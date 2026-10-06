@@ -99,3 +99,40 @@ export function stallState(d: { status: string; deadline: string | null; lastEdi
   if (daysToDeadline > STALL.deadlineWithinDays || idleDays < STALL.idleDays) return { stalled: false };
   return { stalled: true, daysToDeadline, idleDays, pastDue: daysToDeadline < 0 };
 }
+
+// ---------------------------------------------------------------------------
+// Visits (patch 2): which part of the portal a page is, with ids removed.
+// ---------------------------------------------------------------------------
+
+/** A person's use of one part of the portal is recorded at most this often. */
+export const VISIT_GAP_MINUTES = 30;
+
+export const FEATURES: { key: string; label: string; prefix: string }[] = [
+  { key: "invenstory", label: "Inven(s)tory", prefix: "/invenstory" },
+  { key: "chat", label: "Ask your Inven(s)tory", prefix: "/chat" },
+  { key: "search", label: "Search", prefix: "/search" },
+  { key: "eligibility", label: "Funding Eligibility", prefix: "/funding-eligibility" },
+  { key: "funder_matches", label: "Funder Matches", prefix: "/funder-matches" },
+  { key: "story_cards", label: "Story Cards", prefix: "/story-cards" },
+  { key: "analysis", label: "Analyze my Inven(s)tory", prefix: "/analysis" },
+  { key: "drafts", label: "Drafts", prefix: "/drafts" },
+  { key: "story_intelligence", label: "Story Intelligence", prefix: "/story-intelligence" },
+  { key: "garden", label: "Garden", prefix: "/plant" },
+  { key: "account", label: "Account", prefix: "/account" },
+];
+export const FEATURE_LABEL: Record<string, string> = Object.fromEntries(FEATURES.map(f => [f.key, f.label]));
+
+/** The path as recorded: no query string or fragment, ids and long tokens replaced. */
+export function cleanPath(raw: string): string {
+  const path = (raw.split(/[?#]/)[0] || "/").slice(0, 200);
+  return path.split("/").map(seg =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg) || /^\d+$/.test(seg) || seg.length > 40 ? ":id" : seg,
+  ).join("/") || "/";
+}
+
+/** Which part of the portal a path belongs to, or null for pages not worth recording (admin, sign-in). */
+export function featureForPath(path: string): string | null {
+  if (path.startsWith("/admin") || path.startsWith("/auth") || path === "/") return null;
+  const f = FEATURES.find(x => path === x.prefix || path.startsWith(`${x.prefix}/`));
+  return f ? f.key : "other";
+}

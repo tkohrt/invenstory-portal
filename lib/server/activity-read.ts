@@ -11,11 +11,23 @@ import { getContentCoverage, readiness } from "./gap-agent";
 import { getEligibilityProfile } from "./eligibility";
 import { LIMITS } from "@/lib/usage-limits";
 import { pagesOf } from "@/lib/analysis-cap";
-import { monthRange, recentMonths, dayKey, topicCounts, stallState, type StallState } from "@/lib/activity";
+import { monthRange, recentMonths, dayKey, topicCounts, stallState, FEATURES, FEATURE_LABEL, type StallState } from "@/lib/activity";
 
 const ALLOWANCE_DOLLARS = 20;  // Phase D's monthly AI allowance per client (decision 24); shown, not yet enforced
 
-type Users = { id: string; tenant_id: string | null; role: string; full_name: string; email: string; created_at: string }[];
+type Users = { id: string; tenant_id: string | null; role: string; full_name: string; email: string; created_at: string; auth_id?: string | null }[];
+
+/** Each login's last sign-in, from Supabase Auth. Best-effort: a failure leaves it unknown. */
+async function lastSignIns(authIds: string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  await Promise.all(authIds.map(async id => {
+    try {
+      const { data } = await db.auth.admin.getUserById(id);
+      out.set(id, data?.user?.last_sign_in_at ?? null);
+    } catch { /* unknown */ }
+  }));
+  return out;
+}
 
 const micros = (rows: { cost_micros: number }[]) => rows.reduce((n, r) => n + Number(r.cost_micros), 0) / 1_000_000;
 
@@ -69,6 +81,13 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     db.from("chat_message").select("tenant_id, author_user_id, created_at").eq("role", "user").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
     db.from("ai_usage").select("created_at").order("created_at").limit(1),  // tenant-safe: admin portfolio, earliest meter row
   ]);
+  // Visits (patch 2). Before migration 0052 the table is missing and these are empty.
+  const [{ data: visitsMonth }, { data: lastVisits }] = await Promise.all([
+    db.from("activity_event").select("tenant_id, user_id").gte("created_at", s).lt("created_at", e).limit(20000),  // tenant-safe: admin portfolio across every client
+    db.from("activity_event").select("tenant_id, created_at").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
+  ]);
+  const vm = (visitsMonth ?? []) as { tenant_id: string; user_id: string }[];
+  const lv = (lastVisits ?? []) as { tenant_id: string; created_at: string }[];
   const userList = (users ?? []) as Users;
   const clientIds = new Set(userList.filter(u => u.role === "client").map(u => u.id));
   const ms = (msgs ?? []) as { tenant_id: string; author_user_id: string | null }[];
@@ -88,12 +107,13 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     const lastDoc = ((lastDocs ?? []) as { tenant_id: string; created_at: string }[]).find(d => d.tenant_id === t.id)?.created_at ?? null;
     const lastMsg = ((lastMsgs ?? []) as { tenant_id: string; author_user_id: string | null; created_at: string }[])
       .find(m => m.tenant_id === t.id && m.author_user_id && clientIds.has(m.author_user_id))?.created_at ?? null;
-    const last = [lastDoc, lastMsg].filter(Boolean).sort().pop() ?? null;
+    const lastVisit = lv.find(v => v.tenant_id === t.id)?.created_at ?? null;
+    const last = [lastDoc, lastMsg, lastVisit].filter(Boolean).sort().pop() ?? null;
     return {
       tenantId: t.id, name: t.name,
       people: people.length,
-      // Until sign-ins are recorded (patch 2), "active" means asked a question this month.
-      activePeople: new Set(myMsgs.map(m => m.author_user_id)).size,
+      // Used the portal this month: a recorded visit, or a question asked.
+      activePeople: new Set([...myMsgs.map(m => m.author_user_id), ...vm.filter(v => v.tenant_id === t.id).map(v => v.user_id)]).size,
       lastClientActivity: last,
       chat: myMsgs.length, chatLimit: LIMITS.chatPerMonthPerClient + extra,
       spendClient: micros(myUsage.filter(u => u.actor === "client")), spendTotal: micros(myUsage), allowance: ALLOWANCE_DOLLARS,
@@ -120,14 +140,20 @@ export interface DraftRow {
   status: string; stage: string | null; purpose: string | null; mode: string | null;
   createdBy: string | null; createdAt: string; lastEdit: string;
   sections: number; answered: number; done: number;
-  sourceKind: string | null; sourceUrl: string | null; sourceFilename: string | null; hasSourceText: boolean;
+  sourceKind: string | null; sourceUrl: string | null; sourceFilename: string | null; hasSourceText: boolean; hasOriginal: boolean;
   submittedAt: string | null; stall: StallState; touchedThisMonth: boolean;
 }
 
 export interface ClientActivity {
   tenant: { id: string; name: string; orgType: string | null; createdAt: string };
   month: string; months: string[];
-  people: { id: string; name: string; email: string; since: string; questions: number; busiestDay: { day: string; count: number } | null }[];
+  people: { id: string; name: string; email: string; since: string; questions: number; busiestDay: { day: string; count: number } | null;
+    lastSeen: string | null; visits: number; daysActive: number; features: string[];
+    /** From the sign-in service itself, so it covers the time before visits were recorded. Null: never signed in. */
+    lastSignIn: string | null }[];
+  /** Which parts of the portal were used this month, by how many people (patch 2). */
+  features: { key: string; label: string; people: number; visits: number }[];
+  visitsRecorded: boolean;
   chat: {
     month: number; limit: number; extra: number; perDayLimit: number;
     topics: { key: string; label: string; count: number }[];
@@ -163,7 +189,7 @@ export async function getClientActivity(tenantId: string, month: string): Promis
   const [{ data: users }, { data: msgs }, { data: chatAudit }, { data: usage }, { data: aUsage }, { data: docs }, { data: docsYear },
     { data: docsBad }, { data: emptyReads }, { data: audits }, { data: drafts }, { data: sections }, { data: events },
     { data: grantRows }, { data: reqRows }, { data: cards }, wc, coverage, profile] = await Promise.all([
-    db.from("app_user").select("id, tenant_id, role, full_name, email, created_at").eq("tenant_id", tenantId),
+    db.from("app_user").select("id, tenant_id, role, full_name, email, created_at, auth_id").eq("tenant_id", tenantId),
     db.from("chat_message").select("author_user_id, content, created_at").eq("tenant_id", tenantId).eq("role", "user").gte("created_at", s).lt("created_at", e),
     db.from("audit_log").select("actor_user_id, detail").eq("tenant_id", tenantId).eq("action", "chat").gte("created_at", s).lt("created_at", e),
     db.from("ai_usage").select("actor, feature, cost_micros").eq("tenant_id", tenantId).gte("created_at", s).lt("created_at", e),
@@ -173,7 +199,8 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     db.from("document").select("id, status").eq("tenant_id", tenantId),
     db.from("analysis_doc").select("document_id").eq("tenant_id", tenantId).eq("content_hash", "empty"),
     db.from("audit_log").select("action, actor_user_id").eq("tenant_id", tenantId).in("action", ["reprocess_doc", "upload_ai_read_deferred"]).gte("created_at", s).lt("created_at", e),
-    db.from("grant_draft").select("id, title, funder, deadline, amount_cents, status, stage, purpose, mode, created_by, created_at, updated_at, source_kind, source_url, source_filename, source_text, submitted_at").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
+    // Every column, so the stored-file columns of migration 0052 appear once it has run.
+    db.from("grant_draft").select("*").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
     db.from("draft_section").select("id, draft_id, status, updated_at").eq("tenant_id", tenantId),
     db.from("card_event").select("draft_id, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(2000),
     db.from("usage_grant").select("extra, note, granted_at, period").eq("tenant_id", tenantId).eq("kind", "chat_month").eq("period", month),
@@ -184,8 +211,18 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     getEligibilityProfile(tenantId).catch(() => null),
   ]);
 
+  const [{ data: visitRows, error: visitErr }, { data: lastSeenRows }] = await Promise.all([
+    db.from("activity_event").select("user_id, feature, session_start, created_at").eq("tenant_id", tenantId).gte("created_at", s).lt("created_at", e).limit(20000),
+    db.from("activity_event").select("user_id, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(2000),
+  ]);
+  type V = { user_id: string; feature: string; session_start: boolean; created_at: string };
+  const visits = (visitRows ?? []) as V[];
+  const lastSeenOf = new Map<string, string>();
+  ((lastSeenRows ?? []) as { user_id: string; created_at: string }[]).forEach(r => { if (!lastSeenOf.has(r.user_id)) lastSeenOf.set(r.user_id, r.created_at); });
+
   const userList = (users ?? []) as Users;
   const clients = userList.filter(u => u.role === "client");
+  const signIns = await lastSignIns(clients.map(u => u.auth_id).filter((x): x is string => !!x));
   const clientIds = new Set(clients.map(u => u.id));
   const nameOf = new Map<string, string>(userList.map(u => [u.id, u.full_name]));
   // Anyone not among this client's logins is For Granted (admins have no client).
@@ -199,8 +236,15 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     const byDay = new Map<string, number>();
     mine.forEach(m => { const d = dayKey(new Date(m.created_at)); byDay.set(d, (byDay.get(d) ?? 0) + 1); });
     const busiest = [...byDay].sort((a, b) => b[1] - a[1])[0];
+    const myVisits = visits.filter(v => v.user_id === u.id);
+    const days = new Set([...mine.map(m => dayKey(new Date(m.created_at))), ...myVisits.map(v => dayKey(new Date(v.created_at)))]);
     return { id: u.id, name: u.full_name, email: u.email, since: u.created_at, questions: mine.length,
-      busiestDay: busiest ? { day: busiest[0], count: busiest[1] } : null };
+      busiestDay: busiest ? { day: busiest[0], count: busiest[1] } : null,
+      lastSeen: lastSeenOf.get(u.id) ?? null,
+      visits: myVisits.filter(v => v.session_start).length,
+      daysActive: days.size,
+      features: [...new Set(myVisits.map(v => v.feature))].map(k => FEATURE_LABEL[k] ?? k),
+      lastSignIn: u.auth_id ? signIns.get(u.auth_id) ?? null : null };
   });
   const nothingFound = ((chatAudit ?? []) as { actor_user_id: string | null; detail: string }[])
     .filter(a => a.actor_user_id && clientIds.has(a.actor_user_id) && /mode=none\b/.test(a.detail)).length;
@@ -234,7 +278,7 @@ export async function getClientActivity(tenantId: string, month: string): Promis
   const au2 = (audits ?? []) as { action: string; actor_user_id: string | null }[];
 
   // Drafts.
-  type GD = { id: string; title: string; funder: string | null; deadline: string | null; amount_cents: number | null; status: string; stage: string | null;
+  type GD = { source_storage_key?: string | null; id: string; title: string; funder: string | null; deadline: string | null; amount_cents: number | null; status: string; stage: string | null;
     purpose: string | null; mode: string | null; created_by: string | null; created_at: string; updated_at: string;
     source_kind: string | null; source_url: string | null; source_filename: string | null; source_text: string | null; submitted_at: string | null };
   const gd = (drafts ?? []) as GD[];
@@ -249,7 +293,7 @@ export async function getClientActivity(tenantId: string, month: string): Promis
       status: d.status, stage: d.stage, purpose: d.purpose, mode: d.mode,
       createdBy: who(d.created_by), createdAt: d.created_at, lastEdit,
       sections: mine.length, answered: mine.filter(x => x.status !== "empty").length, done: mine.filter(x => x.status === "done").length,
-      sourceKind: d.source_kind, sourceUrl: d.source_url, sourceFilename: d.source_filename, hasSourceText: !!d.source_text?.trim(),
+      sourceKind: d.source_kind, sourceUrl: d.source_url, sourceFilename: d.source_filename, hasSourceText: !!d.source_text?.trim(), hasOriginal: !!d.source_storage_key,
       submittedAt: d.submitted_at,
       stall: stallState({ status: d.status, deadline: d.deadline, lastEdit }, now),
       touchedThisMonth: t >= start.getTime() && t < end.getTime(),
@@ -265,6 +309,11 @@ export async function getClientActivity(tenantId: string, month: string): Promis
 
   return {
     tenant: { id: tenant.id, name: tenant.name, orgType: tenant.org_type, createdAt: tenant.created_at },
+    features: [...FEATURES.map(f => f.key), "other"].map(key => {
+      const rows = visits.filter(v => v.feature === key);
+      return { key, label: FEATURE_LABEL[key] ?? "Other pages", people: new Set(rows.map(r => r.user_id)).size, visits: rows.length };
+    }).filter(f => f.visits > 0).sort((a, b) => b.people - a.people || b.visits - a.visits),
+    visitsRecorded: !visitErr,
     month, months: [...months].reverse(),
     people,
     chat: { month: clientMsgs.length, limit: LIMITS.chatPerMonthPerClient + extra, extra, perDayLimit: LIMITS.chatPerDayPerPerson,

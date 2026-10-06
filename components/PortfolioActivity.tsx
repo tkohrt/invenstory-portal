@@ -41,7 +41,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
             return (
               <tr key={r.tenantId} className={r.stalled || r.pendingRequests ? "an-conflict" : ""}>
                 <td><Link href={`/admin/clients/${r.tenantId}?m=${data.month}`}><b>{r.name}</b></Link></td>
-                <td>{r.activePeople} of {r.people}<div className="ov-muted">asked a question</div></td>
+                <td>{r.activePeople} of {r.people}<div className="ov-muted">used the portal</div></td>
                 <td>{ago(r.lastClientActivity)}</td>
                 <td className={nearChat ? "an-warn" : ""}>{r.chat} of {r.chatLimit}</td>
                 <td className={nearSpend ? "an-warn" : ""}>{usd(r.spendClient)} of ${r.allowance}<div className="ov-muted">{usd(r.spendTotal)} all</div></td>
@@ -55,7 +55,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
       </div>
       <p className="cl-note">Months are Eastern time. The $20 allowance is shown for reference until Phase D enforces it.
         {data.meterSince ? ` AI spend is measured from ${new Date(data.meterSince).toLocaleDateString()}.` : " AI spend is measured from the first AI call after the usage update."}
-        {" "}&ldquo;People&rdquo; counts who asked a question this month, until sign-ins are recorded.</p>
+        {" "}&ldquo;People&rdquo; counts client logins that used the portal this month (a recorded visit or a question).</p>
     </section>
   );
 }

@@ -96,7 +96,16 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
             <Stat label="Applications" value={`${d.outcomes.submittedAll} submitted`} sub={`${d.outcomes.won} won (${money(d.outcomes.wonCents)}), ${d.outcomes.lost} lost`} />
             <Stat label="Deadlines ahead" value={`${d.outcomes.upcoming.d30} in 30 days`} sub={`${d.outcomes.upcoming.d60} in 60, ${d.outcomes.upcoming.d90} in 90`} />
             <Stat label="Inven(s)tory size" value={`${d.growth.docsTotal} documents`} sub={`${d.growth.words.toLocaleString()} words`} />
+            <Stat label="People active this month" value={`${d.people.filter(p => p.daysActive > 0).length} of ${d.people.length}`}
+              sub={`${d.people.reduce((n, p) => n + p.visits, 0)} visits`} />
           </div>
+          <h3>Parts of the portal used this month</h3>
+          {d.features.length === 0 ? <p className="cl-note">{d.visitsRecorded ? "No visits recorded this month." : "Visits are not being recorded yet: run migration 0052."}</p> : (
+            <table className="an-table">
+              <thead><tr><th>Part</th><th>People</th><th>Visits</th></tr></thead>
+              <tbody>{d.features.map(f => <tr key={f.key}><td>{f.label}</td><td>{f.people} of {d.people.length}</td><td>{f.visits}</td></tr>)}</tbody>
+            </table>
+          )}
           <h3>Worth a look</h3>
           <ul className="ca-items">
             {friction(d).map((f, i) => <li key={i} className={`ca-item ${f.bad ? "ca-missing" : "ca-covered"}`}><b>{f.label}</b> <span className="ov-muted">{f.detail}</span></li>)}
@@ -108,14 +117,23 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
       {tab === "documents" && <DocumentsTab d={d} />}
       {tab === "grants" && <GrantsTab d={d} />}
       {tab === "people" && (
+        <>
+        {!d.visitsRecorded && <p className="cl-note an-warn">Visits are not being recorded yet: run migration 0052.</p>}
         <table className="an-table">
-          <thead><tr><th>Person</th><th>Email</th><th>Login since</th><th>Questions this month</th><th>Busiest day</th></tr></thead>
-          <tbody>{d.people.length === 0 ? <tr><td colSpan={5}><em>No client logins yet.</em></td></tr> : d.people.map(p => (
-            <tr key={p.id}><td>{p.name}</td><td>{p.email}</td><td>{date(p.since)}</td><td>{p.questions}</td>
+          <thead><tr><th>Person</th><th>Email</th><th>Login since</th><th>Last sign-in</th><th>Last seen</th><th>Visits</th><th>Days active</th><th>Parts used</th><th>Questions</th><th>Busiest day</th></tr></thead>
+          <tbody>{d.people.length === 0 ? <tr><td colSpan={10}><em>No client logins yet.</em></td></tr> : d.people.map(p => (
+            <tr key={p.id} className={!p.lastSignIn ? "an-conflict" : ""}><td>{p.name}</td><td>{p.email}</td><td>{date(p.since)}</td>
+              <td>{p.lastSignIn ? date(p.lastSignIn) : <span className="an-bad">Never signed in</span>}</td>
+              <td>{p.lastSeen ? date(p.lastSeen) : <span className="ov-muted">Not since visits were recorded</span>}</td>
+              <td>{p.visits}</td><td>{p.daysActive}</td>
+              <td style={{ whiteSpace: "normal" }}>{p.features.join(", ")}</td>
+              <td>{p.questions}</td>
               <td className={p.busiestDay && p.busiestDay.count >= d.chat.perDayLimit * LIMITS.warnAt ? "an-warn" : ""}>
                 {p.busiestDay ? `${p.busiestDay.count} on ${new Date(`${p.busiestDay.day}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric" })} (limit ${d.chat.perDayLimit})` : ""}</td></tr>
           ))}</tbody>
         </table>
+        <p className="cl-note">This month, except &ldquo;last seen&rdquo;. A visit begins after 30 quiet minutes. Recorded for client logins only, from when this update went live: the part of the portal and nothing else.</p>
+        </>
       )}
     </div>
   );
@@ -254,11 +272,12 @@ function GrantsTab({ d }: { d: ClientActivity }) {
 }
 
 function DraftRowView({ x, tenantId }: { x: DraftRow; tenantId: string }) {
-  const source = x.sourceUrl
-    ? <a className="fc-link" href={x.sourceUrl} target="_blank" rel="noopener noreferrer">From the funder&rsquo;s web page</a>
-    : x.sourceFilename
-      ? <span title="The portal reads the file and keeps its text; keeping the file itself comes in the next patch.">{x.sourceFilename}<div className="ov-muted">questions kept; file not stored yet</div></span>
-      : x.hasSourceText ? <span className="ov-muted">Pasted questions</span> : <span className="ov-muted">None</span>;
+  const web = x.sourceUrl ? <a className="fc-link" href={x.sourceUrl} target="_blank" rel="noopener noreferrer">The funder&rsquo;s web page</a> : null;
+  const source = x.hasOriginal
+    ? <span><DownloadOriginal draftId={x.id} tenantId={tenantId} name={x.sourceFilename} />{web && <div>{web}</div>}</span>
+    : web ?? (x.sourceFilename
+      ? <span title="Brought in before files were kept: the questions were read, the file itself was not stored.">{x.sourceFilename}<div className="ov-muted">questions kept; file from before files were stored</div></span>
+      : x.hasSourceText ? <span className="ov-muted">Pasted questions</span> : <span className="ov-muted">None</span>);
   return (
     <tr className={x.stall.stalled ? "an-conflict" : ""}>
       <td><b>{x.title}</b>{x.funder ? <div className="ov-muted">{x.funder}{x.amountCents ? `, ${money(x.amountCents)}` : ""}</div> : null}
@@ -271,5 +290,20 @@ function DraftRowView({ x, tenantId }: { x: DraftRow; tenantId: string }) {
       <td>{source}</td>
       <td><OpenAsClient tenantId={tenantId} href={`/drafts/${x.id}`}>Open the draft</OpenAsClient></td>
     </tr>
+  );
+}
+
+function DownloadOriginal({ draftId, tenantId, name }: { draftId: string; tenantId: string; name: string | null }) {
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <span>
+      <button type="button" className="fc-link" onClick={async () => {
+        setErr(null);
+        const res = await fetch(`/api/drafts/source?draftId=${draftId}&tenantId=${tenantId}`);
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.url) window.open(j.url, "_blank", "noopener,noreferrer"); else setErr(j.error ?? "Not available");
+      }}>Download {name ? `"${name}"` : "the funder's application"}</button>
+      {err && <div className="an-bad">{err}</div>}
+    </span>
   );
 }
