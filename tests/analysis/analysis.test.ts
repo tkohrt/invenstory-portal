@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   DOC_TYPES, DOC_TYPE_MAP, FACT_KEYS, parseAnalysis, pickDocType, checkFact, decideDocument, stateCode,
+  consultantSpeaking, planAsFact, rejectionLabel,
   previewLibrary, summarizeFacts, reviewSample, reviewTally, reviewTarget, duplicatePairs, type ParsedRead,
 } from "@/lib/analysis";
 import { CARD_KINDS, kindsFor, cardFingerprint } from "@/lib/story-card";
@@ -293,4 +294,34 @@ describe("research report type (5 October 2026)", () => {
     expect(DOC_TYPE_MAP.research_report?.label).toBe("Research report");
     expect(DOC_TYPE_MAP.research_report?.itemKey).toBeNull();
   });
+});
+
+describe("For Granted speaking, and plans stated as fact (5 October 2026 review)", () => {
+  test("For Granted describing itself is caught", () => {
+    expect(consultantSpeaking("Tyler and I, as you know, are big relationship people.")).toBe(true);
+    expect(consultantSpeaking("we had agreed to a 5 or 10% success fee, that would be our expectation")).toBe(true);
+    expect(consultantSpeaking("we could arrange a monthly consulting fee where we surface opportunities")).toBe(true);
+    expect(consultantSpeaking("when we produce that inventory in concert with you, the organization owns it")).toBe(true);
+    expect(consultantSpeaking("We were introduced to For Granted by a mentor.")).toBe(true);
+  });
+  test("the client describing itself is not", () => {
+    expect(consultantSpeaking("we've been working for about 5 years within the Ohio ecosystem")).toBe(false);
+    expect(consultantSpeaking("I've been a case manager for over 20 years, and during COVID we built a prototype")).toBe(false);
+  });
+  test("a plan written as fact is caught; a plan written as a plan is not", () => {
+    expect(planAsFact("The organization provides workforce training for residents.", "Training will prepare residents for entry level roles.")).toBe(true);
+    expect(planAsFact("The organization will provide workforce training for residents.", "Training will prepare residents for entry level roles.")).toBe(false);
+    expect(planAsFact("The organization aims to index 100 resources.", "We expect to index 100 resources.")).toBe(false);
+  });
+  test("a present-tense quote is not a plan", () => {
+    expect(planAsFact("The platform serves 1,000 patients.", "The platform serves 1,000 patients across 13 practices.")).toBe(false);
+  });
+  test("both refusals are named for a person", () => {
+    expect(rejectionLabel("consultant_speaking", {})).toContain("For Granted");
+    expect(rejectionLabel("plan_as_fact", {})).toContain("plan");
+  });
+});
+
+test("a long-term objective framed as one is not a plan stated as fact", () => {
+  expect(planAsFact("Its long term objective is to keep its headquarters in the city.", "The long term objective is for the city to remain the headquarters, and it will grow there.")).toBe(false);
 });

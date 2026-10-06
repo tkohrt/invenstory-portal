@@ -389,7 +389,7 @@ export interface AnalysisRejection {
   key: string;
   text: string;
   quote: string;
-  reason: RejectReason | FactRejectReason | "funder_document";
+  reason: RejectReason | FactRejectReason | "funder_document" | "consultant_speaking" | "plan_as_fact";
 }
 
 /** One accepted card as stored in analysis_doc.cards: story_card_doc's shape. */
@@ -402,6 +402,44 @@ export interface DocumentAnalysis {
   cards: AnalysisCard[];
   facts: AnalysisFact[];
   rejected: AnalysisRejection[];
+}
+
+/**
+ * Is this quote For Granted (or another adviser) speaking about itself?
+ *
+ * For Granted compiles the Inven(s)tory and is on many of its calls. On 5
+ * October 2026 the RE-Assist review found 11 of the Howie intro call's 39 cards
+ * were For Granted describing its own fees, contracts, team and beliefs,
+ * credited to RE-Assist, because that transcript has no speaker labels. The
+ * prompt now names For Granted as an outsider; this is the backstop for the
+ * plainest cases. Narrow on purpose: it looks for For Granted by name, its
+ * founders speaking as "Tyler and I", and its own commercial terms.
+ */
+const CONSULTANT_SELF: RegExp[] = [
+  /\bfor granted\b/i,
+  /\b(?:tyler|shane)\s+and\s+(?:i|me|myself)\b/i,
+  /\b(?:i|me)\s+and\s+(?:tyler|shane)\b/i,
+  /\bsuccess[- ]fees?\b/i,
+  /\bconsulting fees?\b/i,
+  /\b(?:produce|build|assemble|create)\s+(?:that|the|this|your)\s+inven(?:\(s\))?tory\b/i,
+];
+export function consultantSpeaking(quote: string, statement = ""): boolean {
+  return CONSULTANT_SELF.some(r => r.test(quote) || r.test(statement));
+}
+
+/**
+ * A plan stated as something already done.
+ *
+ * A proposal's targets and deliverables are plans. The 5 October review marked
+ * 13 cards from the Forest Park proposal as aspirations presented as current.
+ * The prompt now asks for plans to be written as plans; this refuses the
+ * plainest misses: a quote in the future or planning voice, and a statement
+ * with no word of planning in it.
+ */
+const PLAN_IN_QUOTE = /\b(?:will|plans? to|planning to|aims? to|aiming to|intends? to|propos(?:e|es|ed) to|expects? to|expected to|projected|our goal is|the goal is)\b/i;
+const PLAN_IN_STATEMENT = /\b(?:will|plans?|planned|planning|aims?|aiming|intends?|goals?|targets?|propos\w*|projects?|projected|expects?|expected|would|seeks?|hopes?|vision|aspir\w*|objectives?|ambitions?|if funded|commits?)\b/i;
+export function planAsFact(statement: string, quote: string): boolean {
+  return PLAN_IN_QUOTE.test(quote) && !PLAN_IN_STATEMENT.test(statement);
 }
 
 /**
@@ -434,6 +472,14 @@ export function decideDocument(input: {
       rejected.push({ what: "card", key: r.rejected.kind, text: r.rejected.statement, quote: r.rejected.quote, reason: r.rejected.reason });
       continue;
     }
+    if (consultantSpeaking(r.card.quote, r.card.statement)) {
+      rejected.push({ what: "card", key: r.card.kind, text: r.card.statement, quote: r.card.quote, reason: "consultant_speaking" });
+      continue;
+    }
+    if (planAsFact(r.card.statement, r.card.quote)) {
+      rejected.push({ what: "card", key: r.card.kind, text: r.card.statement, quote: r.card.quote, reason: "plan_as_fact" });
+      continue;
+    }
     const fp = cardFingerprint(r.card.kind, r.card.statement);
     if (seenCards.has(fp)) continue;          // overlapping windows
     seenCards.add(fp);
@@ -449,6 +495,10 @@ export function decideDocument(input: {
     }
     const r = checkFact(f, text, reattribute);
     if (!r.ok) { rejected.push({ what: "fact", key: f.key, text: f.value, quote: f.quote, reason: r.reason }); continue; }
+    if (consultantSpeaking(r.fact.quote)) {
+      rejected.push({ what: "fact", key: f.key, text: f.value, quote: f.quote, reason: "consultant_speaking" });
+      continue;
+    }
     const id = factIdentity(r.fact);
     if (seenFacts.has(id)) continue;
     seenFacts.add(id);
@@ -655,5 +705,7 @@ export function reviewTally(
 /** Plain-language reason for any refusal in analysis_doc.rejected. */
 export function rejectionLabel(reason: string, cardLabels: Record<string, string>): string {
   if (reason === "funder_document") return "the document is a funder's form, so its words are not the client's";
+  if (reason === "consultant_speaking") return "For Granted or another adviser speaking about itself, not about the client";
+  if (reason === "plan_as_fact") return "a plan or target written as something already done";
   return (FACT_REJECT_LABEL as Record<string, string>)[reason] ?? cardLabels[reason] ?? reason;
 }
