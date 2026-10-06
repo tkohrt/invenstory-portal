@@ -11,7 +11,8 @@ import { getContentCoverage, readiness } from "./gap-agent";
 import { getEligibilityProfile } from "./eligibility";
 import { LIMITS } from "@/lib/usage-limits";
 import { pagesOf } from "@/lib/analysis-cap";
-import { monthRange, recentMonths, dayKey, topicCounts, stallState, FEATURES, FEATURE_LABEL, type StallState } from "@/lib/activity";
+import { monthRange, recentMonths, dayKey, topicCounts, stallState, FEATURES, FEATURE_LABEL, type StallState, type Milestone } from "@/lib/activity";
+import { getAllMilestones } from "./milestones";
 
 const ALLOWANCE_DOLLARS = 20;  // Phase D's monthly AI allowance per client (decision 24); shown, not yet enforced
 
@@ -32,7 +33,7 @@ async function lastSignIns(authIds: string[]): Promise<Map<string, string | null
 const micros = (rows: { cost_micros: number }[]) => rows.reduce((n, r) => n + Number(r.cost_micros), 0) / 1_000_000;
 
 /** The latest moment anything in a draft changed: the draft, its questions, or a card placed or moved. */
-function lastEdits(
+export function lastEdits(
   drafts: { id: string; updated_at: string }[],
   sections: { draft_id: string; updated_at: string }[],
   events: { draft_id: string | null; created_at: string }[],
@@ -59,6 +60,8 @@ export interface PortfolioRow {
   spendClient: number; spendTotal: number; allowance: number;
   docsClient: number; docsFG: number;
   draftsOpen: number; stalled: number; pendingRequests: number;
+  /** Getting-started milestones reached, of MILESTONES.length (patch 3). */
+  milestonesDone: number;
 }
 export interface PortfolioActivity { month: string; months: string[]; rows: PortfolioRow[]; spendTotal: number; meterSince: string | null }
 
@@ -86,6 +89,7 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     db.from("activity_event").select("tenant_id, user_id").gte("created_at", s).lt("created_at", e).limit(20000),  // tenant-safe: admin portfolio across every client
     db.from("activity_event").select("tenant_id, created_at").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
   ]);
+  const milestones = await getAllMilestones().catch(() => new Map<string, Milestone[]>());
   const vm = (visitsMonth ?? []) as { tenant_id: string; user_id: string }[];
   const lv = (lastVisits ?? []) as { tenant_id: string; created_at: string }[];
   const userList = (users ?? []) as Users;
@@ -122,6 +126,7 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
       draftsOpen: myDrafts.filter(d => d.status === "drafting" || d.status === "client_review").length,
       stalled: myDrafts.filter(d => stallState({ status: d.status, deadline: d.deadline, lastEdit: edits.get(d.id) ?? d.updated_at }, now).stalled).length,
       pendingRequests: ((reqs ?? []) as { tenant_id: string }[]).filter(r => r.tenant_id === t.id).length,
+      milestonesDone: (milestones.get(t.id) ?? []).filter(x => x.at).length,
     };
   });
   return {
@@ -174,6 +179,8 @@ export interface ClientActivity {
   outcomes: { byMonth: { month: string; submitted: number }[]; won: number; lost: number; wonCents: number; submittedAll: number;
     upcoming: { d30: number; d60: number; d90: number } };
   growth: { docsTotal: number; words: number; cardsVerified: number; cardsVerifiedThisMonth: number; cardsTotal: number; readinessPct: number };
+  /** Getting started: days from joining to each first (patch 3). */
+  milestones: Milestone[];
 }
 
 export async function getClientActivity(tenantId: string, month: string): Promise<ClientActivity | null> {
@@ -210,6 +217,7 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     getContentCoverage(tenantId).catch(() => null),
     getEligibilityProfile(tenantId).catch(() => null),
   ]);
+  const milestones = (await getAllMilestones().catch(() => null))?.get(tenantId) ?? [];
 
   const [{ data: visitRows, error: visitErr }, { data: lastSeenRows }] = await Promise.all([
     db.from("activity_event").select("user_id, feature, session_start, created_at").eq("tenant_id", tenantId).gte("created_at", s).lt("created_at", e).limit(20000),
@@ -350,5 +358,6 @@ export async function getClientActivity(tenantId: string, month: string): Promis
       cardsTotal: cardRows.filter(c => c.status !== "retired").length,
       readinessPct: coverage && profile ? readiness(profile.org_type, coverage.cov).pct : 0,
     },
+    milestones,
   };
 }

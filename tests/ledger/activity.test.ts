@@ -1,6 +1,6 @@
 // Admin, Client activity: months, chat topics and stalled drafts (6 October 2026).
 import { describe, expect, test } from "vitest";
-import { monthRange, recentMonths, dayKey, isMonthKey, chatTopic, topicCounts, stallState, cleanPath, featureForPath } from "@/lib/activity";
+import { monthRange, recentMonths, dayKey, isMonthKey, chatTopic, topicCounts, stallState, cleanPath, featureForPath, milestoneTimeline, nthEarliest, lastWeek } from "@/lib/activity";
 
 describe("Eastern months", () => {
   test("a month runs from midnight Eastern on the 1st to the next", () => {
@@ -67,5 +67,37 @@ describe("visits", () => {
     expect(featureForPath("/admin/clients")).toBeNull();
     expect(featureForPath("/")).toBeNull();
     expect(featureForPath("/something-new")).toBe("other");
+  });
+});
+
+describe("milestones", () => {
+  test("days are counted from joining; anything earlier is day 0", () => {
+    const t = milestoneTimeline("2026-08-04T15:00:00Z", { first_document: "2024-11-01T00:00:00Z", analysed: "2026-10-05T20:00:00Z" });
+    expect(t).toHaveLength(7);
+    expect(t[0]).toMatchObject({ key: "first_document", day: 0 });
+    expect(t.find(m => m.key === "analysed")?.day).toBe(62);
+    expect(t.find(m => m.key === "first_draft")).toMatchObject({ at: null, day: null });
+  });
+  test("the fifth document is the fifth earliest", () => {
+    const d = ["2026-08-05", "2026-08-01", null, "2026-08-03", "2026-08-02", "2026-08-04", "2026-08-09"];
+    expect(nthEarliest(d, 5)).toBe("2026-08-05");
+    expect(nthEarliest(["2026-08-01"], 5)).toBeNull();
+  });
+});
+
+describe("the digest's week", () => {
+  test("Monday morning covers the Monday-to-Monday week before, Eastern", () => {
+    const w = lastWeek(new Date("2026-10-12T13:00:00Z"));
+    expect(w.start.toISOString()).toBe("2026-10-05T04:00:00.000Z");
+    expect(w.end.toISOString()).toBe("2026-10-12T04:00:00.000Z");
+  });
+  test("mid-week it is still the last full week", () => {
+    const w = lastWeek(new Date("2026-10-08T02:00:00Z"));  // Wednesday 7 October, 10pm Eastern
+    expect(w.start.toISOString()).toBe("2026-09-28T04:00:00.000Z");
+  });
+  test("the week daylight saving ends is 7 days and an hour", () => {
+    const w = lastWeek(new Date("2026-11-02T14:00:00Z"));
+    expect(w.start.toISOString()).toBe("2026-10-26T04:00:00.000Z");
+    expect(w.end.toISOString()).toBe("2026-11-02T05:00:00.000Z");
   });
 });

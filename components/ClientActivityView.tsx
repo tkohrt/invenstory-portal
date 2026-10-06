@@ -106,6 +106,16 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
               <tbody>{d.features.map(f => <tr key={f.key}><td>{f.label}</td><td>{f.people} of {d.people.length}</td><td>{f.visits}</td></tr>)}</tbody>
             </table>
           )}
+          <h3>Getting started</h3>
+          <table className="an-table">
+            <thead><tr><th>Milestone</th><th>Reached</th><th>Days after joining</th></tr></thead>
+            <tbody>{d.milestones.map(m => (
+              <tr key={m.key} className={m.at ? "" : "ms-pending"}>
+                <td>{m.label}</td><td>{m.at ? date(m.at) : "Not yet"}</td><td>{m.day == null ? "" : m.day === 0 ? "Day 0" : `Day ${m.day}`}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          <p className="cl-note">Counted from when the client was set up in the portal. Documents dated before that count as day 0. &ldquo;First look at Funder Matches&rdquo; is known only from 6 October 2026, when visits began to be recorded.</p>
           <h3>Worth a look</h3>
           <ul className="ca-items">
             {friction(d).map((f, i) => <li key={i} className={`ca-item ${f.bad ? "ca-missing" : "ca-covered"}`}><b>{f.label}</b> <span className="ov-muted">{f.detail}</span></li>)}

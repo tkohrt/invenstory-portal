@@ -4,7 +4,7 @@
 import Link from "next/link";
 import MonthPicker from "./MonthPicker";
 import type { PortfolioActivity as Data } from "@/lib/server/activity-read";
-import { monthLabel } from "@/lib/activity";
+import { monthLabel, MILESTONES } from "@/lib/activity";
 import { LIMITS } from "@/lib/usage-limits";
 
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
@@ -22,6 +22,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
       <div className="pa-head">
         <div className="section-label" style={{ margin: 0 }}>Activity, {monthLabel(data.month)}</div>
         <div className="spacer" />
+        <Link className="btn secondary" href="/admin/clients/digest">Monday digest</Link>
         <MonthPicker month={data.month} months={data.months} />
       </div>
       <div className="cl-summary">
@@ -33,7 +34,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
         <table className="an-table pa-table">
           <thead><tr>
             <th>Client</th><th>People</th><th>Last client activity</th>
-            <th>Chat questions</th><th>AI spend (client / all)</th><th>Documents added</th><th>Drafts</th><th />
+            <th>Chat questions</th><th>AI spend (client / all)</th><th>Documents added</th><th>Drafts</th><th>Getting started</th><th />
           </tr></thead>
           <tbody>{data.rows.map(r => {
             const nearChat = r.chat >= r.chatLimit * LIMITS.warnAt;
@@ -47,6 +48,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
                 <td className={nearSpend ? "an-warn" : ""}>{usd(r.spendClient)} of ${r.allowance}<div className="ov-muted">{usd(r.spendTotal)} all</div></td>
                 <td>{r.docsClient} by client<div className="ov-muted">{r.docsFG} by For Granted</div></td>
                 <td>{r.draftsOpen} open{r.stalled ? <div className="an-bad">{r.stalled} stalled</div> : null}</td>
+                <td>{r.milestonesDone} of {MILESTONES.length}<div className="ov-muted">milestones</div></td>
                 <td><Link className="fc-link" href={`/admin/clients/${r.tenantId}?m=${data.month}`}>Activity</Link></td>
               </tr>
             );
@@ -55,7 +57,8 @@ export default function PortfolioActivity({ data }: { data: Data }) {
       </div>
       <p className="cl-note">Months are Eastern time. The $20 allowance is shown for reference until Phase D enforces it.
         {data.meterSince ? ` AI spend is measured from ${new Date(data.meterSince).toLocaleDateString()}.` : " AI spend is measured from the first AI call after the usage update."}
-        {" "}&ldquo;People&rdquo; counts client logins that used the portal this month (a recorded visit or a question).</p>
+        {" "}&ldquo;People&rdquo; counts client logins that used the portal this month (a recorded visit or a question).
+        {" "}&ldquo;Getting started&rdquo; counts the milestones reached so far, from first document to first application submitted; each client&rsquo;s page shows the days to each.</p>
     </section>
   );
 }

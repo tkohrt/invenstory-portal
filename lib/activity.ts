@@ -136,3 +136,68 @@ export function featureForPath(path: string): string | null {
   const f = FEATURES.find(x => path === x.prefix || path.startsWith(`${x.prefix}/`));
   return f ? f.key : "other";
 }
+
+// ---------------------------------------------------------------------------
+// Activation milestones (patch 3): days from joining to each first.
+// ---------------------------------------------------------------------------
+
+export const MILESTONES = [
+  { key: "first_document", label: "First document in the Inven(s)tory" },
+  { key: "five_documents", label: "5 documents" },
+  { key: "analysed", label: "Inven(s)tory analysed" },
+  { key: "eligibility", label: "Eligibility confirmed" },
+  { key: "funder_matches", label: "First look at Funder Matches" },
+  { key: "first_draft", label: "First grant draft" },
+  { key: "first_submission", label: "First application submitted" },
+] as const;
+export type MilestoneKey = (typeof MILESTONES)[number]["key"];
+export interface Milestone { key: MilestoneKey; label: string; at: string | null; day: number | null }
+
+/** The n-th earliest of some moments (1-based), or null when there are fewer. */
+export function nthEarliest(moments: (string | null | undefined)[], n: number): string | null {
+  const s = moments.filter((x): x is string => !!x).sort();
+  return s.length >= n ? s[n - 1] : null;
+}
+
+/**
+ * Each milestone with the day it was reached, counted from when the client
+ * joined. Something dated before the account existed (a document backdated to
+ * its own date, say) counts as day 0.
+ */
+export function milestoneTimeline(joined: string, at: Partial<Record<MilestoneKey, string | null>>): Milestone[] {
+  const j = new Date(joined).getTime();
+  return MILESTONES.map(m => {
+    const t = at[m.key] ?? null;
+    return { key: m.key, label: m.label, at: t, day: t ? Math.max(0, Math.floor((new Date(t).getTime() - j) / 86400_000)) : null };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The Monday digest's week: Monday to Monday, Eastern time.
+// ---------------------------------------------------------------------------
+
+function easternOffsetMin(d: Date): number {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: PORTAL_TIME_ZONE, timeZoneName: "shortOffset" })
+    .formatToParts(d).find(p => p.type === "timeZoneName")?.value ?? "";
+  const m = name.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
+  return m ? Number(m[1]) * 60 + Math.sign(Number(m[1])) * Number(m[2] ?? 0) : 0;
+}
+
+/** Midnight Eastern at the start of a "YYYY-MM-DD" day. */
+function easternMidnight(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  // 04:30 UTC is around midnight in New York on either side of daylight
+  // saving, and the clocks change at 2am on a Sunday, never at a Monday midnight.
+  const probe = new Date(Date.UTC(y, m - 1, d, 4, 30));
+  return new Date(Date.UTC(y, m - 1, d) - easternOffsetMin(probe) * 60_000);
+}
+
+/** The last full week before `now`: from Monday midnight Eastern to the next Monday midnight. */
+export function lastWeek(now = new Date()): { start: Date; end: Date } {
+  const today = dayKey(now);
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: PORTAL_TIME_ZONE, weekday: "short" }).format(now);
+  const sinceMonday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(weekday);
+  const [y, m, d] = today.split("-").map(Number);
+  const ymd = (offset: number) => new Date(Date.UTC(y, m - 1, d + offset, 12)).toISOString().slice(0, 10);
+  return { start: easternMidnight(ymd(-sinceMonday - 7)), end: easternMidnight(ymd(-sinceMonday)) };
+}
