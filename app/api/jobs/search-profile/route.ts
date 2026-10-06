@@ -14,6 +14,7 @@
 // again, and one whose text has changed since is.
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
+import { withAiUsage } from "@/lib/server/ai-usage";
 import { getTenant } from "@/lib/server/data";
 import {
   continueProfileBuild, clearProfileDocs, profileBuildProgress, assembleProfile,
@@ -117,11 +118,11 @@ export async function POST(req: Request) {
   if (!body?.begun && (!existing || body?.restart)) await opening();
 
   try {
-    const r = await continueProfileBuild(
+    const r = await withAiUsage({ tenantId, userId: session.user.id, actor: "admin", feature: "search_profile" }, () => continueProfileBuild(
       tenantId, session.user.id, tenant?.name ?? "this client", {
       onProgress: p => { void updateJob(tenantId, jobId, p); },
       onEvent: e => { void recordEvent(tenantId, jobId, e); },
-    });
+    }));
     const progress = await profileBuildProgress(tenantId);
 
     if (r.complete) {

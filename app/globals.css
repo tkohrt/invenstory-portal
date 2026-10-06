@@ -1332,3 +1332,6 @@ a.dl-row:hover{background:#f6f8f5}
 .ca-val-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
 .ca-val-text{font-weight:600}
 .ca-confirm{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+/* Chat: a note near a usage limit, and the way to ask for more (6 October 2026) */
+.chat-usage{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:#fdf6ec;border:1px solid #efd9a6;color:#6b4a00;border-radius:9px;padding:8px 12px;margin:6px 0;font-size:13px}

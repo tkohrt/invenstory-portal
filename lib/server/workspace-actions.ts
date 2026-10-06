@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { chatComplete } from "./llm";
+import { withAiUsage } from "./ai-usage";
 import { BLOCK_COLS, loadCards, resolveBlocks, type WsBlock } from "./workspace";
 import { orgTypeOf } from "./application-parse";
 import { SLUG_KINDS } from "@/lib/application-parse";
@@ -450,7 +451,8 @@ export async function tidyAction(sectionId: string): Promise<TidyProposal | { er
   const user = `<question>\n${section.prompt}${section.guidance ? `\n${section.guidance}` : ""}\n</question>\n\n<pieces>\n`
     + live.map((b, i) => `${i + 1}. ${b.text.replace(/\s+/g, " ").trim().slice(0, 1200)}`).join("\n")
     + `\n</pieces>`;
-  const res = await chatComplete({ system: TIDY_SYSTEM, user, maxTokens: 400, temperature: 0 });
+  const res = await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "tidy" },
+    () => chatComplete({ system: TIDY_SYSTEM, user, maxTokens: 400, temperature: 0 }));
   if (!res) return { error: "The model did not answer, so Tidy has nothing to suggest. Nothing changed." };
   const proposal = parseTidy(res.text, live.map(b => b.id));
   if (!proposal) {

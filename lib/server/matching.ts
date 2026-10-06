@@ -1,4 +1,5 @@
 import "server-only";
+import { withAiUsage } from "./ai-usage";
 // Funder matching: eligibility filter -> alignment rank -> evidence boost.
 //
 // The pipeline from the architecture doc, in that order:
@@ -389,8 +390,8 @@ export async function runMatch(
    */
   step(4, 5, `explaining ${screened.length} matches against the Inven(s)tory`);
   try {
-    await addRationales(screened, dossier, p, orgName,
-      (done, total) => step(4, 5, `explained ${done} of ${total} matches`));
+    await withAiUsage({ tenantId, actor: "admin", feature: "match_rationale" }, () => addRationales(screened, dossier, p, orgName,
+      (done, total) => step(4, 5, `explained ${done} of ${total} matches`)));
     await writeRationales(tenantId, screened);
   } catch (e) {
     console.error("rationale generation failed", e);
@@ -512,8 +513,8 @@ export async function fillPendingRationales(
     funder: r.funder ?? undefined, eligibility: r.eligibility ?? undefined,
   })) as unknown as ScreenedGrant[];
 
-  await addRationales(screened, dossier, p, orgName,
-    (done, count) => opts.onProgress?.({ done, total: count, detail: `explained ${done} of ${count} matches` }));
+  await withAiUsage({ tenantId, actor: "admin", feature: "match_rationale" }, () => addRationales(screened, dossier, p, orgName,
+    (done, count) => opts.onProgress?.({ done, total: count, detail: `explained ${done} of ${count} matches` })));
 
   const filled = await writeRationales(tenantId, screened);
   return { filled, remaining: await pendingRationaleCount(tenantId) };

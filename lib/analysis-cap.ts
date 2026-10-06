@@ -9,10 +9,12 @@
 // Analyses For Granted runs are never counted. Pure, so the page can explain
 // the cap and the server enforce exactly the same rule.
 
+import { monthStart as monthStartOf } from "./usage-limits";
+
 export const ANALYSIS_CAP = {
   /** Client-started analyses per rolling 24 hours. */
   runsPerDay: 1,
-  /** New pages a client's own analyses may read per calendar month. */
+  /** New pages a client's own analyses may read per calendar month (Eastern time). */
   pagesPerMonth: 200,
   /** A page, for the allowance: roughly a printed page of text. */
   charsPerPage: 3000,
@@ -41,7 +43,7 @@ export function decideClientRun(input: {
   const { now, usage, pendingDocs, pendingChars } = input;
   if (pendingDocs <= 0) return { allowed: false, reason: "nothing_new" };
   const pages = pagesOf(pendingChars);
-  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const monthStart = monthStartOf(now).getTime();
   const monthPagesUsed = usage
     .filter(u => new Date(u.at).getTime() >= monthStart)
     .reduce((n, u) => n + pagesOf(u.pendingChars), 0);

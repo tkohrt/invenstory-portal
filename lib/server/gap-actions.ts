@@ -2,11 +2,12 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
+import { withAiUsage } from "./ai-usage";
 import { getEligibilityProfile } from "./eligibility";
 
 async function storeExtractionCoverage(tenantId: string, orgType: string | null): Promise<{ covered: number; thin: number; missing: number }> {
   const { extractDocumentEvidence } = await import("./doc-extract");
-  const trace = await extractDocumentEvidence(tenantId, orgType);
+  const trace = await withAiUsage({ tenantId, actor: "admin", feature: "readiness_refresh" }, () => extractDocumentEvidence(tenantId, orgType));
   const cov: Record<string, { state: string; sources: { id: string; title: string; quote?: string }[] }> = {};
   const counts = { covered: 0, thin: 0, missing: 0 } as Record<string, number>;
   for (const it of trace.items) {
@@ -52,7 +53,7 @@ export async function runReadinessAuditAction() {
   if (!s || s.role !== "admin") throw new Error("unauthorized");
   const profile = await getEligibilityProfile(s.tenantId);
   const { traceContentCoverage } = await import("./gap-agent");
-  return traceContentCoverage(s.tenantId, profile.org_type);
+  return withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "readiness_audit" }, () => traceContentCoverage(s.tenantId, profile.org_type));
 }
 
 export async function runDocExtractionAuditAction() {
@@ -60,5 +61,5 @@ export async function runDocExtractionAuditAction() {
   if (!s || s.role !== "admin") throw new Error("unauthorized");
   const profile = await getEligibilityProfile(s.tenantId);
   const { extractDocumentEvidence } = await import("./doc-extract");
-  return extractDocumentEvidence(s.tenantId, profile.org_type);
+  return withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "readiness_audit" }, () => extractDocumentEvidence(s.tenantId, profile.org_type));
 }

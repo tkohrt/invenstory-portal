@@ -1,4 +1,5 @@
 import "server-only";
+import { actorForJob, withAiUsage } from "./ai-usage";
 // One stage of an Inven(s)tory Analysis run, shared by the page's route and the
 // server's own continuation. card-build.ts's shape: take the lease, read what
 // fits, keep it, say what is left. A stage that reads nothing while documents
@@ -31,7 +32,13 @@ async function summarize(tenantId: string): Promise<{ result: Record<string, num
   return { result, text };
 }
 
+/** Every model call in a pass is metered against this client, as whoever started the run. */
 export async function runAnalysisPass(tenantId: string, jobId: string, opts: { chained?: boolean } = {}): Promise<PassOutcome> {
+  const who = await actorForJob(tenantId, jobId);
+  return withAiUsage({ tenantId, userId: who.userId, actor: who.actor, feature: "analysis" }, () => runAnalysisPassMetered(tenantId, jobId, opts));
+}
+
+async function runAnalysisPassMetered(tenantId: string, jobId: string, opts: { chained?: boolean }): Promise<PassOutcome> {
   if (!await claimJob(tenantId, jobId)) return { kind: "busy" };
   try {
     if (opts.chained) {

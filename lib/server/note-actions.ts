@@ -30,7 +30,7 @@ export async function addInvenstoryNoteAction(itemKey: string, text: string) {
     { document_id: docId, tenant_id: s.tenantId, tag: item.key },
     { document_id: docId, tenant_id: s.tenantId, tag: "written-note" },
   ]);
-  try { await processDocument(docId); } catch { /* status recorded; still filed */ }
+  try { await processDocument(docId, { actor: s.role === "admin" ? "admin" : "client" }); } catch { /* status recorded; still filed */ }
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "invenstory_note", detail: item.key });
   revalidatePath("/funding-eligibility"); revalidatePath("/invenstory");
   return { ok: true };

@@ -1,4 +1,5 @@
 import "server-only";
+import { actorForJob, withAiUsage } from "./ai-usage";
 // One stage of a Card Library build, shared by the page's route and the
 // server's own continuation (lib/server/job-chain.ts).
 //
@@ -26,7 +27,13 @@ export type PassOutcome =
 /** Chained stages leave room to hand on to the next one inside the 60-second limit. */
 const CHAINED_BUDGET_MS = 34_000;
 
+/** Every model call in a pass is metered against this client, as whoever started the run. */
 export async function runCardPass(tenantId: string, jobId: string, opts: { chained?: boolean } = {}): Promise<PassOutcome> {
+  const who = await actorForJob(tenantId, jobId);
+  return withAiUsage({ tenantId, userId: who.userId, actor: who.actor, feature: "card_library" }, () => runCardPassMetered(tenantId, jobId, opts));
+}
+
+async function runCardPassMetered(tenantId: string, jobId: string, opts: { chained?: boolean }): Promise<PassOutcome> {
   if (!await claimJob(tenantId, jobId)) return { kind: "busy" };
   try {
     if (opts.chained) {

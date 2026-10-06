@@ -6,6 +6,8 @@ import "server-only";
 import { after } from "next/server";
 import { embedText, embedTextsParallel } from "./embed";
 import { db } from "./db";
+import { uploadReadsLastDay, withAiUsage } from "./ai-usage";
+import { uploadReadNow, type Actor } from "@/lib/usage-limits";
 
 const EMBED_MODEL = "gte-small";
 
@@ -118,9 +120,26 @@ export async function embed(text: string): Promise<number[]> {
   return v;
 }
 
-export async function processDocument(documentId: string): Promise<void> {
+/**
+ * Read a document into passages and embeddings, then fold it into readiness.
+ *
+ * `actor` is who caused this read (defaults from the document's source). The
+ * readiness read is the only model call here, and for a client it follows the
+ * limits of 6 October 2026 (lib/usage-limits.ts): when a client processes a
+ * document again and its text has not changed, it is skipped, and past 30
+ * readiness reads a day for one client it waits (the next readiness refresh or
+ * analysis picks it up). The upload itself is never blocked. Admins never wait.
+ */
+export async function processDocument(documentId: string, opts: { actor?: Actor; reprocess?: boolean } = {}): Promise<void> {
   const { data: doc } = await db.from("document").select("*").eq("id", documentId).single();  // tenant-safe: ingestion worker: single document resolved by id
   if (!doc) throw new Error("document not found");
+  const actor: Actor = opts.actor ?? (doc.source === "client" ? "client" : "admin");
+  // The text read last time, to tell a real change from a repeat press.
+  let previousText: string | null = null;
+  if (opts.reprocess) {
+    const { data: old } = await db.from("document_chunk").select("text, chunk_index").eq("document_id", documentId).order("chunk_index");  // tenant-safe: ingestion worker: chunks of the document being processed
+    previousText = ((old ?? []) as { text: string | null }[]).map(c => c.text ?? "").join("\n");
+  }
   await db.from("document").update({ status: "processing", error_detail: null }).eq("id", documentId);  // tenant-safe: ingestion worker: same document by id
   try {
     const { data: blob, error: dlErr } = await db.storage.from("documents").download(doc.storage_key);
@@ -159,8 +178,21 @@ export async function processDocument(documentId: string): Promise<void> {
     // available via the button). It is model calls over the whole document, so it
     // runs after the response has been sent: a long transcript must not turn a
     // successful upload into a timeout. Outside a request it simply runs inline.
+    const sameText = previousText !== null && previousText === chunks.map(c => c.text ?? "").join("\n");
     const mergeCoverage = async () => {
-      try { const { mergeDocumentIntoCoverage } = await import("./doc-extract"); await mergeDocumentIntoCoverage(documentId); } catch { /* non-fatal */ }
+      try {
+        if (actor === "client") {
+          if (sameText) return;  // processed again with nothing new to read
+          if (!uploadReadNow(actor, await uploadReadsLastDay(doc.tenant_id))) {
+            await db.from("audit_log").insert({ tenant_id: doc.tenant_id, action: "upload_ai_read_deferred", detail: documentId });
+            return;
+          }
+          await db.from("audit_log").insert({ tenant_id: doc.tenant_id, action: "upload_ai_read", detail: documentId });
+        }
+        const { mergeDocumentIntoCoverage } = await import("./doc-extract");
+        await withAiUsage({ tenantId: doc.tenant_id, userId: doc.uploaded_by ?? null, actor, feature: "upload_readiness" },
+          () => mergeDocumentIntoCoverage(documentId));
+      } catch { /* non-fatal */ }
     };
     try { after(mergeCoverage); } catch { await mergeCoverage(); }
   } catch (e) {

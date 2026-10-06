@@ -77,3 +77,29 @@ export async function notifyAnalysisRequest(d: { org: string; requester: string;
     } catch { /* best-effort */ }
   }
 }
+
+/** A client reached an AI usage limit and asked for more (6 October 2026). */
+export async function notifyUsageRequest(d: { org: string; requester: string; kind: string }) {
+  const what = d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
+  const line = `${d.requester} (${d.org}) has used ${what} and asked For Granted for more.`;
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
+          subject: `More questions requested: ${d.org}`,
+          html: `<p>${esc(line)}</p><p>Grant more on Admin, AI usage.</p><p><a href="${APP_URL}/admin/usage">Open the portal</a></p>`,
+        }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `:speech_balloon: *More questions requested* ${line}  <${APP_URL}/admin/usage|Open portal>` }) });
+    } catch { /* best-effort */ }
+  }
+}

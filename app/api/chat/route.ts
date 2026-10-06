@@ -3,29 +3,29 @@ import { getSession } from "@/lib/server/session";
 import { userClient } from "@/lib/server/supabase";
 import { db } from "@/lib/server/db";
 import { retrieve, retrieveCards, generate } from "@/lib/server/rag";
+import { decideChat } from "@/lib/usage-limits";
+import { chatCounts, withAiUsage } from "@/lib/server/ai-usage";
 
 export const maxDuration = 60;
 
-// AI cost is the only unbounded line item -> per-user rate limit (DB-backed so
-// it holds across serverless instances): max messages per rolling minute.
-const RATE_MAX = 12;
-async function overRateLimit(userId: string): Promise<boolean> {
-  const since = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await db.from("chat_message")  // tenant-safe: rate limit scoped to the authenticated user's own messages
-    .select("id", { count: "exact", head: true })
-    .eq("author_user_id", userId).eq("role", "user").gte("created_at", since);
-  return (count ?? 0) >= RATE_MAX;
-}
-
+// The client limits (lib/usage-limits.ts, decided 6 October 2026): a question
+// at most about a page long, 12 a minute and 50 a day per person, and 500 a
+// month for each client across all of its logins. Counts are DB-backed so they
+// hold across serverless instances. For Granted's admins are never limited.
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (await overRateLimit(session.user.id))
-    return NextResponse.json({ error: "You're sending messages very quickly — give it a moment." }, { status: 429 });
+  const admin = session.role === "admin";
 
   const { question, sessionId } = await req.json();
   const q = String(question ?? "").trim();
   if (!q) return NextResponse.json({ error: "empty question" }, { status: 400 });
+
+  const counts = admin ? { minute: 0, day: 0, month: 0 } : await chatCounts(session.tenantId, session.user.id);
+  const decision = decideChat(admin ? "admin" : "client", q.length, counts);
+  if (!decision.ok) {
+    return NextResponse.json({ error: decision.message, limit: decision.reason, canRequest: decision.canRequest }, { status: 429 });
+  }
 
   const supabase = await userClient();
 
@@ -53,7 +53,9 @@ export async function POST(req: NextRequest) {
   ]);
   const passages = [...cardPassages, ...r.passages];
   const mode = r.mode;
-  const answer = await generate(q, passages);
+  const answer = await withAiUsage(
+    { tenantId: session.tenantId, userId: session.user.id, actor: admin ? "admin" : "client", feature: "chat" },
+    () => generate(q, passages));
 
   // Persist both turns (service client: author_user_id set explicitly).
   if (sid) {
@@ -78,5 +80,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     sessionId: sid, content: answer.content, citations: cites,
     generated: answer.generated, mode: answer.mode, retrieval: mode,
+    // Near a limit, the page says how many questions are left.
+    usageWarning: "warning" in decision ? decision.warning : null,
   });
 }

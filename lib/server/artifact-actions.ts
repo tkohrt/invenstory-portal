@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { generateArtifact } from "./artifacts";
+import { withAiUsage } from "./ai-usage";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -16,14 +17,23 @@ async function requireAdmin() {
 export async function generateSIAction(slug: string) {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
-  // client or admin may generate for the active tenant
-  await generateArtifact(s.tenantId, slug);
+  // A client may generate a kind only once, before any draft exists: the button
+  // shows only then, and the server holds the same line, so a replayed request
+  // cannot run the model again or put an approved set back to pending.
+  // Regenerating stays For Granted's (6 October 2026).
+  if (s.role !== "admin") {
+    const { data: existing } = await db.from("artifact_set").select("id").eq("tenant_id", s.tenantId).eq("type_slug", slug).maybeSingle();
+    if (existing) throw new Error("This has already been generated. For Granted can regenerate it.");
+  }
+  await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: s.role === "admin" ? "admin" : "client", feature: "story_intelligence" },
+    () => generateArtifact(s.tenantId, slug));
   revalidatePath(`/story-intelligence/${slug}`);
 }
 
 export async function regenerateSIAction(slug: string) {
   const s = await requireAdmin();
-  await generateArtifact(s.tenantId, slug);
+  await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "story_intelligence" },
+    () => generateArtifact(s.tenantId, slug));
   revalidatePath(`/story-intelligence/${slug}`);
 }
 

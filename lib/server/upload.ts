@@ -61,7 +61,7 @@ export async function fileUploadedDocument(i: FileInput): Promise<{ id: string }
   if (i.tags.length) await db.from("document_tag").insert(
     i.tags.map(tag => ({ document_id: i.docId, tenant_id: i.tenantId, tag })));
 
-  try { await processDocument(i.docId); } catch { /* status=failed already recorded; card shows it */ }
+  try { await processDocument(i.docId, { actor: i.role === "admin" ? "admin" : "client" }); } catch { /* status=failed already recorded; card shows it */ }
   // New material invalidates approved Story Intelligence -> stale (offers regenerate).
   await markStaleOnUpload(i.tenantId);
   // Notify the For Granted team when a client (not an admin) uploads.

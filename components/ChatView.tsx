@@ -7,6 +7,8 @@ import { DocDrawer } from "./DocBits";
 import Drawer from "./Drawer";
 import type { DocumentWithTags, ChatSessionSummary } from "@/lib/types";
 import { loadSessionAction, deleteSessionAction } from "@/lib/server/chat-actions";
+import { requestMoreUsageAction } from "@/lib/server/usage-actions";
+import { LIMITS } from "@/lib/usage-limits";
 
 interface Cite { id: string; title: string }
 interface Msg { role: "user" | "assistant"; content: string; citations: Cite[]; generated?: boolean; mode?: string }
@@ -80,6 +82,9 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
   const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [showBedrock, setShowBedrock] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
+  // The client limits (lib/usage-limits.ts): a note near a limit, and the way to ask for more at one.
+  const [usage, setUsage] = useState<{ text: string; kind: "chat_month" | null } | null>(null);
+  const [requested, setRequested] = useState(false);
   const openDoc = docs.find(d => d.id === openDocId) ?? null;
   const scroll = () => setTimeout(() => streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" }), 40);
 
@@ -90,8 +95,11 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q, sessionId }) });
       const b = await res.json();
-      if (!res.ok) { setMsgs(m => [...m, { role: "assistant", content: b.error ?? "Something went wrong.", citations: [] }]); }
-      else {
+      if (!res.ok) {
+        setMsgs(m => [...m, { role: "assistant", content: b.error ?? "Something went wrong.", citations: [] }]);
+        if (res.status === 429 && b.canRequest) setUsage({ text: b.error, kind: "chat_month" });
+      } else {
+        setUsage(b.usageWarning ? { text: b.usageWarning, kind: null } : null);
         const wasNew = !sessionId && b.sessionId;
         setSessionId(b.sessionId);
         if (wasNew) setSessions(list => [{ id: b.sessionId, title: q.slice(0, 60), created_at: new Date().toISOString() }, ...list]);
@@ -161,8 +169,19 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
         ))}
         {busy && <div className="msg ai"><div className="who">AI</div><div className="bubble"><p className="empty">Reading your Inven(s)tory…</p></div></div>}
       </div>
+      {usage && (
+        <div className="chat-usage">
+          <span>{usage.text}</span>
+          {usage.kind && (requested
+            ? <span className="ov-muted">Request sent. For Granted will be in touch.</span>
+            : <button type="button" className="btn secondary ap-mini" onClick={async () => {
+                try { await requestMoreUsageAction(usage.kind!); setRequested(true); } catch { setRequested(true); }
+              }}>Ask For Granted for more</button>)}
+        </div>
+      )}
       <div className="chat-input">
         <input placeholder="Ask about this Inven(s)tory…" value={input} disabled={busy}
+          maxLength={isAdmin ? undefined : LIMITS.chatQuestionChars}
           onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} />
         <button className="btn inline" onClick={send} disabled={busy}>Send</button>
       </div>

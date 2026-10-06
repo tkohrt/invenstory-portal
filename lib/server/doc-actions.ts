@@ -46,9 +46,15 @@ export async function reprocessDocAction(documentId: string): Promise<{ ok: true
   const supabase = await userClient();
   const { data: doc } = await supabase.from("document").select("id, tenant_id").eq("id", documentId).single();
   if (!doc) return { ok: false, error: "That document no longer exists." };
+  // A client can process documents again 5 times a day; admins without limit.
+  const actor = session.role === "admin" ? "admin" as const : "client" as const;
+  const { clientActionsLastDay } = await import("./ai-usage");
+  const { decideReprocess } = await import("@/lib/usage-limits");
+  const gate = decideReprocess(actor, actor === "admin" ? 0 : await clientActionsLastDay(doc.tenant_id, "reprocess_doc"));
+  if (!gate.ok) return { ok: false, error: gate.message };
   const { processDocument } = await import("./ingest");
   let failure: string | null = null;
-  try { await processDocument(documentId); }
+  try { await processDocument(documentId, { actor, reprocess: true }); }
   catch (e) { failure = e instanceof Error ? e.message : "Reading the document failed."; }
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: doc.tenant_id, action: "reprocess_doc", detail: documentId });
   revalidatePath("/invenstory"); revalidatePath("/search");

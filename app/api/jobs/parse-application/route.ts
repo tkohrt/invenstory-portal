@@ -15,6 +15,7 @@
 //   (none)   carry on
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
+import { withAiUsage } from "@/lib/server/ai-usage";
 import { getTenant } from "@/lib/server/data";
 import { continueParse, parseJobId, setParseJob, resetParse } from "@/lib/server/application-parse";
 import {
@@ -60,10 +61,10 @@ export async function POST(req: Request) {
 
     if (!await claimJob(tenantId, id)) return NextResponse.json({ jobId: id, busy: true, complete: false });
 
-    const r = await continueParse(tenantId, draftId, orgName, {
+    const r = await withAiUsage({ tenantId, userId: session.user.id, actor: "admin", feature: "parse_application" }, () => continueParse(tenantId, draftId, orgName, {
       onProgress: p => { void updateJob(tenantId, id, p); },
       onEvent: (kind, text, done, total) => { void recordEvent(tenantId, id, { kind, text, done, total }); },
-    });
+    }));
     await releaseJob(tenantId, id);
     if (r.complete) {
       await finishJob(tenantId, id, { questions: r.total }, `${r.total} question(s) ready to confirm.`);
