@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import ActivityBeacon from "./ActivityBeacon";
@@ -20,10 +20,35 @@ export interface ShellProps {
   children?: React.ReactNode;
 }
 
+const NAV_KEY = "fg.nav.collapsed";
+const NAV_EVENT = "fg-nav-collapsed";
+let navMemo = false;  // used when browser storage is unavailable, until the page reloads
+function readNavCollapsed(): boolean {
+  try { const v = localStorage.getItem(NAV_KEY); return v === null ? navMemo : v === "1"; } catch { return navMemo; }
+}
+function writeNavCollapsed(v: boolean) {
+  navMemo = v;
+  try { localStorage.setItem(NAV_KEY, v ? "1" : "0"); } catch { /* storage unavailable: navMemo holds it */ }
+  window.dispatchEvent(new Event(NAV_EVENT));
+}
+function subscribeNav(cb: () => void) {
+  window.addEventListener(NAV_EVENT, cb);
+  window.addEventListener("storage", cb);
+  return () => { window.removeEventListener(NAV_EVENT, cb); window.removeEventListener("storage", cb); };
+}
+
 export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, workspaceVis, garden, storyCardsWaiting = 0, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  // On a wide screen the sidebar can fold down to a rail of icons. Remembered in
+  // this browser only (the server always renders it open); if storage is
+  // unavailable it simply starts open.
+  const collapsed = useSyncExternalStore(subscribeNav, readNavCollapsed, () => false);
+  const toggleMenu = () => {
+    if (window.matchMedia("(max-width: 900px)").matches) { setNavOpen(o => !o); return; }
+    writeNavCollapsed(!collapsed);
+  };
   const [topQuery, setTopQuery] = useState("");
   const submitSearch = (e: React.FormEvent) => { e.preventDefault(); const v = topQuery.trim(); if (v) router.push(`/search?q=${encodeURIComponent(v)}`); };
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
@@ -69,10 +94,11 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   const closeNav = () => setNavOpen(false);
 
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? " nav-collapsed" : ""}`}>
       <ActivityBeacon enabled={!admin} />
       <div className="topbar">
-        <button className="menu-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Menu">☰</button>
+        <button className="menu-toggle" onClick={toggleMenu} aria-label={collapsed ? "Show the menu" : "Menu"}
+          title={collapsed ? "Show the menu" : "Hide or show the menu"} aria-expanded={!collapsed}>☰</button>
         <div className="brand"><img src="/forgranted-logo.png" alt="For Granted" className="brand-logo" /><h1>Inven(s)tory Portal</h1></div>
         <form className="topbar-search" onSubmit={submitSearch}>
           <span className="ts-icon">⌕</span>
@@ -128,7 +154,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <Link key={item.href} onClick={closeNav}
               className={`${nav(item.href)}${item.toggle && admin && !visible ? " nav-hidden" : ""}`}
               href={item.href}
-              title={item.adminOnly ? "For Granted only" : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
+              title={collapsed ? item.label : item.adminOnly ? "For Granted only" : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
               <span className="ic">{item.ic}</span> {item.label}
               {item.key === "card_review" && storyCardsWaiting > 0 && <span className="badge-count" title="New cards to look at">{storyCardsWaiting}</span>}
               {item.toggle && admin && (
@@ -141,13 +167,13 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             </Link>
           );
         })}
-        <Link onClick={closeNav} className={nav("/account")} href="/account"><span className="ic">◔</span> Account</Link>
+        <Link onClick={closeNav} className={nav("/account")} href="/account" title={collapsed ? "Account" : undefined}><span className="ic">◔</span> Account</Link>
         <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
         {artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav}
             className={`${nav(`/story-intelligence/${t.slug}`)}${admin && !t.visible ? " nav-hidden" : ""}`}
             href={`/story-intelligence/${t.slug}`}
-            title={admin ? (t.visible ? "Visible to client" : "Hidden from client") : undefined}>
+            title={collapsed ? t.nav_label : admin ? (t.visible ? "Visible to client" : "Hidden from client") : undefined}>
             <span className="ic">◈</span> {t.nav_label}
             {admin && (
               <button type="button"
@@ -161,19 +187,19 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         {admin && (
           <div>
             <div className="nav-section-label" style={{ marginTop: 16 }}>Admin</div>
-            <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients"><span className="ic">◫</span> All clients</Link>
-            <Link onClick={closeNav} className={nav("/admin/questions")} href="/admin/questions"><span className="ic">◎</span> Question bank</Link>
-            <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews">
+            <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients" title={collapsed ? "All clients" : undefined}><span className="ic">◫</span> All clients</Link>
+            <Link onClick={closeNav} className={nav("/admin/questions")} href="/admin/questions" title={collapsed ? "Question bank" : undefined}><span className="ic">◎</span> Question bank</Link>
+            <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews" title={collapsed ? "Story Intelligence reviews" : undefined}>
               <span className="ic">✦</span> Story Intelligence reviews
               {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
             </Link>
-            <Link onClick={closeNav} className={nav("/admin/ledger-overlay")} href="/admin/ledger-overlay">
+            <Link onClick={closeNav} className={nav("/admin/ledger-overlay")} href="/admin/ledger-overlay" title={collapsed ? "Ground Truth review" : undefined}>
               <span className="ic">◈</span> Ground Truth review
               {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
             </Link>
-            <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit"><span className="ic">◍</span> Readiness audit</Link>
-            <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library"><span className="ic">▣</span> Card Library</Link>
-            <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis"><span className="ic">◎</span> Analysis (trial)</Link>
+            <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit" title={collapsed ? "Readiness audit" : undefined}><span className="ic">◍</span> Readiness audit</Link>
+            <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library" title={collapsed ? "Card Library" : undefined}><span className="ic">▣</span> Card Library</Link>
+            <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis" title={collapsed ? "Analysis (trial)" : undefined}><span className="ic">◎</span> Analysis (trial)</Link>
           </div>
         )}
       </div>

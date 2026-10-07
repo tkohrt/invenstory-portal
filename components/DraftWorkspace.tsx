@@ -134,7 +134,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     };
     fit();
     window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    // Refit when anything above the split changes height: a build notice
+    // appearing, the locked banner, the sidebar folding.
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit());
+    const main = document.querySelector(".main");
+    if (ro && main) for (const el of Array.from(main.children)) ro.observe(el);
+    return () => { window.removeEventListener("resize", fit); ro?.disconnect(); };
   }, []);
 
   // When the question card scrolls out of view, a one-line strip says which question this is.

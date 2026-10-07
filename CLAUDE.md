@@ -44,6 +44,7 @@ Primary engine = **document-level extraction** (`lib/server/doc-extract.ts`):
 
 ## The Garden (plant) — tie-in
 - `lib/server/garden.ts` `getGardenState`. **Size** is readiness+eligibility-weighted and ratcheted (never shrinks, via persisted `size_2/size_3` achievements). **Health "thriving"** requires freshness AND substance (Essentials covered / readiness ≥ bar) AND a complete eligibility profile — gated on having been analyzed. Tunables in `GARDEN_TUNING`.
+- **The page never scrolls as a whole** (7 Oct 2026): `.shell` is exactly the window (`100dvh`, `overflow:hidden`), and `.sidebar` and `.main` each scroll on their own. On wide screens the ☰ button folds the sidebar to a rail of icons (`nav-collapsed`, remembered per browser in `localStorage` through `useSyncExternalStore`; on phones it still opens the drawer). The Storyboard sizes its split to the window and refits when anything above it changes height, so there is no space to scroll past it.
 - The plant lives in the **left sidebar** (`components/Shell.tsx`) linking to `/plant` (`components/GardenPanel.tsx`). Retargeted growth prompts (`garden.prompt`) deep-link to `/invenstory?item=<key>` which opens that Readiness item's detail modal.
 
 ## Ingestion
