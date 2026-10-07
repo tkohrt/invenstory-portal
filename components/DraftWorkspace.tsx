@@ -12,8 +12,11 @@
 // local one, so the page always shows what is stored. Changes go through one
 // queue, so two quick clicks never race each other into a muddled order.
 //
-// Weave and Polish (bridges, fit to limit, figure audit) are Phase 4; their
-// stage tabs are shown, disabled, so the shape of the work is visible.
+// Weave (Phase 4) shows the same answer as prose: cards as highlighted text,
+// bridges proposed between them to accept, edit or reject (components/WeaveView.tsx).
+// An answer is woven only once every card in it would pass the finish line, and
+// a reminder about the AI allowance comes first (components/WeaveReminder.tsx).
+// Polish (fit to limit, figure audit) is next; its tab is shown, disabled.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -27,10 +30,14 @@ import {
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   keepWordingAction, refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
+  acceptBridgesAction, weaveSectionAction,
 } from "@/lib/server/workspace-actions";
+import WeaveView from "./WeaveView";
+import WeaveReminder from "./WeaveReminder";
+import { bridgeGaps } from "@/lib/weave";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import {
-  autosaveVersionAction, compareVersionAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
+  autosaveVersionAction, compareVersionAction, enterStageAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
   saveVersionAction, setDraftStatusAction, type VersionItem,
 } from "@/lib/server/version-actions";
 import { LOCKED_STATUSES, STATUS_NAME, type DraftStatus, type SectionDiff } from "@/lib/draft-version";
@@ -91,7 +98,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   // Statuses changed in this page since it loaded, until the refresh catches up.
   const [statusNow, setStatusNow] = useState<Record<string, "verified" | "retired">>({});
   // The finish line: what stands in the way, and what to do once it is clear.
-  const [blockers, setBlockers] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | null } | null>(null);
+  const [blockers, setBlockers] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | "weave" | null } | null>(null);
+  // Weave: which stage the page shows, and the reminder before a weave runs.
+  const [stage, setStage] = useState<"arrange" | "weave">(draft.stage === "weave" ? "weave" : "arrange");
+  const [weaveAsk, setWeaveAsk] = useState<{ enter: boolean; again: boolean } | null>(null);
+  const weaveEnter = useRef(false);
+  // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
+  const [wovenHere, setWovenHere] = useState<Set<string>>(() => new Set());
   const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
   // Removing a block: which is being dragged, where a card would land, the
   // question being asked, and the Undo on offer.
@@ -269,7 +282,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     const r = ranked.find(x => x.card.id === cardId);
     const temp: WsBlock = {
       id: `tmp-${cardId}`, sectionId: section.id, kind: "card", cardId, cardVersion: cardById.get(cardId)?.version ?? 1,
-      text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false,
+      text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false, proposed: false,
     };
     setBlocksBy(m => {
       const list = [...(m[section.id] ?? [])];
@@ -344,21 +357,23 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     const position = blocks.findIndex(x => x.id === b.id);
     const removed: RemovedBlock = {
       kind: b.kind, cardId: b.cardId, cardVersion: b.cardVersion, text: b.ownText,
-      edited: b.edited, breakBefore: b.breakBefore, position: Math.max(0, position),
+      edited: b.edited, breakBefore: b.breakBefore, position: Math.max(0, position), proposed: b.proposed,
     };
     const sectionId = section.id;
     setBlocksBy(m => ({ ...m, [sectionId]: (m[sectionId] ?? []).filter(x => x.id !== b.id) }));
     void run(() => removeBlockAction(sectionId, b.id, via), next => {
       putBlocks(sectionId)(next);
       if (undoTimer.current) clearTimeout(undoTimer.current);
-      setUndo({ sectionId, removed, label: b.kind === "card" ? "Card removed." : "Text removed." });
+      setUndo({ sectionId, removed, label: b.kind === "card" ? "Card removed. It is back among your Story Cards."
+        : b.kind === "bridge" ? (b.proposed ? "Bridge rejected." : "Bridge removed.") : "Text removed." });
       undoTimer.current = setTimeout(() => setUndo(null), 8_000);
     });
   }, [section, blocks, run, putBlocks]);
 
   /** Edited cards and your own writing always ask; a plain card asks until "Don't ask me again". */
   const requestRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
-    const mustAsk = b.kind === "card" ? b.edited || askRemove : !!b.text.trim();
+    // A bridge Weave wrote is rejected at once (Undo brings it back); one a writer edited asks first.
+    const mustAsk = b.kind === "card" ? b.edited || askRemove : b.kind === "bridge" ? b.edited : !!b.text.trim();
     if (mustAsk) setConfirming({ block: b, via }); else doRemove(b, via);
   }, [askRemove, doRemove]);
 
@@ -412,6 +427,55 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const atFinishLine = (scope: "draft" | "section", then: "completed" | "submit" | "approve", next: () => void) => {
     const list = scope === "draft" ? draftBlockers : sectionBlockers;
     if (list.length) setBlockers({ scope, then }); else next();
+  };
+
+  // ---- Weave ---------------------------------------------------------------
+  // Gaps a bridge could fill once earlier, unaccepted proposals are cleared.
+  const weavePieces = blocks.filter(b => !b.proposed).map(b => ({ id: b.id, kind: b.kind, text: b.text, breakBefore: b.breakBefore }));
+  const weaveGaps = bridgeGaps(weavePieces).length;
+  const proposedCount = blocks.filter(b => b.proposed).length;
+  const hasBridges = blocks.some(b => b.kind === "bridge");
+
+  const switchStage = (st: "arrange" | "weave") => {
+    setStage(st); setEditing(null); setTidy(null);
+    if (!readOnly) void run(() => enterStageAction(draft.id, st), () => undefined);
+  };
+
+  /**
+   * Weave this answer, entering the Weave stage first if `enter`. Not while any
+   * card in it stands at the finish line (Shane, 7 October 2026): the list of
+   * cards to review opens instead, and weaving carries on once they are clear.
+   * Then the reminder about the AI allowance, unless the person turned it off.
+   */
+  const requestWeave = (enter: boolean) => {
+    if (sectionBlockers.length) { weaveEnter.current = enter; setBlockers({ scope: "section", then: "weave" }); return; }
+    if (!weaveGaps) {
+      if (enter) switchStage("weave");
+      say(blocks.length
+        ? "Nothing to weave in this answer: every gap already has a bridge, or its pieces sit in separate paragraphs."
+        : "Nothing to weave yet. Place cards in Arrange first.");
+      return;
+    }
+    setWeaveAsk({ enter, again: hasBridges });
+  };
+
+  const doWeave = (enter: boolean) => {
+    setWeaveAsk(null);
+    if (enter) switchStage("weave");
+    const sectionId = section.id;
+    void run(() => weaveSectionAction(sectionId), r => {
+      if (!r.ok) {
+        setError(r.error);
+        if (r.blocked) setBlockers({ scope: "section", then: "weave" });
+        return;
+      }
+      putBlocks(sectionId)(r.blocks);
+      setWovenHere(w => new Set(w).add(sectionId));
+      const set = r.refused ? ` ${r.refused} more ${r.refused === 1 ? "was" : "were"} set aside unseen for adding a number, name or quotation the cards do not hold.` : "";
+      say(r.proposed
+        ? `Weave proposed ${r.proposed} bridge${r.proposed === 1 ? "" : "s"}, shown in grey. Accept, edit or reject each; none is in the answer until you accept it.${set}`
+        : `Weave proposed no bridges: these pieces already read well side by side.${set}`);
+    });
   };
 
   const money = draft.amount_cents == null ? null : "$" + (draft.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -475,7 +539,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
-            wantedKinds={section.wantedKinds} locked={readOnly} onAdd={id => addCard(id, blocks.length)}
+            wantedKinds={section.wantedKinds} locked={readOnly || stage === "weave"} onAdd={id => addCard(id, blocks.length)}
             open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
 
           <div className="ws-main">
@@ -488,8 +552,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             )}
             <div className="ws-scroll" ref={scrollRef}>
               <div className="ws-stages" role="tablist" aria-label="Drafting stage">
-                <button type="button" role="tab" aria-selected="true" className="chip active">Arrange</button>
-                <button type="button" role="tab" aria-selected="false" className="chip" disabled title="Bridges between cards, in the client's voice. Next release.">Weave</button>
+                <button type="button" role="tab" aria-selected={stage === "arrange"} className={`chip${stage === "arrange" ? " active" : ""}`}
+                  disabled={pending > 0} onClick={() => { if (stage !== "arrange") switchStage("arrange"); }}
+                  title="Choose and order the cards">Arrange</button>
+                <button type="button" role="tab" aria-selected={stage === "weave"} className={`chip${stage === "weave" ? " active" : ""}`}
+                  disabled={pending > 0}
+                  onClick={() => { if (stage === "weave") return; if (readOnly || hasBridges) switchStage("weave"); else requestWeave(true); }}
+                  title="Read the answer as prose, with short bridges between the cards to accept or reject">Weave</button>
                 <button type="button" role="tab" aria-selected="false" className="chip" disabled title="Fit to limit, figure audit, repetition check. Next release.">Polish</button>
               </div>
 
@@ -579,7 +648,25 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </div>
               )}
 
-              <AnswerColumn
+              {stage === "weave" && blocks.length > 0 && !hasBridges && weaveGaps > 0 && !readOnly && !wovenHere.has(section.id) && (
+                <div className="ws-notice wv-start">
+                  <span>This answer has not been woven yet.</span>
+                  <button type="button" className="btn inline ap-go ap-mini" disabled={locked} onClick={() => requestWeave(false)}>Weave this answer</button>
+                </div>
+              )}
+              {stage === "weave" ? (
+                blocks.length
+                  ? <WeaveView blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked}
+                      handlers={{
+                        onAccept: id => run(() => acceptBridgesAction(section.id, id), putBlocks(section.id)),
+                        onEdit: (id, t) => run(() => editBlockAction(section.id, id, t), putBlocks(section.id)),
+                        onRemove: id => { const b = blocks.find(x => x.id === id); if (b) requestRemove(b, "button"); },
+                        onReview: cardId => setReview({ mode: "review", queue: [{ cardId, position: null }] }),
+                        onRefresh: id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
+                        onKeep: id => run(() => keepWordingAction(section.id, id), putBlocks(section.id)),
+                      }} />
+                  : <div className="ws-empty-answer"><p>Nothing to weave yet. Go back to <strong>Arrange</strong> to place cards in this answer.</p></div>
+              ) : <AnswerColumn
                 blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked} editing={editing} setEditing={setEditing}
                 dropBefore={dragging && overId && overId !== "answer" && overId !== "panel" ? overId : null}
                 dropAtEnd={!!dragging && overId === "answer"}
@@ -601,7 +688,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                     })}
                   />
                 }
-              />
+              />}
 
               {sectionBlockers.length > 0 && !readOnly && (
                 <div className="ws-warn">
@@ -651,7 +738,21 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               </span>
               <span className="ws-bar-group">
                 <button type="button" className="btn ghost ws-panel-toggle" onClick={() => setPanelOpen(true)}>Story Cards</button>
-                {blocks.length === 0 && (
+                {stage === "weave" && !readOnly && (
+                  <>
+                    {proposedCount > 0 && (
+                      <button type="button" className="btn inline ap-go ws-edit-only" disabled={locked}
+                        title="Accept every bridge proposed in this answer"
+                        onClick={() => void run(() => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
+                    )}
+                    {hasBridges && (
+                      <button type="button" className="btn secondary ws-edit-only" disabled={locked}
+                        title="Propose bridges again: replaces the ones not yet accepted, and fills any gap without one"
+                        onClick={() => requestWeave(false)}>Weave again</button>
+                    )}
+                  </>
+                )}
+                {stage === "arrange" && blocks.length === 0 && (
                   <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
                     onClick={() => void run(() => arrangeForMeAction(section.id), r => {
                       putBlocks(section.id)(r.blocks);
@@ -664,21 +765,21 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                       setArrangeReview(r.needsReview.length ? r.needsReview : null);
                     })}>Arrange for me</button>
                 )}
-                <button type="button" className="btn secondary ws-edit-only" disabled={locked} onClick={() => {
+                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked} onClick={() => {
                   setEditing("__new");
                   void run(() => addHumanBlockAction(section.id, blocks.length), next => {
                     putBlocks(section.id)(next);
                     const added = next.find(b => b.kind === "human" && !b.text && !blocks.some(o => o.id === b.id));
                     setEditing(added?.id ?? null);
                   });
-                }}>＋ Write your own text</button>
-                <button type="button" className="btn secondary ws-edit-only" disabled={locked || blocks.length < 3}
+                }}>＋ Write your own text</button>}
+                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked || blocks.length < 3}
                   title={blocks.length < 3 ? "Tidy needs at least three pieces" : "Ask for a suggested order, with a reason. Nothing changes unless you accept it."}
                   onClick={() => void run(() => tidyAction(section.id), r => {
                     if ("error" in r) say(r.error);
                     else if (r.order.every((id, i) => id === blocks[i]?.id)) say(`Tidy would keep this order. ${r.rationale}`);
                     else { setTidy(r); reveal(); }
-                  })}>Tidy</button>
+                  })}>Tidy</button>}
               </span>
               <span className="ws-bar-group">
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
@@ -709,6 +810,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
           <VersionsDrawer draftId={draft.id} readOnly={readOnly} onClose={() => setVersionsOpen(false)}
             onRestored={(r) => { setVersionsOpen(false); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />
         )}
+        {weaveAsk && (
+          <WeaveReminder tenantName={tenantName} again={weaveAsk.again}
+            onWeave={() => doWeave(weaveAsk.enter)} onCancel={() => setWeaveAsk(null)} />
+        )}
         {submitting && (
           <SubmitDialog onCancel={() => setSubmitting(false)}
             onSubmit={date => { setSubmitting(false); void run(() => setDraftStatusAction(draft.id, "submitted", date), () => router.refresh()); }} />
@@ -729,6 +834,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             onContinue={() => {
               const t = blockers.then; setBlockers(null);
               if (t === "completed") markCompleted(); else if (t === "submit") setSubmitting(true); else if (t === "approve") approveNow();
+              else if (t === "weave") requestWeave(weaveEnter.current);
             }}
             onClose={() => setBlockers(null)} />
         )}
@@ -747,7 +853,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         )}
         {undo && (
           <div className="ws-undo" role="status">
-            <span>{undo.label} It is back among your Story Cards.</span>
+            <span>{undo.label}</span>
             <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => {
               const u = undo; setUndo(null);
               if (undoTimer.current) clearTimeout(undoTimer.current);
@@ -788,7 +894,7 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
         <div className="ws-about-pop">
           {standard
             ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
-            : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave and Polish come next.</>}
+            : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave then reads it as prose, with short bridges between the cards for you to accept or reject. Polish comes next.</>}
         </div>
       </details>
     </span>
@@ -1021,6 +1127,7 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
         title="Drag to reorder, or onto Story Cards to remove">
         <span className="ws-handle" aria-hidden="true">⠿</span>
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
+        {b.kind === "bridge" && b.proposed && <span className="ov-tag" title="Proposed in Weave and not accepted yet, so it is not part of the answer.">Proposed, not in the answer</span>}
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
         {isCard && blocked === "unverified" && <span className="ov-tag ws-tag-review" title="Placed before verification was required, or un-verified since. Review it before this answer is used.">Needs review</span>}
         {isCard && blocked === "retired" && <span className="ov-tag ws-tag-sens" title="Retired from the library. Remove it before this answer is used.">Retired card</span>}
@@ -1103,10 +1210,12 @@ function CopyButton({ text, blocked, onBlocked }: { text: string; blocked: boole
  * The answer as one text, each part marked by its origin. Honest about
  * authorship: a card's wording is the reader's phrasing of a quote from the
  * client's documents, not the client's own sentence; an edited card is a writer
- * changing that phrasing; "your words" are a writer's own. Bridges (Weave) will
- * be the fourth kind.
+ * changing that phrasing; "your words" are a writer's own; a bridge is
+ * connecting text drafted with AI in Weave and accepted (or edited) by a writer.
  */
-function SeamsView({ blocks }: { blocks: WsBlock[] }) {
+function SeamsView({ blocks: all }: { blocks: WsBlock[] }) {
+  // Proposed bridges are suggestions, not part of the answer.
+  const blocks = all.filter(b => !b.proposed);
   const cls = (b: WsBlock) => b.kind === "human" ? "seam-human" : b.kind === "bridge" ? "seam-bridge" : b.edited ? "seam-edited" : "seam-card";
   return (
     <div className="ws-seams" aria-label="The answer, marked by source">
@@ -1114,6 +1223,7 @@ function SeamsView({ blocks }: { blocks: WsBlock[] }) {
         <span className="seam-card">From a Story Card (phrased from a quote)</span>
         <span className="seam-edited">Story Card, edited by the writer</span>
         <span className="seam-human">Written by the writer</span>
+        {blocks.some(b => b.kind === "bridge") && <span className="seam-bridge">Bridge drafted with AI, accepted by the writer</span>}
       </div>
       <p>
         {blocks.filter(b => b.text.trim()).map((b, i) => (
@@ -1331,17 +1441,18 @@ function ReviewDialog({ cardId, mode, note, left, onAction, onSkip, onClose }: {
 
 /** What stands between this application (or answer) and the funder, one card at a time. */
 function BlockersDialog({ list, what, then, onReview, onWording, onGo, onContinue, onClose }: {
-  list: Blocker[]; what: string; then: "completed" | "submit" | "approve" | null;
+  list: Blocker[]; what: string; then: "completed" | "submit" | "approve" | "weave" | null;
   onReview: (b: Blocker) => void; onGo: (b: Blocker) => void; onContinue: () => void; onClose: () => void;
   /** A reworded card: use the library's new wording, or keep the old wording on purpose. */
   onWording: (b: Blocker, keepOld: boolean) => void;
 }) {
   const clear = list.length === 0;
-  const action = then === "completed" ? "Mark completed" : then === "submit" ? "Mark submitted…" : then === "approve" ? "Approve this answer" : null;
+  const action = then === "completed" ? "Mark completed" : then === "submit" ? "Mark submitted…" : then === "approve" ? "Approve this answer"
+    : then === "weave" ? "Weave this answer" : null;
   return (
     <div className="ws-modal-back" role="presentation" onClick={onClose}>
       <div className="ws-modal ws-blockers" role="dialog" aria-modal="true" aria-labelledby="ws-bl-title" onClick={e => e.stopPropagation()}>
-        <h3 id="ws-bl-title">{clear ? "Every card is ready" : "Some cards need review first"}</h3>
+        <h3 id="ws-bl-title">{clear ? "Every card is ready" : then === "weave" ? "Before weaving, review these cards" : "Some cards need review first"}</h3>
         <p className="ov-muted">{clear
           ? "Every card here is verified and live."
           : `${describeBlockers(list, what)} Every card in a grant must be verified by a person, any sensitive card decided, any retired card removed, and any card reworded since it was placed brought up to date or kept on purpose.`}</p>

@@ -15,16 +15,21 @@ export interface AnswerBlock {
   kind: BlockKind;
   text: string;
   breakBefore: boolean;
+  /** A bridge proposed by Weave and not yet accepted. Never part of the answer. */
+  proposed?: boolean;
 }
 
 /**
  * The answer as plain text: blocks in order, a space between them, a blank line
  * where a block starts a new paragraph. Whitespace inside a card is collapsed;
- * a person's own line breaks inside a written block are kept.
+ * a person's own line breaks inside a written block are kept. A bridge Weave
+ * proposed counts only once a person has accepted it.
  */
-export function assembleAnswer(blocks: Pick<AnswerBlock, "kind" | "text" | "breakBefore">[]): string {
+export function assembleAnswer(blocks: Pick<AnswerBlock, "kind" | "text" | "breakBefore" | "proposed">[]): string {
   let out = "";
   for (const b of blocks) {
+    // A proposed bridge is a suggestion on screen, not part of the answer, until a person accepts it.
+    if (b.proposed) continue;
     const t = b.kind === "human" ? b.text.trim() : b.text.replace(/\s+/g, " ").trim();
     if (!t) continue;
     out += out ? (b.breakBefore ? "\n\n" : " ") + t : t;

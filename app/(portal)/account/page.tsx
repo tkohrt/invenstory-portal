@@ -24,6 +24,7 @@ export default async function AccountPage() {
       contactName={contact}
       stats={stats}
       confirmCardRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false}
+      confirmWeave={(session.user.ui_prefs as { confirm_weave?: boolean } | null)?.confirm_weave !== false}
     />
   );
 }

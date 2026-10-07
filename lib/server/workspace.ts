@@ -40,6 +40,8 @@ export interface WsBlock {
   ownText: string | null;
   edited: boolean;
   breakBefore: boolean;
+  /** A bridge Weave proposed that no one has accepted yet: shown, never part of the answer's text. */
+  proposed: boolean;
 }
 
 export interface WsSection {
@@ -109,11 +111,12 @@ export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBl
       id: r.id as string, sectionId: r.section_id as string, kind: r.kind as WsBlock["kind"],
       cardId: (r.card_id as string | null) ?? null, cardVersion: (r.card_version as number | null) ?? null,
       text, ownText: (r.text as string | null) ?? null, edited, breakBefore: !!r.break_before,
+      proposed: r.kind === "bridge" && !!r.proposed,
     };
   });
 }
 
-export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before";
+export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before, proposed";
 
 /** The client's live cards, with what ranking and placement need. */
 export async function loadCards(tenantId: string): Promise<WsCard[]> {

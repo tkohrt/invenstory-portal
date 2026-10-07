@@ -6,13 +6,16 @@ import type { ClientStats } from "@/lib/types";
 
 interface Factor { id: string; friendly_name?: string; status: string }
 
-export default function AccountView({ fullName, email, role, orgName, website, contactName, stats, confirmCardRemove = true }: {
+export default function AccountView({ fullName, email, role, orgName, website, contactName, stats, confirmCardRemove = true, confirmWeave = true }: {
   fullName: string; email: string; role: "client" | "admin";
   orgName: string | null; website: string | null; contactName: string | null; stats: ClientStats;
   /** Whether the Storyboard asks before a card is removed from an answer. */
   confirmCardRemove?: boolean;
+  /** Remind before weaving an answer (it uses part of the monthly AI allowance). */
+  confirmWeave?: boolean;
 }) {
   const [warnRemove, setWarnRemove] = useState(confirmCardRemove);
+  const [warnWeave, setWarnWeave] = useState(confirmWeave);
   const isClient = role === "client";
   const adminViewing = role === "admin";
   const money = (c: number) => "$" + Math.round(c / 100).toLocaleString();
@@ -171,6 +174,12 @@ export default function AccountView({ fullName, email, role, orgName, website, c
           Ask before removing a card from an answer
         </label>
         <p className="acct-note">Edited cards and your own writing always ask first, whatever this is set to, and every removal can be undone for a few seconds.</p>
+        <label className="acct-note" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={warnWeave}
+            onChange={async e => { const v = e.target.checked; setWarnWeave(v); try { await setUiPrefAction("confirm_weave", v); } catch { setWarnWeave(!v); } }} />
+          Remind me before weaving an answer
+        </label>
+        <p className="acct-note">Weaving drafts bridges between cards and uses a small part of the monthly AI allowance. For a client, the reminder comes back once 80% of the month&rsquo;s allowance is used, whatever this is set to.</p>
       </section>}
 
       {isClient && (

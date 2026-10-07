@@ -20,6 +20,8 @@ export interface VersionBlock {
   text: string;
   edited: boolean;
   break_before: boolean;
+  /** A bridge proposed by Weave and not yet accepted (versions from before Weave have none). */
+  proposed?: boolean;
 }
 
 export interface VersionSection {
@@ -36,7 +38,7 @@ export interface VersionContent { sections: VersionSection[] }
 /** A fingerprint of what matters: the answers' structure and words. Status changes alone are not a new version. */
 export function contentHash(c: VersionContent): string {
   const key = JSON.stringify(c.sections.map(s => [s.section_id,
-    s.blocks.map(b => [b.kind, b.card_id, b.card_version, b.own_text, b.edited, b.break_before])]));
+    s.blocks.map(b => [b.kind, b.card_id, b.card_version, b.own_text, b.edited, b.break_before, ...(b.proposed ? [1] : [])])]));
   let h = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return `${key.length}:${(h >>> 0).toString(36)}`;

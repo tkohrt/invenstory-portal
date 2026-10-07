@@ -1375,3 +1375,36 @@ a.dl-row:hover{background:#f6f8f5}
 .dt-pick{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
 .dt-tag{font-weight:600}
 .dt-suggest{color:var(--muted)}
+
+/* Weave (Phase 4): the answer as prose. A card reads as highlighted text: its
+   layer's border, rounded, with a pale wash of the same colour behind it. */
+.wv{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin:4px 0 12px}
+.wv-para-wrap + .wv-para-wrap{margin-top:14px}
+.wv-para{margin:0;font-size:15.5px;line-height:2.05;color:var(--ink)}
+.wv-card{--wv:#8a8f98;border:1.5px solid var(--wv);border-radius:7px;padding:2px 5px;cursor:pointer;
+  background:color-mix(in srgb,var(--wv) 11%,transparent);-webkit-box-decoration-break:clone;box-decoration-break:clone;transition:background .12s}
+.wv-card.l1{--wv:var(--l1)} .wv-card.l2{--wv:var(--l2)} .wv-card.l3{--wv:var(--l3)}
+.wv-card:hover,.wv-card.wv-open{background:color-mix(in srgb,var(--wv) 20%,transparent)}
+.wv-card.wv-open{box-shadow:0 0 0 2px color-mix(in srgb,var(--wv) 30%,transparent)}
+.wv-card:focus-visible,.wv-plain:focus-visible,.wv-bridge-text:focus-visible{outline:2px solid #1f4d2e;outline-offset:2px}
+/* A card that would stop the answer leaving: a small mark on its corner, no words. */
+.wv-card.wv-flag{position:relative}
+.wv-card.wv-flag:after{content:"";position:absolute;top:-4px;left:-4px;width:8px;height:8px;border-radius:50%;background:#d9a441;border:1.5px solid var(--panel)}
+.wv-plain{cursor:pointer;border-radius:4px}
+.wv-plain:hover,.wv-plain.wv-open{background:#f2f2ee}
+.wv-bridge-prop{color:#6b7078;font-style:italic;white-space:normal}
+.wv-bridge-text{cursor:pointer;border-bottom:1px dashed #b8bcc4}
+.wv-bridge-prop.wv-open .wv-bridge-text{background:#f2f2ee}
+.wv-bridge-acts{display:inline-flex;gap:3px;margin-left:5px;vertical-align:1px;font-style:normal}
+.wv-mini{border:1px solid var(--line);background:var(--panel);border-radius:6px;font-size:11.5px;line-height:1;padding:3px 6px;cursor:pointer}
+.wv-yes{color:#1f4d2e;border-color:#b9d3bf} .wv-yes:hover{background:#eef5ef}
+.wv-no{color:#8a3b2e;border-color:#e3c3bd} .wv-no:hover{background:#fbefec}
+.wv-details{--wv:#8a8f98;border:1px solid var(--line);border-left:4px solid var(--wv);border-radius:10px;padding:10px 13px;margin:10px 0 4px;background:var(--panel);box-shadow:var(--shadow)}
+.wv-details.l1{--wv:var(--l1)} .wv-details.l2{--wv:var(--l2)} .wv-details.l3{--wv:var(--l3)}
+.wv-d-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.wv-d-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wv-d-note{margin:0 0 8px;font-size:13px}
+.wv-start{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.wv-remind p{margin:0 0 10px}
+.wv-remind-off{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0 2px}
+.wv-remind-off input{width:auto}

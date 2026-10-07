@@ -58,7 +58,7 @@ async function currentContent(tenantId: string, draftId: string): Promise<Versio
         section_id: sec.id, prompt: sec.prompt, status: sec.status, text: assembleAnswer(mine),
         blocks: mine.map(b => ({
           kind: b.kind, card_id: b.cardId, card_version: b.cardVersion, own_text: b.ownText,
-          text: b.text, edited: b.edited, break_before: b.breakBefore,
+          text: b.text, edited: b.edited, break_before: b.breakBefore, ...(b.proposed ? { proposed: true } : {}),
         })),
       };
     }),
@@ -235,7 +235,7 @@ export async function restoreVersionAction(draftId: string, versionId: string): 
       const { error } = await db.from("section_block").insert(sec.blocks.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the session
         tenant_id: s.tenantId, section_id: sec.section_id, sort_order: i, kind: b.kind,
         card_id: b.card_id, card_version: b.card_version, text: b.own_text, edited: b.edited,
-        break_before: b.break_before, created_by: s.user.id,
+        break_before: b.break_before, proposed: b.kind === "bridge" && !!b.proposed, created_by: s.user.id,
       })));
       if (error) throw new Error(`Could not restore a question: ${error.message}`);
     }
@@ -274,7 +274,7 @@ export async function newDraftFromAction(draftId: string): Promise<string> {
     const { data: ns, error: sErr } = await db.from("draft_section").insert({ ...rest, tenant_id: s.tenantId, draft_id: newId, confirmed: true })
       .select("id").single();
     if (sErr || !ns) throw new Error(`Could not copy a question: ${sErr?.message ?? "no row"}`);
-    const { data: bl } = await db.from("section_block").select("sort_order, kind, card_id, card_version, text, edited, break_before")
+    const { data: bl } = await db.from("section_block").select("sort_order, kind, card_id, card_version, text, edited, break_before, proposed")
       .eq("tenant_id", s.tenantId).eq("section_id", oldId as string);
     if (bl?.length) {
       const { error: bErr } = await db.from("section_block").insert(  // tenant-safe: every row carries tenant_id from the session
