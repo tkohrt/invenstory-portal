@@ -6,7 +6,8 @@ import { actorForJob, withAiUsage } from "./ai-usage";
 // are outstanding ends the run as failed rather than chaining forever.
 import { db } from "./db";
 import { getTenant } from "./data";
-import { continueAnalysis, analysisProgress } from "./analysis-extract";
+import { continueAnalysis, analysisProgress, pendingReading } from "./analysis-extract";
+import { onAnalysis } from "./analysis-source";
 import { claimJob, failJob, finishJob, recordEvent, releaseJob, updateJob } from "./jobs";
 import { MAX_CHAIN_PASSES } from "./job-chain";
 import type { PassOutcome } from "./card-build";
@@ -66,6 +67,17 @@ async function runAnalysisPassMetered(tenantId: string, jobId: string, opts: { c
     const progress = await analysisProgress(tenantId);
 
     if (r.complete) {
+      // Phase D, read on upload: a document that arrived while this run was
+      // going is read by it, rather than waiting for the next run. Bounded: a
+      // stage that then reads nothing ends the run below, and stages are capped.
+      if (await onAnalysis(tenantId)) {
+        const late = await pendingReading(tenantId);
+        if (late.docs > 0) {
+          await updateJob(tenantId, jobId, { detail: `${late.docs} more document${late.docs === 1 ? "" : "s"} arrived; reading ${late.docs === 1 ? "it" : "them"} too` });
+          await releaseJob(tenantId, jobId);
+          return { kind: "more", read: r.read, remaining: late.docs, ...progress };
+        }
+      }
       await releaseJob(tenantId, jobId);
       const s = await summarize(tenantId);
       // Phase D: for a client on the analysis, what it found becomes the

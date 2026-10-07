@@ -139,3 +139,21 @@ export function describeLibraryChange(
     keptOnOldEvidence,
   };
 }
+
+export type ArrivalPlan = "not_on_analysis" | "nothing_new" | "deferred" | "join" | "start";
+
+/**
+ * Read on upload (Phase D patch 4): what to do when a document becomes ready.
+ * A client's own uploads keep the existing guard of `uploadReadsPerDay` reads a
+ * day (decision 23); For Granted's are never held. A run already going reads
+ * the document itself.
+ */
+export function arrivalPlan(i: {
+  onAnalysis: boolean; pendingDocs: number; actor: "client" | "admin";
+  readsToday: number; uploadReadsPerDay: number; running: boolean;
+}): ArrivalPlan {
+  if (!i.onAnalysis) return "not_on_analysis";
+  if (i.pendingDocs <= 0) return "nothing_new";
+  if (i.actor === "client" && i.readsToday >= i.uploadReadsPerDay) return "deferred";
+  return i.running ? "join" : "start";
+}

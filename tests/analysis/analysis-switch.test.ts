@@ -1,6 +1,6 @@
 // Phase D: switching a client over to the analysis (decision 29).
 import { describe, expect, test } from "vitest";
-import { isOnAnalysis, switchGate, coverageFromDerived, describeLibraryChange, PROVING_TENANT_ID } from "@/lib/analysis-switch";
+import { isOnAnalysis, switchGate, coverageFromDerived, describeLibraryChange, arrivalPlan, PROVING_TENANT_ID } from "@/lib/analysis-switch";
 import { planMerge, type MergeCard } from "@/lib/card-merge";
 import { cardFingerprint } from "@/lib/story-card";
 
@@ -111,5 +111,23 @@ describe("what the switch would do to the library", () => {
     const ch = describeLibraryChange(plan, cards, { placed: new Set(["c2"]), verified: new Set(["c3"]), edited: new Set() });
     expect(ch.keptOnOldEvidence.map(c => c.id)).toEqual(["c2"]);
     expect(ch.retiringInUse.map(c => c.id)).toEqual(["c3"]);
+  });
+});
+
+describe("read on upload", () => {
+  const base = { onAnalysis: true, pendingDocs: 1, actor: "client" as const, readsToday: 0, uploadReadsPerDay: 30, running: false };
+  test("a client not on the analysis keeps the old upload read", () => {
+    expect(arrivalPlan({ ...base, onAnalysis: false })).toBe("not_on_analysis");
+  });
+  test("an upload with nothing new to read starts nothing", () => {
+    expect(arrivalPlan({ ...base, pendingDocs: 0 })).toBe("nothing_new");
+  });
+  test("a new document starts a run, or joins the one going", () => {
+    expect(arrivalPlan(base)).toBe("start");
+    expect(arrivalPlan({ ...base, running: true })).toBe("join");
+  });
+  test("past 30 reads a day a client's read waits; For Granted's never does", () => {
+    expect(arrivalPlan({ ...base, readsToday: 30 })).toBe("deferred");
+    expect(arrivalPlan({ ...base, actor: "admin", readsToday: 99 })).toBe("start");
   });
 });
