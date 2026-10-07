@@ -145,7 +145,11 @@ export async function enterStageAction(draftId: string, stage: "arrange" | "weav
   if (stage !== "arrange") await snapshot(s.tenantId, s.user.id, d, "stage", null, stage);
   const { error } = await db.from("grant_draft").update({ stage }).eq("tenant_id", s.tenantId).eq("id", draftId);
   if (error) throw new Error(`Could not change the stage: ${error.message}`);
-  revalidatePath(`/drafts/${draftId}`);
+  // No revalidatePath here. The page holds the stage itself, and a refresh
+  // triggered by this action could arrive after the weave that follows it and
+  // replace the new bridges with the answer as it stood a moment earlier
+  // (found 7 October 2026: the first live weave saved its bridge, and the page
+  // did not show it until reloaded).
 }
 
 /**

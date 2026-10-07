@@ -182,8 +182,11 @@ export function screenBridges(proposed: ProposedBridge[], pieces: WeavePiece[]):
 // The reminder before weaving.
 // ---------------------------------------------------------------------------
 
-/** Used until real weaves have been measured: about four and a half cents a question. */
-export const WEAVE_COST_FALLBACK_MICROS = 45_000;
+/**
+ * Used until three weaves have been measured. The first live weave (7 October
+ * 2026) cost about a quarter of a cent; this allows twice that.
+ */
+export const WEAVE_COST_FALLBACK_MICROS = 5_000;
 
 /**
  * The share of a monthly allowance one weave uses, as a person reads it:

@@ -476,6 +476,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       }
       putBlocks(sectionId)(r.blocks);
       setWovenHere(w => new Set(w).add(sectionId));
+      // Any page refresh still in flight (after a review, say) was rendered
+      // before these bridges existed; ask for one more so the newest wins.
+      router.refresh();
       const set = r.refused ? ` ${r.refused} more ${r.refused === 1 ? "was" : "were"} set aside unseen for adding a number, name or quotation the cards do not hold.` : "";
       say(r.proposed
         ? `Weave proposed ${r.proposed} bridge${r.proposed === 1 ? "" : "s"}, shown in grey. Accept, edit or reject each; none is in the answer until you accept it.${set}`
