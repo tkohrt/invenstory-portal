@@ -1265,6 +1265,7 @@ a.dl-row:hover{background:#f6f8f5}
 
 /* Inven(s)tory Analysis trial (Phase A, 0048) */
 .an-trial{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:2px 7px;vertical-align:middle;margin-left:6px}
+.an-trial.an-live{background:#1f4d2e;color:#fff}
 .an-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;font-size:13px;margin:8px 0}
 .an-table th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
 .an-table td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}

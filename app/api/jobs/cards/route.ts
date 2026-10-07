@@ -16,6 +16,7 @@
 //   remerge   rebuild the library from what is already read (free)
 //   stop      mark the build ended, keeping everything read
 //   (none)    the same as kick, for a page from before this change
+import { onAnalysis } from "@/lib/server/analysis-source";
 import { NextResponse, after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
@@ -36,6 +37,14 @@ export async function POST(req: Request) {
   const tenantId = session.tenantId;
   const tenant = await getTenant(tenantId);
   const orgName = tenant?.name ?? "this client";
+
+  // Phase D: a client on the analysis has no Card Library read of its own. Re-merge
+  // (free, from the analysis) and stopping still work; reading happens on Admin, Analysis.
+  if (!body?.remerge && !body?.stop && await onAnalysis(tenantId)) {
+    return NextResponse.json({
+      error: `${orgName} is on the analysis: its cards come from the Inven(s)tory Analysis. Read new or changed documents on Admin, then Analysis.`,
+    }, { status: 409 });
+  }
 
   const existing = await latestJob(tenantId, "cards");
   const jobId = existing?.id ?? await createJob(

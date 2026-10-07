@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { syncReviewRefusal, setRefusalLifted } from "./refusals";
+import { refreshIfOnAnalysis } from "./analysis-switch";
 
 const PATH = "/admin/analysis";
 
@@ -59,10 +60,12 @@ export async function saveReviewAction(r: ReviewInput) {
     const { data } = await db.from("document").select("id").eq("tenant_id", s.tenantId).in("id", asked);
     for (const d of (data ?? []) as { id: string }[]) own.add(d.id);
   }
-  await syncReviewRefusal(s.tenantId, s.user.id, {
+  const changed = await syncReviewRefusal(s.tenantId, s.user.id, {
     fingerprint: r.fingerprint, kind: r.kind, statement: r.statement, verdict: r.verdict,
     evidence: evidence.map(e => ({ documentId: e.documentId && own.has(e.documentId) ? e.documentId : null, quote: String(e.quote ?? "") })),
   });
+  // On the analysis, a refusal reaches the client's library, readiness and profile at once (free).
+  if (changed) await refreshIfOnAnalysis(s.tenantId, s.user.id);
   revalidatePath(PATH);
 }
 
@@ -71,7 +74,9 @@ export async function clearReviewAction(fingerprint: string) {
   const s = await adminSession();
   const { error } = await db.from("analysis_review").delete().eq("tenant_id", s.tenantId).eq("fingerprint", fingerprint);
   if (error) throw new Error(`could not clear the review: ${error.message}`);
-  await syncReviewRefusal(s.tenantId, s.user.id, { fingerprint, kind: "", statement: "", evidence: [], verdict: null });
+  if (await syncReviewRefusal(s.tenantId, s.user.id, { fingerprint, kind: "", statement: "", evidence: [], verdict: null })) {
+    await refreshIfOnAnalysis(s.tenantId, s.user.id);
+  }
   revalidatePath(PATH);
 }
 
@@ -83,6 +88,7 @@ export async function liftRefusalAction(id: string, lifted: boolean) {
   const s = await adminSession();
   if (!id || id.length > 64) throw new Error("That refusal could not be identified.");
   await setRefusalLifted(s.tenantId, s.user.id, id, !!lifted);
+  await refreshIfOnAnalysis(s.tenantId, s.user.id);
   revalidatePath(PATH);
   revalidatePath("/story-cards");
 }

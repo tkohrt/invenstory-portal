@@ -145,7 +145,12 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         </div>
         <div className="spacer" />
         <div className="cl-actions">
-          {nothingYet ? (
+          {data.source === "analysis" ? (
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void remerge()}
+              title="Free. Rebuilds the library from what the analysis stored, without reading anything.">
+              Re-merge
+            </button>
+          ) : nothingYet ? (
             <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void runChain(false)}
               aria-busy={busy}>
               {busy ? "Building\u2026" : "Build the Card Library"}
@@ -196,8 +201,12 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         <span><b>{counts.verified}</b> verified</span>
         <span><b>{counts.duplicates}</b> possible duplicates</span>
         <span><b>{counts.retired}</b> retired</span>
-        <span className="cl-read">{data.progress.done} of {data.progress.total} documents read for cards</span>
+        <span className="cl-read">{data.progress.done} of {data.progress.total} documents read for cards{data.source === "analysis" ? " (by the analysis)" : ""}</span>
       </div>
+      {data.source === "analysis" && (
+        <p className="cl-note">This client is on the analysis: its cards come from the Inven(s)tory Analysis, and new or changed
+          documents are read on Admin, then Analysis. Verifying, editing, retiring and merging cards work as before.</p>
+      )}
       {data.unread.length > 0 && !nothingYet && (
         <p className="cl-note">Not read yet: {data.unread.slice(0, 8).join(", ")}
           {data.unread.length > 8 ? `, and ${data.unread.length - 8} more` : ""}.</p>

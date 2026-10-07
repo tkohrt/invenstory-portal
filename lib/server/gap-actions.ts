@@ -4,6 +4,8 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { withAiUsage, type UsageCtx } from "./ai-usage";
 import { checkAllowance } from "./allowance";
+import { onAnalysis } from "./analysis-source";
+import { applyReadiness } from "./analysis-switch";
 import { getEligibilityProfile } from "./eligibility";
 
 async function storeExtractionCoverage(
@@ -35,6 +37,13 @@ async function storeExtractionCoverage(
 export async function runGapAnalysisAction(): Promise<{ ok: true } | { ok: false; allowance: string }> {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
+  // Phase D: on the analysis, readiness is worked out from what it stored. Free,
+  // so it is never held to the allowance.
+  if (await onAnalysis(s.tenantId)) {
+    await applyReadiness(s.tenantId);
+    revalidatePath("/funding-eligibility"); revalidatePath("/invenstory");
+    return { ok: true };
+  }
   const actor = s.role === "admin" ? "admin" : "client";
   const allowance = await checkAllowance(actor, s.tenantId);
   if (!allowance.ok) return { ok: false, allowance: allowance.message };
@@ -52,6 +61,12 @@ export async function refreshAllReadinessAction(): Promise<{ results: RefreshRes
   const results: RefreshResult[] = [];
   for (const t of tenants ?? []) {
     try {
+      if (await onAnalysis(t.id)) {
+        // On the analysis: free, from what it stored.
+        await applyReadiness(t.id);
+        results.push({ tenant: `${t.name} (from the analysis)`, ok: true });
+        continue;
+      }
       const { data: prof } = await db.from("eligibility_profile").select("org_type").eq("tenant_id", t.id).maybeSingle();
       const c = await storeExtractionCoverage(t.id, (prof?.org_type as string | null) ?? null);
       results.push({ tenant: t.name, ok: true, ...c });

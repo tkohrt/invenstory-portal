@@ -23,6 +23,8 @@ import {
   createJob, updateJob, finishJob, failJob, claimJob, releaseJob, latestJob, recordEvent,
 } from "@/lib/server/jobs";
 import { PROFILE_INTRO } from "@/lib/search-profile";
+import { onAnalysis } from "@/lib/server/analysis-source";
+import { applySearchProfile } from "@/lib/server/analysis-switch";
 
 export const maxDuration = 60;
 
@@ -37,6 +39,17 @@ export async function POST(req: Request) {
   // Continue the chain rather than starting a second one beside it. Even on a
   // restart: reusing the row keeps the lease meaningful, which is what stops
   // two tabs reading the same documents for the same money.
+  // Phase D: a client on the analysis has its search profile worked out from the
+  // analysis, for free. Every kind of press (build, reassemble) does that instead.
+  if (!body?.stop && await onAnalysis(tenantId)) {
+    try {
+      const r = await applySearchProfile(tenantId, session.user.id);
+      return NextResponse.json({ jobId: null, complete: true, read: 0, reassembled: true, fromAnalysis: true, facts: r.facts, note: r.note });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "Could not work out the profile." }, { status: 500 });
+    }
+  }
+
   const existing = await latestJob(tenantId, "search_profile");
   const tenant = await getTenant(tenantId);
   const jobId = existing?.id ?? await createJob(

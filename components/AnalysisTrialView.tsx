@@ -8,6 +8,7 @@
 //   Facts      every fact by key, with conflicts called out
 //   Review     the card-quality review the Build Spec requires, counted here
 //   Refused    quotes For Granted refused, remembered and held back from every read (Phase D)
+//   Switch     the switch-over: what switching would change, the gate, and the button (Phase D)
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
@@ -19,8 +20,19 @@ import { CARD_KIND_MAP } from "@/lib/story-card";
 import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction, liftRefusalAction } from "@/lib/server/analysis-actions";
 import { REVIEW_ALL_UP_TO } from "@/lib/analysis";
 import AnalysisCompare, { type CompareResult } from "./AnalysisCompare";
+import type { SwitchStatus } from "@/lib/server/analysis-source";
+import type { SwitchPreview } from "@/lib/server/analysis-switch";
+import type { GateResult } from "@/lib/analysis-switch";
+import { switchToAnalysisAction, switchBackAction } from "@/lib/server/analysis-switch-actions";
 
-type Tab = "documents" | "cards" | "facts" | "review" | "compare" | "refused";
+export interface SwitchInfo {
+  status: SwitchStatus | null;
+  preview: { ok: true; p: SwitchPreview } | { ok: false; error: string };
+  gate: GateResult | null;
+  proving: boolean;
+}
+
+type Tab = "documents" | "cards" | "facts" | "review" | "compare" | "refused" | "switch";
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 
 function possessive(name: string) {
@@ -29,8 +41,10 @@ function possessive(name: string) {
   return /s$/i.test(n) ? `${n}’` : `${n}’s`;
 }
 
-export default function AnalysisTrialView({ orgName, data, job: initialJob, compare }: {
+export default function AnalysisTrialView({ orgName, data, job: initialJob, compare, switchInfo }: {
   orgName: string; data: AnalysisTrialData; job: Job | null;
+  /** Phase D: the switch-over. */
+  switchInfo?: SwitchInfo;
   /** Phase B: what the read implies, beside what the portal shows today. */
   compare?: CompareResult;
 }) {
@@ -98,10 +112,13 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
     <div className="cl an">
       <div className="page-head">
         <div>
-          <h2>Inven(s)tory Analysis <span className="an-trial">Trial</span></h2>
+          <h2>Inven(s)tory Analysis {switchInfo?.status?.onAnalysis
+            ? <span className="an-trial an-live">Live for this client</span>
+            : <span className="an-trial">Trial</span>}</h2>
           <p>One read of each of {possessive(orgName)} documents for its type, its Story Cards and its facts, each
-            proven by a quote. Runs beside the current reads: nothing here changes readiness, the Card Library,
-            Funding Eligibility or Funder Matches, and the client sees none of it.</p>
+            proven by a quote. {switchInfo?.status?.onAnalysis
+              ? "This client is on the analysis: what it finds is the client's readiness, Card Library and search profile."
+              : "Runs beside the current reads: nothing here changes readiness, the Card Library, Funding Eligibility or Funder Matches, and the client sees none of it."}</p>
         </div>
         <div className="spacer" />
         <div className="cl-actions">
@@ -166,7 +183,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
       ) : (
         <>
           <div className="cl-filters">
-            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"], ["compare", "Compare"], ["refused", "Refused before"]] as [Tab, string][]).map(([t, label]) => (
+            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"], ["compare", "Compare"], ["refused", "Refused before"], ["switch", switchInfo?.status?.onAnalysis ? "On the analysis" : "Switch-over"]] as [Tab, string][]).map(([t, label]) => (
               <button key={t} type="button" className={`chip${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
                 {label}{t === "review" ? <> <span className="cl-count">{data.tally.reviewed}/{data.tally.target}{data.tally.pairs.total ? ` · ${data.tally.pairs.decided}/${data.tally.pairs.total} pairs` : ""}</span></> : null}
                 {t === "refused" && activeRefusals.length > 0 ? <> <span className="cl-count">{activeRefusals.length}</span></> : null}
@@ -180,6 +197,7 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
           {tab === "review" && <ReviewTab data={data} titleById={titleById} />}
           {tab === "compare" && <AnalysisCompare result={compare} titleById={titleById} />}
           {tab === "refused" && <RefusedTab refusals={data.remembered} titleById={titleById} />}
+          {tab === "switch" && <SwitchTab orgName={orgName} info={switchInfo} />}
         </>
       )}
     </div>
@@ -518,5 +536,114 @@ function RefusalRow({ r, titleById }: { r: AnalysisTrialData["remembered"][numbe
       </div>
       {err && <div className="cl-error">{err}</div>}
     </li>
+  );
+}
+
+/**
+ * Phase D: switching this client over to the analysis, or back. Shows what the
+ * switch would change before anything does, and the gate (decision 29): RE-Assist
+ * needs its own card review and Compare to pass; every other client needs
+ * RE-Assist to have switched. The action checks the gate again on the server.
+ */
+function SwitchTab({ orgName, info }: { orgName: string; info?: SwitchInfo }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  if (!info?.status) return <p className="cl-note">The switch-over could not be read. Has migration 0055 been run?</p>;
+  const { status, preview, gate, proving } = info;
+  const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  const act = (fn: () => Promise<{ text?: string } | unknown>) => start(async () => {
+    setErr(null); setDone(null);
+    try { const r = await fn() as { text?: string } | undefined; setDone(r?.text ?? "Done."); router.refresh(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "That did not work."); }
+  });
+  const STATE = { covered: "covered", thin: "thin", missing: "missing" } as Record<string, string>;
+
+  if (status.onAnalysis) {
+    return (
+      <div>
+        <div className="an-gate an-pass">
+          <strong>{orgName} is on the analysis{status.switchedAt ? ` since ${day(status.switchedAt)}` : " (added after RE-Assist proved it)"}.</strong>
+          <p className="cl-note">Readiness, the Card Library and the search profile come from the analysis, and are updated after every
+            analysis run and whenever a refusal changes, at no cost. Run Readiness Check, Re-merge and rebuilding the search profile all
+            work them out from the analysis too. The Analyze page and the Inven(s)tory page agree.</p>
+        </div>
+        <div className="cl-card-acts">
+          <button type="button" className="btn ghost" disabled={pending}
+            onClick={() => { if (confirm(`Switch ${orgName} back to the old reads? Readiness and the search profile go back to exactly what they were before the switch, and the Card Library is re-merged from the old card read.`)) act(() => switchBackAction()); }}>
+            Switch back to the old reads</button>
+        </div>
+        {done && <p className="cl-note">{done}</p>}
+        {err && <div className="cl-error">{err}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="cl-note">Switching makes the analysis the source of {orgName}&rsquo;s readiness, Card Library and search profile.
+        Nothing is read and nothing is paid: it is worked out from what the analysis stored. What the client has now is kept, and
+        Switch back restores it exactly.</p>
+      {proving
+        ? <p className="cl-note">RE-Assist proves the analysis for every client (decision 29): its card review and Compare must both pass.
+            Once it switches, every other client can switch without a review of its own, and new clients start on the analysis.</p>
+        : status.proofAt
+          ? <p className="cl-note">Proven by RE-Assist on {day(status.proofAt)}: {orgName} needs no review of its own.</p>
+          : null}
+      {status.switchedOffAt && <p className="cl-note">Switched back on {day(status.switchedOffAt)}.</p>}
+
+      {!preview.ok ? <div className="cl-error">{preview.error}</div> : (
+        <>
+          <h3>What switching would change</h3>
+          <table className="an-table">
+            <tbody>
+              <tr><th>Readiness</th><td>{preview.p.readiness.before === null ? "none yet" : `${preview.p.readiness.before}%`} now, {preview.p.readiness.after}% from the analysis
+                {preview.p.readiness.changed.length ? `; ${preview.p.readiness.changed.length} item${preview.p.readiness.changed.length === 1 ? "" : "s"} change` : "; no item changes"}</td></tr>
+              <tr><th>Card Library</th><td>{preview.p.library.kept} live card{preview.p.library.kept === 1 ? "" : "s"} kept, {preview.p.library.created} new,
+                {" "}{preview.p.library.revived} restored, {preview.p.library.retired} retired (no evidence in the analysis; never deleted, and back if their evidence returns)</td></tr>
+              <tr><th>Search profile</th><td>{preview.p.profile.before} fact{preview.p.profile.before === 1 ? "" : "s"} now, {preview.p.profile.after} from the analysis
+                {preview.p.profile.editsKept + preview.p.profile.editsLost
+                  ? `; of ${preview.p.profile.editsKept + preview.p.profile.editsLost} hidden or edited line${preview.p.profile.editsKept + preview.p.profile.editsLost === 1 ? "" : "s"}, ${preview.p.profile.editsKept} still match${preview.p.profile.editsLost ? ` and ${preview.p.profile.editsLost} would not (their lines are not in the analysis; added lines are always kept)` : ""}`
+                  : ""}</td></tr>
+            </tbody>
+          </table>
+          {preview.p.library.keptOnOldEvidence.length > 0 && (
+            <details className="cl-note"><summary>{preview.p.library.keptOnOldEvidence.length} card{preview.p.library.keptOnOldEvidence.length === 1 ? "" : "s"} in use
+              {" "}the analysis does not find, kept on the quotes they already have</summary>
+              <ul>{preview.p.library.keptOnOldEvidence.map(c => (
+                <li key={c.id}><span className="cl-kind">{CARD_KIND_MAP[c.kind]?.label ?? c.kind}</span> {c.statement} <em>({c.why.join(", ")})</em></li>
+              ))}</ul>
+            </details>
+          )}
+          {preview.p.library.retiringInUse.length > 0 && (
+            <div className="an-gate">
+              <strong>{preview.p.library.retiringInUse.length} card{preview.p.library.retiringInUse.length === 1 ? "" : "s"} in use would retire</strong>
+              <ul>{preview.p.library.retiringInUse.map(c => (
+                <li key={c.id}><span className="cl-kind">{CARD_KIND_MAP[c.kind]?.label ?? c.kind}</span> {c.statement} <em>({c.why.join(", ")})</em></li>
+              ))}</ul>
+              <p className="cl-note">A retired card in a draft stops that draft at the finish line until it is replaced. Check these before switching.</p>
+            </div>
+          )}
+          {preview.p.readiness.changed.length > 0 && (
+            <details className="cl-note"><summary>Readiness items that change</summary>
+              <ul>{preview.p.readiness.changed.map(c => <li key={c.key}>{c.label}: {STATE[c.before]} to {STATE[c.after]}</li>)}</ul>
+            </details>
+          )}
+        </>
+      )}
+
+      <div className={`an-gate${gate?.allowed ? " an-pass" : ""}`}>
+        <strong>{gate?.allowed ? "Ready to switch." : "Not ready to switch yet"}</strong>
+        {gate && !gate.allowed && <ul>{gate.reasons.map((r, i) => <li key={i} className="an-fail">{r}</li>)}</ul>}
+      </div>
+      <div className="cl-card-acts">
+        <button type="button" className="btn inline cl-primary" disabled={pending || !gate?.allowed}
+          onClick={() => { if (confirm(`Switch ${orgName} to the analysis now?`)) act(() => switchToAnalysisAction()); }}>
+          Switch {orgName} to the analysis</button>
+      </div>
+      {done && <p className="cl-note">{done}</p>}
+      {err && <div className="cl-error">{err}</div>}
+    </div>
   );
 }

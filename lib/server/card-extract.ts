@@ -34,8 +34,9 @@ import type { JobEventKind } from "@/lib/job";
 import { assessSensitivity } from "@/lib/card-sensitivity";
 import { normalizeText } from "@/lib/story-card";
 import { planMerge, NEW, type MergeCandidate, type MergeCard, type MergeEvidence, type MergePlan } from "@/lib/card-merge";
-import { withoutRefused } from "@/lib/refusal";
+import { withoutRefused, indexRefusals, refusalFor } from "@/lib/refusal";
 import { activeRefusals } from "./refusals";
+import { onAnalysis } from "./analysis-source";
 
 type Layer = "I" | "II" | "III" | null;
 
@@ -310,21 +311,44 @@ export async function continueCardBuild(
 /** What a merge did, plus how many live cards await a sensitivity decision. */
 export type MergeSummary = MergePlan["summary"] & { sensitive?: number };
 
+export type CardSource = "analysis" | "cards";
+
 /**
- * Rebuild the library's derived state from every document's stored candidates.
- *
- * Reads no document and calls no model, so it is free: a change to how cards
- * are merged costs a re-merge, never a re-read. What a merge may and may not do
- * to a card is decided by planMerge() in lib/card-merge.ts, where it is tested;
- * this only reads, calls it, and writes what it says.
+ * Where a client's cards come from: the analysis once the client is switched
+ * over (Phase D), the Card Library's own read before. Each source's rows are
+ * the same shape (analysis_doc.cards was built to match story_card_doc.candidates).
  */
-export async function remergeLibrary(tenantId: string): Promise<MergeSummary> {
+export async function cardSource(tenantId: string): Promise<CardSource> {
+  return (await onAnalysis(tenantId)) ? "analysis" : "cards";
+}
+
+/** Every stored candidate from documents still ready, by document, from one source. */
+async function storedCandidates(tenantId: string, source: CardSource): Promise<{ documentId: string; candidates: MergeCandidate[] }[]> {
   // Only documents still ready contribute, so an archived or failed document's
   // cards lose that evidence at the next merge.
-  const { data: docRows, error: dErr } = await db.from("story_card_doc")
+  if (source === "analysis") {
+    const { data, error } = await db.from("analysis_doc")
+      .select("document_id, cards, document:document_id!inner(status)")
+      .eq("tenant_id", tenantId).eq("document.status", "ready");
+    if (error) throw new Error(`could not read the analysis: ${error.message}`);
+    return ((data ?? []) as unknown as { document_id: string; cards: MergeCandidate[] }[])
+      .map(r => ({ documentId: r.document_id, candidates: r.cards ?? [] }));
+  }
+  const { data, error } = await db.from("story_card_doc")
     .select("document_id, candidates, document:document_id!inner(status)")
     .eq("tenant_id", tenantId).eq("document.status", "ready");
-  if (dErr) throw new Error(`could not read stored candidates: ${dErr.message}`);
+  if (error) throw new Error(`could not read stored candidates: ${error.message}`);
+  return ((data ?? []) as unknown as { document_id: string; candidates: MergeCandidate[] }[])
+    .map(r => ({ documentId: r.document_id, candidates: r.candidates ?? [] }));
+}
+
+/**
+ * The merge, planned but not written: what remergeLibrary would do now, from
+ * a given source. The switch-over's preview uses it to show what switching
+ * would do to the library before anything changes.
+ */
+export async function planLibraryMerge(tenantId: string, source: CardSource): Promise<{ plan: MergePlan; cards: MergeCard[] }> {
+  const docRows = await storedCandidates(tenantId, source);
 
   const { data: cardRows, error: cErr } = await db.from("story_card")
     .select("id, kind, statement, fingerprint, status, retired_reason, merged_into, created_from, created_at, "
@@ -339,16 +363,46 @@ export async function remergeLibrary(tenantId: string): Promise<MergeSummary> {
   // Quotes For Granted refused (Not supported in review, or retired as
   // Inaccurate) contribute nothing, so a card resting only on them is retired
   // as source_removed and cannot return by a re-read (decisions 19 and 31).
-  const refused = withoutRefused(
-    ((docRows ?? []) as unknown as { document_id: string; candidates: MergeCandidate[] }[])
-      .map(r => ({ documentId: r.document_id, cards: r.candidates ?? [] })),
-    await activeRefusals(tenantId),
-  );
+  const refusals = await activeRefusals(tenantId);
+  const refused = withoutRefused(docRows.map(r => ({ documentId: r.documentId, cards: r.candidates })), refusals);
+  const cards = (cardRows ?? []) as unknown as MergeCard[];
+
+  // Cards a person has put to use keep the evidence they have when no read finds
+  // them any more (lib/card-merge.ts): placed in a draft, verified, or reworded.
+  const [{ data: placed }, { data: ready }, { data: human }] = await Promise.all([
+    db.from("section_block").select("card_id").eq("tenant_id", tenantId).not("card_id", "is", null),
+    db.from("document").select("id").eq("tenant_id", tenantId).eq("status", "ready"),
+    db.from("story_card").select("id").eq("tenant_id", tenantId).eq("statement_origin", "human"),
+  ]);
+  const inUse = new Set<string>([
+    ...((placed ?? []) as { card_id: string }[]).map(r => r.card_id),
+    ...((human ?? []) as { id: string }[]).map(r => r.id),
+    ...cards.filter(c => c.status === "verified").map(c => c.id),
+  ]);
+  const readyIds = new Set(((ready ?? []) as { id: string }[]).map(d => d.id));
+  const refusalIndex = indexRefusals(refusals);
   const plan = planMerge({
     docs: refused.docs.map(d => ({ documentId: d.documentId, candidates: d.cards })),
-    cards: (cardRows ?? []) as unknown as MergeCard[],
+    cards,
     evidence: (evRows ?? []) as MergeEvidence[],
+    inUse,
+    evidenceStillGood: e => readyIds.has(e.document_id) && !refusalFor(e.quote, refusalIndex),
   });
+  return { plan, cards };
+}
+
+/**
+ * Rebuild the library's derived state from every document's stored candidates.
+ *
+ * Reads no document and calls no model, so it is free: a change to how cards
+ * are merged costs a re-merge, never a re-read. What a merge may and may not do
+ * to a card is decided by planMerge() in lib/card-merge.ts, where it is tested;
+ * this only reads, calls it, and writes what it says. The candidates come from
+ * the analysis once the client is switched over (Phase D).
+ */
+export async function remergeLibrary(tenantId: string, source?: CardSource): Promise<MergeSummary> {
+  const from = source ?? await cardSource(tenantId);
+  const { plan } = await planLibraryMerge(tenantId, from);
   const now = new Date().toISOString();
 
   // New cards first, so their evidence has something to point at. Inserted
@@ -406,7 +460,7 @@ export async function remergeLibrary(tenantId: string): Promise<MergeSummary> {
     }));
   }
 
-  const flagged = await assessLibrarySensitivity(tenantId);
+  const flagged = await assessLibrarySensitivity(tenantId, from);
   return { ...plan.summary, sensitive: flagged };
 }
 
@@ -421,17 +475,18 @@ export async function remergeLibrary(tenantId: string): Promise<MergeSummary> {
  * consent stays cleared when it is reassessed. Returns how many live cards are
  * flagged and not yet cleared.
  */
-export async function assessLibrarySensitivity(tenantId: string): Promise<number> {
-  const [{ data: cards, error: cErr }, { data: ev, error: eErr }, { data: docs, error: dErr }] = await Promise.all([
+export async function assessLibrarySensitivity(tenantId: string, source?: CardSource): Promise<number> {
+  const from = source ?? await cardSource(tenantId);
+  const [{ data: cards, error: cErr }, { data: ev, error: eErr }, docs] = await Promise.all([
     db.from("story_card").select("id, kind, subject, statement, status, sensitive, sensitive_reason, sensitive_cleared")
       .eq("tenant_id", tenantId),
     db.from("story_card_evidence").select("card_id, document_id, quote").eq("tenant_id", tenantId),
-    db.from("story_card_doc").select("document_id, candidates").eq("tenant_id", tenantId),
+    storedCandidates(tenantId, from),
   ]);
-  if (cErr || eErr || dErr) throw new Error(`could not assess sensitivity: ${(cErr ?? eErr ?? dErr)!.message}`);
+  if (cErr || eErr) throw new Error(`could not assess sensitivity: ${(cErr ?? eErr)!.message}`);
 
   const flaggedQuote = new Set<string>();
-  for (const d of (docs ?? []) as { document_id: string; candidates: { quote: string; sensitive?: boolean }[] | null }[]) {
+  for (const d of docs.map(x => ({ document_id: x.documentId, candidates: x.candidates as unknown as { quote: string; sensitive?: boolean }[] | null }))) {
     for (const c of d.candidates ?? []) if (c.sensitive) flaggedQuote.add(`${d.document_id}|${normalizeText(c.quote)}`);
   }
   const evByCard = new Map<string, { document_id: string; quote: string }[]>();

@@ -182,6 +182,10 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
     const sameText = previousText !== null && previousText === chunks.map(c => c.text ?? "").join("\n");
     const mergeCoverage = async () => {
       try {
+        // Phase D: a client on the analysis gets readiness from the analysis, not
+        // from this older per-upload read (the analysis reads the upload).
+        const { onAnalysis } = await import("./analysis-source");
+        if (await onAnalysis(doc.tenant_id)) return;
         if (actor === "client") {
           if (sameText) return;  // processed again with nothing new to read
           if (!uploadReadNow(actor, await uploadReadsLastDay(doc.tenant_id))) {

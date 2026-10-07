@@ -10,6 +10,7 @@ import { continueAnalysis, analysisProgress } from "./analysis-extract";
 import { claimJob, failJob, finishJob, recordEvent, releaseJob, updateJob } from "./jobs";
 import { MAX_CHAIN_PASSES } from "./job-chain";
 import type { PassOutcome } from "./card-build";
+import { refreshIfOnAnalysis } from "./analysis-switch";
 
 const CHAINED_BUDGET_MS = 34_000;
 
@@ -35,10 +36,10 @@ async function summarize(tenantId: string): Promise<{ result: Record<string, num
 /** Every model call in a pass is metered against this client, as whoever started the run. */
 export async function runAnalysisPass(tenantId: string, jobId: string, opts: { chained?: boolean } = {}): Promise<PassOutcome> {
   const who = await actorForJob(tenantId, jobId);
-  return withAiUsage({ tenantId, userId: who.userId, actor: who.actor, feature: "analysis" }, () => runAnalysisPassMetered(tenantId, jobId, opts));
+  return withAiUsage({ tenantId, userId: who.userId, actor: who.actor, feature: "analysis" }, () => runAnalysisPassMetered(tenantId, jobId, opts, who.userId));
 }
 
-async function runAnalysisPassMetered(tenantId: string, jobId: string, opts: { chained?: boolean }): Promise<PassOutcome> {
+async function runAnalysisPassMetered(tenantId: string, jobId: string, opts: { chained?: boolean }, userId: string | null): Promise<PassOutcome> {
   if (!await claimJob(tenantId, jobId)) return { kind: "busy" };
   try {
     if (opts.chained) {
@@ -67,7 +68,11 @@ async function runAnalysisPassMetered(tenantId: string, jobId: string, opts: { c
     if (r.complete) {
       await releaseJob(tenantId, jobId);
       const s = await summarize(tenantId);
-      await finishJob(tenantId, jobId, s.result, s.text);
+      // Phase D: for a client on the analysis, what it found becomes the
+      // client's readiness, Card Library and search profile now. Free.
+      const applied = await refreshIfOnAnalysis(tenantId, userId);
+      if (applied) await recordEvent(tenantId, jobId, { kind: "phase", text: `Updated from the analysis. ${applied.text}` });
+      await finishJob(tenantId, jobId, s.result, applied ? `${s.text} ${applied.text}` : s.text);
       return { kind: "done", read: r.read, ...progress };
     }
     await updateJob(tenantId, jobId, { detail: `${progress.done} of ${progress.total} documents analysed` });

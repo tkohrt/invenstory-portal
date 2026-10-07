@@ -16,6 +16,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { remergeLibrary } from "./card-extract";
 import { rememberRetiredCard, forgetRetiredCard } from "./refusals";
+import { refreshIfOnAnalysis } from "./analysis-switch";
 import { writeCardEdit } from "./card-edit";
 import { getLibraryCard, type LibraryCard } from "./card-library";
 
@@ -108,7 +109,10 @@ export async function retireCardAction(id: string, reason: "inaccurate" | "super
   if (error) throw new Error(`could not retire: ${error.message}`);
   // Inaccurate is remembered: its quotes are refused on every later read, so a
   // re-read that words the claim differently cannot bring it back (decision 31).
-  if (reason === "inaccurate") await rememberRetiredCard(s.tenantId, s.user.id, id);
+  if (reason === "inaccurate") {
+    await rememberRetiredCard(s.tenantId, s.user.id, id);
+    await refreshIfOnAnalysis(s.tenantId, s.user.id);  // its quotes now count for nothing in readiness or the profile either
+  }
   await audit(s.tenantId, s.user.id, "card_retire", `${id} ${reason}${why ? `: ${why}` : ""}`);
   revalidatePath(PATH);
 }
@@ -123,7 +127,8 @@ export async function reinstateCardAction(id: string) {
   if (error) throw new Error(`could not reinstate: ${error.message}`);
   await forgetRetiredCard(s.tenantId, id);  // before the merge, so its quotes count again
   await audit(s.tenantId, s.user.id, "card_reinstate", id);
-  await remergeLibrary(s.tenantId);   // gives it back the evidence it forwarded
+  // Gives it back the evidence it forwarded. On the analysis, readiness and the profile follow too.
+  if (!(await refreshIfOnAnalysis(s.tenantId, s.user.id))) await remergeLibrary(s.tenantId);
   revalidatePath(PATH);
 }
 

@@ -5,6 +5,7 @@ import "server-only";
 // tables are admin-only by policy (0039), and every query still names the
 // tenant: an admin's RLS sees every client, and the page must show one.
 import { userClient } from "./supabase";
+import { onAnalysis } from "./analysis-source";
 import { CARD_KIND_MAP, REJECT_LABEL, type RejectReason, type RejectedCandidate } from "@/lib/story-card";
 
 export interface LibraryEvidence {
@@ -41,19 +42,38 @@ export interface CardLibraryData {
    */
   unread: string[];
   refusals: RefusalSummary[];
+  /**
+   * Where the cards come from (Phase D): the analysis once the client is
+   * switched over, the Card Library's own read before. On the analysis the
+   * page's Build buttons give way to Re-merge: documents are read on Admin, Analysis.
+   */
+  source: "analysis" | "cards";
 }
 
 export async function getCardLibrary(tenantId: string): Promise<CardLibraryData> {
   const s = await userClient();
 
-  const [{ data: cardRows, error: cErr }, { data: docRows }, { data: readRows }] = await Promise.all([
+  const source = (await onAnalysis(tenantId)) ? "analysis" as const : "cards" as const;
+  const [{ data: cardRows, error: cErr }, { data: docRows }, { data: readRaw }] = await Promise.all([
     s.from("story_card")
       .select("*, story_card_evidence(document_id, quote, speaker, document:document_id(title, layer, status))")
       .eq("tenant_id", tenantId)
       .order("kind").order("created_at"),
     s.from("document").select("id, title").eq("tenant_id", tenantId).eq("status", "ready"),
-    s.from("story_card_doc").select("document_id, content_hash, rejected, extracted_at").eq("tenant_id", tenantId),
+    source === "analysis"
+      ? s.from("analysis_doc").select("document_id, content_hash, rejected, extracted_at").eq("tenant_id", tenantId)
+      : s.from("story_card_doc").select("document_id, content_hash, rejected, extracted_at").eq("tenant_id", tenantId),
   ]);
+  // The analysis records refusals of cards, facts and types together; only its
+  // card refusals belong here, in the Card Library's own shape.
+  type AnalysisRefusal = { what?: string; key?: string; text?: string; quote?: string; reason: string };
+  const readRows = source === "analysis"
+    ? ((readRaw ?? []) as { document_id: string; rejected: AnalysisRefusal[] | null }[]).map(r => ({
+        document_id: r.document_id,
+        rejected: (r.rejected ?? []).filter(x => x.what === "card")
+          .map(x => ({ kind: x.key ?? "", statement: x.text ?? "", quote: x.quote ?? "", reason: x.reason as RejectReason })),
+      }))
+    : (readRaw ?? []) as { document_id: string; rejected: RejectedCandidate[] | null }[];
   if (cErr) throw new Error(`Card Library read failed: ${cErr.message}`);
 
   const cards: LibraryCard[] = ((cardRows ?? []) as Record<string, unknown>[]).map(toLibraryCard);
@@ -88,6 +108,7 @@ export async function getCardLibrary(tenantId: string): Promise<CardLibraryData>
     progress: { done: ready.length - unread.length, total: ready.length },
     unread,
     refusals: [...byReason.values()].sort((a, b) => b.count - a.count),
+    source,
   };
 }
 

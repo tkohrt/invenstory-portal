@@ -47,7 +47,8 @@ export async function listRefusals(tenantId: string): Promise<RefusalListing[]> 
 }
 
 /**
- * Bring one review's refusal in line with its verdict. Not supported remembers
+ * Bring one review's refusal in line with its verdict. Says whether anything
+ * remembered changed, so a client on the analysis is refreshed only then. Not supported remembers
  * every quote the card stood on (again, if it had been lifted: saving Not
  * supported is a fresh judgement); any other verdict, or clearing the review,
  * forgets them.
@@ -56,11 +57,12 @@ export async function syncReviewRefusal(tenantId: string, userId: string, review
   fingerprint: string; kind: string; statement: string;
   evidence: { documentId: string | null; quote: string }[];
   verdict: "supported" | "partly" | "unsupported" | null;
-}): Promise<void> {
-  const { error: dErr } = await db.from("card_refusal").delete()
-    .eq("tenant_id", tenantId).eq("source", "review").eq("source_ref", review.fingerprint);
+}): Promise<boolean> {
+  const { data: gone, error: dErr } = await db.from("card_refusal").delete()
+    .eq("tenant_id", tenantId).eq("source", "review").eq("source_ref", review.fingerprint).select("id");
   if (dErr) throw new Error(`could not update the remembered refusal: ${dErr.message}`);
-  if (review.verdict !== "unsupported") return;
+  const forgot = (gone?.length ?? 0) > 0;
+  if (review.verdict !== "unsupported") return forgot;
   const seen = new Set<string>();
   const rows = review.evidence
     .filter(e => e.quote?.trim() && !seen.has(e.quote) && seen.add(e.quote))
@@ -70,9 +72,10 @@ export async function syncReviewRefusal(tenantId: string, userId: string, review
       kind: review.kind.slice(0, 60), statement: review.statement.slice(0, 2000), quote: e.quote.slice(0, 2000),
       created_by: userId,
     }));
-  if (!rows.length) return;
+  if (!rows.length) return forgot;
   const { error } = await db.from("card_refusal").insert(rows);  // tenant-safe: every row built above carries tenant_id
   if (error) throw new Error(`could not remember the refusal: ${error.message}`);
+  return true;
 }
 
 /** A card retired as Inaccurate: remember every quote it stood on. */

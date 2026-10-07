@@ -19,6 +19,11 @@
 //   - A card left with no evidence is RETIRED as source_removed, never deleted,
 //     and comes back as suggested if its evidence returns. A card retired by a
 //     person for any other reason stays retired.
+//   - Except a card a person has put to use (placed in a draft, verified, or
+//     reworded: `inUse`). When no read finds it any more, it keeps the evidence
+//     it already has, from documents still in the Inven(s)tory, rather than
+//     being retired out from under a draft. Added for the Phase D switch-over,
+//     where the analysis chooses different passages from the old card read.
 //   - Possible duplicates are flagged, never merged.
 import {
   CARD_KIND_MAP, cardFingerprint, normalizeText, displayLayer, strongest, findPossibleDuplicates,
@@ -78,6 +83,10 @@ export function planMerge(input: {
   docs: { documentId: string; candidates: MergeCandidate[] }[];
   cards: MergeCard[];
   evidence: MergeEvidence[];
+  /** Cards a person has put to use; see the rule above. */
+  inUse?: Set<string>;
+  /** Whether a kept card's existing evidence may stay (still in the Inven(s)tory, quote not refused). */
+  evidenceStillGood?: (e: MergeEvidence) => boolean;
 }): MergePlan {
   // 1. Group every document's candidates by claim.
   const groups = new Map<string, { kind: string; statement: string; ev: Ev[] }>();
@@ -147,6 +156,13 @@ export function planMerge(input: {
 
   // 4. Existing cards: derived fields, revival, retirement.
   let revived = 0; let retired = 0;
+  // A card in use that no read finds any more keeps the evidence it has.
+  const kept = new Map<string, MergeEvidence[]>();
+  for (const e of input.evidence) {
+    if (!input.inUse?.has(e.card_id) || evByTarget.has(e.card_id)) continue;
+    if (input.evidenceStillGood && !input.evidenceStillGood(e)) continue;
+    kept.set(e.card_id, [...(kept.get(e.card_id) ?? []), e]);
+  }
   const patched = new Map<string, CardPatch>();
   for (const c of input.cards) {
     const ev = evByTarget.get(c.id) ?? [];
@@ -164,6 +180,8 @@ export function planMerge(input: {
       if (c.status === "retired" && c.retired_reason === "source_removed") {
         next.status = "suggested"; next.retired_reason = null; revived += 1;
       }
+    } else if (kept.has(c.id)) {
+      // In use: stays as it is, on the evidence it already has.
     } else if (c.status !== "retired" && c.created_from === "extraction" && !c.merged_into) {
       next.status = "retired"; next.retired_reason = "source_removed"; retired += 1;
     }
@@ -199,6 +217,7 @@ export function planMerge(input: {
   const evidence: PlannedEvidence[] = [...evByTarget.entries()].flatMap(([target, list]) =>
     list.map(e => ({ target, documentId: e.documentId, quote: e.quote, speaker: e.speaker })));
   const want = new Set(evidence.filter(e => !e.target.startsWith(NEW)).map(e => `${e.target}|${e.documentId}`));
+  for (const [cardId, list] of kept) for (const e of list) want.add(`${cardId}|${e.document_id}`);
   const dropEvidence = input.evidence.filter(e => !want.has(`${e.card_id}|${e.document_id}`)).map(e => e.id);
 
   const liveExisting = input.cards.filter(c => patched.get(c.id)!.status !== "retired").length;

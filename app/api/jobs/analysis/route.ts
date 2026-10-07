@@ -23,6 +23,7 @@ import { createJob, supersedeRunning, failJob, releaseJob, latestJob, recordEven
 import { scheduleAnalysisPass } from "@/lib/server/job-chain";
 import { pendingReading } from "@/lib/server/analysis-extract";
 import { checkAllowance } from "@/lib/server/allowance";
+import { onAnalysis } from "@/lib/server/analysis-source";
 import { decideClientRun, describeCap } from "@/lib/analysis-cap";
 
 export const maxDuration = 60;
@@ -76,11 +77,14 @@ export async function POST(req: Request) {
     if (uErr) console.error("[analysis] usage not recorded", uErr.message);
   }
 
+  const switched = await onAnalysis(tenantId);
   const opening = () => recordEvent(tenantId, jobId, {
     kind: "phase",
-    text: `Starting the trial analysis for ${orgName}. Each document is read once for its type, its Story Cards `
+    text: `Starting the analysis for ${orgName}. Each document is read once for its type, its Story Cards `
       + "and its facts, each proven by a quote. The code refuses anything whose quote is not in its document. "
-      + "This is a trial: nothing the client sees changes.",
+      + (switched
+        ? "When it finishes, readiness, the Card Library and the search profile are updated from it."
+        : "This client is not on the analysis yet: nothing the client sees changes."),
   });
 
   if (body?.begin) {
