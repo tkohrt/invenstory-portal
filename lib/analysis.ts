@@ -78,7 +78,12 @@ export const DOC_TYPES: DocType[] = [
   { key: "website_capture", label: "Website capture", itemKey: "public_story",
     describe: "text captured from the organization's website or public pages" },
   { key: "pitch_deck", label: "Pitch deck", itemKey: "pitch_deck",
-    describe: "slides presenting the company or organization to investors or funders" },
+    describe: "slides presenting the company or organization itself to INVESTORS or FUNDERS, to raise money" },
+  // Added 7 October 2026 at Shane's request: a pitch to a customer or partner is
+  // not the investor pitch deck the checklist asks for (RE-Assist's CareSpring
+  // presentation). It evidences no item on its own; its cards still count.
+  { key: "sales_pitch", label: "Sales pitch", itemKey: null,
+    describe: "slides or a proposal selling a product, program or service to a CUSTOMER or PARTNER (a health system, a buyer), not to investors" },
   { key: "cap_table", label: "Cap table", itemKey: "cap_table",
     describe: "ownership, share classes, entity structure or raise history" },
   { key: "investor_update", label: "Investor update", itemKey: "investor_updates",

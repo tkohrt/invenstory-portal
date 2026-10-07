@@ -49,6 +49,11 @@ describe("deriveReadiness", () => {
     expect(stateOf(r, "determination")).toBe("missing");
   });
 
+  test("a sales pitch is not a pitch deck: it covers no item on its own", () => {
+    const r = deriveReadiness("for_profit", [doc({ id: "a", docType: "pitch_deck", typeTag: "sales_pitch" })]);
+    expect(stateOf(r, "pitch_deck")).toBe("missing");
+  });
+
   test("a startup's pitch deck and financial model need a tag too", () => {
     const r = deriveReadiness("for_profit", [
       doc({ id: "a", docType: "pitch_deck", docTypeProven: true, docTypeQuote: "Confidential, for discussion only." }),

@@ -44,6 +44,10 @@ export const READER_VERSION: number = 3;
 // 2 (5 October 2026): quotes are compared without Markdown bold and code marks.
 // 3 (5 October 2026): For Granted is named as an outsider; plans must read as
 //   plans; garbled quotes make no card. From the first RE-Assist card review.
+// Not raised on 7 October 2026 for the new Sales pitch type, on purpose: a
+//   document's type is now only a suggestion a person confirms (decision 33),
+//   so documents already read need no re-read (which would cost money and
+//   reshuffle RE-Assist's reviewed cards). New reads may suggest it.
 
 /** What a read is stored against: the text it read, under the rules that read it. */
 function readHash(text: string): string {
