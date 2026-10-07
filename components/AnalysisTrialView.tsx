@@ -6,7 +6,8 @@
 //   Documents  each document's type, cards, facts and refusals
 //   Cards      the Card Library this read WOULD produce (nothing is written to it)
 //   Facts      every fact by key, with conflicts called out
-//   Review     the 50-card quality review the Build Spec requires, counted here
+//   Review     the card-quality review the Build Spec requires, counted here
+//   Refused    quotes For Granted refused, remembered and held back from every read (Phase D)
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
@@ -15,14 +16,14 @@ import type { AnalysisTrialData, TrialDoc } from "@/lib/server/analysis-read";
 import type { PreviewCard } from "@/lib/analysis";
 import { FACT_KEY_MAP } from "@/lib/analysis";
 import { CARD_KIND_MAP } from "@/lib/story-card";
-import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction } from "@/lib/server/analysis-actions";
+import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction, liftRefusalAction } from "@/lib/server/analysis-actions";
 import { REVIEW_ALL_UP_TO } from "@/lib/analysis";
 import AnalysisCompare, { type CompareResult } from "./AnalysisCompare";
 import { decideAnalysisRequestAction } from "@/lib/server/analysis-client-actions";
 
 export interface AnalysisRequestRow { id: string; note: string | null; at: string; by: string }
 
-type Tab = "documents" | "cards" | "facts" | "review" | "compare";
+type Tab = "documents" | "cards" | "facts" | "review" | "compare" | "refused";
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 
 function possessive(name: string) {
@@ -94,7 +95,9 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
   const totalCards = data.docs.reduce((n, d) => n + (d.read?.cards.length ?? 0), 0);
   const totalFacts = data.docs.reduce((n, d) => n + (d.read?.facts.length ?? 0), 0);
   const unreadable = data.docs.filter(d => d.read?.skipped === "empty");
-  const dupCount = data.library.filter(c => c.possibleDuplicateOf).length;
+  const dupCount = data.liveLibrary.filter(c => c.possibleDuplicateOf).length;
+  const activeRefusals = data.remembered.filter(r => !r.liftedAt);
+  const heldBack = data.library.length - data.liveLibrary.length;
 
   return (
     <div className="cl an">
@@ -149,7 +152,8 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
 
       <div className="cl-summary">
         <span className="cl-read">{data.progress.done} of {data.progress.total} documents analysed</span>
-        <span><b>{totalCards}</b> card candidates, <b>{data.library.length}</b> after merging</span>
+        <span><b>{totalCards}</b> card candidates, <b>{data.liveLibrary.length}</b> after merging
+          {heldBack > 0 ? <>, <b>{heldBack}</b> held back by remembered refusals</> : null}</span>
         <span><b>{dupCount}</b> possible duplicates</span>
         <span><b>{totalFacts}</b> facts</span>
         <span title="The current Card Library, built by the old card read. For reference only.">Current Card Library: <b>{data.current.liveCards}</b> live cards</span>
@@ -170,18 +174,20 @@ export default function AnalysisTrialView({ orgName, data, job: initialJob, comp
       ) : (
         <>
           <div className="cl-filters">
-            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"], ["compare", "Compare"]] as [Tab, string][]).map(([t, label]) => (
+            {([["documents", "Documents"], ["cards", "Cards"], ["facts", "Facts"], ["review", "Review"], ["compare", "Compare"], ["refused", "Refused before"]] as [Tab, string][]).map(([t, label]) => (
               <button key={t} type="button" className={`chip${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
                 {label}{t === "review" ? <> <span className="cl-count">{data.tally.reviewed}/{data.tally.target}{data.tally.pairs.total ? ` · ${data.tally.pairs.decided}/${data.tally.pairs.total} pairs` : ""}</span></> : null}
+                {t === "refused" && activeRefusals.length > 0 ? <> <span className="cl-count">{activeRefusals.length}</span></> : null}
               </button>
             ))}
           </div>
           {tab === "documents" && <DocumentsTab docs={data.docs} refusals={data.refusals} busy={busy}
             onReread={id => void run(false, id)} />}
-          {tab === "cards" && <CardsTab cards={data.library} titleById={titleById} />}
+          {tab === "cards" && <CardsTab cards={data.liveLibrary} heldBack={heldBack} titleById={titleById} />}
           {tab === "facts" && <FactsTab facts={data.facts} titleById={titleById} />}
           {tab === "review" && <ReviewTab data={data} titleById={titleById} />}
           {tab === "compare" && <AnalysisCompare result={compare} titleById={titleById} />}
+          {tab === "refused" && <RefusedTab refusals={data.remembered} titleById={titleById} />}
         </>
       )}
     </div>
@@ -277,7 +283,7 @@ function Evidence({ card, titleById }: { card: PreviewCard; titleById: Map<strin
   );
 }
 
-function CardsTab({ cards, titleById }: { cards: PreviewCard[]; titleById: Map<string, string> }) {
+function CardsTab({ cards, heldBack, titleById }: { cards: PreviewCard[]; heldBack: number; titleById: Map<string, string> }) {
   const [kind, setKind] = useState("");
   const [q, setQ] = useState("");
   const kinds = useMemo(() => {
@@ -291,7 +297,7 @@ function CardsTab({ cards, titleById }: { cards: PreviewCard[]; titleById: Map<s
   return (
     <div>
       <p className="cl-note">The Card Library this read would produce, merged by the same rules as the real one. Nothing
-        here is written to the Card Library.</p>
+        here is written to the Card Library.{heldBack > 0 ? ` ${heldBack} card${heldBack === 1 ? " rests" : "s rest"} on a quote For Granted refused and ${heldBack === 1 ? "is" : "are"} left out: see Refused before.` : ""}</p>
       <div className="cl-filters">
         <select value={kind} onChange={e => setKind(e.target.value)} aria-label="Kind" className="cl-select">
           <option value="">Every kind ({cards.length})</option>
@@ -427,6 +433,7 @@ function ReviewRow({ card: c, review, titleById }: {
       await saveReviewAction({
         fingerprint: c.fingerprint, documentId: e?.documentId ?? null, kind: c.kind,
         statement: c.statement, quote: e?.quote ?? "", verdict, competitor, duplicate, note,
+        evidence: c.evidence.map(x => ({ documentId: x.documentId, quote: x.quote })),
       });
       router.refresh();
     } catch (x) { setErr(x instanceof Error ? x.message : "That did not save."); }
@@ -453,6 +460,9 @@ function ReviewRow({ card: c, review, titleById }: {
         <button type="button" className="btn secondary" disabled={pending} onClick={() => save("unsupported")}>Not supported</button>
         {review && <button type="button" className="btn ghost" disabled={pending} onClick={clear}>Clear</button>}
       </div>
+      {review?.verdict === "unsupported" && (
+        <p className="cl-note">Remembered: {c.evidence.length === 1 ? "this quote is" : "these quotes are"} refused on every later read for this client, and the card stays out of the library. It still counts here, because the review judges the reader.</p>
+      )}
       {err && <div className="cl-error">{err}</div>}
     </li>
   );
@@ -495,5 +505,66 @@ function RequestsPanel({ orgName, requests, busy, onRun }: {
       </ul>
       {err && <div className="cl-error">{err}</div>}
     </div>
+  );
+}
+
+/**
+ * Phase D (decisions 19 and 31): every quote For Granted refused for this
+ * client, what each is holding back from the current read, and a way to let
+ * one through again. Lifting is recorded, never deleted.
+ */
+function RefusedTab({ refusals, titleById }: { refusals: AnalysisTrialData["remembered"]; titleById: Map<string, string> }) {
+  if (!refusals.length) {
+    return <p className="cl-note">Nothing refused yet. A card marked Not supported in the Review, or retired as Inaccurate in the
+      Card Library, has its quote remembered here and held back from every later read.</p>;
+  }
+  return (
+    <div>
+      <p className="cl-note">Quotes For Granted refused for this client. A card resting on one of them is left out of the library,
+        readiness, eligibility and the search profile, however a later read words it. A quote matches when it is the same
+        passage, or most of a new quote is taken from it. Lift a refusal to let the quote through again.</p>
+      <ol className="an-review">
+        {refusals.map(r => <RefusalRow key={r.id} r={r} titleById={titleById} />)}
+      </ol>
+    </div>
+  );
+}
+
+function RefusalRow({ r, titleById }: { r: AnalysisTrialData["remembered"][number]; titleById: Map<string, string> }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const toggle = (lift: boolean) => start(async () => {
+    setErr(null);
+    try { await liftRefusalAction(r.id, lift); router.refresh(); }
+    catch (x) { setErr(x instanceof Error ? x.message : "That did not save."); }
+  });
+  return (
+    <li className={`an-rev${r.liftedAt ? " an-rev-supported" : " an-rev-unsupported"}`}>
+      <div className="cl-card-head">
+        <span className="cl-kind">{CARD_KIND_MAP[r.kind]?.label ?? r.kind}</span>
+        <span className="cl-badge">{r.source === "review" ? "Not supported in review" : "Retired as Inaccurate"}
+          {r.liftedAt ? `, lifted ${new Date(r.liftedAt).toLocaleDateString()}` : ""}</span>
+      </div>
+      <p className="cl-statement">{r.statement}</p>
+      <div className="cl-quote">{`“${r.quote}”`}</div>
+      <div className="cl-src">{r.documentId ? titleById.get(r.documentId) ?? "a document no longer ready" : "document not recorded"}
+        {` · refused ${new Date(r.createdAt).toLocaleDateString()}`}</div>
+      {!r.liftedAt && (r.blocking.length === 0
+        ? <p className="cl-note">Holding back nothing in the current read.</p>
+        : <>
+            <p className="cl-note">Holding back {r.blocking.length} card{r.blocking.length === 1 ? "" : "s"} in the current read:</p>
+            <ul className="an-list">{r.blocking.map((b, i) => (
+              <li key={i} className="an-refused"><span className="cl-kind">{CARD_KIND_MAP[b.kind]?.label ?? b.kind}</span> {b.statement}
+                <div className="cl-quote">{`“${b.quote}”`}</div>
+                <div className="cl-src">{titleById.get(b.documentId) ?? "document"}</div></li>))}</ul>
+          </>)}
+      <div className="cl-card-acts">
+        {r.liftedAt
+          ? <button type="button" className="btn secondary" disabled={pending} onClick={() => toggle(false)}>Refuse again</button>
+          : <button type="button" className="btn ghost" disabled={pending} onClick={() => toggle(true)}>Lift: let this quote through</button>}
+      </div>
+      {err && <div className="cl-error">{err}</div>}
+    </li>
   );
 }

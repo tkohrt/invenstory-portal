@@ -10,6 +10,8 @@ import "server-only";
 import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
 import { pendingReading } from "./analysis-extract";
+import { activeRefusals } from "./refusals";
+import { dropRefusedCards } from "@/lib/refusal";
 import { checklistFor } from "@/lib/checklist";
 import { previewLibrary, type AnalysisCard, type AnalysisFact } from "@/lib/analysis";
 import {
@@ -82,7 +84,8 @@ export async function analysedDocs(tenantId: string): Promise<{ docs: AnalysedDo
         roster: d.speaker_roster ?? null,
       };
     });
-  return { docs, ready: byId.size };
+  // Cards resting on a quote For Granted refused never count (decisions 19 and 31).
+  return { docs: dropRefusedCards(docs, await activeRefusals(tenantId)), ready: byId.size };
 }
 
 export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysis> {

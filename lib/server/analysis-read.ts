@@ -9,6 +9,8 @@ import "server-only";
 // no model call: the would-be Card Library, the facts by key, the review
 // sample and its tally. Changing how they are assembled is free.
 import { userClient } from "./supabase";
+import { listRefusals, type RefusalListing } from "./refusals";
+import { withoutRefused } from "@/lib/refusal";
 import { REJECT_LABEL } from "@/lib/story-card";
 import {
   DOC_TYPE_MAP, previewLibrary, summarizeFacts, reviewSample, reviewTally, reviewTarget, duplicatePairs, rejectionLabel,
@@ -30,10 +32,24 @@ export interface TrialDoc {
 
 export interface TrialReview extends ReviewMark { fingerprint: string; note: string | null; reviewedAt: string }
 
+/** A remembered refusal, with the cards it is holding back from the current read. */
+export interface TrialRefusal extends RefusalListing {
+  blocking: { documentId: string; kind: string; statement: string; quote: string }[];
+}
+
 export interface AnalysisTrialData {
   docs: TrialDoc[];
   progress: { done: number; total: number };
+  /**
+   * Everything the read produced, merged. The Review samples THIS, refused cards
+   * included: the gate judges the reader, and leaving out the cards a person
+   * already caught would flatter it.
+   */
   library: PreviewCard[];
+  /** The library as it would go live: without cards resting on a refused quote (decisions 19 and 31). */
+  liveLibrary: PreviewCard[];
+  /** Every remembered refusal for this client, lifted ones included. */
+  remembered: TrialRefusal[];
   facts: FactSummary[];
   sample: PreviewCard[];
   reviews: Record<string, TrialReview>;
@@ -83,7 +99,16 @@ export async function getAnalysisTrial(tenantId: string): Promise<AnalysisTrialD
   });
 
   const readDocs = docs.filter(d => d.read);
-  const library = previewLibrary(readDocs.map(d => ({ documentId: d.id, cards: d.read!.cards })));
+  const readCards = readDocs.map(d => ({ documentId: d.id, cards: d.read!.cards }));
+  const library = previewLibrary(readCards);
+  const listed = await listRefusals(tenantId);
+  const filtered = withoutRefused(readCards, listed.filter(r => !r.liftedAt));
+  const liveLibrary = filtered.blocked.length ? previewLibrary(filtered.docs) : library;
+  const remembered: TrialRefusal[] = listed.map(r => ({
+    ...r,
+    blocking: filtered.blocked.filter(b => b.refusal.id === r.id)
+      .map(b => ({ documentId: b.documentId, kind: b.card.kind, statement: b.card.statement, quote: b.card.quote })),
+  }));
   const facts = summarizeFacts(readDocs.map(d => ({ documentId: d.id, facts: d.read!.facts })));
 
   const reviews: Record<string, TrialReview> = {};
@@ -113,6 +138,6 @@ export async function getAnalysisTrial(tenantId: string): Promise<AnalysisTrialD
 
   return {
     docs, progress: { done: readDocs.length, total: docs.length },
-    library, facts, sample, reviews, tally, pairs, current: { liveCards: liveCards ?? 0 }, refusals,
+    library, liveLibrary, remembered, facts, sample, reviews, tally, pairs, current: { liveCards: liveCards ?? 0 }, refusals,
   };
 }

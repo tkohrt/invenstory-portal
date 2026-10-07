@@ -34,6 +34,8 @@ import type { JobEventKind } from "@/lib/job";
 import { assessSensitivity } from "@/lib/card-sensitivity";
 import { normalizeText } from "@/lib/story-card";
 import { planMerge, NEW, type MergeCandidate, type MergeCard, type MergeEvidence, type MergePlan } from "@/lib/card-merge";
+import { withoutRefused } from "@/lib/refusal";
+import { activeRefusals } from "./refusals";
 
 type Layer = "I" | "II" | "III" | null;
 
@@ -334,9 +336,16 @@ export async function remergeLibrary(tenantId: string): Promise<MergeSummary> {
     .select("id, card_id, document_id, quote").eq("tenant_id", tenantId);
   if (eErr) throw new Error(`could not read card evidence: ${eErr.message}`);
 
+  // Quotes For Granted refused (Not supported in review, or retired as
+  // Inaccurate) contribute nothing, so a card resting only on them is retired
+  // as source_removed and cannot return by a re-read (decisions 19 and 31).
+  const refused = withoutRefused(
+    ((docRows ?? []) as unknown as { document_id: string; candidates: MergeCandidate[] }[])
+      .map(r => ({ documentId: r.document_id, cards: r.candidates ?? [] })),
+    await activeRefusals(tenantId),
+  );
   const plan = planMerge({
-    docs: ((docRows ?? []) as unknown as { document_id: string; candidates: MergeCandidate[] }[])
-      .map(r => ({ documentId: r.document_id, candidates: r.candidates ?? [] })),
+    docs: refused.docs.map(d => ({ documentId: d.documentId, candidates: d.cards })),
     cards: (cardRows ?? []) as unknown as MergeCard[],
     evidence: (evRows ?? []) as MergeEvidence[],
   });

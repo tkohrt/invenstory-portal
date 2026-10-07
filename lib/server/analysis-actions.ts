@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
+import { syncReviewRefusal, setRefusalLifted } from "./refusals";
 
 const PATH = "/admin/analysis";
 
@@ -26,6 +27,8 @@ export interface ReviewInput {
   competitor: boolean;
   duplicate: boolean;
   note?: string | null;
+  /** Every piece of the card's evidence, so Not supported remembers each quote it stood on. */
+  evidence?: { documentId: string | null; quote: string }[];
 }
 
 /** Record (or change) one card's review. The card itself is stored with it, as judged. */
@@ -47,6 +50,19 @@ export async function saveReviewAction(r: ReviewInput) {
     reviewed_by: s.user.id, reviewed_at: new Date().toISOString(),
   }, { onConflict: "tenant_id,fingerprint" });
   if (error) throw new Error(`could not save the review: ${error.message}`);
+  // Not supported is remembered for this client and refused on every later
+  // read (decision 19); any other verdict forgets it.
+  const evidence = (r.evidence?.length ? r.evidence : [{ documentId: r.documentId, quote: r.quote }]).slice(0, 20);
+  const asked = [...new Set(evidence.map(e => e.documentId).filter((x): x is string => !!x))];
+  const own = new Set<string>();
+  if (asked.length) {
+    const { data } = await db.from("document").select("id").eq("tenant_id", s.tenantId).in("id", asked);
+    for (const d of (data ?? []) as { id: string }[]) own.add(d.id);
+  }
+  await syncReviewRefusal(s.tenantId, s.user.id, {
+    fingerprint: r.fingerprint, kind: r.kind, statement: r.statement, verdict: r.verdict,
+    evidence: evidence.map(e => ({ documentId: e.documentId && own.has(e.documentId) ? e.documentId : null, quote: String(e.quote ?? "") })),
+  });
   revalidatePath(PATH);
 }
 
@@ -55,7 +71,20 @@ export async function clearReviewAction(fingerprint: string) {
   const s = await adminSession();
   const { error } = await db.from("analysis_review").delete().eq("tenant_id", s.tenantId).eq("fingerprint", fingerprint);
   if (error) throw new Error(`could not clear the review: ${error.message}`);
+  await syncReviewRefusal(s.tenantId, s.user.id, { fingerprint, kind: "", statement: "", evidence: [], verdict: null });
   revalidatePath(PATH);
+}
+
+/**
+ * Let a remembered refusal's quote through again (lifted = true), or refuse it
+ * again. The refusal stays on record either way.
+ */
+export async function liftRefusalAction(id: string, lifted: boolean) {
+  const s = await adminSession();
+  if (!id || id.length > 64) throw new Error("That refusal could not be identified.");
+  await setRefusalLifted(s.tenantId, s.user.id, id, !!lifted);
+  revalidatePath(PATH);
+  revalidatePath("/story-cards");
 }
 
 /** A flagged possible duplicate: the same claim, or not. Counted against the whole library. */

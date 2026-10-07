@@ -191,6 +191,10 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
         <div className="cl-edit">
           <textarea rows={2} value={retireNote} onChange={e => setRetireNote(e.target.value)} autoFocus
             placeholder={retiring === "inaccurate" ? "Optional: what is wrong with it" : "Optional: what has changed, or what replaces it"} />
+          {retiring === "inaccurate" && (
+            <p className="cl-note">Its quotes are remembered and refused on every later read, so the claim cannot come back
+              reworded. Reinstating the card forgets them.</p>
+          )}
           <div className="cl-card-acts">
             <button type="button" className="btn inline cl-primary" disabled={pending}
               onClick={() => act(async () => { await retireCardAction(c.id, retiring, retireNote); setRetiring(null); setRetireNote(""); }, "retired")}>

@@ -31,6 +31,8 @@ const TENANT_SCOPED = new Set([
   "ai_usage","usage_grant","usage_request",
   // Client activity visits (0052).
   "activity_event",
+  // Remembered refusals, Phase D patch 1 (0053).
+  "card_refusal",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

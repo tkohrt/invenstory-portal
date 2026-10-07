@@ -12,6 +12,8 @@ import { userClient } from "./supabase";
 import { getContentCoverage } from "./gap-agent";
 import { getEligibilityProfile } from "./eligibility";
 import { getSearchProfile } from "./search-profile-read";
+import { activeRefusals } from "./refusals";
+import { dropRefusedCards } from "@/lib/refusal";
 import { checklistFor } from "@/lib/checklist";
 import {
   deriveReadiness, deriveEligibility, deriveSearchFacts, readinessScore, essentialsAtLeastThin,
@@ -75,7 +77,10 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
 
   const orgType = profile.org_type;
   const items = checklistFor(orgType);
-  const derived = deriveReadiness(orgType, docs);
+  // The analysis as it would go live: without cards resting on a quote For
+  // Granted refused (decisions 19 and 31).
+  const live = dropRefusedCards(docs, await activeRefusals(tenantId));
+  const derived = deriveReadiness(orgType, live);
   const derivedBy = new Map(derived.map(x => [x.key, x]));
   const current = (key: string): ItemState => (coverage.cov[key]?.state ?? "missing") as ItemState;
   const derivedState = (key: string): ItemState => derivedBy.get(key)?.state ?? "missing";
@@ -94,7 +99,7 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
     note: notes.get(`readiness|${r.key}`) ?? null,
   }));
 
-  const eligibility = deriveEligibility(docs, profile).map(sug => {
+  const eligibility = deriveEligibility(live, profile).map(sug => {
     const v = verdicts.find(x => x.area === "eligibility" && x.item_key === sug.field);
     const oldState = sug.current.join(", ");
     const newState = sug.values.map(x => x.display).join(", ");
@@ -105,7 +110,7 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
     };
   });
 
-  const derivedFacts = deriveSearchFacts(docs);
+  const derivedFacts = deriveSearchFacts(live);
   const currentFacts = search?.facts ?? [];
   const facets = FACETS.map(f => ({
     facet: f, label: FACET_LABEL[f],
