@@ -73,6 +73,16 @@ export const EXTRA_KIND_ITEMS: Record<string, string[]> = {
 /** Kinds that can only make their item thin. A need told as a story is not a data-backed need. */
 export const THIN_ONLY_KINDS = new Set(["need_story"]);
 
+/**
+ * Tagged types that cover one more item besides their own (decision 34, 7
+ * October 2026, Shane). For Granted's Layer I Deep Research Report is built to
+ * capture the organization's public story (it scrapes the client's website and
+ * public sources), so a document tagged Research report covers the public
+ * story, the same as a website capture. It evidences nothing else on its own
+ * (decision 15), which is why the type itself has no itemKey.
+ */
+export const TYPE_EXTRA_ITEMS: Record<string, string> = { research_report: "public_story" };
+
 /** Facts that evidence an item, at most thin: one figure is not an operating budget. */
 export const FACT_ITEMS: Record<string, string> = { annual_budget: "budget" };
 
@@ -117,6 +127,10 @@ export function deriveReadiness(orgType: string | null, docs: AnalysedDoc[]): De
     const t = d.typeTag ? DOC_TYPE_MAP[d.typeTag] : undefined;
     if (t?.itemKey) {
       add(t.itemKey, "covered", { id: d.id, title: d.title, via: "type" }, `${t.label} in the Inven(s)tory (tagged)`);
+    }
+    const extraItem = d.typeTag ? TYPE_EXTRA_ITEMS[d.typeTag] : undefined;
+    if (extraItem && t) {
+      add(extraItem, "covered", { id: d.id, title: d.title, via: "type" }, `${t.label} capturing the public story (tagged)`);
     }
     const fv = founderVoice(d);
     if (fv !== "missing") {

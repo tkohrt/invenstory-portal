@@ -49,6 +49,16 @@ describe("deriveReadiness", () => {
     expect(stateOf(r, "determination")).toBe("missing");
   });
 
+  test("a research report covers the public story, as a website capture does (decision 34)", () => {
+    const r = deriveReadiness("for_profit", [doc({ typeTag: "research_report" })]);
+    expect(stateOf(r, "public_story")).toBe("covered");
+    // It evidences nothing else on its own (decision 15).
+    expect(r.filter(i => i.state !== "missing").map(i => i.key)).toEqual(["public_story"]);
+    expect(stateOf(deriveReadiness("for_profit", [doc({ typeTag: "website_capture" })]), "public_story")).toBe("covered");
+    // The analysis's guess alone still counts for nothing.
+    expect(stateOf(deriveReadiness("for_profit", [doc({ docType: "research_report" })]), "public_story")).toBe("missing");
+  });
+
   test("a sales pitch is not a pitch deck: it covers no item on its own", () => {
     const r = deriveReadiness("for_profit", [doc({ id: "a", docType: "pitch_deck", typeTag: "sales_pitch" })]);
     expect(stateOf(r, "pitch_deck")).toBe("missing");
