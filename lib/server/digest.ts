@@ -18,7 +18,7 @@ export async function gatherDigest(now = new Date()): Promise<DigestData> {
   const { start, end } = lastWeek(now);
   const s = start.toISOString(), e = end.toISOString();
   const [{ data: tenants }, { data: users }, { data: msgs }, { data: docs }, { data: visits }, { data: usage },
-    { data: drafts }, { data: sections }, { data: events }, { data: usageReqs }, { data: analysisReqs }, milestones] = await Promise.all([
+    { data: drafts }, { data: sections }, { data: events }, { data: usageReqs }, milestones] = await Promise.all([
     db.from("tenant").select("id, name").order("name"),
     db.from("app_user").select("id, tenant_id, role, full_name"),  // tenant-safe: admin digest across every client
     db.from("chat_message").select("tenant_id, author_user_id").eq("role", "user").gte("created_at", s).lt("created_at", e),  // tenant-safe: admin digest across every client
@@ -29,7 +29,6 @@ export async function gatherDigest(now = new Date()): Promise<DigestData> {
     db.from("draft_section").select("draft_id, updated_at"),  // tenant-safe: admin digest across every client
     db.from("card_event").select("draft_id, created_at").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin digest across every client
     db.from("usage_request").select("tenant_id, user_id, kind, created_at").eq("status", "pending"),  // tenant-safe: admin digest across every client
-    db.from("analysis_request").select("tenant_id, requested_by, created_at").eq("status", "pending"),  // tenant-safe: admin digest across every client
     getAllMilestones().catch(() => new Map()),
   ]);
 
@@ -63,12 +62,8 @@ export async function gatherDigest(now = new Date()): Promise<DigestData> {
   const requests = [
     ...((usageReqs ?? []) as { tenant_id: string; user_id: string | null; kind: string; created_at: string }[]).map(r => ({
       tenantId: r.tenant_id, client: tenantName.get(r.tenant_id) ?? "A client",
-      what: r.kind === "chat_month" ? "more chat questions this month" : "more chat questions",
+      what: r.kind === "ai_month" ? "more AI allowance this month" : r.kind === "chat_month" ? "more chat questions this month" : "more chat questions",
       by: (r.user_id && nameOf.get(r.user_id)) || "A client user", at: r.created_at })),
-    ...((analysisReqs ?? []) as { tenant_id: string; requested_by: string | null; created_at: string }[]).map(r => ({
-      tenantId: r.tenant_id, client: tenantName.get(r.tenant_id) ?? "A client",
-      what: "an Inven(s)tory analysis",
-      by: (r.requested_by && nameOf.get(r.requested_by)) || "A client user", at: r.created_at })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
   return {

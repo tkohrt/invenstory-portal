@@ -6,6 +6,7 @@ import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import Busy from "./Busy";
+import AllowanceRequest from "./AllowanceRequest";
 
 function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [draft, setDraft] = useState("");
@@ -42,9 +43,14 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
     router.refresh();
   };
   const [analyzing, setAnalyzing] = useState(false);
+  // Phase D: past the monthly AI allowance a client is offered Request more instead.
+  const [allowance, setAllowance] = useState<string | null>(null);
   const analyze = async () => {
     setAnalyzing(true);
-    try { await runGapAnalysisAction(); router.refresh(); }
+    try {
+      const r = await runGapAnalysisAction();
+      if (!r.ok) setAllowance(r.allowance); else router.refresh();
+    }
     finally { setAnalyzing(false); }
   };
   const TIER = { critical: "🔴", essential: "🟠", important: "🟡", enriching: "⚪" } as const;
@@ -75,6 +81,7 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
             />
           )}
         </div>
+        {allowance && <AllowanceRequest message={allowance} />}
         {sortedGaps.length === 0
           ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and Inven(s)tory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>
           : <div className="gap-list">{sortedGaps.map(g => (

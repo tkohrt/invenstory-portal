@@ -3,9 +3,9 @@
 //
 // For Granted can do anything here. A client (Phase C) can only start a read of
 // what is new or changed, from their own Analyze page, while the per-client
-// switch is on, and only within the fair-use cap (lib/analysis-cap.ts) or with a
-// request For Granted approved. A client cannot stop a run, re-read everything,
-// or re-read one document: those stay For Granted's.
+// switch is on. Its spend counts toward the monthly AI allowance (Phase D,
+// lib/allowance.ts) but building the Inven(s)tory is never stopped by it. A client cannot stop
+// a run, re-read everything, or re-read one document: those stay For Granted's.
 //
 // The same stages as the Card Library build (app/api/jobs/cards), carried by
 // the server so the page can be closed:
@@ -22,7 +22,7 @@ import { clearAnalysisDocs, analysisProgress, REREAD_MARK } from "@/lib/server/a
 import { createJob, supersedeRunning, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
 import { scheduleAnalysisPass } from "@/lib/server/job-chain";
 import { pendingReading } from "@/lib/server/analysis-extract";
-import { clientUsage, unusedApproval } from "@/lib/server/analysis-client-read";
+import { checkAllowance } from "@/lib/server/allowance";
 import { decideClientRun, describeCap } from "@/lib/analysis-cap";
 
 export const maxDuration = 60;
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Inven(s)tory Analysis is not turned on for this account yet." }, { status: 403 });
   }
   const body = await req.json().catch(() => ({}));
-  if (!admin && (body?.stop || body?.restart || body?.documentId || body?.request)) {
+  if (!admin && (body?.stop || body?.restart || body?.documentId)) {
     return NextResponse.json({ error: "Only For Granted can do that." }, { status: 403 });
   }
   const tenant = await getTenant(tenantId);
@@ -44,27 +44,18 @@ export async function POST(req: Request) {
 
   const existing = await latestJob(tenantId, "analysis");
 
-  // A client starting a new run: the fair-use cap, checked before anything is
-  // created, against exactly what the run would read. Rejoining a run already
-  // going is always free.
-  let usage: { pending_docs: number; pending_chars: number; via_request: string | null } | null = null;
-  const requestId = admin && typeof body?.request === "string" && /^[0-9a-f-]{36}$/i.test(body.request) ? body.request : null;
-  if ((!existing || requestId) && !body?.stop && (body?.begin || !body?.begun)) {
-    if (!admin) {
-      const [rows, pending, approval] = await Promise.all([clientUsage(tenantId), pendingReading(tenantId), unusedApproval(tenantId)]);
-      const plain = decideClientRun({ now: new Date(), usage: rows, pendingDocs: pending.docs, pendingChars: pending.chars });
-      const d = plain.allowed || !approval ? plain
-        : decideClientRun({ now: new Date(), usage: rows, pendingDocs: pending.docs, pendingChars: pending.chars, approvedRequest: true });
-      if (!d.allowed) {
-        return NextResponse.json({ error: describeCap(d), capped: true, reason: d.reason }, { status: 429 });
-      }
-      usage = { pending_docs: pending.docs, pending_chars: pending.chars, via_request: plain.allowed ? null : approval };
-    } else if (requestId) {
-      // For Granted running a client's approved request: recorded so the
-      // approval is used up, and never counted against the client's cap.
-      const pending = await pendingReading(tenantId);
-      usage = { pending_docs: pending.docs, pending_chars: pending.chars, via_request: requestId };
+  // A client starting a new run: something new to read, and the monthly AI
+  // allowance, both checked before anything is created. Rejoining a run already
+  // going is always free. The client's runs are recorded for the activity
+  // dashboard (pages read); they no longer count against a cap of their own.
+  let usage: { pending_docs: number; pending_chars: number } | null = null;
+  if (!admin && !existing && !body?.stop && (body?.begin || !body?.begun)) {
+    const [pending, allowance] = await Promise.all([pendingReading(tenantId), checkAllowance("client", tenantId, { kind: "build" })]);
+    const d = decideClientRun({ pendingDocs: pending.docs, pendingChars: pending.chars, allowance });
+    if (!d.allowed) {
+      return NextResponse.json({ error: describeCap(d), capped: true, reason: d.reason, canRequest: d.reason === "allowance" }, { status: 429 });
     }
+    usage = { pending_docs: pending.docs, pending_chars: pending.chars };
   }
   if (!admin && !existing && body?.kick && body?.begun) {
     return NextResponse.json({ error: "Start the analysis from the Analyze page." }, { status: 400 });
@@ -80,8 +71,7 @@ export async function POST(req: Request) {
   const jobId = existing?.id ?? await createJob(
     tenantId, "analysis", `Analysing ${orgName}'s Inven(s)tory`, session.user.id);
   if (!existing) await supersedeRunning(tenantId, "analysis", jobId);
-  // An approved request is used up even when it joins a run already going.
-  if (usage && (!existing || usage.via_request)) {
+  if (usage && !existing) {
     const { error: uErr } = await db.from("analysis_usage").insert({ tenant_id: tenantId, job_id: jobId, started_by: session.user.id, ...usage });
     if (uErr) console.error("[analysis] usage not recorded", uErr.message);
   }

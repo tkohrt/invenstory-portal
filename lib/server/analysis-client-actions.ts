@@ -1,17 +1,17 @@
 "use server";
-// Inven(s)tory Analysis, Phase C: what the client does on the Analyze page, and
-// For Granted's answer to a request.
+// Inven(s)tory Analysis, Phase C: what the client does on the Analyze page.
+// (Phase C's "Request an analysis" is gone: past the monthly AI allowance the
+// page offers Request more, lib/server/usage-actions.ts.)
 //
 // Every action checks the session itself, and a client only reaches any of them
 // while the per-client switch ('analysis') is on for their account.
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
-import { getTenant, getFeatureVisible } from "./data";
+import { getFeatureVisible } from "./data";
 import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
 import { saveEligibilityProfileAction } from "./eligibility-actions";
 import { analysedDocs } from "./analysis-client-read";
-import { notifyAnalysisRequest } from "./notify";
 import { deriveEligibility, type EligField } from "@/lib/analysis-derive";
 import { openSuggestions, applySuggestion, suggestionKey, type SuggestionDecision } from "@/lib/analysis-client";
 
@@ -35,21 +35,6 @@ async function currentOpen(tenantId: string) {
   const decisions: SuggestionDecision[] = ((decRows ?? []) as { field: string; value_key: string; decision: "confirmed" | "rejected" }[])
     .map(r => ({ field: r.field, valueKey: r.value_key, decision: r.decision }));
   return { profile, open: openSuggestions(deriveEligibility(docs, profile), decisions) };
-}
-
-/** Ask For Granted to run an analysis past the fair-use cap. One pending request at a time. */
-export async function requestAnalysisAction(note?: string | null) {
-  const s = await clientOrAdmin();
-  const { data: pending } = await db.from("analysis_request").select("id")
-    .eq("tenant_id", s.tenantId).eq("status", "pending").limit(1);
-  if (pending?.length) return { ok: true, already: true };
-  const clean = note?.trim() ? note.trim().slice(0, 1000) : null;
-  const { error } = await db.from("analysis_request").insert({ tenant_id: s.tenantId, requested_by: s.user.id, note: clean });
-  if (error) throw new Error(`Could not send the request: ${error.message}`);
-  const tenant = await getTenant(s.tenantId);
-  await notifyAnalysisRequest({ org: tenant?.name ?? "A client", requester: s.user.full_name ?? "A client user", note: clean });
-  revalidatePath(PAGE);
-  return { ok: true, already: false };
 }
 
 /**
@@ -91,19 +76,4 @@ export async function confirmEligibilityAction() {
   }, { onConflict: "tenant_id" });
   if (error) throw new Error(`Could not save that: ${error.message}`);
   revalidatePath(PAGE); revalidatePath("/funding-eligibility");
-}
-
-/**
- * For Granted's answer to a request. Approving lets one press through the cap;
- * the admin page then runs it straight away, so the client need not come back.
- */
-export async function decideAnalysisRequestAction(id: string, approve: boolean) {
-  const s = await getSession();
-  if (!s || s.role !== "admin") throw new Error("For Granted only.");
-  const { data, error } = await db.from("analysis_request").update({
-    status: approve ? "approved" : "declined", decided_by: s.user.id, decided_at: new Date().toISOString(),
-  }).eq("tenant_id", s.tenantId).eq("id", id).eq("status", "pending").select("id");
-  if (error) throw new Error(`Could not save that: ${error.message}`);
-  if (!data?.length) throw new Error("That request has already been answered.");
-  revalidatePath("/admin/analysis"); revalidatePath(PAGE);
 }

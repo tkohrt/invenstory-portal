@@ -14,7 +14,7 @@ import { pagesOf } from "@/lib/analysis-cap";
 import { monthRange, recentMonths, dayKey, topicCounts, stallState, FEATURES, FEATURE_LABEL, type StallState, type Milestone } from "@/lib/activity";
 import { getAllMilestones } from "./milestones";
 
-const ALLOWANCE_DOLLARS = 20;  // Phase D's monthly AI allowance per client (decision 24); shown, not yet enforced
+import { ALLOWANCE, ceilingMicros, MICROS_PER_CENT } from "@/lib/allowance";
 
 type Users = { id: string; tenant_id: string | null; role: string; full_name: string; email: string; created_at: string; auth_id?: string | null }[];
 
@@ -57,7 +57,9 @@ export interface PortfolioRow {
   tenantId: string; name: string;
   people: number; activePeople: number; lastClientActivity: string | null;
   chat: number; chatLimit: number;
-  spendClient: number; spendTotal: number; allowance: number;
+  spendClient: number; spendTotal: number;
+  /** Phase D: the soft line and the hard ceiling this month, in dollars. */
+  allowance: number; ceiling: number;
   docsClient: number; docsFG: number;
   draftsOpen: number; stalled: number; pendingRequests: number;
   /** Getting-started milestones reached, of MILESTONES.length (patch 3). */
@@ -78,7 +80,7 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     db.from("grant_draft").select("id, tenant_id, status, deadline, updated_at, purpose"),  // tenant-safe: admin portfolio across every client
     db.from("draft_section").select("draft_id, updated_at"),  // tenant-safe: admin portfolio across every client
     db.from("card_event").select("draft_id, created_at").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
-    db.from("usage_grant").select("tenant_id, extra, period").eq("kind", "chat_month").eq("period", month),  // tenant-safe: admin portfolio across every client
+    db.from("usage_grant").select("tenant_id, kind, extra, period").eq("period", month),  // tenant-safe: admin portfolio across every client
     db.from("usage_request").select("tenant_id").eq("status", "pending"),  // tenant-safe: admin portfolio across every client
     db.from("document").select("tenant_id, created_at").eq("source", "client").order("created_at", { ascending: false }).limit(2000),  // tenant-safe: admin portfolio across every client
     db.from("chat_message").select("tenant_id, author_user_id, created_at").eq("role", "user").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
@@ -90,6 +92,9 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     db.from("activity_event").select("tenant_id, created_at").order("created_at", { ascending: false }).limit(5000),  // tenant-safe: admin portfolio across every client
   ]);
   const milestones = await getAllMilestones().catch(() => new Map<string, Milestone[]>());
+  // Phase D: each client's monthly AI allowance. Before migration 0054 there is no table and everyone has the default.
+  const { data: allowanceRows } = await db.from("ai_allowance").select("tenant_id, monthly_cents, ceiling_cents");  // tenant-safe: admin portfolio across every client
+  const settingsOf = new Map(((allowanceRows ?? []) as { tenant_id: string; monthly_cents: number; ceiling_cents: number | null }[]).map(r => [r.tenant_id, r]));
   const vm = (visitsMonth ?? []) as { tenant_id: string; user_id: string }[];
   const lv = (lastVisits ?? []) as { tenant_id: string; created_at: string }[];
   const userList = (users ?? []) as Users;
@@ -107,7 +112,13 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
     const myMsgs = ms.filter(m => m.tenant_id === t.id && m.author_user_id && clientIds.has(m.author_user_id));
     const myUsage = us.filter(u => u.tenant_id === t.id);
     const myDrafts = dr.filter(d => d.tenant_id === t.id);
-    const extra = ((grants ?? []) as { tenant_id: string; extra: number }[]).filter(g => g.tenant_id === t.id).reduce((n, g) => n + g.extra, 0);
+    const myGrants = ((grants ?? []) as { tenant_id: string; kind: string; extra: number }[]).filter(g => g.tenant_id === t.id);
+    const extra = myGrants.filter(g => g.kind === "chat_month").reduce((n, g) => n + g.extra, 0);
+    const extraCents = myGrants.filter(g => g.kind === "ai_month").reduce((n, g) => n + g.extra, 0);
+    const set = settingsOf.get(t.id);
+    const monthly = set?.monthly_cents ?? ALLOWANCE.defaultCents;
+    const allowanceDollars = (monthly + extraCents) / 100;
+    const ceilingDollars = ceilingMicros({ spentMicros: 0, monthlyCents: monthly, extraCents, ceilingCents: set?.ceiling_cents ?? null }) / MICROS_PER_CENT / 100;
     const lastDoc = ((lastDocs ?? []) as { tenant_id: string; created_at: string }[]).find(d => d.tenant_id === t.id)?.created_at ?? null;
     const lastMsg = ((lastMsgs ?? []) as { tenant_id: string; author_user_id: string | null; created_at: string }[])
       .find(m => m.tenant_id === t.id && m.author_user_id && clientIds.has(m.author_user_id))?.created_at ?? null;
@@ -120,7 +131,7 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
       activePeople: new Set([...myMsgs.map(m => m.author_user_id), ...vm.filter(v => v.tenant_id === t.id).map(v => v.user_id)]).size,
       lastClientActivity: last,
       chat: myMsgs.length, chatLimit: LIMITS.chatPerMonthPerClient + extra,
-      spendClient: micros(myUsage.filter(u => u.actor === "client")), spendTotal: micros(myUsage), allowance: ALLOWANCE_DOLLARS,
+      spendClient: micros(myUsage.filter(u => u.actor === "client")), spendTotal: micros(myUsage), allowance: allowanceDollars, ceiling: ceilingDollars,
       docsClient: ds.filter(d => d.tenant_id === t.id && d.source === "client").length,
       docsFG: ds.filter(d => d.tenant_id === t.id && d.source !== "client").length,
       draftsOpen: myDrafts.filter(d => d.status === "drafting" || d.status === "client_review").length,
@@ -164,11 +175,17 @@ export interface ClientActivity {
     topics: { key: string; label: string; count: number }[];
     nothingFound: number;
   };
-  requests: { id: string; at: string; by: string; status: string }[];
-  grants: { at: string; extra: number; note: string | null }[];
-  spend: { client: number; admin: number; system: number; total: number; allowance: number;
+  requests: { id: string; at: string; by: string; kind: string; status: string }[];
+  grants: { at: string; kind: string; extra: number; note: string | null }[];
+  /**
+   * Phase D: the monthly AI allowance (the soft line) and the hard ceiling, in
+   * cents; `custom` when For Granted changed the allowance, `ceilingSet` when it
+   * set its own ceiling rather than twice the allowance.
+   */
+  allowance: { monthlyCents: number; extraCents: number; ceilingCents: number; ceilingSet: number | null; custom: boolean; note: string | null };
+  spend: { client: number; admin: number; system: number; total: number; allowance: number; ceiling: number;
     byFeature: { feature: string; calls: number; cost: number }[] };
-  analysis: { runs: number; pages: number; pagesLimit: number };
+  analysis: { runs: number; pages: number };
   documents: {
     list: { id: string; title: string; layer: string; kind: string | null; source: string | null; by: string | null; at: string; status: string; problem: string | null }[];
     byMonth: { month: string; client: number; fg: number }[];
@@ -210,14 +227,17 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     db.from("grant_draft").select("*").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
     db.from("draft_section").select("id, draft_id, status, updated_at").eq("tenant_id", tenantId),
     db.from("card_event").select("draft_id, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(2000),
-    db.from("usage_grant").select("extra, note, granted_at, period").eq("tenant_id", tenantId).eq("kind", "chat_month").eq("period", month),
-    db.from("usage_request").select("id, user_id, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20),
+    db.from("usage_grant").select("kind, extra, note, granted_at, period").eq("tenant_id", tenantId).eq("period", month),
+    db.from("usage_request").select("id, user_id, kind, status, created_at").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(20),
     db.from("story_card").select("status, verified_at").eq("tenant_id", tenantId),
     db.rpc("tenant_word_count", { p_tenant: tenantId }),
     getContentCoverage(tenantId).catch(() => null),
     getEligibilityProfile(tenantId).catch(() => null),
   ]);
   const milestones = (await getAllMilestones().catch(() => null))?.get(tenantId) ?? [];
+  // Phase D: this client's monthly AI allowance (the default until For Granted changes it).
+  const { data: allowanceRow } = await db.from("ai_allowance").select("monthly_cents, ceiling_cents, note, updated_at").eq("tenant_id", tenantId).maybeSingle();
+  const allowanceSet = allowanceRow as { monthly_cents: number; ceiling_cents: number | null; note: string | null; updated_at: string } | null;
 
   const [{ data: visitRows, error: visitErr }, { data: lastSeenRows }] = await Promise.all([
     db.from("activity_event").select("user_id, feature, session_start, created_at").eq("tenant_id", tenantId).gte("created_at", s).lt("created_at", e).limit(20000),
@@ -256,7 +276,12 @@ export async function getClientActivity(tenantId: string, month: string): Promis
   });
   const nothingFound = ((chatAudit ?? []) as { actor_user_id: string | null; detail: string }[])
     .filter(a => a.actor_user_id && clientIds.has(a.actor_user_id) && /mode=none\b/.test(a.detail)).length;
-  const extra = ((grantRows ?? []) as { extra: number }[]).reduce((n, g) => n + g.extra, 0);
+  type G = { kind: string; extra: number; note: string | null; granted_at: string };
+  const grantList = (grantRows ?? []) as G[];
+  const extra = grantList.filter(g => g.kind === "chat_month").reduce((n, g) => n + g.extra, 0);
+  const extraCents = grantList.filter(g => g.kind === "ai_month").reduce((n, g) => n + g.extra, 0);
+  const monthlyCents = allowanceSet?.monthly_cents ?? ALLOWANCE.defaultCents;
+  const ceilingCents = Math.round(ceilingMicros({ spentMicros: 0, monthlyCents, extraCents, ceilingCents: allowanceSet?.ceiling_cents ?? null }) / MICROS_PER_CENT);
 
   type U = { actor: string; feature: string; cost_micros: number };
   const us = (usage ?? []) as U[];
@@ -326,15 +351,16 @@ export async function getClientActivity(tenantId: string, month: string): Promis
     people,
     chat: { month: clientMsgs.length, limit: LIMITS.chatPerMonthPerClient + extra, extra, perDayLimit: LIMITS.chatPerDayPerPerson,
       topics: topicCounts(clientMsgs.map(m => m.content)), nothingFound },
-    requests: ((reqRows ?? []) as { id: string; user_id: string | null; status: string; created_at: string }[])
-      .map(r => ({ id: r.id, at: r.created_at, by: who(r.user_id) ?? "A client user", status: r.status })),
-    grants: ((grantRows ?? []) as { extra: number; note: string | null; granted_at: string }[]).map(g => ({ at: g.granted_at, extra: g.extra, note: g.note })),
+    requests: ((reqRows ?? []) as { id: string; user_id: string | null; kind: string; status: string; created_at: string }[])
+      .map(r => ({ id: r.id, at: r.created_at, by: who(r.user_id) ?? "A client user", kind: r.kind, status: r.status })),
+    grants: grantList.map(g => ({ at: g.granted_at, kind: g.kind, extra: g.extra, note: g.note })),
+    allowance: { monthlyCents, extraCents, ceilingCents, ceilingSet: allowanceSet?.ceiling_cents ?? null, custom: !!allowanceSet, note: allowanceSet?.note ?? null },
     spend: {
       client: micros(us.filter(u => u.actor === "client")), admin: micros(us.filter(u => u.actor === "admin")),
-      system: micros(us.filter(u => u.actor === "system")), total: micros(us), allowance: ALLOWANCE_DOLLARS,
+      system: micros(us.filter(u => u.actor === "system")), total: micros(us), allowance: (monthlyCents + extraCents) / 100, ceiling: ceilingCents / 100,
       byFeature: [...byFeature.values()].sort((a, b) => b.cost - a.cost),
     },
-    analysis: { runs: au.filter(r => !r.via_request).length, pages: au.filter(r => !r.via_request).reduce((n, r) => n + pagesOf(r.pending_chars), 0), pagesLimit: 200 },
+    analysis: { runs: au.length, pages: au.reduce((n, r) => n + pagesOf(r.pending_chars), 0) },
     documents: { list: docList, byMonth, total: allDocs.length, failedNow: allDocs.filter(d => d.status === "failed").length, unreadableNow: empty.size },
     other: {
       reprocesses: au2.filter(a => a.action === "reprocess_doc" && a.actor_user_id && clientIds.has(a.actor_user_id)).length,

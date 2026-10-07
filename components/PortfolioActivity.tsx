@@ -45,7 +45,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
                 <td>{r.activePeople} of {r.people}<div className="ov-muted">used the portal</div></td>
                 <td>{ago(r.lastClientActivity)}</td>
                 <td className={nearChat ? "an-warn" : ""}>{r.chat} of {r.chatLimit}</td>
-                <td className={nearSpend ? "an-warn" : ""}>{usd(r.spendClient)} of ${r.allowance}<div className="ov-muted">{usd(r.spendTotal)} all</div></td>
+                <td className={nearSpend ? "an-warn" : ""}>{usd(r.spendClient)} of {usd(r.allowance)}<div className="ov-muted">hard limit {usd(r.ceiling)}</div><div className="ov-muted">{usd(r.spendTotal)} all</div></td>
                 <td>{r.docsClient} by client<div className="ov-muted">{r.docsFG} by For Granted</div></td>
                 <td>{r.draftsOpen} open{r.stalled ? <div className="an-bad">{r.stalled} stalled</div> : null}</td>
                 <td>{r.milestonesDone} of {MILESTONES.length}<div className="ov-muted">milestones</div></td>
@@ -55,7 +55,7 @@ export default function PortfolioActivity({ data }: { data: Data }) {
           })}</tbody>
         </table>
       </div>
-      <p className="cl-note">Months are Eastern time. The $20 allowance is shown for reference until Phase D enforces it.
+      <p className="cl-note">Months are Eastern time. Each client&rsquo;s monthly AI allowance ($20 unless changed, plus anything granted this month) is a soft line on the AI spend the client causes: past it nothing stops and you are alerted. The hard limit (twice the allowance unless changed) stops only chat, readiness re-runs and Story Intelligence.
         {data.meterSince ? ` AI spend is measured from ${new Date(data.meterSince).toLocaleDateString()}.` : " AI spend is measured from the first AI call after the usage update."}
         {" "}&ldquo;People&rdquo; counts client logins that used the portal this month (a recorded visit or a question).
         {" "}&ldquo;Getting started&rdquo; counts the milestones reached so far, from first document to first application submitted; each client&rsquo;s page shows the days to each.</p>

@@ -53,34 +53,9 @@ export async function notifyAccountClosure(d: { org: string; requester: string; 
   }
 }
 
-/** A client asked For Granted to run an analysis past the fair-use cap (Phase C). */
-export async function notifyAnalysisRequest(d: { org: string; requester: string; note: string | null }) {
-  const line = `${d.requester} (${d.org}) asked For Granted to run an Inven(s)tory analysis.` + (d.note ? ` Note: ${d.note}` : "");
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  if (RESEND_KEY) {
-    try {
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
-          subject: `Analysis request: ${d.org}`,
-          html: `<p>${esc(line)}</p><p>Switch to ${esc(d.org)} in the portal, then open Admin, Analysis (trial) to approve or decline it.</p><p><a href="${APP_URL}/admin/analysis">Open the portal</a></p>`,
-        }),
-      });
-    } catch { /* best-effort */ }
-  }
-  if (SLACK_WEBHOOK) {
-    try {
-      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:mag: *Analysis request* ${line}  <${APP_URL}/admin/analysis|Open portal>` }) });
-    } catch { /* best-effort */ }
-  }
-}
-
 /** A client reached an AI usage limit and asked for more (6 October 2026). */
 export async function notifyUsageRequest(d: { org: string; requester: string; kind: string }) {
-  const what = d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
+  const what = d.kind === "ai_month" ? "this month's AI allowance" : d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
   const line = `${d.requester} (${d.org}) has used ${what} and asked For Granted for more.`;
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   if (RESEND_KEY) {
@@ -90,8 +65,8 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
         headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
-          subject: `More questions requested: ${d.org}`,
-          html: `<p>${esc(line)}</p><p>Grant more on Admin, All Clients, then the client's activity page.</p><p><a href="${APP_URL}/admin/clients">Open the portal</a></p>`,
+          subject: `${d.kind === "ai_month" ? "More AI allowance" : "More questions"} requested: ${d.org}`,
+          html: `<p>${esc(line)}</p><p>Grant more on Admin, All Clients, then the client's activity page, Usage and limits.</p><p><a href="${APP_URL}/admin/clients">Open the portal</a></p>`,
         }),
       });
     } catch { /* best-effort */ }
@@ -99,7 +74,38 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:speech_balloon: *More questions requested* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
+        body: JSON.stringify({ text: `:speech_balloon: *${d.kind === "ai_month" ? "More AI allowance" : "More questions"} requested* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
+    } catch { /* best-effort */ }
+  }
+}
+
+/**
+ * A client passed its monthly AI allowance, or reached its hard ceiling (Phase D,
+ * decision 32). Sent once each a month. Past the allowance nothing stops; at the
+ * ceiling chat, readiness re-runs and Story Intelligence wait for a grant.
+ */
+export async function notifyAllowance(d: { org: string; level: "over" | "ceiling"; spent: string; line: string; ceiling: string }) {
+  const line = d.level === "over"
+    ? `${d.org} has passed this month's AI allowance: ${d.spent} of ${d.line}. Nothing has stopped; the hard limit is ${d.ceiling}.`
+    : `${d.org} has reached this month's hard AI limit: ${d.spent} of ${d.ceiling}. Chat, readiness re-runs and Story Intelligence now wait for a grant; document reads carry on.`;
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
+          subject: `${d.level === "over" ? "Past the AI allowance" : "At the AI limit"}: ${d.org}`,
+          html: `<p>${esc(line)}</p><p>Give more, or change the allowance, on Admin, All Clients, then the client's activity page, Usage and limits.</p><p><a href="${APP_URL}/admin/clients">Open the portal</a></p>`,
+        }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `:moneybag: *${d.level === "over" ? "Past the AI allowance" : "At the AI limit"}* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
     } catch { /* best-effort */ }
   }
 }

@@ -5,13 +5,16 @@ import { db } from "@/lib/server/db";
 import { retrieve, retrieveCards, generate } from "@/lib/server/rag";
 import { decideChat } from "@/lib/usage-limits";
 import { chatCounts, withAiUsage } from "@/lib/server/ai-usage";
+import { checkAllowance, conversationInFlight } from "@/lib/server/allowance";
 
 export const maxDuration = 60;
 
 // The client limits (lib/usage-limits.ts, decided 6 October 2026): a question
 // at most about a page long, 12 a minute and 50 a day per person, and 500 a
 // month for each client across all of its logins. Counts are DB-backed so they
-// hold across serverless instances. For Granted's admins are never limited.
+// hold across serverless instances. Then the monthly AI allowance (Phase D,
+// lib/allowance.ts), which every paid client step shares. For Granted's admins
+// are never limited.
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -24,7 +27,14 @@ export async function POST(req: NextRequest) {
   const counts = admin ? { minute: 0, day: 0, month: 0 } : await chatCounts(session.tenantId, session.user.id);
   const decision = decideChat(admin ? "admin" : "client", q.length, counts);
   if (!decision.ok) {
-    return NextResponse.json({ error: decision.message, limit: decision.reason, canRequest: decision.canRequest }, { status: 429 });
+    return NextResponse.json({ error: decision.message, limit: decision.reason, canRequest: decision.canRequest, requestKind: "chat_month" }, { status: 429 });
+  }
+  // Past the allowance nothing stops; only the hard ceiling does, and a
+  // conversation already under way may finish (lib/allowance.ts).
+  const inFlight = admin ? false : await conversationInFlight(session.tenantId, typeof sessionId === "string" ? sessionId : undefined);
+  const allowance = await checkAllowance(admin ? "admin" : "client", session.tenantId, { kind: "interactive", inFlight });
+  if (!allowance.ok) {
+    return NextResponse.json({ error: allowance.message, limit: "allowance", canRequest: true, requestKind: "ai_month" }, { status: 429 });
   }
 
   const supabase = await userClient();
@@ -81,6 +91,6 @@ export async function POST(req: NextRequest) {
     sessionId: sid, content: answer.content, citations: cites,
     generated: answer.generated, mode: answer.mode, retrieval: mode,
     // Near a limit, the page says how many questions are left.
-    usageWarning: "warning" in decision ? decision.warning : null,
+    usageWarning: ("warning" in decision ? decision.warning : null) ?? ("warning" in allowance ? allowance.warning : null),
   });
 }

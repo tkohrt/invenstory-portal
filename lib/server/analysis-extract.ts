@@ -305,7 +305,7 @@ export async function continueAnalysis(
 /**
  * What an analysis would read now: every ready document, and the ones still to
  * read (new, changed, read under older rules, or marked to read again). Shared
- * by the read itself and by the client's fair-use cap, so the cap measures
+ * by the read itself and by the client's Analyze button, so the button says
  * exactly what the run will read.
  */
 async function readingPlan(tenantId: string) {
@@ -339,7 +339,7 @@ async function readingPlan(tenantId: string) {
   return { docList, todo, textByDoc };
 }
 
-/** How much a run would read now, for the client's fair-use cap. No model call. */
+/** How much a run would read now, for the client's Analyze button. No model call. */
 export async function pendingReading(tenantId: string): Promise<{ docs: number; chars: number }> {
   const { todo, textByDoc } = await readingPlan(tenantId);
   return { docs: todo.length, chars: todo.reduce((n, d) => n + (textByDoc.get(d.id)?.length ?? 0), 0) };

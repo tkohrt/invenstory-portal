@@ -2,12 +2,16 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { withAiUsage } from "./ai-usage";
+import { withAiUsage, type UsageCtx } from "./ai-usage";
+import { checkAllowance } from "./allowance";
 import { getEligibilityProfile } from "./eligibility";
 
-async function storeExtractionCoverage(tenantId: string, orgType: string | null): Promise<{ covered: number; thin: number; missing: number }> {
+async function storeExtractionCoverage(
+  tenantId: string, orgType: string | null,
+  who: Pick<UsageCtx, "actor" | "userId"> = { actor: "admin" },
+): Promise<{ covered: number; thin: number; missing: number }> {
   const { extractDocumentEvidence } = await import("./doc-extract");
-  const trace = await withAiUsage({ tenantId, actor: "admin", feature: "readiness_refresh" }, () => extractDocumentEvidence(tenantId, orgType));
+  const trace = await withAiUsage({ tenantId, ...who, feature: "readiness_refresh" }, () => extractDocumentEvidence(tenantId, orgType));
   const cov: Record<string, { state: string; sources: { id: string; title: string; quote?: string }[] }> = {};
   const counts = { covered: 0, thin: 0, missing: 0 } as Record<string, number>;
   for (const it of trace.items) {
@@ -22,11 +26,20 @@ async function storeExtractionCoverage(tenantId: string, orgType: string | null)
   return { covered: counts.covered, thin: counts.thin, missing: counts.missing };
 }
 
-export async function runGapAnalysisAction() {
+/**
+ * Run Readiness Check. A client can press it, so it is metered as whoever
+ * pressed it (until 6 October 2026 every run was recorded as For Granted's,
+ * which hid the most expensive thing a client could start), and a client's
+ * press is held to the monthly AI allowance (Phase D).
+ */
+export async function runGapAnalysisAction(): Promise<{ ok: true } | { ok: false; allowance: string }> {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
+  const actor = s.role === "admin" ? "admin" : "client";
+  const allowance = await checkAllowance(actor, s.tenantId);
+  if (!allowance.ok) return { ok: false, allowance: allowance.message };
   const profile = await getEligibilityProfile(s.tenantId);
-  await storeExtractionCoverage(s.tenantId, profile.org_type);
+  await storeExtractionCoverage(s.tenantId, profile.org_type, { actor, userId: s.user.id });
   revalidatePath("/funding-eligibility"); revalidatePath("/invenstory");
   return { ok: true };
 }

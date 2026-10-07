@@ -3,16 +3,19 @@
 // and sees what it found: readiness and what is missing, the Story Cards found,
 // the eligibility answers to confirm one by one, and what has opened up.
 //
-// Past the fair-use cap the button becomes "Request an analysis", which For
-// Granted approves. Everything here is the client's own material; nothing For
-// Granted uses to judge a reader (refusals, duplicate flags, reviews) is shown.
+// The button counts toward the monthly AI allowance (Phase D) but is never
+// stopped by it: building the Inven(s)tory is always allowed. Near and past the
+// allowance the page says so. Everything
+// here is the client's own material; nothing For Granted uses to judge a
+// reader (refusals, duplicate flags, reviews) is shown.
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
 import type { ClientAnalysis } from "@/lib/server/analysis-client-read";
-import { describeCap, ANALYSIS_CAP } from "@/lib/analysis-cap";
-import { requestAnalysisAction, decideSuggestionAction, confirmEligibilityAction } from "@/lib/server/analysis-client-actions";
+import { describeCap } from "@/lib/analysis-cap";
+import { decideSuggestionAction, confirmEligibilityAction } from "@/lib/server/analysis-client-actions";
+import AllowanceRequest from "./AllowanceRequest";
 
 const STATE_LABEL = { covered: "Covered", thin: "Partly covered", missing: "Missing" } as const;
 const TIER_LABEL: Record<string, string> = { essential: "Essential", important: "Important", enriching: "Enriching" };
@@ -75,15 +78,18 @@ export default function ClientAnalysisView({ orgName, data, job: initialJob, isA
             <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void run()} aria-busy={busy}>
               {busy ? "Analysing…" : never ? "Analyze my Inven(s)tory" : "Analyze new and changed documents"}
             </button>
-            <p className="cl-note">About {cap.pages} page{cap.pages === 1 ? "" : "s"} to read. You can run one analysis a day,
-              and up to {ANALYSIS_CAP.pagesPerMonth} new pages a month.</p>
+            <p className="cl-note">About {cap.pages} page{cap.pages === 1 ? "" : "s"} to read.</p>
+            {cap.warning && <p className="cl-note ca-warn">{cap.warning}</p>}
           </>
         ) : cap.reason === "nothing_new" ? (
           <p className="cl-note">{data.documents === 0 ? "Upload documents to your Inven(s)tory first, then analyse them here." : describeCap(cap)}</p>
+        ) : isAdmin ? (
+          <p className="cl-note">The client has used this month&rsquo;s AI allowance, so their button offers Request more.
+            Your own runs are never limited: run it from Admin, then Analysis, or give more on the client&rsquo;s activity page.</p>
         ) : (
-          <RequestBox message={describeCap(cap)} pending={data.pendingRequest} lastDecided={data.lastDecided} />
+          <AllowanceRequest message={describeCap(cap)} requested={data.allowanceRequested} />
         )}
-        {isAdmin && <p className="cl-note">For Granted view: this is the client&rsquo;s page. Your own runs, with no cap, are on Admin, then Analysis (trial).</p>}
+        {isAdmin && <p className="cl-note">For Granted view: this is the client&rsquo;s page, showing the client&rsquo;s allowance. Your own runs, never limited, are on Admin, then Analysis.</p>}
         {error && <div className="cl-error">{error}</div>}
         {job && !dismissed && (
           <JobProgress job={job} lostContact={gaveUp} onDismiss={() => setDismissed(true)} />
@@ -104,31 +110,6 @@ export default function ClientAnalysisView({ orgName, data, job: initialJob, isA
           <Unlocks data={data} />
         </>
       )}
-    </div>
-  );
-}
-
-function RequestBox({ message, pending, lastDecided }: {
-  message: string; pending: ClientAnalysis["pendingRequest"]; lastDecided: ClientAnalysis["lastDecided"];
-}) {
-  const router = useRouter();
-  const [note, setNote] = useState("");
-  const [busy, start] = useTransition();
-  const [err, setErr] = useState<string | null>(null);
-  if (pending) {
-    return <p className="cl-note">You asked For Granted to run an analysis on {day(pending.at)}. We&rsquo;ll run it and the results will appear here.</p>;
-  }
-  return (
-    <div className="ca-request">
-      <p className="cl-note">{message}</p>
-      {lastDecided?.status === "declined" && <p className="cl-note">Your last request ({day(lastDecided.at)}) was not run. Get in touch if you have questions.</p>}
-      <input className="cl-search" placeholder="Anything we should know? (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={1000} />
-      <button type="button" className="btn secondary" disabled={busy}
-        onClick={() => start(async () => {
-          setErr(null);
-          try { await requestAnalysisAction(note); router.refresh(); } catch (e) { setErr(e instanceof Error ? e.message : "The request did not send."); }
-        })}>Request an analysis</button>
-      {err && <div className="cl-error">{err}</div>}
     </div>
   );
 }

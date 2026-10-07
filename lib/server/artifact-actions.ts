@@ -7,6 +7,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { generateArtifact } from "./artifacts";
 import { withAiUsage } from "./ai-usage";
+import { checkAllowance } from "./allowance";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -24,10 +25,14 @@ export async function generateSIAction(slug: string) {
   if (s.role !== "admin") {
     const { data: existing } = await db.from("artifact_set").select("id").eq("tenant_id", s.tenantId).eq("type_slug", slug).maybeSingle();
     if (existing) throw new Error("This has already been generated. For Granted can regenerate it.");
+    // The monthly AI allowance (Phase D): past it, the panel offers Request more.
+    const allowance = await checkAllowance("client", s.tenantId);
+    if (!allowance.ok) return { ok: false as const, allowance: allowance.message };
   }
   await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: s.role === "admin" ? "admin" : "client", feature: "story_intelligence" },
     () => generateArtifact(s.tenantId, slug));
   revalidatePath(`/story-intelligence/${slug}`);
+  return { ok: true as const };
 }
 
 export async function regenerateSIAction(slug: string) {

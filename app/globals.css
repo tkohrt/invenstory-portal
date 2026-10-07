@@ -1319,6 +1319,7 @@ a.dl-row:hover{background:#f6f8f5}
 .ca-request{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ca-request .cl-note{flex-basis:100%;margin:0}
 .ca-request .cl-search{flex:1;min-width:200px}
+.ca-warn{color:#8a5a00}
 .ca-sec{margin:0 0 20px}
 .ca-sec h3{margin:0 0 4px;font-size:17px}
 .ca-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}

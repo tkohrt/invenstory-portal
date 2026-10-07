@@ -19,7 +19,8 @@ import {
   type AnalysedDoc, type ItemState,
 } from "@/lib/analysis-derive";
 import { openSuggestions, unlocks, type OpenSuggestion, type SuggestionDecision } from "@/lib/analysis-client";
-import { decideClientRun, type CapDecision, type UsageRow } from "@/lib/analysis-cap";
+import { decideClientRun, type CapDecision } from "@/lib/analysis-cap";
+import { checkAllowance, pendingAllowanceRequest } from "./allowance";
 import type { SpeakerRoster } from "@/lib/transcript-speakers";
 
 export interface ClientAnalysis {
@@ -34,30 +35,10 @@ export interface ClientAnalysis {
   suggestions: OpenSuggestion[];
   eligibilityConfirmedAt: string | null;
   unlock: ReturnType<typeof unlocks>;
+  /** Whether the button is available: something new to read, within the monthly AI allowance (Phase D). */
   cap: CapDecision;
-  pendingRequest: { id: string; at: string } | null;
-  lastDecided: { status: "approved" | "declined"; at: string } | null;
-}
-
-/** The client's own presses, for the cap. For Granted's runs are never recorded. */
-export async function clientUsage(tenantId: string): Promise<UsageRow[]> {
-  const since = new Date(Date.now() - 32 * 24 * 3600_000).toISOString();
-  // A run For Granted approved past the cap does not count against it.
-  const { data, error } = await db.from("analysis_usage").select("created_at, pending_chars")
-    .eq("tenant_id", tenantId).gte("created_at", since).is("via_request", null);
-  if (error) throw new Error(`could not read analysis usage: ${error.message}`);
-  return ((data ?? []) as { created_at: string; pending_chars: number }[]).map(r => ({ at: r.created_at, pendingChars: r.pending_chars }));
-}
-
-/** An approved request not yet used by a run: it lets one press past the cap. */
-export async function unusedApproval(tenantId: string): Promise<string | null> {
-  const [{ data: approved }, { data: used }] = await Promise.all([
-    db.from("analysis_request").select("id").eq("tenant_id", tenantId).eq("status", "approved")
-      .order("decided_at", { ascending: false }).limit(5),
-    db.from("analysis_usage").select("via_request").eq("tenant_id", tenantId).not("via_request", "is", null),
-  ]);
-  const usedIds = new Set(((used ?? []) as { via_request: string }[]).map(r => r.via_request));
-  return ((approved ?? []) as { id: string }[]).find(r => !usedIds.has(r.id))?.id ?? null;
+  /** A request for more allowance is already with For Granted. */
+  allowanceRequested: boolean;
 }
 
 /** The documents the analysis has read, in the shape the derivations take. */
@@ -89,16 +70,15 @@ export async function analysedDocs(tenantId: string): Promise<{ docs: AnalysedDo
 }
 
 export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysis> {
-  const [{ docs, ready }, profile, { data: decRows }, { data: state }, usage, pending, approval, { data: reqRows }] = await Promise.all([
+  const [{ docs, ready }, profile, { data: decRows }, { data: state }, pending, allowance, requested] = await Promise.all([
     analysedDocs(tenantId),
     getEligibilityProfile(tenantId),
     db.from("analysis_suggestion_decision").select("field, value_key, decision").eq("tenant_id", tenantId),
     db.from("analysis_client_state").select("eligibility_confirmed_at").eq("tenant_id", tenantId).maybeSingle(),
-    clientUsage(tenantId),
     pendingReading(tenantId),
-    unusedApproval(tenantId),
-    db.from("analysis_request").select("id, status, created_at, decided_at").eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false }).limit(1),
+    // The client's allowance, also when For Granted is looking at the client's page.
+    checkAllowance("client", tenantId, { kind: "build" }),
+    pendingAllowanceRequest(tenantId).catch(() => false),
   ]);
 
   const orgType = profile.org_type;
@@ -116,7 +96,6 @@ export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysi
   const suggestions = openSuggestions(deriveEligibility(docs, profile), decisions);
   const confirmedAt = (state as { eligibility_confirmed_at: string | null } | null)?.eligibility_confirmed_at ?? null;
 
-  const last = ((reqRows ?? []) as { id: string; status: string; created_at: string; decided_at: string | null }[])[0];
   return {
     analysed: docs.length,
     documents: ready,
@@ -134,19 +113,7 @@ export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysi
       eligibilityConfirmed: !!confirmedAt && !suggestions.length,
       essentialsThin: essentialsAtLeastThin(orgType, st),
     }),
-    cap: decideClientRun({ now: new Date(), usage, pendingDocs: pending.docs, pendingChars: pending.chars, approvedRequest: !!approval }),
-    pendingRequest: last?.status === "pending" ? { id: last.id, at: last.created_at } : null,
-    lastDecided: last && last.status !== "pending" && last.decided_at
-      ? { status: last.status as "approved" | "declined", at: last.decided_at } : null,
+    cap: decideClientRun({ pendingDocs: pending.docs, pendingChars: pending.chars, allowance }),
+    allowanceRequested: requested,
   };
-}
-
-/** For Granted's view: every pending request for this client. */
-export async function pendingRequests(tenantId: string) {
-  const { data, error } = await db.from("analysis_request")
-    .select("id, note, created_at, requested_by, app_user:requested_by(full_name)")
-    .eq("tenant_id", tenantId).eq("status", "pending").order("created_at");
-  if (error) throw new Error(`could not read requests: ${error.message}`);
-  return ((data ?? []) as unknown as { id: string; note: string | null; created_at: string; app_user: { full_name: string } | null }[])
-    .map(r => ({ id: r.id, note: r.note, at: r.created_at, by: r.app_user?.full_name ?? "The client" }));
 }

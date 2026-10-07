@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { embedText, embedTextsParallel } from "./embed";
 import { db } from "./db";
 import { uploadReadsLastDay, withAiUsage } from "./ai-usage";
+import { checkAllowance } from "./allowance";
 import { uploadReadNow, type Actor } from "@/lib/usage-limits";
 
 const EMBED_MODEL = "gte-small";
@@ -187,6 +188,10 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
             await db.from("audit_log").insert({ tenant_id: doc.tenant_id, action: "upload_ai_read_deferred", detail: documentId });
             return;
           }
+          // Counted toward the monthly AI allowance (Phase D) and never
+          // stopped by it: reading what a client uploads is building the
+          // Inven(s)tory. The check is made for its alert to For Granted.
+          await checkAllowance("client", doc.tenant_id, { kind: "build" });
           await db.from("audit_log").insert({ tenant_id: doc.tenant_id, action: "upload_ai_read", detail: documentId });
         }
         const { mergeDocumentIntoCoverage } = await import("./doc-extract");

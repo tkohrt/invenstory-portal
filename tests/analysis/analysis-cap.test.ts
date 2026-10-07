@@ -1,46 +1,37 @@
-// The fair-use cap on the client's Analyze button (Phase C).
+// The client's Analyze button (Phase C). Phase D counts its spend toward the allowance and never stops it.
 import { describe, expect, test } from "vitest";
-import { decideClientRun, describeCap, pagesOf, ANALYSIS_CAP } from "@/lib/analysis-cap";
+import { decideClientRun, describeCap, pagesOf } from "@/lib/analysis-cap";
+import type { AllowanceDecision } from "@/lib/allowance";
 
-const now = new Date("2026-10-15T12:00:00Z");
-const hoursAgo = (h: number) => new Date(now.getTime() - h * 3600_000).toISOString();
+const fine: AllowanceDecision = { ok: true, level: "fine", warning: null };
+const near: AllowanceDecision = { ok: true, level: "near", warning: "Your organization has used 85% of this month's AI allowance." };
+// The Analyze button is a build step, so in practice it is never refused (lib/allowance.ts); the page still handles a refusal.
+const used: AllowanceDecision = { ok: false, level: "ceiling", canRequest: true, message: "Your organization has used this month's AI allowance." };
 
 describe("decideClientRun", () => {
-  test("nothing new to read is never a paid run", () => {
-    expect(decideClientRun({ now, usage: [], pendingDocs: 0, pendingChars: 0 })).toEqual({ allowed: false, reason: "nothing_new" });
-    expect(decideClientRun({ now, usage: [], pendingDocs: 0, pendingChars: 0, approvedRequest: true }).allowed).toBe(false);
+  test("nothing new to read is never a run, whatever the allowance", () => {
+    expect(decideClientRun({ pendingDocs: 0, pendingChars: 0, allowance: fine })).toEqual({ allowed: false, reason: "nothing_new" });
+    expect(decideClientRun({ pendingDocs: 0, pendingChars: 0, allowance: used }).allowed).toBe(false);
+    expect(describeCap({ allowed: false, reason: "nothing_new" })).toContain("has been analysed");
   });
 
-  test("the first press of the day is allowed", () => {
-    const d = decideClientRun({ now, usage: [], pendingDocs: 2, pendingChars: 9000 });
-    expect(d).toEqual({ allowed: true, pages: 3, monthPagesAfter: 3 });
+  test("within the allowance a run is allowed, as often as there is something new (no daily or page cap)", () => {
+    expect(decideClientRun({ pendingDocs: 40, pendingChars: 3_000_000, allowance: fine })).toEqual({ allowed: true, pages: 1000, warning: null });
   });
 
-  test("a second press within 24 hours waits, and says when", () => {
-    const d = decideClientRun({ now, usage: [{ at: hoursAgo(5), pendingChars: 3000 }], pendingDocs: 1, pendingChars: 3000 });
-    expect(d.allowed).toBe(false);
-    if (!d.allowed && d.reason === "daily") {
-      expect(d.nextAt).toBe(new Date(now.getTime() + 19 * 3600_000).toISOString());
-      expect(describeCap(d, now)).toContain("about 19 hours");
-    } else throw new Error("expected the daily cap");
+  test("near the allowance the run is allowed and carries the warning", () => {
+    const d = decideClientRun({ pendingDocs: 1, pendingChars: 3000, allowance: near });
+    expect(d).toEqual({ allowed: true, pages: 1, warning: near.ok && "warning" in near ? near.warning : null });
   });
 
-  test("a press more than 24 hours ago does not count against today", () => {
-    expect(decideClientRun({ now, usage: [{ at: hoursAgo(25), pendingChars: 3000 }], pendingDocs: 1, pendingChars: 3000 }).allowed).toBe(true);
+  test("past the allowance the button says why", () => {
+    const d = decideClientRun({ pendingDocs: 2, pendingChars: 9000, allowance: used });
+    expect(d).toEqual({ allowed: false, reason: "allowance", message: "Your organization has used this month's AI allowance." });
+    expect(describeCap(d)).toBe("Your organization has used this month's AI allowance.");
   });
 
-  test("the monthly page allowance counts only this calendar month", () => {
-    const lastMonth = { at: "2026-09-30T23:00:00Z", pendingChars: ANALYSIS_CAP.pagesPerMonth * ANALYSIS_CAP.charsPerPage };
-    expect(decideClientRun({ now, usage: [lastMonth], pendingDocs: 1, pendingChars: 3000 }).allowed).toBe(true);
-    const thisMonth = { at: "2026-10-02T09:00:00Z", pendingChars: 190 * ANALYSIS_CAP.charsPerPage };
-    const d = decideClientRun({ now, usage: [thisMonth], pendingDocs: 4, pendingChars: 20 * ANALYSIS_CAP.charsPerPage });
-    expect(d).toEqual({ allowed: false, reason: "monthly", pages: 20, monthPagesUsed: 190 });
-    expect(describeCap(d)).toContain("190 of this month's 200");
-  });
-
-  test("an approved request lets one press through the cap", () => {
-    const d = decideClientRun({ now, usage: [{ at: hoursAgo(1), pendingChars: 600_000 }], pendingDocs: 3, pendingChars: 60_000, approvedRequest: true });
-    expect(d.allowed).toBe(true);
+  test("an admin's unlimited allowance always allows", () => {
+    expect(decideClientRun({ pendingDocs: 1, pendingChars: 10, allowance: { ok: true, unlimited: true } }).allowed).toBe(true);
   });
 
   test("pages round up, and an empty text is no pages", () => {

@@ -83,7 +83,7 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
   const [showBedrock, setShowBedrock] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   // The client limits (lib/usage-limits.ts): a note near a limit, and the way to ask for more at one.
-  const [usage, setUsage] = useState<{ text: string; kind: "chat_month" | null } | null>(null);
+  const [usage, setUsage] = useState<{ text: string; kind: "chat_month" | "ai_month" | null } | null>(null);
   const [requested, setRequested] = useState(false);
   const openDoc = docs.find(d => d.id === openDocId) ?? null;
   const scroll = () => setTimeout(() => streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" }), 40);
@@ -97,7 +97,7 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
       const b = await res.json();
       if (!res.ok) {
         setMsgs(m => [...m, { role: "assistant", content: b.error ?? "Something went wrong.", citations: [] }]);
-        if (res.status === 429 && b.canRequest) setUsage({ text: b.error, kind: "chat_month" });
+        if (res.status === 429 && b.canRequest) setUsage({ text: b.error, kind: b.requestKind === "ai_month" ? "ai_month" : "chat_month" });
       } else {
         setUsage(b.usageWarning ? { text: b.usageWarning, kind: null } : null);
         const wasNew = !sessionId && b.sessionId;

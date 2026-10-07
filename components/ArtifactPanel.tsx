@@ -5,6 +5,7 @@ import {
   approveSIAction, generateSIAction, regenerateSIAction, removeSICardAction, editSICardAction,
 } from "@/lib/server/artifact-actions";
 import type { ArtifactBundle, ArtifactCardView } from "@/lib/types";
+import AllowanceRequest from "./AllowanceRequest";
 
 function Cites({ card, onOpenDoc }: { card: ArtifactCardView; onOpenDoc: (id: string) => void }) {
   return (
@@ -53,7 +54,16 @@ export default function ArtifactPanel({ bundle, isAdmin, onOpenDoc }: {
   const { type, set, cards } = bundle;
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
-  const run = (label: string, fn: () => Promise<unknown>) => { setBusy(label); start(async () => { await fn(); setBusy(null); }); };
+  // Phase D: a client past the monthly AI allowance is offered Request more instead.
+  const [allowance, setAllowance] = useState<string | null>(null);
+  const run = (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label);
+    start(async () => {
+      const r = await fn() as { ok?: boolean; allowance?: string } | undefined;
+      if (r && r.ok === false && r.allowance) setAllowance(r.allowance);
+      setBusy(null);
+    });
+  };
   const head = <div className="tp-head"><span className="spark">✦</span><h3>{type.name}</h3></div>;
   const working = pending || busy;
 
@@ -66,6 +76,7 @@ export default function ArtifactPanel({ bundle, isAdmin, onOpenDoc }: {
             {busy === "gen" ? "Generating…" : "✦ Generate"}</button>
           <span className="tp-sub" style={{ margin: 0 }}>Runs the synthesis, then goes to the For Granted team for review.</span>
         </div>
+        {allowance && <AllowanceRequest message={allowance} />}
       </div>
     );
   }

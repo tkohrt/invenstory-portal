@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import type { ReadinessItem } from "@/lib/checklist";
+import AllowanceRequest from "./AllowanceRequest";
 
 const TIER_LABEL = { essential: "🟠 Essential", important: "🟡 Important", enriching: "🔵 Enriching" } as const;
 
@@ -59,7 +60,15 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
   useEffect(() => { try { if (localStorage.getItem("rc-collapsed") === "1") setCollapsed(true); } catch {} }, []);
   const toggleCollapsed = () => setCollapsed(c => { const n = !c; try { localStorage.setItem("rc-collapsed", n ? "1" : "0"); } catch {} return n; });
   useEffect(() => { if (openKey) { setExpanded(openKey); setCollapsed(false); } }, [openKey]);
-  const analyze = async () => { setAnalyzing(true); await runGapAnalysisAction(); setAnalyzing(false); router.refresh(); };
+  // Phase D: past the monthly AI allowance a client is offered Request more instead.
+  const [allowance, setAllowance] = useState<string | null>(null);
+  const analyze = async () => {
+    setAnalyzing(true);
+    const r = await runGapAnalysisAction();
+    setAnalyzing(false);
+    if (!r.ok) { setAllowance(r.allowance); return; }
+    router.refresh();
+  };
   const pctColor = readiness.pct >= 80 ? "#3a7d44" : readiness.pct >= 50 ? "#b08a2e" : "#b06a2e";
   const expandedItem = readiness.items.find(i => i.key === expanded);
   const mark = (s: string) => s === "covered" ? "✓" : s === "thin" ? "◐" : "○";
@@ -77,6 +86,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
         <button className={`btn rc-run-cta${computedAt ? "" : " rc-run-pulse"}`} style={{ flex: 1, alignSelf: "center" }} onClick={analyze} disabled={analyzing}>{analyzing ? "Running Readiness Check…" : computedAt ? "Re-Run Readiness Check" : "Run Readiness Check"}</button>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
+      {allowance && <AllowanceRequest message={allowance} />}
 
       {!collapsed && <div className="ck-cols ck-cols-4" id="rc-body">
         {(() => {

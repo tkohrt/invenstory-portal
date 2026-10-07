@@ -10,7 +10,8 @@ import OpenAsClient from "./OpenAsClient";
 import type { ClientActivity, DraftRow } from "@/lib/server/activity-read";
 import { monthLabel, STALL } from "@/lib/activity";
 import { LIMITS } from "@/lib/usage-limits";
-import { grantChatAction, dismissUsageRequestAction } from "@/lib/server/usage-actions";
+import { grantChatAction, grantAllowanceAction, setAllowanceAction, dismissUsageRequestAction } from "@/lib/server/usage-actions";
+import { ALLOWANCE, usdFromCents } from "@/lib/allowance";
 
 type Tab = "overview" | "usage" | "documents" | "grants" | "people";
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
@@ -28,11 +29,11 @@ const FEATURE: Record<string, string> = {
 
 function Meter({ used, limit, label, dollars }: { used: number; limit: number; label: string; dollars?: boolean }) {
   const f = (n: number) => (dollars ? `$${n.toFixed(2)}` : n.toLocaleString());
-  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : used > 0 ? 100 : 0;
   const tone = pct >= 100 ? "full" : pct >= LIMITS.warnAt * 100 ? "near" : "ok";
   return (
     <div className="ca-meter">
-      <div className="ca-meter-head"><span>{label}</span><b>{f(used)} of {dollars ? `$${limit}` : f(limit)}</b></div>
+      <div className="ca-meter-head"><span>{label}</span><b>{f(used)} of {f(limit)}</b></div>
       <div className={`ca-meter-bar ca-meter-${tone}`} role="meter" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used} aria-label={label}>
         <div style={{ width: `${pct}%` }} />
       </div>
@@ -89,7 +90,7 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
           )}
           <div className="stat-grid">
             <Stat label="Chat questions this month" value={`${d.chat.month} of ${d.chat.limit}`} warn={d.chat.month >= d.chat.limit * LIMITS.warnAt} />
-            <Stat label="AI spend caused by the client" value={usd(d.spend.client)} sub={`of the $${d.spend.allowance} allowance (Phase D); ${usd(d.spend.total)} in all`} warn={d.spend.client >= d.spend.allowance * LIMITS.warnAt} />
+            <Stat label="AI spend caused by the client" value={usd(d.spend.client)} sub={`of the ${usd(d.spend.allowance)} allowance; ${usd(d.spend.total)} in all`} warn={d.spend.client >= d.spend.allowance * LIMITS.warnAt} />
             <Stat label="Documents added" value={String(docsAdded)} sub={`${docsClient} by the client, ${docsAdded - docsClient} by For Granted`} />
             <Stat label="Readiness" value={`${d.growth.readinessPct}%`} sub="today" />
             <Stat label="Verified Story Cards" value={String(d.growth.cardsVerified)} sub={`${d.growth.cardsVerifiedThisMonth} verified this month, of ${d.growth.cardsTotal}`} />
@@ -155,7 +156,7 @@ function friction(d: ClientActivity): { label: string; detail: string; bad: bool
   out.push({ label: `${d.documents.unreadableNow} with no readable text`, detail: "usually scanned PDFs, waiting on text recognition", bad: d.documents.unreadableNow > 0 });
   out.push({ label: `${d.chat.nothingFound} chat question${d.chat.nothingFound === 1 ? "" : "s"} found nothing`, detail: "this month: a sign of something missing from the Inven(s)tory", bad: d.chat.nothingFound > 0 });
   const open = d.requests.filter(r => r.status === "pending").length;
-  out.push({ label: `${open} open request${open === 1 ? "" : "s"} for more questions`, detail: "answer on Usage and limits", bad: open > 0 });
+  out.push({ label: `${open} open request${open === 1 ? "" : "s"} for more`, detail: "questions or AI allowance; answer on Usage and limits", bad: open > 0 });
   out.push({ label: `${d.other.readsHeld} upload read${d.other.readsHeld === 1 ? "" : "s"} held back`, detail: `past ${LIMITS.uploadReadsPerDayPerClient} a day this month`, bad: d.other.readsHeld > 0 });
   return out;
 }
@@ -164,6 +165,9 @@ function UsageTab({ d }: { d: ClientActivity }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [n, setN] = useState(250);
+  const [more, setMore] = useState("10");
+  const [monthly, setMonthly] = useState((d.allowance.monthlyCents / 100).toFixed(2));
+  const [ceiling, setCeiling] = useState(d.allowance.ceilingSet == null ? "" : (d.allowance.ceilingSet / 100).toFixed(2));
   const [err, setErr] = useState<string | null>(null);
   const act = (fn: () => Promise<unknown>) => start(async () => {
     setErr(null);
@@ -174,24 +178,44 @@ function UsageTab({ d }: { d: ClientActivity }) {
     <>
       <div className="ca-meters">
         <Meter label="Chat questions, all logins" used={d.chat.month} limit={d.chat.limit} />
-        <Meter label="AI spend caused by the client (Phase D allowance)" used={d.spend.client} limit={d.spend.allowance} dollars />
-        <Meter label="Analysis pages read" used={d.analysis.pages} limit={d.analysis.pagesLimit} />
+        <Meter label="AI allowance: spend caused by the client" used={d.spend.client} limit={d.spend.allowance} dollars />
+        <Meter label="Hard limit (only chat, readiness re-runs and Story Intelligence stop here)" used={d.spend.client} limit={d.spend.ceiling} dollars />
       </div>
       <p className="cl-note">Limits: {LIMITS.chatPerDayPerPerson} questions a day per person and {LIMITS.chatPerMonthPerClient} a month per client
-        {d.chat.extra ? `, plus ${d.chat.extra} granted this month` : ""}; {d.analysis.runs} analysis run{d.analysis.runs === 1 ? "" : "s"} by the client this month (1 a day);
-        {" "}{d.other.reprocesses} document{d.other.reprocesses === 1 ? "" : "s"} processed again ({LIMITS.reprocessPerDayPerClient} a day). For Granted is never limited.</p>
+        {d.chat.extra ? `, plus ${d.chat.extra} granted this month` : ""}; {d.other.reprocesses} document{d.other.reprocesses === 1 ? "" : "s"} processed
+        again ({LIMITS.reprocessPerDayPerClient} a day). The AI allowance is {usdFromCents(d.allowance.monthlyCents)} a month
+        {d.allowance.custom ? (d.allowance.monthlyCents === ALLOWANCE.defaultCents ? " (set by For Granted)" : ` (changed from the ${usdFromCents(ALLOWANCE.defaultCents)} default)`) : " (the default)"}
+        {d.allowance.extraCents ? `, plus ${usdFromCents(d.allowance.extraCents)} granted this month` : ""}, with a hard limit
+        of {usdFromCents(d.allowance.ceilingCents)}{d.allowance.ceilingSet == null ? " (twice the allowance)" : ""}. It counts chat, analysis, readiness checks,
+        upload reads and Story Intelligence the client starts. The client is warned at {Math.round(ALLOWANCE.warnAt * 100)}% and never sees dollars.
+        Past the allowance nothing stops and you are alerted; at the hard limit chat, readiness re-runs and Story Intelligence offer Request more
+        (a conversation already under way can finish). Document reads and analysis are never stopped. {d.analysis.runs} analysis run{d.analysis.runs === 1 ? "" : "s"} by the client this month,
+        about {d.analysis.pages} page{d.analysis.pages === 1 ? "" : "s"}. For Granted is never limited.</p>
 
       <div className="ca-grant">
         <b>Give more questions this month</b>
         <input type="number" min={1} max={10000} value={n} onChange={e => setN(Number(e.target.value))} aria-label="Questions to grant" />
         <button type="button" className="btn secondary ap-mini" disabled={pending} onClick={() => act(() => grantChatAction(d.tenant.id, n))}>Grant</button>
+      </div>
+      <div className="ca-grant">
+        <b>Give more AI allowance this month</b>
+        <span>$</span><input type="text" inputMode="decimal" value={more} onChange={e => setMore(e.target.value)} aria-label="Dollars to grant" style={{ width: 90 }} />
+        <button type="button" className="btn secondary ap-mini" disabled={pending} onClick={() => act(() => grantAllowanceAction(d.tenant.id, more))}>Grant</button>
+      </div>
+      <div className="ca-grant">
+        <b>Monthly AI allowance</b>
+        <span>$</span><input type="text" inputMode="decimal" value={monthly} onChange={e => setMonthly(e.target.value)} aria-label="Monthly allowance in dollars" style={{ width: 90 }} />
+        <b>Hard limit</b>
+        <span>$</span><input type="text" inputMode="decimal" value={ceiling} onChange={e => setCeiling(e.target.value)} placeholder="2x" aria-label="Hard limit in dollars, blank for twice the allowance" style={{ width: 90 }} />
+        <button type="button" className="btn secondary ap-mini" disabled={pending} onClick={() => act(() => setAllowanceAction(d.tenant.id, monthly, ceiling))}>Save</button>
+        <span className="ov-muted">From this month on. Leave the hard limit blank for twice the allowance.</span>
         {err && <span className="cl-error">{err}</span>}
       </div>
       {d.requests.length > 0 && (
         <table className="an-table">
-          <thead><tr><th>Request for more</th><th>By</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Request for more</th><th>Of</th><th>By</th><th>Status</th><th /></tr></thead>
           <tbody>{d.requests.map(r => (
-            <tr key={r.id}><td>{date(r.at)}</td><td>{r.by}</td><td>{r.status}</td>
+            <tr key={r.id}><td>{date(r.at)}</td><td>{r.kind === "ai_month" ? "AI allowance" : "Chat questions"}</td><td>{r.by}</td><td>{r.status}</td>
               <td>{r.status === "pending" && <button type="button" className="fc-link" disabled={pending} onClick={() => act(() => dismissUsageRequestAction(d.tenant.id, r.id))}>dismiss</button>}</td></tr>
           ))}</tbody>
         </table>
