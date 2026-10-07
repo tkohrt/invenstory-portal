@@ -20,6 +20,7 @@ import { CARD_KIND_MAP } from "@/lib/story-card";
 import { saveReviewAction, clearReviewAction, saveDupDecisionAction, clearDupDecisionAction, liftRefusalAction } from "@/lib/server/analysis-actions";
 import { REVIEW_ALL_UP_TO } from "@/lib/analysis";
 import AnalysisCompare, { type CompareResult } from "./AnalysisCompare";
+import DocTypePicker from "./DocTypePicker";
 import type { SwitchStatus } from "@/lib/server/analysis-source";
 import type { SwitchPreview } from "@/lib/server/analysis-switch";
 import type { GateResult } from "@/lib/analysis-switch";
@@ -226,12 +227,13 @@ function DocumentsTab({ docs, refusals, busy, onReread }: {
                     {!r ? <em>Not read yet</em>
                       : r.skipped === "boilerplate" ? <em>Skipped: template, sample or unsigned</em>
                       : r.skipped === "empty" ? <em className="an-bad">No readable text</em>
-                      : <>
-                          {r.docTypeLabel}
-                          <span className={`an-proof${r.docTypeProven ? " ok" : ""}`}
-                            title={r.docTypeProven ? `Quoted: “${r.docTypeQuote}”` : "No quote found in the document for the type; judged from the content"}>
-                            {r.docTypeProven ? "quoted" : "judged"}</span>
-                        </>}
+                      : <span onClick={e => e.stopPropagation()}>
+                          {/* Decision 33: the analysis suggests, a person confirms. Only a tagged type counts for a file item. */}
+                          <DocTypePicker documentId={d.id} tag={d.typeTag} suggested={r.docType && r.docType !== "other" ? r.docType : null} />
+                          {d.typeTag && r.docType && d.typeTag !== r.docType && (
+                            <div className="cl-src">The analysis suggested {r.docTypeLabel}</div>
+                          )}
+                        </span>}
                   </td>
                   <td>{r && !r.skipped ? r.cards.length : ""}</td>
                   <td>{r && !r.skipped ? r.facts.length : ""}</td>
@@ -555,7 +557,11 @@ function SwitchTab({ orgName, info }: { orgName: string; info?: SwitchInfo }) {
   const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
   const act = (fn: () => Promise<{ text?: string } | unknown>) => start(async () => {
     setErr(null); setDone(null);
-    try { const r = await fn() as { text?: string } | undefined; setDone(r?.text ?? "Done."); router.refresh(); }
+    try {
+      const r = await fn() as { ok?: boolean; error?: string; text?: string } | undefined;
+      if (r && r.ok === false) { setErr(r.error ?? "That did not work."); return; }
+      setDone(r?.text ?? "Done."); router.refresh();
+    }
     catch (e) { setErr(e instanceof Error ? e.message : "That did not work."); }
   });
   const STATE = { covered: "covered", thin: "thin", missing: "missing" } as Record<string, string>;

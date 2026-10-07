@@ -17,6 +17,7 @@ import { processDocument } from "./ingest";
 import { markStaleOnUpload } from "./artifacts";
 import { notifyClientUpload } from "./notify";
 import { EXT_TO_KIND } from "@/lib/uploads";
+import { DOC_TYPE_MAP } from "@/lib/analysis";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -38,6 +39,8 @@ export interface FileInput {
   title: string;
   layer: string;
   tags: string[];
+  /** The document's type, if the uploader picked one (decision 33). */
+  typeTag?: string | null;
 }
 
 /** Create the document rows for a file already in storage, then read it. */
@@ -53,6 +56,9 @@ export async function fileUploadedDocument(i: FileInput): Promise<{ id: string }
     storage_key: storageKey, mime_type: i.contentType || "application/octet-stream",
     doc_kind: docKind, status: "pending", uploaded_by: i.userId,
     source: i.role === "admin" ? "for_granted" : "client",
+    // Only when picked, so an upload without one never touches the 0056 columns.
+    ...(i.typeTag && DOC_TYPE_MAP[i.typeTag]
+      ? { type_tag: i.typeTag, type_tagged_by: i.userId, type_tagged_at: new Date().toISOString() } : {}),
   });
   if (docErr) return { error: docErr.message, status: 500 };
   await db.from("document_version").insert({

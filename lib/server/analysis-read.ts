@@ -20,6 +20,8 @@ import {
 
 export interface TrialDoc {
   id: string; title: string; layer: string | null; docKind: string | null;
+  /** The type a person gave it (decision 33), or null. */
+  typeTag: string | null;
   /** Null when the document has not been analysed yet. */
   read: null | {
     docType: string | null; docTypeLabel: string; docTypeReason: string | null; docTypeQuote: string | null;
@@ -64,7 +66,7 @@ export interface AnalysisTrialData {
 export async function getAnalysisTrial(tenantId: string): Promise<AnalysisTrialData> {
   const s = await userClient();
   const [{ data: docRows, error: dErr }, { data: readRows, error: rErr }, { data: revRows }, { count: liveCards }, { data: dupRows }] = await Promise.all([
-    s.from("document").select("id, title, layer, doc_kind").eq("tenant_id", tenantId).eq("status", "ready").order("title"),
+    s.from("document").select("*").eq("tenant_id", tenantId).eq("status", "ready").order("title"),
     s.from("analysis_doc").select("*").eq("tenant_id", tenantId),
     s.from("analysis_review").select("fingerprint, verdict, competitor, duplicate, note, reviewed_at").eq("tenant_id", tenantId),
     s.from("story_card").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).neq("status", "retired"),
@@ -74,13 +76,13 @@ export async function getAnalysisTrial(tenantId: string): Promise<AnalysisTrialD
   if (rErr) throw new Error(`analysis read failed: ${rErr.message}`);
 
   const reads = new Map(((readRows ?? []) as Record<string, unknown>[]).map(r => [r.document_id as string, r]));
-  const docs: TrialDoc[] = ((docRows ?? []) as { id: string; title: string; layer: string | null; doc_kind: string | null }[]).map(d => {
+  const docs: TrialDoc[] = ((docRows ?? []) as { id: string; title: string; layer: string | null; doc_kind: string | null; type_tag?: string | null }[]).map(d => {
     const r = reads.get(d.id);
-    if (!r) return { id: d.id, title: d.title, layer: d.layer, docKind: d.doc_kind, read: null };
+    if (!r) return { id: d.id, title: d.title, layer: d.layer, docKind: d.doc_kind, typeTag: d.type_tag ?? null, read: null };
     const hash = r.content_hash as string;
     const type = (r.doc_type as string | null) ?? null;
     return {
-      id: d.id, title: d.title, layer: d.layer, docKind: d.doc_kind,
+      id: d.id, title: d.title, layer: d.layer, docKind: d.doc_kind, typeTag: d.type_tag ?? null,
       read: {
         docType: type,
         docTypeLabel: type ? DOC_TYPE_MAP[type]?.label ?? type : "Not recognised",

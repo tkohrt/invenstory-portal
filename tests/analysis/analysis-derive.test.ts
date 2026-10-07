@@ -35,14 +35,33 @@ describe("the mapping tables", () => {
 });
 
 describe("deriveReadiness", () => {
-  test("a document's type covers its item when quoted, thin when judged", () => {
+  test("a file item is covered only by a document a person tagged as that type (decision 33)", () => {
     const r = deriveReadiness("nonprofit_501c3", [
-      doc({ id: "a", docType: "irs_990", docTypeProven: true, docTypeQuote: "Form 990" }),
-      doc({ id: "b", docType: "board_roster", docTypeProven: false }),
+      doc({ id: "a", docType: "irs_990", docTypeProven: true, docTypeQuote: "Form 990", typeTag: "irs_990" }),
+      // The analysis's guess alone, even "quoted", is only a suggestion.
+      doc({ id: "b", docType: "board_roster", docTypeProven: true, docTypeQuote: "Board of Directors" }),
+      // A person's tag wins over the analysis's guess.
+      doc({ id: "c", docType: "pitch_deck", docTypeProven: true, typeTag: "annual_report" }),
     ]);
     expect(stateOf(r, "irs_990")).toBe("covered");
-    expect(stateOf(r, "board_roster")).toBe("thin");
+    expect(stateOf(r, "board_roster")).toBe("missing");
+    expect(stateOf(r, "annual_report")).toBe("covered");
     expect(stateOf(r, "determination")).toBe("missing");
+  });
+
+  test("a startup's pitch deck and financial model need a tag too", () => {
+    const r = deriveReadiness("for_profit", [
+      doc({ id: "a", docType: "pitch_deck", docTypeProven: true, docTypeQuote: "Confidential, for discussion only." }),
+      doc({ id: "b", typeTag: "financial_model" }),
+    ]);
+    expect(stateOf(r, "pitch_deck")).toBe("missing");
+    expect(stateOf(r, "financial_model")).toBe("covered");
+  });
+
+  test("the founder interview goes by a person's type first, then the analysis's", () => {
+    const client = { speakers: [{ label: "A", name: "Ashley", isClient: true }] } as unknown as Parameters<typeof doc>[0]["roster"];
+    expect(stateOf(deriveReadiness(null, [doc({ docType: "meeting_transcript", typeTag: "interview", roster: client })]), "founder_voice")).toBe("covered");
+    expect(stateOf(deriveReadiness(null, [doc({ docType: "interview", typeTag: "press", roster: client })]), "founder_voice")).toBe("missing");
   });
 
   test("cards cover their item, thin cards make it thin, and the strongest wins", () => {
@@ -166,7 +185,7 @@ describe("search profile", () => {
 });
 
 describe("the comparison gate", () => {
-  const derived = deriveReadiness(null, [doc({ docType: "irs_990", docTypeProven: true, cards: [card("mission_values")] })]);
+  const derived = deriveReadiness(null, [doc({ docType: "irs_990", docTypeProven: true, typeTag: "irs_990", cards: [card("mission_values")] })]);
 
   test("agreements need nothing; every disagreement needs a judgement", () => {
     const rows = compareReadiness(null, k => (k === "mission" ? "covered" : "missing"), derived, new Map());

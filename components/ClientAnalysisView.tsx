@@ -16,6 +16,7 @@ import type { ClientAnalysis } from "@/lib/server/analysis-client-read";
 import { describeCap } from "@/lib/analysis-cap";
 import { decideSuggestionAction, confirmEligibilityAction } from "@/lib/server/analysis-client-actions";
 import AllowanceRequest from "./AllowanceRequest";
+import DocTypePicker from "./DocTypePicker";
 
 const STATE_LABEL = { covered: "Covered", thin: "Partly covered", missing: "Missing" } as const;
 const TIER_LABEL: Record<string, string> = { essential: "Essential", important: "Important", enriching: "Enriching" };
@@ -106,6 +107,7 @@ export default function ClientAnalysisView({ orgName, data, job: initialJob, isA
               {data.cardsByKind.map(k => <span key={k.label} className="chip">{k.label} · {k.count}</span>)}
             </div>
           </section>
+          <DocumentTypes data={data} />
           <Eligibility data={data} />
           <Unlocks data={data} />
         </>
@@ -207,6 +209,37 @@ function Unlocks({ data }: { data: ClientAnalysis }) {
         </li>
       </ul>
       <p className="cl-note">For Granted turns each one on for your account once it is ready.</p>
+    </section>
+  );
+}
+
+/**
+ * Decision 33: what kind of document each one is. The analysis suggests a type;
+ * the client confirms it or picks another. Items such as a pitch deck, a 990 or
+ * a budget count on the checklist only once a document is tagged.
+ */
+function DocumentTypes({ data }: { data: ClientAnalysis }) {
+  const [all, setAll] = useState(false);
+  const waiting = data.documentTypes.filter(d => !d.tag);
+  const shown = all ? data.documentTypes : waiting;
+  return (
+    <section className="ca-sec">
+      <h3>What kind of document is each one?</h3>
+      <p className="cl-note">Some checklist items are a document in themselves, such as a pitch deck, an IRS 990 or a budget. They count
+        once a document is marked as that type. We suggest a type for each; confirm it, or pick the right one.
+        {waiting.length ? ` ${waiting.length} waiting for you.` : " All confirmed."}</p>
+      {shown.length > 0 && (
+        <table className="an-table">
+          <tbody>{shown.map(d => (
+            <tr key={d.id}><td>{d.title}</td>
+              <td><DocTypePicker documentId={d.id} tag={d.tag} suggested={d.suggested} locked={d.lockedByFG} />
+                {d.lockedByFG && <div className="cl-src">Set by For Granted</div>}</td></tr>
+          ))}</tbody>
+        </table>
+      )}
+      {data.documentTypes.length > waiting.length && (
+        <button type="button" className="fc-link" onClick={() => setAll(a => !a)}>{all ? "Show only those waiting" : "Show every document"}</button>
+      )}
     </section>
   );
 }

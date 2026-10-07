@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Drawer from "./Drawer";
 import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction, finishIndexingAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
+import { DOC_TYPES } from "@/lib/analysis";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 import Busy from "./Busy";
 import { browserClient } from "@/lib/supabase-browser";
@@ -248,6 +249,7 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
   const [title, setTitle] = useState("");
   const [layer, setLayer] = useState<string>(initialLayer ?? "I");
   const [tags, setTags] = useState("");
+  const [typeTag, setTypeTag] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -267,7 +269,7 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
         .uploadToSignedUrl(sb.path, sb.token, file, { contentType: file.type || "application/octet-stream" });
       if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
       const c = await fetch("/api/upload/complete", json({
-        docId: sb.docId, filename: file.name, contentType: file.type, title, layer, tags,
+        docId: sb.docId, filename: file.name, contentType: file.type, title, layer, tags, typeTag,
       }));
       const cb = await c.json().catch(() => ({}));
       if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
@@ -306,6 +308,12 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
         <option value="II">Layer II — Internal Strategy</option>
         <option value="III">Layer III — Living Voice</option>
       </select>
+      <label>What kind of document is it?</label>
+      <select value={typeTag} onChange={e => setTypeTag(e.target.value)}>
+        <option value="">Not sure (we&rsquo;ll suggest one)</option>
+        {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+      </select>
+      <div className="hint" style={{ marginTop: 4 }}>A pitch deck, an IRS 990, a budget and similar documents count on the readiness checklist once their type is set.</div>
       <label>Tags (comma-separated)</label>
       <input value={tags} onChange={e => setTags(e.target.value)} placeholder="budget, transportation" />
       {error && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {error}</div>}

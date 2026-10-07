@@ -48,7 +48,7 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
   const s = await userClient();
   const [{ data: readRows, error: rErr }, { data: docRows, error: dErr }, { data: vRows }, profile, coverage, search] = await Promise.all([
     s.from("analysis_doc").select("document_id, doc_type, doc_type_proven, doc_type_quote, cards, facts, content_hash").eq("tenant_id", tenantId),
-    s.from("document").select("id, title, layer, speaker_roster").eq("tenant_id", tenantId).eq("status", "ready"),
+    s.from("document").select("*").eq("tenant_id", tenantId).eq("status", "ready"),
     s.from("analysis_verdict").select("area, item_key, verdict, old_state, new_state, note").eq("tenant_id", tenantId),
     getEligibilityProfile(tenantId),
     getContentCoverage(tenantId),
@@ -57,7 +57,7 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
   if (rErr) throw new Error(`analysis read failed: ${rErr.message}`);
   if (dErr) throw new Error(`document read failed: ${dErr.message}`);
 
-  const docById = new Map(((docRows ?? []) as { id: string; title: string; layer: string | null; speaker_roster: SpeakerRoster | null }[])
+  const docById = new Map(((docRows ?? []) as { id: string; title: string; layer: string | null; speaker_roster: SpeakerRoster | null; type_tag?: string | null }[])
     .map(d => [d.id, d]));
   // Only documents still ready count, as everywhere else.
   const docs: AnalysedDoc[] = ((readRows ?? []) as Record<string, unknown>[])
@@ -72,6 +72,7 @@ export async function getAnalysisComparison(tenantId: string): Promise<Compariso
         cards: (r.cards as AnalysisCard[]) ?? [],
         facts: (r.facts as AnalysisFact[]) ?? [],
         roster: d.speaker_roster ?? null,
+        typeTag: d.type_tag ?? null,
       };
     });
 

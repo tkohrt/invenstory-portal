@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({})) as {
-    docId?: string; filename?: string; contentType?: string; title?: string; layer?: string; tags?: string;
+    docId?: string; filename?: string; contentType?: string; title?: string; layer?: string; tags?: string; typeTag?: string;
   };
   const docId = typeof b.docId === "string" && /^[0-9a-f-]{36}$/i.test(b.docId) ? b.docId : "";
   if (!docId) return NextResponse.json({ error: "docId required" }, { status: 400 });
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     docId, filename: String(b.filename ?? "").slice(0, 300), contentType: String(b.contentType ?? ""),
     title: String(b.title ?? "").trim().slice(0, 300), layer: String(b.layer ?? ""),
     tags: String(b.tags ?? "").split(",").map(t => t.trim()).filter(Boolean),
+    typeTag: typeof b.typeTag === "string" && b.typeTag ? b.typeTag.slice(0, 40) : null,
   });
   return "error" in r ? NextResponse.json({ error: r.error }, { status: r.status }) : NextResponse.json({ id: r.id });
 }

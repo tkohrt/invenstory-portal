@@ -34,6 +34,12 @@ export interface AnalysedDoc {
   docType: string | null;
   docTypeProven: boolean;
   docTypeQuote: string | null;
+  /**
+   * The type a person gave the document (decision 33): at upload, by
+   * confirming the analysis's suggestion (docType), or by picking another.
+   * Null until someone has. Only a tagged type evidences a file item.
+   */
+  typeTag?: string | null;
   cards: AnalysisCard[];
   facts: AnalysisFact[];
   /** Who speaks in it, when it is a transcript (0038). */
@@ -79,8 +85,11 @@ export const FACT_ITEMS: Record<string, string> = { annual_budget: "budget" };
  */
 function founderVoice(d: AnalysedDoc): ItemState {
   const clientSpeaks = !!d.roster?.speakers.some(s => s.isClient === true);
-  if (d.docType === "interview") return clientSpeaks ? "covered" : "thin";
-  if (d.docType === "meeting_transcript" && clientSpeaks) return "thin";
+  // A person's type wins; the analysis's own type stands in until then, since
+  // an interview is judged by who speaks in it, not by being a file.
+  const type = d.typeTag ?? d.docType;
+  if (type === "interview") return clientSpeaks ? "covered" : "thin";
+  if (type === "meeting_transcript" && clientSpeaks) return "thin";
   return "missing";
 }
 
@@ -99,13 +108,15 @@ export function deriveReadiness(orgType: string | null, docs: AnalysedDoc[]): De
   };
 
   for (const d of docs) {
-    // The document's type evidences an item by itself, covered when the type
-    // is shown in the document (a form number, a title), thin when judged.
-    const t = d.docType ? DOC_TYPE_MAP[d.docType] : undefined;
+    // A file item (a 990, a pitch deck, a budget) is covered by a document a
+    // person has tagged as that type (decision 33). The analysis's own guess is
+    // only a suggestion to confirm: on 7 October 2026 it called two RE-Assist
+    // presentations pitch decks on quotes that showed nothing of the kind, and
+    // whether a file IS a pitch deck cannot be read off a quote. Untagged, the
+    // item stays missing.
+    const t = d.typeTag ? DOC_TYPE_MAP[d.typeTag] : undefined;
     if (t?.itemKey) {
-      add(t.itemKey, d.docTypeProven ? "covered" : "thin",
-        { id: d.id, title: d.title, quote: d.docTypeQuote ?? undefined, via: "type" },
-        `${t.label} in the Inven(s)tory${d.docTypeProven ? "" : " (type judged, not quoted)"}`);
+      add(t.itemKey, "covered", { id: d.id, title: d.title, via: "type" }, `${t.label} in the Inven(s)tory (tagged)`);
     }
     const fv = founderVoice(d);
     if (fv !== "missing") {

@@ -39,17 +39,24 @@ export interface ClientAnalysis {
   cap: CapDecision;
   /** A request for more allowance is already with For Granted. */
   allowanceRequested: boolean;
+  /**
+   * Each analysed document's type (decision 33): the type a person gave it, the
+   * analysis's suggestion, and whether For Granted set it (then the client
+   * cannot change it).
+   */
+  documentTypes: { id: string; title: string; tag: string | null; suggested: string | null; lockedByFG: boolean }[];
 }
 
 /** The documents the analysis has read, in the shape the derivations take. */
 export async function analysedDocs(tenantId: string): Promise<{ docs: AnalysedDoc[]; ready: number }> {
   const [{ data: rows, error: rErr }, { data: docRows, error: dErr }] = await Promise.all([
     db.from("analysis_doc").select("document_id, doc_type, doc_type_proven, doc_type_quote, cards, facts").eq("tenant_id", tenantId),
-    db.from("document").select("id, title, layer, speaker_roster").eq("tenant_id", tenantId).eq("status", "ready"),
+    db.from("document").select("*").eq("tenant_id", tenantId).eq("status", "ready"),
   ]);
   if (rErr) throw new Error(`analysis read failed: ${rErr.message}`);
   if (dErr) throw new Error(`document read failed: ${dErr.message}`);
-  const byId = new Map(((docRows ?? []) as { id: string; title: string; layer: string | null; speaker_roster: SpeakerRoster | null }[])
+  // Every column (not a list), so type_tag (0056) is there once the migration has run and nothing breaks before.
+  const byId = new Map(((docRows ?? []) as { id: string; title: string; layer: string | null; speaker_roster: SpeakerRoster | null; type_tag?: string | null }[])
     .map(d => [d.id, d]));
   const docs = ((rows ?? []) as Record<string, unknown>[])
     .filter(r => byId.has(r.document_id as string))
@@ -63,6 +70,7 @@ export async function analysedDocs(tenantId: string): Promise<{ docs: AnalysedDo
         cards: (r.cards as AnalysisCard[]) ?? [],
         facts: (r.facts as AnalysisFact[]) ?? [],
         roster: d.speaker_roster ?? null,
+        typeTag: d.type_tag ?? null,
       };
     });
   // Cards resting on a quote For Granted refused never count (decisions 19 and 31).
@@ -80,6 +88,15 @@ export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysi
     checkAllowance("client", tenantId, { kind: "build" }),
     pendingAllowanceRequest(tenantId).catch(() => false),
   ]);
+
+  // Who tagged each document, so a client sees For Granted's tags as fixed.
+  const { data: tagRows } = await db.from("document").select("*").eq("tenant_id", tenantId).eq("status", "ready");
+  const taggedBy = new Map(((tagRows ?? []) as { id: string; type_tagged_by?: string | null }[]).map(r => [r.id, r.type_tagged_by ?? null]));
+  const taggers = [...new Set([...taggedBy.values()].filter((x): x is string => !!x))];
+  const { data: adminRows } = taggers.length
+    ? await db.from("app_user").select("id").in("id", taggers).eq("role", "admin")  // tenant-safe: roles of the people who tagged this client's documents
+    : { data: [] };
+  const admins = new Set(((adminRows ?? []) as { id: string }[]).map(r => r.id));
 
   const orgType = profile.org_type;
   const derived = deriveReadiness(orgType, docs);
@@ -115,5 +132,10 @@ export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysi
     }),
     cap: decideClientRun({ pendingDocs: pending.docs, pendingChars: pending.chars, allowance }),
     allowanceRequested: requested,
+    documentTypes: docs.map(d => ({
+      id: d.id, title: d.title, tag: d.typeTag ?? null,
+      suggested: d.docType && d.docType !== "other" ? d.docType : null,
+      lockedByFG: !!d.typeTag && admins.has(taggedBy.get(d.id) ?? ""),
+    })).sort((a, b) => Number(!!a.tag) - Number(!!b.tag) || a.title.localeCompare(b.title)),
   };
 }

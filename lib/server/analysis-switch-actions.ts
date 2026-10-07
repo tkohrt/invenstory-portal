@@ -44,7 +44,8 @@ export async function switchToAnalysisAction() {
   const status = await switchStatus(s.tenantId);
   if (status.switchedAt) return { ok: true as const, already: true, text: "Already on the analysis." };
   const gate = await switchGateFor(s.tenantId);
-  if (!gate.allowed) throw new Error(gate.reasons.join(" "));
+  // Returned, not thrown: in production Next.js hides a thrown action's message.
+  if (!gate.allowed) return { ok: false as const, error: gate.reasons.join(" ") };
   const snapshot = s.tenantId === PROVING_TENANT_ID
     ? { review: gate.input.review ?? null, compare: gate.input.compare ?? null, at: new Date().toISOString(), by: s.user.id }
     : null;
