@@ -851,7 +851,7 @@ export interface WeaveInfo {
   due: boolean;
   /** "about 0.2%": one question's weave, as a share of the client's monthly allowance. */
   perWeave: string;
-  /** For Granted only: one weave in cents. */
+  /** For Granted only: one weave in cents (may be a fraction of a cent). */
   perWeaveCents: number;
   /** A client only: how much of this month's allowance is used, in whole percent. */
   usedPct: number | null;
@@ -865,7 +865,7 @@ export async function weaveInfoAction(): Promise<WeaveInfo> {
   if (!s) throw new Error("Please sign in again.");
   const remindersOn = (s.user.ui_prefs as { confirm_weave?: boolean } | null)?.confirm_weave !== false;
   const [cost, state] = await Promise.all([weaveCostMicros(), allowanceState(s.tenantId).catch(() => null)]);
-  const perWeaveCents = Math.max(1, Math.round(cost / MICROS_PER_CENT));
+  const perWeaveCents = cost / MICROS_PER_CENT;
   const perWeave = state ? weaveShareLabel(cost, lineMicros(state)) : "a small part";
   if (s.role === "admin") {
     return { admin: true, due: remindersOn, perWeave, perWeaveCents, usedPct: null, atCeiling: false };

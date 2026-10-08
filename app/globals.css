@@ -1414,11 +1414,16 @@ a.dl-row:hover{background:#f6f8f5}
 .wv-mini{border:1px solid var(--line);background:var(--panel);border-radius:6px;font-size:11.5px;line-height:1;padding:3px 6px;cursor:pointer}
 .wv-yes{color:#1f4d2e;border-color:#b9d3bf} .wv-yes:hover{background:#eef5ef}
 .wv-no{color:#8a3b2e;border-color:#e3c3bd} .wv-no:hover{background:#fbefec}
-.wv-details{--wv:#8a8f98;border:1px solid var(--line);border-left:4px solid var(--wv);border-radius:10px;padding:10px 13px;margin:10px 0 4px;background:var(--panel);box-shadow:var(--shadow)}
-.wv-details.l1{--wv:var(--l1)} .wv-details.l2{--wv:var(--l2)} .wv-details.l3{--wv:var(--l3)}
-.wv-d-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+/* The full card, opened from Weave: a white card on the grey of the Story Cards panel. */
+.wv-piece{max-width:620px;background:var(--bg);padding:14px 16px 16px}
+.wv-piece-nav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.wv-full{background:var(--panel);padding:14px 16px;gap:10px}
+.wv-full.wv-full-bridge{border-style:dashed;border-color:#b8bcc4}
+.wv-full.wv-full-own{border-color:#cfd3da}
+.ws-card.wv-full .wv-full-text{font-size:16px;line-height:1.6;white-space:pre-wrap}
+.wv-full-prop{color:#5f646c;font-style:italic}
 .wv-d-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.wv-d-note{margin:0 0 8px;font-size:13px}
+.wv-d-note{margin:0;font-size:13px}
 .wv-start{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .wv-remind p{margin:0 0 10px}
 .wv-remind-off{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0 2px}

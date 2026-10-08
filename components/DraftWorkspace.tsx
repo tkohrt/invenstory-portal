@@ -16,6 +16,7 @@
 // bridges proposed between them to accept, edit or reject (components/WeaveView.tsx).
 // An answer is woven only once every card in it would pass the finish line, and
 // a reminder about the AI allowance comes first (components/WeaveReminder.tsx).
+// Opening the Weave tab costs nothing; Begin Weaving, inside it, is what weaves.
 // Polish (fit to limit, figure audit) is next; its tab is shown, disabled.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -37,7 +38,7 @@ import WeaveReminder from "./WeaveReminder";
 import { bridgeGaps } from "@/lib/weave";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import {
-  autosaveVersionAction, compareVersionAction, enterStageAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
+  autosaveVersionAction, compareVersionAction, enterStageAction, saveBeforeWeaveAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
   saveVersionAction, setDraftStatusAction, type VersionItem,
 } from "@/lib/server/version-actions";
 import { LOCKED_STATUSES, STATUS_NAME, type DraftStatus, type SectionDiff } from "@/lib/draft-version";
@@ -101,8 +102,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [blockers, setBlockers] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | "weave" | null } | null>(null);
   // Weave: which stage the page shows, and the reminder before a weave runs.
   const [stage, setStage] = useState<"arrange" | "weave">(draft.stage === "weave" ? "weave" : "arrange");
-  const [weaveAsk, setWeaveAsk] = useState<{ enter: boolean; again: boolean } | null>(null);
-  const weaveEnter = useRef(false);
+  const [weaveAsk, setWeaveAsk] = useState<{ again: boolean } | null>(null);
   // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
   const [wovenHere, setWovenHere] = useState<Set<string>>(() => new Set());
   const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
@@ -447,28 +447,34 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   };
 
   /**
-   * Weave this answer, entering the Weave stage first if `enter`. Not while any
-   * card in it stands at the finish line (Shane, 7 October 2026): the list of
-   * cards to review opens instead, and weaving carries on once they are clear.
-   * Then the reminder about the AI allowance, unless the person turned it off.
+   * Why Begin Weaving cannot run here, or null when it can. Entering the Weave
+   * tab costs nothing (Shane, 8 October 2026); this button is what spends.
    */
-  const requestWeave = (enter: boolean) => {
-    if (sectionBlockers.length) { weaveEnter.current = enter; setBlockers({ scope: "section", then: "weave" }); return; }
-    if (!weaveGaps) {
-      if (enter) switchStage("weave");
-      say(blocks.length
-        ? "Nothing to weave in this answer: every gap already has a bridge, or its pieces sit in separate paragraphs."
-        : "Nothing to weave yet. Place cards in Arrange first.");
-      return;
-    }
-    setWeaveAsk({ enter, again: hasBridges });
+  const weaveBlockedWhy = !blocks.length ? "Place cards in Arrange first."
+    : !weaveGaps ? (hasBridges ? "Every gap between the cards already has a bridge." : "Each card sits in its own paragraph, so there is nothing to join. Join paragraphs in Arrange to weave them.")
+    : null;
+
+  /**
+   * Begin Weaving (or Weave again). Not while any card in the answer stands at
+   * the finish line (Shane, 7 October 2026): the list of cards to review opens
+   * instead, and weaving carries on once they are clear. Then the reminder
+   * about the AI allowance, unless the person turned it off.
+   */
+  const requestWeave = () => {
+    if (sectionBlockers.length) { setBlockers({ scope: "section", then: "weave" }); return; }
+    if (weaveBlockedWhy) { say(weaveBlockedWhy); return; }
+    setWeaveAsk({ again: hasBridges });
   };
 
-  const doWeave = (enter: boolean) => {
+  const doWeave = () => {
     setWeaveAsk(null);
-    if (enter) switchStage("weave");
     const sectionId = section.id;
-    void run(() => weaveSectionAction(sectionId), r => {
+    // The "Before Weave" version is taken now, just before bridges are written
+    // (skipped when nothing changed since the last version).
+    void run(async () => {
+      await saveBeforeWeaveAction(draft.id).catch(() => null);
+      return weaveSectionAction(sectionId);
+    }, r => {
       if (!r.ok) {
         setError(r.error);
         if (r.blocked) setBlockers({ scope: "section", then: "weave" });
@@ -565,7 +571,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   title="Choose and order the cards">Arrange</button>
                 <button type="button" role="tab" aria-selected={stage === "weave"} className={`chip${stage === "weave" ? " active" : ""}`}
                   disabled={pending > 0}
-                  onClick={() => { if (stage === "weave") return; if (readOnly || hasBridges) switchStage("weave"); else requestWeave(true); }}
+                  onClick={() => { if (stage !== "weave") switchStage("weave"); }}
                   title="Read the answer as prose, with short bridges between the cards to accept or reject">Weave</button>
                 <button type="button" role="tab" aria-selected="false" className="chip" disabled title="Fit to limit, figure audit, repetition check. Next release.">Polish</button>
               </div>
@@ -656,10 +662,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </div>
               )}
 
-              {stage === "weave" && blocks.length > 0 && !hasBridges && weaveGaps > 0 && !readOnly && !wovenHere.has(section.id) && (
+              {stage === "weave" && blocks.length > 0 && !hasBridges && !readOnly && !wovenHere.has(section.id) && (
                 <div className="ws-notice wv-start">
-                  <span>This answer has not been woven yet.</span>
-                  <button type="button" className="btn inline ap-go ap-mini" disabled={locked} onClick={() => requestWeave(false)}>Weave this answer</button>
+                  <span>{weaveBlockedWhy
+                    ? weaveBlockedWhy
+                    : "Read the cards as one passage. Begin Weaving drafts short connecting sentences between them, for you to accept, edit or reject."}</span>
+                  <button type="button" className="btn inline ap-go" disabled={locked || !!weaveBlockedWhy}
+                    title={weaveBlockedWhy ?? "Uses a small part of the monthly AI allowance"} onClick={requestWeave}>Begin Weaving</button>
                 </div>
               )}
               {stage === "weave" ? (
@@ -753,11 +762,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                         title="Accept every bridge proposed in this answer"
                         onClick={() => void run(() => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
                     )}
-                    {hasBridges && (
-                      <button type="button" className="btn secondary ws-edit-only" disabled={locked}
-                        title="Propose bridges again: replaces the ones not yet accepted, and fills any gap without one"
-                        onClick={() => requestWeave(false)}>Weave again</button>
-                    )}
+                    {hasBridges || wovenHere.has(section.id)
+                      ? <button type="button" className="btn secondary ws-edit-only" disabled={locked || !!weaveBlockedWhy}
+                          title={weaveBlockedWhy ?? "Propose bridges again: replaces the ones not yet accepted, and fills any gap without one"}
+                          onClick={requestWeave}>Weave again</button>
+                      : <button type="button" className="btn inline ap-go ws-edit-only" disabled={locked || !!weaveBlockedWhy}
+                          title={weaveBlockedWhy ?? "Draft connecting sentences between the cards. Uses a small part of the monthly AI allowance."}
+                          onClick={requestWeave}>Begin Weaving</button>}
                   </>
                 )}
                 {stage === "arrange" && blocks.length === 0 && (
@@ -820,7 +831,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         )}
         {weaveAsk && (
           <WeaveReminder tenantName={tenantName} again={weaveAsk.again}
-            onWeave={() => doWeave(weaveAsk.enter)} onCancel={() => setWeaveAsk(null)} />
+            onWeave={doWeave} onCancel={() => setWeaveAsk(null)} />
         )}
         {submitting && (
           <SubmitDialog onCancel={() => setSubmitting(false)}
@@ -842,7 +853,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             onContinue={() => {
               const t = blockers.then; setBlockers(null);
               if (t === "completed") markCompleted(); else if (t === "submit") setSubmitting(true); else if (t === "approve") approveNow();
-              else if (t === "weave") requestWeave(weaveEnter.current);
+              else if (t === "weave") requestWeave();
             }}
             onClose={() => setBlockers(null)} />
         )}
@@ -1456,7 +1467,7 @@ function BlockersDialog({ list, what, then, onReview, onWording, onGo, onContinu
 }) {
   const clear = list.length === 0;
   const action = then === "completed" ? "Mark completed" : then === "submit" ? "Mark submitted…" : then === "approve" ? "Approve this answer"
-    : then === "weave" ? "Weave this answer" : null;
+    : then === "weave" ? "Begin Weaving" : null;
   return (
     <div className="ws-modal-back" role="presentation" onClick={onClose}>
       <div className="ws-modal ws-blockers" role="dialog" aria-modal="true" aria-labelledby="ws-bl-title" onClick={e => e.stopPropagation()}>

@@ -66,10 +66,11 @@ async function currentContent(tenantId: string, draftId: string): Promise<Versio
 }
 
 /** Save a version. Returns null when an autosave found nothing new to keep. */
-async function snapshot(tenantId: string, userId: string, d: DraftRow, reason: VersionReason, name: string | null, stage?: string) {
+async function snapshot(tenantId: string, userId: string, d: DraftRow, reason: VersionReason, name: string | null, stage?: string,
+  opts: { skipIfUnchanged?: boolean } = {}) {
   const content = await currentContent(tenantId, d.id);
   const hash = contentHash(content);
-  if (reason === "autosave") {
+  if (reason === "autosave" || opts.skipIfUnchanged) {
     const { data: last } = await db.from("draft_snapshot").select("content_hash")
       .eq("tenant_id", tenantId).eq("draft_id", d.id).order("taken_at", { ascending: false }).limit(1).maybeSingle();
     if (last?.content_hash === hash) return null;
@@ -133,16 +134,17 @@ export async function autosaveVersionAction(draftId: string): Promise<boolean> {
 }
 
 /**
- * Move to another stage, saving a version first: entering Weave saves "Before
- * Weave", entering Polish saves "Before Polish". Weave and Polish are the next
- * build; this is in place so the version exists from their first day.
+ * Move to another stage. Entering Weave only changes the view (Shane, 8
+ * October 2026): its "Before Weave" version is saved when someone presses Begin
+ * Weaving (saveBeforeWeaveAction), the moment worth going back to. Entering
+ * Polish still saves "Before Polish".
  */
 export async function enterStageAction(draftId: string, stage: "arrange" | "weave" | "polish") {
   const s = await requireAdmin();
   const d = await loadDraft(s.tenantId, draftId);
   if (!["arrange", "weave", "polish"].includes(stage) || stage === d.stage) return;
   if (["submitted", "won", "lost"].includes(d.status)) throw new Error("A submitted application is locked.");
-  if (stage !== "arrange") await snapshot(s.tenantId, s.user.id, d, "stage", null, stage);
+  if (stage === "polish") await snapshot(s.tenantId, s.user.id, d, "stage", null, stage);
   const { error } = await db.from("grant_draft").update({ stage }).eq("tenant_id", s.tenantId).eq("id", draftId);
   if (error) throw new Error(`Could not change the stage: ${error.message}`);
   // No revalidatePath here. The page holds the stage itself, and a refresh
@@ -150,6 +152,18 @@ export async function enterStageAction(draftId: string, stage: "arrange" | "weav
   // replace the new bridges with the answer as it stood a moment earlier
   // (found 7 October 2026: the first live weave saved its bridge, and the page
   // did not show it until reloaded).
+}
+
+/**
+ * Save the "Before Weave" version, just before a weave writes bridges. Skipped
+ * when the application is exactly as the newest version already has it, so
+ * pressing Weave again does not pile up identical versions.
+ */
+export async function saveBeforeWeaveAction(draftId: string) {
+  const s = await requireAdmin();
+  const d = await loadDraft(s.tenantId, draftId);
+  if (["submitted", "won", "lost"].includes(d.status)) return;
+  await snapshot(s.tenantId, s.user.id, d, "stage", null, "weave", { skipIfUnchanged: true });
 }
 
 /**

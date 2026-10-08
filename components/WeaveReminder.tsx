@@ -48,11 +48,11 @@ export default function WeaveReminder({ tenantName, again, onWeave, onCancel }: 
   return (
     <div className="ws-modal-back" role="presentation" onClick={onCancel}>
       <div className="ws-modal wv-remind" role="dialog" aria-modal="true" aria-labelledby="wv-rm-title" onClick={e => e.stopPropagation()}>
-        <h3 id="wv-rm-title">{again ? "Weave this answer again?" : "Weave this answer?"}</h3>
+        <h3 id="wv-rm-title">{again ? "Weave this answer again?" : "Begin weaving this answer?"}</h3>
         <p>Weaving drafts short connecting sentences between the Story Cards in this answer. You accept, edit or reject each one; none of them adds facts, numbers or names.</p>
         {failed && <p className="ov-muted">Weaving uses a small part of the monthly AI allowance.</p>}
         {info && info.admin && (
-          <p className="ov-muted">Each question you weave costs about {info.perWeaveCents} cent{info.perWeaveCents === 1 ? "" : "s"} of AI use.
+          <p className="ov-muted">Each question you weave costs {info.perWeaveCents < 1 ? "less than a cent" : `about ${Math.round(info.perWeaveCents)} cent${Math.round(info.perWeaveCents) === 1 ? "" : "s"}`} of AI use.
             Weaves by For Granted are recorded as For Granted&rsquo;s own use, so they are not counted toward {tenantName}&rsquo;s monthly allowance.</p>
         )}
         {info && !info.admin && !info.atCeiling && (
@@ -69,7 +69,7 @@ export default function WeaveReminder({ tenantName, again, onWeave, onCancel }: 
         )}
         <div className="ws-modal-acts">
           <button type="button" className="btn secondary" onClick={onCancel} autoFocus>Not now</button>
-          {(!info || !info.atCeiling) && <button type="button" className="btn inline ap-go" onClick={go}>Weave</button>}
+          {(!info || !info.atCeiling) && <button type="button" className="btn inline ap-go" onClick={go}>{again ? "Weave again" : "Begin Weaving"}</button>}
         </div>
       </div>
     </div>
