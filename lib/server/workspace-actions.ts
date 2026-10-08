@@ -31,6 +31,7 @@ import {
   bridgeGaps, parseWeave, screenBridges, weaveReminderDue, weaveShareLabel, WEAVE_COST_FALLBACK_MICROS, type WeavePiece,
 } from "@/lib/weave";
 import { checkAllowance, allowanceState } from "./allowance";
+import { writeCardEdit } from "./card-edit";
 import { lineMicros, shareUsed, levelOf, MICROS_PER_CENT } from "@/lib/allowance";
 
 async function requireAdmin() {
@@ -1003,5 +1004,55 @@ export async function acceptBridgesAction(sectionId: string, blockId: string | n
   await logEvents(s, section, take.map(r => ({
     event: "bridge_accepted" as const, block_id: r.id as string, payload: { text: r.text ?? "", all: blockId === null },
   })));
+  return finish(s, section);
+}
+
+// ---------------------------------------------------------------------------
+// User-generated cards in the answer (8 October 2026).
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn a block of the writer's own words into the Story Card just made from it
+ * (lib/server/user-card-actions.ts), or into a card already in the library that
+ * says the same thing. The card must be this client's, live and verified.
+ */
+export async function convertToCardAction(sectionId: string, blockId: string, cardId: string): Promise<WsBlock[]> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const row = rows.find(r => r.id === blockId);
+  if (!row || row.kind !== "human") throw new Error("That text is no longer in this answer.");
+  const { data: card } = await db.from("story_card").select("id, version, status, sensitive, sensitive_cleared")
+    .eq("tenant_id", s.tenantId).eq("id", cardId).maybeSingle();
+  if (!card || card.status === "retired") throw new Error("That card is not in this client's library.");
+  if (!placeable({ sensitive: card.sensitive, sensitiveCleared: card.sensitive_cleared })) throw new Error(SENSITIVE_REFUSAL);
+  if (card.status !== "verified") throw new Error(UNVERIFIED_REFUSAL);
+  if (rows.some(r => r.card_id === cardId && r.kind === "card")) throw new Error("That card is already in this answer.");
+  const { error } = await db.from("section_block").update({
+    kind: "card", card_id: cardId, card_version: card.version, text: null, edited: false, updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", blockId);
+  if (error) throw new Error(`Could not place the card: ${error.message}`);
+  await logEvents(s, section, [{ event: "added", card_id: cardId, block_id: blockId, payload: { via: "user_card" } }]);
+  return finish(s, section);
+}
+
+/**
+ * Save an edited card block's wording to the card in the Card Library, as a new
+ * version, and have the block use it. The library's own rules apply
+ * (lib/server/card-edit.ts): no figure its sources do not hold.
+ */
+export async function saveWordingToLibraryAction(sectionId: string, blockId: string): Promise<WsBlock[]> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const row = rows.find(r => r.id === blockId);
+  if (!row || row.kind !== "card" || !row.edited || !row.card_id) throw new Error("Only a card edited in this draft has wording to save.");
+  const version = await writeCardEdit(s.tenantId, s.user.id, row.card_id as string, String(row.text ?? ""), "admin");
+  const { data: card } = await db.from("story_card").select("version").eq("tenant_id", s.tenantId).eq("id", row.card_id as string).maybeSingle();
+  const { error } = await db.from("section_block").update({
+    card_version: version ?? card?.version ?? row.card_version, text: null, edited: false, updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", blockId);
+  if (error) throw new Error(`Could not update the answer: ${error.message}`);
+  await logEvents(s, section, [{ event: "edited", card_id: row.card_id as string, block_id: blockId, payload: { saved_to_library: true } }]);
   return finish(s, section);
 }

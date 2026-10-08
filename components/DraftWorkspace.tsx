@@ -31,8 +31,10 @@ import {
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   keepWordingAction, refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
-  acceptBridgesAction, weaveSectionAction,
+  acceptBridgesAction, weaveSectionAction, convertToCardAction, saveWordingToLibraryAction,
 } from "@/lib/server/workspace-actions";
+import UserCardDialog from "./UserCardDialog";
+import { USER_GENERATED } from "@/lib/user-card";
 import WeaveView from "./WeaveView";
 import WeaveReminder from "./WeaveReminder";
 import InfoTip from "./InfoTip";
@@ -89,6 +91,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [editing, setEditing] = useState<string | null>(null);
   const [tidy, setTidy] = useState<{ order: string[]; rationale: string } | null>(null);
   const [dragging, setDragging] = useState<WsCard | null>(null);
+  const [draggingNew, setDraggingNew] = useState(false);
   const [seams, setSeams] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -106,6 +109,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [weaveAsk, setWeaveAsk] = useState<{ again: boolean } | null>(null);
   // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
   const [wovenHere, setWovenHere] = useState<Set<string>>(() => new Set());
+  // Text a writer adds where they click, or by dragging "New text" in: once
+  // written, the page asks whether it is their own words or a new Story Card.
+  const fresh = useRef(new Set<string>());
+  const [choice, setChoice] = useState<{ blockId: string; text: string } | null>(null);
+  const [userCard, setUserCard] = useState<{ blockId: string; text: string } | null>(null);
+  const [weaveEditId, setWeaveEditId] = useState<string | null>(null);
   const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
   // Removing a block: which is being dragged, where a card would land, the
   // question being asked, and the Undo on offer.
@@ -351,11 +360,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
 
   const onDragStart = (e: DragStartEvent) => {
     const d = e.active.data.current as { type?: string; cardId?: string } | undefined;
+    setDraggingNew(d?.type === "newtext");
     setDragging(d?.type === "card" && d.cardId ? cardById.get(d.cardId) ?? null : null);
-    setActiveBlock(d?.type === "card" ? null : String(e.active.id));
+    setActiveBlock(d?.type === "card" || d?.type === "newtext" ? null : String(e.active.id));
   };
   const onDragOver = (e: DragOverEvent) => setOverId(e.over ? String(e.over.id) : null);
-  const endDrag = () => { setDragging(null); setActiveBlock(null); setOverId(null); };
+  const endDrag = () => { setDraggingNew(false); setDragging(null); setActiveBlock(null); setOverId(null); };
 
   // ---- Removing, with a question when it matters and Undo always ------------
   const doRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
@@ -383,6 +393,45 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     if (mustAsk) setConfirming({ block: b, via }); else doRemove(b, via);
   }, [askRemove, doRemove]);
 
+  /** Add an empty text block at `position` and open it for writing. */
+  const insertAt = (position: number) => {
+    if (!section || readOnly) return;
+    const sectionId = section.id;
+    const before = new Set((blocksBy[sectionId] ?? []).map(b => b.id));
+    if (stage === "arrange") setEditing("__new");
+    void run(() => addHumanBlockAction(sectionId, position), next => {
+      putBlocks(sectionId)(next);
+      const added = next.find(b => b.kind === "human" && !before.has(b.id));
+      if (!added) return;
+      fresh.current.add(added.id);
+      if (stage === "weave") setWeaveEditId(added.id); else setEditing(added.id);
+    });
+  };
+
+  /** Save a block's words; text just added asks, once written, what it is. */
+  const editBlock = (id: string, t: string) => {
+    if (!section) return Promise.resolve();
+    const sectionId = section.id;
+    return run(() => editBlockAction(sectionId, id, t), next => {
+      putBlocks(sectionId)(next);
+      if (fresh.current.has(id) && t.trim()) { fresh.current.delete(id); setChoice({ blockId: id, text: t.trim() }); }
+    });
+  };
+
+  /** Put a library card where the writer's text was: a new user-generated card, or one already there. */
+  const placeUserCard = (blockId: string, cardId: string, saved: boolean) => {
+    if (!section) return;
+    const sectionId = section.id;
+    setUserCard(null);
+    void run(() => convertToCardAction(sectionId, blockId, cardId), next => {
+      putBlocks(sectionId)(next);
+      say(saved
+        ? `Saved to Story Cards with a ${USER_GENERATED} label, and filed in the Inven(s)tory as a Writer's note. It is in this answer now, and ready for any other.`
+        : "Used the card already in the library in place of your text.");
+      router.refresh();
+    });
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
     const blockDrag = activeBlock;
@@ -394,6 +443,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       return;
     }
     const overIdx = blocks.findIndex(b => b.id === over.id);
+    if (d?.type === "newtext") {
+      if (overIdx < 0 && over.id !== "answer") return;
+      insertAt(overIdx >= 0 ? overIdx : blocks.length);
+      return;
+    }
     if (d?.type === "card" && d.cardId) {
       if (overIdx < 0 && over.id !== "answer") return;
       addCard(d.cardId, overIdx >= 0 ? overIdx : blocks.length);
@@ -554,6 +608,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
             wantedKinds={section.wantedKinds} locked={readOnly || stage === "weave"} onAdd={id => addCard(id, blocks.length)}
+            onNewText={readOnly ? null : () => insertAt(blocks.length)} canDragNew={!readOnly && stage === "arrange"}
             open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
 
           <div className="ws-main">
@@ -674,9 +729,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               {stage === "weave" ? (
                 blocks.length
                   ? <WeaveView blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked}
+                      editId={weaveEditId} onEditOpened={() => setWeaveEditId(null)}
                       handlers={{
                         onAccept: id => run(() => acceptBridgesAction(section.id, id), putBlocks(section.id)),
-                        onEdit: (id, t) => run(() => editBlockAction(section.id, id, t), putBlocks(section.id)),
+                        onEdit: (id, t) => editBlock(id, t),
+                        onInsert: insertAt,
+                        onSaveCard: id => { const b = blocks.find(x => x.id === id); if (b) setUserCard({ blockId: id, text: b.text.trim() }); },
+                        onSaveWording: id => run(() => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library."); router.refresh(); }),
                         onRemove: id => { const b = blocks.find(x => x.id === id); if (b) requestRemove(b, "button"); },
                         onReview: cardId => setReview({ mode: "review", queue: [{ cardId, position: null }] }),
                         onRefresh: id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
@@ -689,7 +748,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 dropAtEnd={!!dragging && overId === "answer"}
                 onMove={(from, to) => reorder(moveItem(blocks, from, to).map(b => b.id), "buttons")}
                 onRemove={id => { const b = blocks.find(x => x.id === id); if (b) requestRemove(b, "button"); }}
-                onEdit={(id, t) => run(() => editBlockAction(section.id, id, t), putBlocks(section.id))}
+                onEdit={editBlock}
+                onInsert={insertAt}
+                onSaveCard={b => setUserCard({ blockId: b.id, text: b.text.trim() })}
+                onSaveWording={id => run(() => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library. Every answer that uses the card will be offered the new wording."); router.refresh(); })}
                 onBreak={(id, v) => run(() => setBreakAction(section.id, id, v), putBlocks(section.id))}
                 onRefresh={id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
                 onKeep={id => run(() => keepWordingAction(section.id, id), putBlocks(section.id))}
@@ -784,14 +846,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                       setArrangeReview(r.needsReview.length ? r.needsReview : null);
                     })}>Arrange for me</button>
                 )}
-                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked} onClick={() => {
-                  setEditing("__new");
-                  void run(() => addHumanBlockAction(section.id, blocks.length), next => {
-                    putBlocks(section.id)(next);
-                    const added = next.find(b => b.kind === "human" && !b.text && !blocks.some(o => o.id === b.id));
-                    setEditing(added?.id ?? null);
-                  });
-                }}>＋ Write your own text</button>}
+                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked}
+                  title="Add text at the end. Or click between any two pieces of the answer to add it there."
+                  onClick={() => insertAt(blocks.length)}>＋ Write your own text</button>}
                 {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked || blocks.length < 3}
                   title={blocks.length < 3 ? "Tidy needs at least three pieces" : "Ask for a suggested order, with a reason. Nothing changes unless you accept it."}
                   onClick={() => void run(() => tidyAction(section.id), r => {
@@ -828,6 +885,17 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         {versionsOpen && (
           <VersionsDrawer draftId={draft.id} readOnly={readOnly} onClose={() => setVersionsOpen(false)}
             onRestored={(r) => { setVersionsOpen(false); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />
+        )}
+        {choice && (
+          <ChoiceDialog text={choice.text}
+            onOwn={() => setChoice(null)}
+            onCard={() => { const c = choice; setChoice(null); setUserCard(c); }} />
+        )}
+        {userCard && (
+          <UserCardDialog text={userCard.text} sectionId={section.id}
+            onSaved={cardId => placeUserCard(userCard.blockId, cardId, true)}
+            onUseExisting={cardId => placeUserCard(userCard.blockId, cardId, false)}
+            onCancel={() => setUserCard(null)} />
         )}
         {weaveAsk && (
           <WeaveReminder tenantName={tenantName} again={weaveAsk.again}
@@ -881,7 +949,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
           </div>
         )}
         <DragOverlay dropAnimation={null}>
-          {dragging ? <div className={`ws-card ws-overlay ${layerClass(dragging.layer)}`}><p className="cl-statement">{dragging.statement}</p></div>
+          {draggingNew ? <div className="ws-card ws-overlay ws-newtext-overlay"><p className="cl-statement">New text: drop it where it goes</p></div>
+            : dragging ? <div className={`ws-card ws-overlay ${layerClass(dragging.layer)}`}><p className="cl-statement">{dragging.statement}</p></div>
             : activeBlock ? (() => {
                 const b = blocks.find(x => x.id === activeBlock);
                 const c = b?.cardId ? cardById.get(b.cardId) : undefined;
@@ -921,7 +990,9 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
 // The card panel.
 // ---------------------------------------------------------------------------
 
-function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKinds, locked, onAdd, open, onClose, removing }: {
+function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKinds, locked, onAdd, open, onClose, removing, onNewText, canDragNew }: {
+  /** The blank "New text" box at the top: click to add at the end, or drag it into place. */
+  onNewText: (() => void) | null; canDragNew: boolean;
   sectionId: string; ranked: Ranked[]; usedWhere: Map<string, number[]>; current: number;
   statusNow: Record<string, "verified" | "retired">;
   wantedKinds: string[]; locked: boolean; onAdd: (cardId: string) => void;
@@ -936,20 +1007,23 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(PANEL_SIZE);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [userOnly, setUserOnly] = useState(false);
   const logged = useRef(new Set<string>());
 
   const statusOf = (c: WsCard) => statusNow[c.id] ?? c.status;
-  const filtering = !!(kind || layer || q.trim() || verifiedOnly);
+  const filtering = !!(kind || layer || q.trim() || verifiedOnly || userOnly);
   const list = ranked.filter(r => {
     if (statusNow[r.card.id] === "retired") return false;
     if (verifiedOnly && statusOf(r.card as WsCard) !== "verified") return false;
+    if (userOnly && (r.card as WsCard).createdFrom !== "manual") return false;
     if (kind === "__wanted" && !wantedKinds.includes(r.card.kind)) return false;
     if (kind && kind !== "__wanted" && r.card.kind !== kind) return false;
     if (layer && r.card.layer !== layer) return false;
     if (q.trim()) {
       const n = q.trim().toLowerCase();
       const c = r.card as WsCard;
-      if (!`${c.statement} ${c.evidence.map(e => `${e.quote} ${e.title}`).join(" ")}`.toLowerCase().includes(n)) return false;
+      const label = c.createdFrom === "manual" ? `${USER_GENERATED} ${c.sourceLine ?? ""}` : "";
+      if (!`${c.statement} ${label} ${c.evidence.map(e => `${e.quote} ${e.title}`).join(" ")}`.toLowerCase().includes(n)) return false;
     }
     return true;
   });
@@ -988,7 +1062,10 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
         <label className="ws-verified-only" title="Only cards a person has verified. Others can still be used: dropping one opens its review.">
           <input type="checkbox" checked={verifiedOnly} onChange={e => { setVerifiedOnly(e.target.checked); setLimit(PANEL_SIZE); }} /> Verified only
         </label>
+        <button type="button" className={`chip${userOnly ? " active" : ""}`} title="Only cards a person wrote, not ones read from documents"
+          onClick={() => { setUserOnly(v => !v); setLimit(PANEL_SIZE); }}>{USER_GENERATED}</button>
       </div>
+      {onNewText && <NewTextChip onClick={onNewText} canDrag={canDragNew} />}
       {shown.length === 0 && <p className="cl-note">{ranked.length ? "Nothing matches these filters." : "No cards left to place. Build the Card Library, or remove a card from the answer to bring it back."}</p>}
       <div className="ws-cards">
         {shown.map(r => (
@@ -1002,6 +1079,21 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
         </button>
       )}
     </aside>
+  );
+}
+
+/** A blank text box at the top of the Story Cards: drag it into the answer, or click to add it at the end. */
+function NewTextChip({ onClick, canDrag }: { onClick: () => void; canDrag: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: "newtext", data: { type: "newtext" }, disabled: !canDrag });
+  return (
+    <div ref={setNodeRef} className={`ws-newtext${isDragging ? " ws-ghost" : ""}`}>
+      <span className={canDrag ? "ws-grab ws-newtext-grab" : "ws-newtext-grab"} {...listeners} {...attributes}
+        title={canDrag ? "Drag into the answer where the text should go" : undefined} aria-label="New text: drag into the answer">
+        <span className="ws-handle" aria-hidden="true">⠿</span> ✚ New text
+      </span>
+      <span className="ov-muted">{canDrag ? "Drag it into place, or" : "Add it at the end:"}</span>
+      <button type="button" className="btn secondary ap-mini" onClick={onClick}>Add at the end</button>
+    </div>
   );
 }
 
@@ -1019,6 +1111,7 @@ function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: 
         <span className="ws-handle" aria-hidden="true">⠿</span>
         <span className="cl-kind">{c.kindLabel}</span>
         {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
+        {c.createdFrom === "manual" && <span className="uc-tag" title={c.sourceLine ?? undefined}>{USER_GENERATED}</span>}
         <span className="cl-spacer" />
         {verified ? <span className="cl-badge cl-badge-ok">Verified</span> : <span className="cl-badge ws-badge-review" title="Not yet verified. Dropping it in, or pressing Review and add, opens its review first.">Needs review</span>}
       </div>
@@ -1057,8 +1150,11 @@ function Evidence({ card }: { card: WsCard }) {
 // The answer.
 // ---------------------------------------------------------------------------
 
-function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, empty, dropBefore, dropAtEnd }: {
+function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, empty, dropBefore, dropAtEnd, onInsert, onSaveCard, onSaveWording }: {
   blocks: WsBlock[]; cardById: Map<string, WsCard>; gateCard: (id: string) => GateCard | null; locked: boolean;
+  /** Add text at this position: the "+" between pieces. */
+  onInsert: (position: number) => void;
+  onSaveCard: (b: WsBlock) => void; onSaveWording: (id: string) => Promise<unknown>;
   /** While a card from the panel is dragged: the block it would land before, or the end. */
   dropBefore: string | null; dropAtEnd: boolean;
   editing: string | null; setEditing: (id: string | null) => void;
@@ -1072,15 +1168,56 @@ function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing,
       {blocks.length === 0 ? empty : (
         <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
           {blocks.map((b, i) => (
-            <BlockRow key={b.id} block={b} index={i} last={i === blocks.length - 1} dropBefore={dropBefore === b.id}
+            <div key={b.id} className="ws-row">
+            {!locked && <InsertLine onClick={() => onInsert(i)} />}
+            <BlockRow block={b} index={i} last={i === blocks.length - 1} dropBefore={dropBefore === b.id}
+              onSaveCard={onSaveCard} onSaveWording={onSaveWording}
               card={b.cardId ? cardById.get(b.cardId) : undefined} locked={locked}
               blocked={b.kind === "card" && b.cardId ? placeIssue(gateCard(b.cardId)) : null}
               editing={editing === b.id} setEditing={setEditing}
               onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} onKeep={onKeep} />
+            </div>
           ))}
+          {!locked && <InsertLine onClick={() => onInsert(blocks.length)} />}
         </SortableContext>
       )}
       <div className={`ws-dropzone${dropAtEnd && blocks.length ? " ws-drop-line" : ""}`}>{blocks.length ? "Drop a card here to add it at the end" : null}</div>
+    </div>
+  );
+}
+
+/** The thin "+" between two pieces of the answer: click to add text exactly there. */
+function InsertLine({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="ws-ins" onClick={onClick} title="Add text here" aria-label="Add text here">
+      <span className="ws-ins-plus" aria-hidden="true">＋ Add text here</span>
+    </button>
+  );
+}
+
+/** Once new text is written: the writer's own words in this answer, or a Story Card for every answer? */
+function ChoiceDialog({ text, onOwn, onCard }: { text: string; onOwn: () => void; onCard: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onOwn(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onOwn]);
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onOwn}>
+      <div className="ws-modal" role="dialog" aria-modal="true" aria-labelledby="uc-choice" onClick={e => e.stopPropagation()}>
+        <h3 id="uc-choice">What is this text?</h3>
+        <p className="uc-quote">{text.slice(0, 280)}{text.length > 280 ? "…" : ""}</p>
+        <div className="uc-choices">
+          <button type="button" className="uc-choice" onClick={onOwn} autoFocus>
+            <strong>Your words in this answer</strong>
+            <span>Connecting text, or something only this answer needs. It stays in this draft.</span>
+          </button>
+          <button type="button" className="uc-choice" onClick={onCard}>
+            <strong>A new Story Card</strong>
+            <span>A fact or a story worth using again. Saved to the Story Cards, ready for any answer.</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1102,8 +1239,9 @@ function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }
   );
 }
 
-function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, dropBefore }: {
+function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, dropBefore, onSaveCard, onSaveWording }: {
   block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean; dropBefore: boolean;
+  onSaveCard: (b: WsBlock) => void; onSaveWording: (id: string) => Promise<unknown>;
   /** What stops this card leaving in an answer, from lib/card-gate.ts. */
   blocked: string | null;
   editing: boolean; setEditing: (id: string | null) => void;
@@ -1145,6 +1283,7 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {b.kind === "bridge" && b.proposed && <span className="ov-tag" title="Proposed in Weave and not accepted yet, so it is not part of the answer.">Proposed, not in the answer</span>}
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
+        {isCard && card?.createdFrom === "manual" && <span className="uc-tag" title={card.sourceLine ?? USER_GENERATED}>{USER_GENERATED}</span>}
         {isCard && blocked === "unverified" && <span className="ov-tag ws-tag-review" title="Placed before verification was required, or un-verified since. Review it before this answer is used.">Needs review</span>}
         {isCard && blocked === "retired" && <span className="ov-tag ws-tag-sens" title="Retired from the library. Remove it before this answer is used.">Retired card</span>}
         {isCard && card && !placeable(card) && <span className="ov-tag ws-tag-sens" title={card.sensitiveReason ?? ""}>Sensitive, undecided</span>}
@@ -1191,9 +1330,17 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
           or <button type="button" className="cl-link" onClick={() => void onKeep(b.id)}>keep this wording</button>
         </div>
       )}
-      {isCard && b.edited && !editing && (
-        <button type="button" className="cl-link ws-revert" onClick={() => void onRefresh(b.id)}
-          title="Drop the edit and use the card's current wording from the library">Use the card&rsquo;s wording</button>
+      {isCard && b.edited && !editing && !locked && (
+        <span className="ws-row-links">
+          <button type="button" className="cl-link ws-revert" onClick={() => void onRefresh(b.id)}
+            title="Drop the edit and use the card's current wording from the library">Use the card&rsquo;s wording</button>
+          <button type="button" className="cl-link" onClick={() => void onSaveWording(b.id)}
+            title="Make this wording the card's own, in the Card Library, for every answer">Save this wording to the Card Library</button>
+        </span>
+      )}
+      {b.kind === "human" && !editing && !locked && b.text.trim() && (
+        <button type="button" className="cl-link ws-revert" onClick={() => onSaveCard(b)}
+          title="Save these words as a Story Card, ready for any answer">Save as a Story Card</button>
       )}
       {isCard && card && (
         <>

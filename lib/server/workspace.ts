@@ -26,6 +26,9 @@ export interface WsCard extends RankCard {
   sensitive: boolean; sensitiveReason: string | null;
   sensitiveCleared: "consent" | "deidentified" | "not_sensitive" | null;
   evidence: WsEvidence[];
+  /** 'manual' for a user-generated card (8 Oct 2026), with who wrote it. */
+  createdFrom: string;
+  sourceLine: string | null;
 }
 
 export interface WsBlock {
@@ -122,7 +125,7 @@ export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_versi
 export async function loadCards(tenantId: string): Promise<WsCard[]> {
   const s = await userClient();
   const { data: cardRows, error: cErr } = await s.from("story_card")
-      .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
+      .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, created_from, source_line, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
       .eq("tenant_id", tenantId).neq("status", "retired");
   if (cErr) throw new Error(`Could not read the Card Library: ${cErr.message}`);
   type Ev = { quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string; created_at: string } | null };
@@ -142,6 +145,8 @@ export async function loadCards(tenantId: string): Promise<WsCard[]> {
       newestEvidenceAt: newest?.document?.created_at ?? null,
       newestSource: newest?.document?.title ?? null,
       evidence: ev.map(e => ({ title: e.document!.title, layer: e.document!.layer, quote: e.quote, speaker: e.speaker })),
+      createdFrom: (r.created_from as string | null) ?? "extraction",
+      sourceLine: (r.source_line as string | null) ?? null,
     };
   });
 }

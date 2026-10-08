@@ -16,6 +16,7 @@ import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
 import type { CardLibraryData } from "@/lib/server/card-library";
 import CardReview from "./CardReview";
+import { USER_GENERATED } from "@/lib/user-card";
 
 type StatusFilter = "review" | "sensitive" | "verified" | "duplicates" | "retired" | "all";
 
@@ -44,6 +45,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
   const [kind, setKind] = useState<string>("");
   const [layer, setLayer] = useState<string>("");
   const [q, setQ] = useState("");
+  const [userOnly, setUserOnly] = useState(false);
   const [showRefusals, setShowRefusals] = useState(false);
 
   const byId = useMemo(() => new Map(data.cards.map(c => [c.id, c])), [data.cards]);
@@ -66,9 +68,11 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
     if (status === "retired" && c.status !== "retired") return false;
     if (kind && c.kind !== kind) return false;
     if (layer && c.layer !== layer) return false;
+    if (userOnly && c.createdFrom !== "manual") return false;
     if (q.trim()) {
       const needle = q.trim().toLowerCase();
-      const hay = `${c.statement} ${c.evidence.map(e => `${e.quote} ${e.title}`).join(" ")}`.toLowerCase();
+      const label = c.createdFrom === "manual" ? `${USER_GENERATED} ${c.sourceLine ?? ""}` : "";
+      const hay = `${c.statement} ${label} ${c.evidence.map(e => `${e.quote} ${e.title}`).join(" ")}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
     return true;
@@ -239,6 +243,8 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
               <button key={l} type="button" className={`chip l${l.length}${layer === l ? " active" : ""}`}
                 onClick={() => setLayer(layer === l ? "" : l)}>{LAYER_NAME[l]}</button>
             ))}
+            <button type="button" className={`chip${userOnly ? " active" : ""}`} onClick={() => setUserOnly(v => !v)}
+              title="Cards a person wrote, not ones read from documents">{USER_GENERATED} <span className="cl-count">{data.cards.filter(c => c.createdFrom === "manual" && c.status !== "retired").length}</span></button>
             <input className="cl-search" placeholder="Search statements and quotes" value={q} onChange={e => setQ(e.target.value)} />
             <a className="btn ghost" href="/api/export/cards" title="Every card with its quotes and sources, as a spreadsheet">⬇ Export cards (.csv)</a>
           </div>

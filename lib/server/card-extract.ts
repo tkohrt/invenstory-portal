@@ -364,8 +364,15 @@ export async function planLibraryMerge(tenantId: string, source: CardSource): Pr
   // Inaccurate) contribute nothing, so a card resting only on them is retired
   // as source_removed and cannot return by a re-read (decisions 19 and 31).
   const refusals = await activeRefusals(tenantId);
-  const refused = withoutRefused(docRows.map(r => ({ documentId: r.documentId, cards: r.candidates })), refusals);
   const cards = (cardRows ?? []) as unknown as MergeCard[];
+  // A user-generated card's Writer's note is read like any document, for
+  // readiness, but the cards a read finds in it are the card already made from
+  // it: they are left out here, so the library never gains a twin of it.
+  const manual = new Set(cards.filter(c => c.created_from === "manual").map(c => c.id));
+  const noteDocs = new Set(((evRows ?? []) as { card_id: string; document_id: string }[])
+    .filter(e => manual.has(e.card_id)).map(e => e.document_id));
+  const refused = withoutRefused(docRows.filter(r => !noteDocs.has(r.documentId))
+    .map(r => ({ documentId: r.documentId, cards: r.candidates })), refusals);
 
   // Cards a person has put to use keep the evidence they have when no read finds
   // them any more (lib/card-merge.ts): placed in a draft, verified, or reworded.
@@ -378,6 +385,7 @@ export async function planLibraryMerge(tenantId: string, source: CardSource): Pr
     ...((placed ?? []) as { card_id: string }[]).map(r => r.card_id),
     ...((human ?? []) as { id: string }[]).map(r => r.id),
     ...cards.filter(c => c.status === "verified").map(c => c.id),
+    ...manual,
   ]);
   const readyIds = new Set(((ready ?? []) as { id: string }[]).map(d => d.id));
   const refusalIndex = indexRefusals(refusals);

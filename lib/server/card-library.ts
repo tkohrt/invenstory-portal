@@ -19,6 +19,8 @@ export interface LibraryCard {
   status: "suggested" | "verified" | "retired"; retiredReason: string | null;
   mergedInto: string | null; possibleDuplicateOf: string | null;
   createdFrom: string; version: number; verifiedAt: string | null; createdAt: string;
+  /** User-generated cards (0057): who wrote it, and when a client confirmed one For Granted wrote. */
+  sourceLine: string | null; writtenByRole: "admin" | "client" | null; clientConfirmedAt: string | null;
   /** 0043: who verified it, and why it was retired, in the reviewer's words. */
   verifiedByRole: "admin" | "client" | null; retiredNote: string | null;
   /** 0043: ties an identifiable person to a protected status; see lib/card-sensitivity.ts. */
@@ -131,6 +133,9 @@ function toLibraryCard(r: Record<string, unknown>): LibraryCard {
     mergedInto: (r.merged_into as string | null) ?? null,
     possibleDuplicateOf: (r.possible_duplicate_of as string | null) ?? null,
     createdFrom: r.created_from as string,
+    sourceLine: (r.source_line as string | null) ?? null,
+    writtenByRole: (r.written_by_role as LibraryCard["writtenByRole"]) ?? null,
+    clientConfirmedAt: (r.client_confirmed_at as string | null) ?? null,
     version: r.version as number,
     verifiedAt: (r.verified_at as string | null) ?? null,
     createdAt: r.created_at as string,

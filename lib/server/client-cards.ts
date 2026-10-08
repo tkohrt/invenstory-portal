@@ -14,12 +14,15 @@ export interface ClientCard {
   layer: "I" | "II" | "III" | null; sensitive: boolean; sensitiveCleared: string | null;
   edited: boolean; createdAt: string;
   evidence: { title: string; quote: string }[];
+  /** User-generated (0057): who wrote it; one For Granted wrote waits for the client to confirm it. */
+  userGenerated: boolean; sourceLine: string | null; toConfirm: boolean;
 }
 
 export async function getClientCards(tenantId: string): Promise<ClientCard[]> {
   const s = await userClient();
   const { data, error } = await s.from("story_card")
     .select("id, kind, statement, status, verified_by_role, layer, sensitive, sensitive_cleared, statement_origin, created_at, "
+      + "created_from, source_line, written_by_role, client_confirmed_at, "
       + "story_card_evidence(quote, document:document_id(title, status))")
     .eq("tenant_id", tenantId).neq("status", "retired").order("created_at");
   if (error) throw new Error(`Could not read your Story Cards: ${error.message}`);
@@ -35,6 +38,9 @@ export async function getClientCards(tenantId: string): Promise<ClientCard[]> {
     edited: r.statement_origin === "human", createdAt: r.created_at as string,
     evidence: ((r.story_card_evidence as Ev[]) ?? []).filter(e => e.document?.status === "ready")
       .map(e => ({ title: e.document!.title, quote: e.quote })),
+    userGenerated: r.created_from === "manual",
+    sourceLine: (r.source_line as string | null) ?? null,
+    toConfirm: r.created_from === "manual" && r.written_by_role === "admin" && !r.client_confirmed_at,
   }));
 }
 

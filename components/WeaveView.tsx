@@ -17,6 +17,7 @@ import { placeable } from "@/lib/card-sensitivity";
 import { placeIssue, ISSUE_LABEL, type GateCard } from "@/lib/card-gate";
 import { untracedFigures } from "@/lib/story-card";
 import type { WsBlock, WsCard } from "@/lib/server/workspace";
+import { USER_GENERATED } from "@/lib/user-card";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 const layerClass = (l: string | null | undefined) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "l0");
@@ -29,13 +30,25 @@ export interface WeaveHandlers {
   onReview: (cardId: string) => void;
   onRefresh: (blockId: string) => Promise<unknown>;
   onKeep: (blockId: string) => Promise<unknown>;
+  /** Add text at this position in the answer (the "+" between pieces). */
+  onInsert: (position: number) => void;
+  /** Save a writer's own words as a user-generated Story Card. */
+  onSaveCard: (blockId: string) => void;
+  /** Save an edited card's wording to the card in the Card Library. */
+  onSaveWording: (blockId: string) => Promise<unknown>;
 }
 
-export default function WeaveView({ blocks, cardById, gateCard, locked, handlers }: {
+export default function WeaveView({ blocks, cardById, gateCard, locked, handlers, editId, onEditOpened }: {
   blocks: WsBlock[]; cardById: Map<string, WsCard>; gateCard: (id: string) => GateCard | null; locked: boolean;
   handlers: WeaveHandlers;
+  /** Text just added: open it straight away, ready to type. */
+  editId?: string | null; onEditOpened?: () => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  // Text just added opens at once, ready to type, until it is closed or stepped away from.
+  const fresh = editId && blocks.some(b => b.id === editId) ? editId : null;
+  const open = fresh ?? picked;
+  const setOpen = (id: string | null) => { if (fresh) onEditOpened?.(); setPicked(id); };
   // Paragraphs, as the writer set them in Arrange.
   const paras: WsBlock[][] = [];
   blocks.forEach((b, i) => {
@@ -43,7 +56,12 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
     else paras[paras.length - 1].push(b);
   });
 
-  const toggle = (id: string) => setOpen(o => (o === id ? null : id));
+  const toggle = (id: string) => setOpen(open === id ? null : id);
+  /** The "+" between two pieces: click to add text exactly there. */
+  const Ins = ({ at, end }: { at: number; end?: boolean }) => (
+    <button type="button" className={`wv-ins${end ? " wv-ins-end" : ""}`} onClick={() => handlers.onInsert(at)}
+      title="Add text here" aria-label="Add text here">＋</button>
+  );
   // Previous and Next walk every piece with words, in the answer's order.
   const order = blocks.filter(b => b.text.trim()).map(b => b.id);
   const openBlock = open ? blocks.find(b => b.id === open) : undefined;
@@ -53,12 +71,13 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
 
   return (
     <div className="wv" aria-label="The answer, woven">
-      {paras.map(p => {
+      {paras.map((p, pi) => {
         return (
           <div key={p[0].id} className="wv-para-wrap">
             <p className="wv-para">
               {p.map((b, i) => {
-                const sep = i > 0 ? " " : "";
+                const at = blocks.indexOf(b);
+                const sep = <>{i > 0 ? " " : ""}{!locked && <Ins at={at} />}</>;
                 const text = b.kind === "human" ? b.text.trim() : b.text.replace(/\s+/g, " ").trim();
                 if (b.kind === "card") {
                   const card = b.cardId ? cardById.get(b.cardId) : undefined;
@@ -98,12 +117,13 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
                   </span>
                 );
               })}
+              {!locked && <Ins at={pi === paras.length - 1 ? blocks.length : blocks.indexOf(paras[pi + 1][0])} end />}
             </p>
           </div>
         );
       })}
       {openBlock && (
-        <PieceDialog key={openBlock.id} block={openBlock} card={openBlock.cardId ? cardById.get(openBlock.cardId) : undefined}
+        <PieceDialog key={openBlock.id} startEditing={fresh === openBlock.id} block={openBlock} card={openBlock.cardId ? cardById.get(openBlock.cardId) : undefined}
           gateCard={gateCard} locked={locked} handlers={handlers} onClose={() => setOpen(null)}
           at={order.indexOf(openBlock.id)} total={order.length}
           onStep={d => { const i = order.indexOf(openBlock.id) + d; if (i >= 0 && i < order.length) setOpen(order[i]); }} />
@@ -113,13 +133,15 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
 }
 
 /** The full card (or bridge, or the writer's own words), in a window over the page. */
-function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, total, onStep }: {
+function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, total, onStep, startEditing = false }: {
+  /** Open with the editor ready: text just added. */
+  startEditing?: boolean;
   block: WsBlock; card?: WsCard; gateCard: (id: string) => GateCard | null; locked: boolean;
   handlers: WeaveHandlers; onClose: () => void;
   /** Where this piece sits among the answer's pieces, for Previous and Next. */
   at: number; total: number; onStep: (delta: 1 | -1) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [text, setText] = useState(b.text);
   const [showSrc, setShowSrc] = useState(false);
   const isCard = b.kind === "card";
@@ -141,7 +163,11 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
 
   const save = async () => {
     setEditing(false);
-    if (text.trim() !== b.text.trim() || (b.kind === "bridge" && b.proposed)) await handlers.onEdit(b.id, text);
+    if (text.trim() !== b.text.trim() || (b.kind === "bridge" && b.proposed)) {
+      await handlers.onEdit(b.id, text);
+      // New text, once written, is asked about by the page (your words, or a Story Card).
+      if (startEditing && b.kind === "human" && text.trim()) onClose();
+    }
   };
 
   const title = isCard ? (card?.kindLabel ?? "Story Card")
@@ -162,6 +188,7 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
         <div className={`ws-card wv-full ${isCard ? layerClass(card?.layer) : b.kind === "bridge" ? "wv-full-bridge" : "wv-full-own"}${isCard && card?.strength === "thin" ? " cl-thin" : ""}`}>
           <div className="cl-card-head">
             <span className="cl-kind">{title}</span>
+            {isCard && card?.createdFrom === "manual" && <span className="uc-tag" title={card.sourceLine ?? undefined}>{USER_GENERATED}</span>}
             {isCard && card?.layer && <span className="cl-layer">{LAYER_NAME[card.layer]}</span>}
             {isCard && !issue && <span className="cl-badge cl-badge-ok">Verified</span>}
             {isCard && issue === "unverified" && <span className="cl-badge ws-badge-review">Needs review</span>}
@@ -214,8 +241,15 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
                 </button>
               )}
               {isCard && b.edited && !locked && (
-                <button type="button" className="cl-link" onClick={() => void handlers.onRefresh(b.id)}
-                  title="Drop the edit and use the card's current wording from the library">Use the card&rsquo;s wording</button>
+                <>
+                  <button type="button" className="cl-link" onClick={() => void handlers.onRefresh(b.id)}
+                    title="Drop the edit and use the card's current wording from the library">Use the card&rsquo;s wording</button>
+                  <button type="button" className="cl-link" onClick={() => void handlers.onSaveWording(b.id)}
+                    title="Make this wording the card's own, in the Card Library">Save this wording to the Card Library</button>
+                </>
+              )}
+              {b.kind === "human" && !locked && b.text.trim() && (
+                <button type="button" className="btn secondary ap-mini" onClick={() => { onClose(); handlers.onSaveCard(b.id); }}>Save as a Story Card</button>
               )}
               <span className="cl-spacer" />
               {isCard && card && (

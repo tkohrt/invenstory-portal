@@ -1436,3 +1436,37 @@ a.dl-row:hover{background:#f6f8f5}
 .wv-remind-off{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0 2px}
 .wv-remind-off input{width:auto}
 @media (max-width: 900px){ .back-btn{padding:6px 9px} .back-btn .back-word{display:none} }
+
+/* User-generated Story Cards and adding text anywhere (8 Oct 2026). */
+.uc-tag{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#374151;background:#f1f2f4;border:1px solid #d3d6dc;border-radius:999px;padding:1px 7px}
+.ws-row{display:flex;flex-direction:column}
+.ws-ins{display:block;width:100%;height:12px;margin:-6px 0;padding:0;border:0;background:none;cursor:pointer;position:relative;z-index:2}
+.ws-ins:before{content:"";position:absolute;left:4px;right:4px;top:5px;height:2px;border-radius:2px;background:transparent;transition:background .1s}
+.ws-ins-plus{position:absolute;left:50%;top:-4px;transform:translateX(-50%);font-size:11.5px;font-weight:600;color:#1f4d2e;background:var(--panel);
+  border:1px solid #b9d3bf;border-radius:999px;padding:1px 9px;white-space:nowrap;opacity:0;transition:opacity .1s;pointer-events:none}
+.ws-ins:hover:before,.ws-ins:focus-visible:before{background:#8fbf9a}
+.ws-ins:hover .ws-ins-plus,.ws-ins:focus-visible .ws-ins-plus{opacity:1}
+.ws-row-links{display:flex;gap:12px;flex-wrap:wrap}
+.wv-ins{display:inline-block;width:8px;margin:0 -3px;padding:0;border:0;background:none;color:transparent;font-size:12px;line-height:1;cursor:pointer;
+  vertical-align:middle;border-radius:4px}
+.wv-ins:hover,.wv-ins:focus-visible{color:#1f4d2e;background:#eef5ef;width:auto;padding:1px 4px;margin:0 1px}
+.wv-ins-end{margin-left:2px}
+.ws-newtext{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1.5px dashed #b8bcc4;border-radius:10px;padding:8px 10px;margin:0 0 10px;background:var(--panel);font-size:12.5px}
+.ws-newtext-grab{font-weight:700;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.ws-newtext-overlay{border-style:dashed;border-color:#8a8f98}
+.uc-modal{max-width:560px}
+.uc-preview{margin:6px 0 10px}
+.uc-fields{display:flex;flex-direction:column;gap:9px;margin:4px 0 6px}
+.uc-fields label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+.uc-fields input,.uc-fields select{font-weight:400}
+.uc-source{margin:0;font-size:13px;color:var(--muted)}
+.uc-more{align-self:flex-start}
+.uc-note{font-size:12.5px;margin:6px 0 0}
+.uc-alike{display:flex;flex-direction:column;gap:6px;margin:0 0 8px}
+.uc-alike-row{display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:13px}
+.uc-quote{margin:0 0 10px;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13.5px}
+.uc-choices{display:flex;flex-direction:column;gap:8px}
+.uc-choice{display:flex;flex-direction:column;gap:3px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel);cursor:pointer;font-size:13px}
+.uc-choice strong{font-size:14px}
+.uc-choice span{color:var(--muted)}
+.uc-choice:hover,.uc-choice:focus-visible{border-color:#1f4d2e;background:#f4f9f5}

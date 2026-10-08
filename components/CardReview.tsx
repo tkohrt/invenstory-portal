@@ -11,6 +11,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { LibraryCard } from "@/lib/server/card-library";
+import { USER_GENERATED } from "@/lib/user-card";
 import {
   verifyCardAction, unverifyCardAction, editCardAction, retireCardAction,
   reinstateCardAction, mergeCardAction, dismissDuplicateAction, clearSensitiveAction, reopenSensitiveAction,
@@ -64,6 +65,7 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
     <div className={cls}>
       <div className="cl-card-head">
         <span className="cl-kind">{c.kindLabel}</span>
+        {c.createdFrom === "manual" && <span className="uc-tag" title={c.sourceLine ?? undefined}>{USER_GENERATED}{c.writtenByRole === "admin" && !c.clientConfirmedAt ? " · client to confirm" : ""}</span>}
         {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
         <span className="cl-spacer" />
         {c.sensitive && !c.sensitiveCleared && c.status !== "retired" && <span className="cl-badge cl-badge-sens" title={c.sensitiveReason ?? ""}>Sensitive</span>}
