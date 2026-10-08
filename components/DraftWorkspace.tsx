@@ -35,6 +35,7 @@ import {
 } from "@/lib/server/workspace-actions";
 import WeaveView from "./WeaveView";
 import WeaveReminder from "./WeaveReminder";
+import InfoTip from "./InfoTip";
 import { bridgeGaps } from "@/lib/weave";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import {
@@ -516,7 +517,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   return (
     <div className={`ws ws-page${readOnly ? " ws-readonly" : ""}`}>
       <header className="ws-top">
-        <button className="btn ghost ws-back" onClick={() => router.push("/drafts")}>← Drafts</button>
         <h2 className="ws-title">{draft.title}</h2>
         <About standard={standard} tenantName={tenantName}
           meta={standard ? null : [draft.funder, money, draft.deadline ? `due ${new Date(draft.deadline + "T12:00:00").toLocaleDateString()}` : null].filter(Boolean).join(" · ")} />
@@ -903,19 +903,16 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   }
 }
 
-/** The page's description, out of the way until someone asks for it. */
+/** The page's description, behind an ⓘ that opens on hover. */
 function About({ standard, tenantName, meta }: { standard: boolean; tenantName: string; meta: string | null }) {
   return (
     <span className="ws-about-wrap">
       {meta && <span className="ws-meta">{meta}</span>}
-      <details className="ws-about">
-        <summary title="What this page is for">About</summary>
-        <div className="ws-about-pop">
-          {standard
-            ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
-            : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave then reads it as prose, with short bridges between the cards for you to accept or reject. Polish comes next.</>}
-        </div>
-      </details>
+      <InfoTip label={standard ? "About Standard Answers" : "About this page"}>
+        {standard
+          ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
+          : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave then reads it as prose, with short bridges between the cards for you to accept or reject. Polish comes next.</>}
+      </InfoTip>
     </span>
   );
 }

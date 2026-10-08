@@ -3,7 +3,7 @@
 :root{
   --bg:#f6f7f9; --panel:#ffffff; --ink:#1f2430; --muted:#6b7280; --line:#e6e8ec;
   --accent:#9a7b2f; --accent-soft:#f3ecd9;
-  --l1:#2f6f9a; --l2:#7a5bb0; --l3:#b07a3a;
+  --l1:#c9970c; --l2:#7c3aed; --l3:#3fae68;  /* Layer I gold, II purple, III light green (8 Oct 2026, Option A) */
   --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
   --radius:12px;
 }
@@ -97,18 +97,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .layer-block{margin-bottom:22px}
 .layer-canvas{border-radius:16px;padding:18px 18px 20px;border:1px solid;position:relative;overflow:hidden}
 .layer-canvas:before{content:"";position:absolute;top:0;left:0;right:0;height:4px}
-.layer-canvas.l1{background:#eef4f9;border-color:#d4e3ef}
+.layer-canvas.l1{background:#fdf7e6;border-color:#f0e0ae}
 .layer-canvas.l1:before{background:var(--l1)}
-.layer-canvas.l2{background:#f4eff9;border-color:#e3d8ef}
+.layer-canvas.l2{background:#f4effe;border-color:#ddd0fb}
 .layer-canvas.l2:before{background:var(--l2)}
-.layer-canvas.l3{background:#f9f3ea;border-color:#efe1cd}
+.layer-canvas.l3{background:#ecf8f0;border-color:#c6e8d2}
 .layer-canvas.l3:before{background:var(--l3)}
 .layer-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .layer-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
 .layer-badge{font-size:11px;font-weight:800;letter-spacing:.04em;color:#fff;border-radius:6px;padding:3px 8px}
 .l1 .layer-badge{background:var(--l1)} .l2 .layer-badge{background:var(--l2)} .l3 .layer-badge{background:var(--l3)}
 .layer-head h3{margin:0;font-size:17px}
-.l1 .layer-head h3{color:#234e6c} .l2 .layer-head h3{color:#523c7c} .l3 .layer-head h3{color:#7c5526}
+.l1 .layer-head h3{color:#7a5a00} .l2 .layer-head h3{color:#5b21b6} .l3 .layer-head h3{color:#1f6b3e}
 .layer-head .count{color:var(--muted);font-size:13px;font-weight:600}
 .layer-head .desc{color:var(--muted);font-size:12.5px;margin-left:2px}
 .layer-canvas .doc-card{border-color:rgba(0,0,0,.06)}
@@ -1126,15 +1126,22 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
    question card, progress and the answer, with the action bar pinned below. */
 .ws-page{display:flex;flex-direction:column;gap:10px}
 .ws-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ws-back{padding:2px 4px}
 .ws-title{margin:0;font-size:22px}
 .ws-flag{font-size:12px;color:var(--accent);font-weight:600}
 .ws-about-wrap{display:flex;align-items:center;gap:8px;position:relative}
 .ws-meta{font-size:13px;color:var(--muted)}
-.ws-about summary{list-style:none;cursor:pointer;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 9px}
-.ws-about summary::-webkit-details-marker{display:none}
-.ws-about[open] summary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.ws-about-pop{position:absolute;z-index:20;top:28px;left:0;width:min(420px,80vw);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;box-shadow:var(--shadow)}
+/* The ⓘ: an explanation that opens on hover, keyboard focus or a tap. */
+.info-tip{position:relative;display:inline-flex;align-items:center}
+.info-tip-i{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--muted);background:var(--panel);color:var(--muted);
+  font:italic 700 11.5px/1 Georgia,"Times New Roman",serif;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:help}
+.info-tip:hover .info-tip-i,.info-tip.open .info-tip-i,.info-tip-i:focus-visible{border-color:var(--ink);color:var(--ink)}
+.info-tip-pop{position:absolute;z-index:40;top:26px;width:min(400px,80vw);background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;font-size:13px;line-height:1.5;color:var(--ink);box-shadow:var(--shadow);font-weight:400;text-transform:none;letter-spacing:0;
+  opacity:0;visibility:hidden;transition:opacity .12s;pointer-events:none}
+.info-tip-left{left:-6px} .info-tip-right{right:-6px}
+.info-tip:hover .info-tip-pop,.info-tip:focus-within .info-tip-pop,.info-tip.open .info-tip-pop{opacity:1;visibility:visible;pointer-events:auto}
+/* The portal's Back button, at the right of the top bar. */
+.back-btn{white-space:nowrap;margin-left:auto}
 .ws-split{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;min-height:0}
 .ws-split > .ws-panel{position:static;max-height:none;height:100%;overflow:auto}
 .ws-main{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0}
@@ -1404,7 +1411,7 @@ a.dl-row:hover{background:#f6f8f5}
 .wv-card:focus-visible,.wv-plain:focus-visible,.wv-bridge-text:focus-visible{outline:2px solid #1f4d2e;outline-offset:2px}
 /* A card that would stop the answer leaving: a small mark on its corner, no words. */
 .wv-card.wv-flag{position:relative}
-.wv-card.wv-flag:after{content:"";position:absolute;top:-4px;left:-4px;width:8px;height:8px;border-radius:50%;background:#d9a441;border:1.5px solid var(--panel)}
+.wv-card.wv-flag:after{content:"";position:absolute;top:-4px;left:-4px;width:8px;height:8px;border-radius:50%;background:#e05a47;border:1.5px solid var(--panel)}
 .wv-plain{cursor:pointer;border-radius:4px}
 .wv-plain:hover,.wv-plain.wv-open{background:#f2f2ee}
 .wv-bridge-prop{color:#6b7078;font-style:italic;white-space:normal}
@@ -1428,3 +1435,4 @@ a.dl-row:hover{background:#f6f8f5}
 .wv-remind p{margin:0 0 10px}
 .wv-remind-off{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin:4px 0 2px}
 .wv-remind-off input{width:auto}
+@media (max-width: 900px){ .back-btn{padding:6px 9px} .back-btn .back-word{display:none} }

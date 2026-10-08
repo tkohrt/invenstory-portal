@@ -8,6 +8,7 @@ import { setArtifactVisibilityAction, setFeatureVisibilityAction } from "@/lib/s
 import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
 import PlantVisual from "./PlantVisual";
 import BuildNotice from "./BuildNotice";
+import BackButton from "./BackButton";
 import { promptHref } from "@/lib/garden-prompt";
 
 export interface ShellProps {
@@ -104,6 +105,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           <span className="ts-icon">⌕</span>
           <input value={topQuery} onChange={e => setTopQuery(e.target.value)} placeholder="Search this Inven(s)tory…" aria-label="Search" />
         </form>
+        <BackButton />
         <div className="userchip">
           <Link href="/account" className="userchip-link" onClick={closeNav}>
             <div className="meta">
