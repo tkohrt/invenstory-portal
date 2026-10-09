@@ -14,6 +14,8 @@ import "server-only";
 import { userClient } from "./supabase";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { RankCard } from "@/lib/story-card-rank";
+import type { GapAsk } from "@/lib/draft-gaps";
+import { asksForDraft } from "./asks";
 
 export interface WsEvidence { title: string; layer: string | null; quote: string; speaker: string | null }
 
@@ -79,6 +81,8 @@ export interface Workspace {
   standards: WsStandard[];
   /** Bank question stats by slug, for recommending Standard Answers sections. */
   bank: Record<string, { origin: "seed" | "observed"; observed: number }>;
+  /** Questions For Granted asked the client for this draft (0058). */
+  asks: GapAsk[];
 }
 
 type Raw = Record<string, unknown>;
@@ -154,7 +158,7 @@ export async function loadCards(tenantId: string): Promise<WsCard[]> {
 export async function getWorkspace(tenantId: string, draftId: string): Promise<Workspace> {
   const s = await userClient();
 
-  const [{ data: draft }, { data: secRows, error: sErr }, cards, { data: ansRows }, { data: bankRows }] = await Promise.all([
+  const [{ data: draft }, { data: secRows, error: sErr }, cards, { data: ansRows }, { data: bankRows }, asks] = await Promise.all([
     s.from("grant_draft").select("purpose").eq("tenant_id", tenantId).eq("id", draftId).maybeSingle(),
     s.from("draft_section")
       .select("id, sort_order, prompt, guidance, criteria, limit_value, limit_unit, question_slugs, wanted_kinds, status, created_at")
@@ -164,6 +168,7 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
       .select("id, long_answer, status, source, reviewed_at, draft_section_id, question:question_id(slug)")
       .eq("tenant_id", tenantId).eq("status", "published"),
     s.from("grant_question").select("slug, origin, observed"),
+    asksForDraft(tenantId, draftId),
   ]);
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
 
@@ -194,6 +199,6 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
 
   const bank: Record<string, { origin: "seed" | "observed"; observed: number }> = Object.fromEntries(
     ((bankRows ?? []) as { slug: string; origin: "seed" | "observed"; observed: number }[]).map(q => [q.slug, { origin: q.origin, observed: q.observed }]));
-  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank };
+  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank, asks };
 }
 

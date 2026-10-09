@@ -1470,3 +1470,53 @@ a.dl-row:hover{background:#f6f8f5}
 .uc-choice strong{font-size:14px}
 .uc-choice span{color:var(--muted)}
 .uc-choice:hover,.uc-choice:focus-visible{border-color:#1f4d2e;background:#f4f9f5}
+
+/* ---- Storyboard: gap panel, progress strip, Undo, asking the client (9 Oct 2026) ---- */
+.gp{font-size:12.5px;margin-top:8px}
+.gp > summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:5px;align-items:center;list-style:none}
+.gp > summary::-webkit-details-marker{display:none}
+.gp > summary:before{content:"▸";color:var(--muted);font-size:10px;margin-right:2px}
+.gp[open] > summary:before{content:"▾"}
+.gp-sum{margin-left:4px}
+.gp-k.gp-in_answer{background:#eef5ef;border-color:#cfe2d3;color:#1f4d2e}
+.gp-k.gp-none{border-style:dashed}
+.gp-rows{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:5px}
+.gp-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.gp-row.gp-in_answer{background:#f6faf7;border-color:#dcebe0}
+.gp-row.gp-answered{background:#f4f9f5;border-color:#bcd9c4}
+.gp-name{font-weight:600;min-width:130px}
+.gp-what{flex:1;min-width:180px;color:var(--muted)}
+.gp-in_answer .gp-what{color:#1f4d2e}
+.gp-answered .gp-what{color:var(--ink,#1f2937)}
+.gp-missing{color:#9a3412}
+.gp-ask-text{width:100%;font-size:13.5px;line-height:1.45;margin:8px 0}
+
+.ws-progress-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;margin:2px 0 8px}
+.wps-item{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--panel);color:var(--ink,#1f2937);font-size:12px;line-height:1.3}
+button.wps-item{cursor:pointer;font-weight:600}
+button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
+.wps-done{border:none;background:none;padding-left:0;color:var(--muted)}
+.wps-bar{display:inline-block;width:64px;height:6px;border-radius:6px;background:#e5e7eb;overflow:hidden}
+.wps-bar > span{display:block;height:100%;background:#1f4d2e;border-radius:6px}
+.wps-warn{border-color:#f0c9a8;background:#fff7ef;color:#9a3412}
+.wps-good{border-color:#bcd9c4;background:#eef5ef;color:#1f4d2e}
+.ws-undo-btn{white-space:nowrap}
+
+[data-piece]:focus-visible{outline:2px solid #1f4d2e;outline-offset:2px;border-radius:6px}
+
+.ca{border:1px solid #bcd9c4;background:#f4f9f5;border-radius:12px;padding:12px 14px;margin:0 0 16px}
+.ca-head{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.ca-head strong{font-size:15px;color:#1f4d2e}
+.ca-row{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
+.ca-row-head{display:flex;gap:8px;align-items:center}
+.ca-q{margin:6px 0 8px;font-size:14px;line-height:1.45}
+.ca-row textarea{width:100%;font-size:14px;line-height:1.45}
+.ca-acts{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.ca-acts .btn.inline{background:#1f4d2e}
+.ca-over{color:#9a3412}
+.ca-thanks{color:#1f4d2e;font-weight:600}
+.ca-done{margin-top:8px;font-size:13px}
+.ca-done summary{cursor:pointer;color:var(--muted)}
+.ca-answered .ca-q{color:var(--muted);margin:4px 0}
+.ca-a{margin:0;font-size:13.5px}
+.ca-acts .spacer{flex:1}

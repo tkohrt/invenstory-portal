@@ -85,7 +85,7 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
                   const reworded = !b.edited && !!card && b.cardVersion != null && b.cardVersion < card.version;
                   return (
                     <span key={b.id}>{sep}
-                      <span role="button" tabIndex={0} aria-expanded={open === b.id}
+                      <span role="button" tabIndex={0} aria-expanded={open === b.id} data-piece="" data-piece-index={at}
                         className={`wv-card ${layerClass(card?.layer)}${open === b.id ? " wv-open" : ""}${issue || reworded ? " wv-flag" : ""}`}
                         title={issue ? `This card is ${ISSUE_LABEL[issue]}. Click to see it.` : reworded ? "Reworded in the library since it was placed. Click to choose." : undefined}
                         onClick={() => toggle(b.id)} onKeyDown={keyOpen(b.id)}>{text}</span>
@@ -96,7 +96,7 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
                   return (
                     <span key={b.id}>{sep}
                       <span className={`wv-bridge-prop${open === b.id ? " wv-open" : ""}`}>
-                        <span role="button" tabIndex={0} aria-expanded={open === b.id} className="wv-bridge-text"
+                        <span role="button" tabIndex={0} aria-expanded={open === b.id} className="wv-bridge-text" data-piece="" data-piece-index={at}
                           title="A bridge Weave proposed. Not part of the answer until you accept it."
                           onClick={() => toggle(b.id)} onKeyDown={keyOpen(b.id)}>{text}</span>
                         {!locked && (
@@ -111,7 +111,7 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
                 }
                 return (
                   <span key={b.id}>{sep}
-                    <span role="button" tabIndex={0} aria-expanded={open === b.id}
+                    <span role="button" tabIndex={0} aria-expanded={open === b.id} data-piece="" data-piece-index={at}
                       className={`wv-plain${b.kind === "bridge" ? " wv-bridge" : " wv-own"}${open === b.id ? " wv-open" : ""}${!text ? " ws-placeholder" : ""}`}
                       onClick={() => toggle(b.id)} onKeyDown={keyOpen(b.id)}>{text || "(empty text)"}</span>
                   </span>

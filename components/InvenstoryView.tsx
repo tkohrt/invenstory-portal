@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import { updateClientProfileAction } from "@/lib/server/admin-actions";
@@ -10,9 +10,11 @@ import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openItem }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openItem, asks }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
   contactName: string | null; docs: DocumentWithTags[]; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean; openItem?: string | null;
+  /** Questions For Granted asked from the Storyboard (0058), shown under the heading. */
+  asks?: ReactNode;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -65,6 +67,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         </div>
         <div className="spacer" />
       </div>
+      {asks}
       {readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} openKey={openItem ?? null} />}
       <div className="layers-zone">
       <div className="filters">

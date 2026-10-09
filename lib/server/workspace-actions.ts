@@ -33,6 +33,7 @@ import {
 import { checkAllowance, allowanceState } from "./allowance";
 import { writeCardEdit } from "./card-edit";
 import { lineMicros, shareUsed, levelOf, MICROS_PER_CENT } from "@/lib/allowance";
+import { planRestore, restoreProblem, type StoredBlock, type UndoBlock } from "@/lib/draft-undo";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -280,6 +281,56 @@ export async function restoreBlockAction(sectionId: string, b: RemovedBlock): Pr
     await logEvents(s, section, [{ event: "added", card_id: b.cardId, block_id: ins.id as string, payload: { via: "undo" } }]);
   }
   return finish(s, section);
+}
+
+/**
+ * Undo (9 October 2026): make the answer read exactly as it did before the
+ * writer's last change, from the copy the page remembered (lib/draft-undo.ts).
+ *
+ * Checked like any input: the ids, the kinds, one copy of each card, and every
+ * card the answer gains must still be this client's, not retired, and not
+ * sensitive and undecided. As with restoring one removed block, it need not be
+ * verified: it was in the answer a moment ago, and the finish line still stops
+ * it leaving. Only the answer is undone; the library is not. Cards coming back
+ * and going out are logged with `via: "undo"`.
+ */
+export async function restoreAnswerAction(sectionId: string, target: UndoBlock[]): Promise<{ ok: true; blocks: WsBlock[] } | { ok: false; error: string }> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const problem = restoreProblem(target);
+  if (problem) return { ok: false, error: problem };
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const plan = planRestore(rows as unknown as StoredBlock[], target);
+
+  if (plan.cardsIn.length) {
+    const issues = await cardIssues(s.tenantId, plan.cardsIn);
+    for (const [, issue] of issues) {
+      if (issue === "retired") return { ok: false, error: "A card in that earlier answer has been retired from the library since, so it cannot be put back. Undo stops here." };
+      if (issue === "sensitive") return { ok: false, error: SENSITIVE_REFUSAL };
+    }
+  }
+
+  if (plan.deletes.length) {
+    const { error } = await db.from("section_block").delete().eq("tenant_id", s.tenantId).eq("section_id", sectionId).in("id", plan.deletes);
+    if (error) return { ok: false, error: `Could not undo: ${error.message}` };
+  }
+  const stamp = new Date().toISOString();
+  for (const u of plan.updates) {
+    const { error } = await db.from("section_block").update({ ...u.set, updated_at: stamp })
+      .eq("tenant_id", s.tenantId).eq("section_id", sectionId).eq("id", u.id);
+    if (error) return { ok: false, error: `Could not undo: ${error.message}` };
+  }
+  if (plan.inserts.length) {
+    const { error } = await db.from("section_block").insert(plan.inserts.map(x => ({
+      ...x.row, id: x.id, tenant_id: s.tenantId, section_id: sectionId, created_by: s.user.id, updated_at: stamp,
+    })));
+    if (error) return { ok: false, error: `Could not undo: ${error.message}` };
+  }
+  await logEvents(s, section, [
+    ...plan.cardsIn.map(id => ({ event: "added" as const, card_id: id, block_id: target.find(b => b.cardId === id)?.id ?? null, payload: { via: "undo" } })),
+    ...plan.cardsOut.map(id => ({ event: "removed" as const, card_id: id, block_id: (rows.find(r => r.card_id === id)?.id as string | undefined) ?? null, payload: { via: "undo" } })),
+  ]);
+  return { ok: true, blocks: await finish(s, section) };
 }
 
 /**

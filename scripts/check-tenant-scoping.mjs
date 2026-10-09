@@ -35,6 +35,8 @@ const TENANT_SCOPED = new Set([
   "card_refusal",
   // The monthly AI allowance, Phase D patch 2 (0054).
   "ai_allowance",
+  // For Granted asks the client (0058).
+  "client_ask",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

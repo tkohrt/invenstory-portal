@@ -16,8 +16,10 @@ const LAYERS: { key: "I" | "II" | "III"; label: string }[] = [
   { key: "I", label: "Public story (anything the world can see)" },
 ];
 
-export default function UserCardDialog({ text, sectionId, onSaved, onUseExisting, onCancel }: {
+export default function UserCardDialog({ text, sectionId, preferKind, onSaved, onUseExisting, onCancel }: {
   text: string; sectionId: string | null;
+  /** The kind the gap panel's Add it now was pressed for. */
+  preferKind?: string | null;
   onSaved: (cardId: string) => void;
   /** A verified card already in the library says the same thing: use it instead. */
   onUseExisting: (cardId: string) => void;
@@ -37,10 +39,11 @@ export default function UserCardDialog({ text, sectionId, onSaved, onUseExisting
     let live = true;
     prepareUserCardAction(text, sectionId).then(x => {
       if (!live) return;
-      setD(x); setKind(x.kind); setLayer(x.layer); setAsOf(x.asOf);
+      setD(x); setLayer(x.layer); setAsOf(x.asOf);
+      setKind(preferKind && x.kinds.some(k => k.key === preferKind) ? preferKind : x.kind);
     }).catch(e => { if (live) setError(e instanceof Error ? e.message : "Could not open the card."); });
     return () => { live = false; };
-  }, [text, sectionId]);
+  }, [text, sectionId, preferKind]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };

@@ -109,3 +109,24 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
     } catch { /* best-effort */ }
   }
 }
+
+/** A client answered a question For Granted asked from the Storyboard (9 October 2026). */
+export async function notifyAskAnswered(d: { org: string; answerer: string; kind: string; draftId: string | null }) {
+  const line = `${d.answerer} (${d.org}) answered your question for ${d.kind}. It is saved as a user-generated Story Card, ready in the Storyboard.`;
+  const link = d.draftId ? `${APP_URL}/drafts/${d.draftId}` : `${APP_URL}/admin/card-library`;
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"], subject: `Client answered: ${d.org}`, html: `<p>${esc(line)}</p><p><a href="${link}">Open the draft</a></p>` }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:speech_balloon: *Client answered* ${line} <${link}|Open the draft>` }) });
+    } catch { /* best-effort */ }
+  }
+}

@@ -30,9 +30,13 @@ import {
   addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   keepWordingAction, refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
-  restoreBlockAction, startFromStandardAction, tidyAction, type RemovedBlock,
-  acceptBridgesAction, weaveSectionAction, convertToCardAction, saveWordingToLibraryAction,
+  startFromStandardAction, tidyAction,
+  acceptBridgesAction, weaveSectionAction, convertToCardAction, saveWordingToLibraryAction, restoreAnswerAction,
 } from "@/lib/server/workspace-actions";
+import { askClientAction, withdrawAskAction } from "@/lib/server/ask-actions";
+import GapPanel, { AskDialog, ProgressStrip } from "./GapPanel";
+import { pushUndo, undoState, type UndoBlock } from "@/lib/draft-undo";
+import { draftProgress, questionGaps, type GapAsk, type GapRow } from "@/lib/draft-gaps";
 import UserCardDialog from "./UserCardDialog";
 import { USER_GENERATED } from "@/lib/user-card";
 import WeaveView from "./WeaveView";
@@ -53,7 +57,7 @@ import { getReviewCardAction } from "@/lib/server/card-actions";
 import type { LibraryCard } from "@/lib/server/card-library";
 import CardReview, { type ReviewOutcome } from "./CardReview";
 import { assembleAnswer, countFor, limitState, moveItem } from "@/lib/section-answer";
-import { CARD_KIND_MAP, untracedFigures } from "@/lib/story-card";
+import { untracedFigures } from "@/lib/story-card";
 import type { Workspace, WsBlock, WsCard, WsSection, WsStandard } from "@/lib/server/workspace";
 import type { GrantDraft } from "@/lib/types";
 
@@ -113,7 +117,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   // written, the page asks whether it is their own words or a new Story Card.
   const fresh = useRef(new Set<string>());
   const [choice, setChoice] = useState<{ blockId: string; text: string } | null>(null);
-  const [userCard, setUserCard] = useState<{ blockId: string; text: string } | null>(null);
+  const [userCard, setUserCard] = useState<{ blockId: string; text: string; kind?: string | null } | null>(null);
   const [weaveEditId, setWeaveEditId] = useState<string | null>(null);
   const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
   // Removing a block: which is being dragged, where a card would land, the
@@ -122,7 +126,17 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [overId, setOverId] = useState<string | null>(null);
   const [askRemove, setAskRemove] = useState(confirmRemove);
   const [confirming, setConfirming] = useState<{ block: WsBlock; via: "button" | "drag" } | null>(null);
-  const [undo, setUndo] = useState<{ sectionId: string; removed: RemovedBlock; label: string } | null>(null);
+  // Undo for everything (9 October 2026): each change first remembers the
+  // answer as it stood, per question, newest last (lib/draft-undo.ts). The
+  // toast after a removal offers the same Undo for a few seconds.
+  const [history, setHistory] = useState<Record<string, { label: string; state: UndoBlock[] }[]>>({});
+  const [undo, setUndo] = useState<{ label: string } | null>(null);
+  // Questions asked of the client (0058), what the gap panel's Ask is writing,
+  // and the kind its Add it now is for.
+  const [asks, setAsks] = useState<GapAsk[]>(ws.asks);
+  const [asking, setAsking] = useState<string | null>(null);
+  const freshKind = useRef(new Map<string, string>());
+  const [panelAsk, setPanelAsk] = useState<{ kind: string; n: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
   const [stripVisible, setStripVisible] = useState(false);
@@ -207,6 +221,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     setBlocksBy(m);
     setStatusBy(Object.fromEntries(ws.sections.map(s => [s.id, s.status])));
     setStandards(ws.standards);
+    setAsks(ws.asks);
   }
 
   const section = sections[idx];
@@ -256,6 +271,18 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     });
   }, []);
 
+  /** Before a change: remember the answer as it stands, so Undo can put it back. */
+  const remember = useCallback((sectionId: string, label: string) => {
+    const state = undoState(blocksBy[sectionId] ?? []);
+    setHistory(h => ({ ...h, [sectionId]: pushUndo(h[sectionId] ?? [], { label, state }) }));
+  }, [blocksBy]);
+
+  /** A change to one answer: remembered for Undo, then saved through the queue. */
+  const change = <T,>(sectionId: string, label: string, work: () => Promise<T>, apply: (r: T) => void) => {
+    remember(sectionId, label);
+    return run(work, apply);
+  };
+
   // ---- Ranking --------------------------------------------------------------
   const usedWhere = useMemo(() => {
     const m = new Map<string, number[]>();
@@ -299,6 +326,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       id: `tmp-${cardId}`, sectionId: section.id, kind: "card", cardId, cardVersion: cardById.get(cardId)?.version ?? 1,
       text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false, proposed: false,
     };
+    remember(section.id, "adding a card");
     setBlocksBy(m => {
       const list = [...(m[section.id] ?? [])];
       list.splice(Math.min(position, list.length), 0, temp);
@@ -306,7 +334,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     });
     return run(() => addCardBlockAction(section.id, cardId, position, r ? { position: r.position, score: r.score } : null),
       putBlocks(section.id));
-  }, [section, ranked, cardById, run, putBlocks]);
+  }, [section, ranked, cardById, run, putBlocks, remember]);
 
   /**
    * Put a card into the answer, or, when it has not been verified yet, open its
@@ -339,9 +367,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const reorder = useCallback((order: string[], via: "drag" | "buttons" | "tidy") => {
     if (!section) return;
     const byId = new Map(blocks.map(b => [b.id, b]));
+    remember(section.id, via === "tidy" ? "Tidy's order" : "the move");
     setBlocksBy(m => ({ ...m, [section.id]: order.map(id => byId.get(id)!).filter(Boolean) }));
     void run(() => reorderBlocksAction(section.id, order, via), putBlocks(section.id));
-  }, [section, blocks, run, putBlocks]);
+  }, [section, blocks, run, putBlocks, remember]);
 
   /**
    * Where a drop lands. Over the Story Cards panel means "remove" (for a placed
@@ -370,21 +399,17 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   // ---- Removing, with a question when it matters and Undo always ------------
   const doRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
     if (!section) return;
-    const position = blocks.findIndex(x => x.id === b.id);
-    const removed: RemovedBlock = {
-      kind: b.kind, cardId: b.cardId, cardVersion: b.cardVersion, text: b.ownText,
-      edited: b.edited, breakBefore: b.breakBefore, position: Math.max(0, position), proposed: b.proposed,
-    };
     const sectionId = section.id;
+    remember(sectionId, b.kind === "card" ? "removing the card" : b.kind === "bridge" ? (b.proposed ? "rejecting the bridge" : "removing the bridge") : "removing your text");
     setBlocksBy(m => ({ ...m, [sectionId]: (m[sectionId] ?? []).filter(x => x.id !== b.id) }));
     void run(() => removeBlockAction(sectionId, b.id, via), next => {
       putBlocks(sectionId)(next);
       if (undoTimer.current) clearTimeout(undoTimer.current);
-      setUndo({ sectionId, removed, label: b.kind === "card" ? "Card removed. It is back among your Story Cards."
+      setUndo({ label: b.kind === "card" ? "Card removed. It is back among your Story Cards."
         : b.kind === "bridge" ? (b.proposed ? "Bridge rejected." : "Bridge removed.") : "Text removed." });
       undoTimer.current = setTimeout(() => setUndo(null), 8_000);
     });
-  }, [section, blocks, run, putBlocks]);
+  }, [section, run, putBlocks, remember]);
 
   /** Edited cards and your own writing always ask; a plain card asks until "Don't ask me again". */
   const requestRemove = useCallback((b: WsBlock, via: "button" | "drag") => {
@@ -394,16 +419,18 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   }, [askRemove, doRemove]);
 
   /** Add an empty text block at `position` and open it for writing. */
-  const insertAt = (position: number) => {
+  const insertAt = (position: number, kind?: string) => {
     if (!section || readOnly) return;
     const sectionId = section.id;
     const before = new Set((blocksBy[sectionId] ?? []).map(b => b.id));
+    remember(sectionId, "adding text");
     if (stage === "arrange") setEditing("__new");
     void run(() => addHumanBlockAction(sectionId, position), next => {
       putBlocks(sectionId)(next);
       const added = next.find(b => b.kind === "human" && !before.has(b.id));
       if (!added) return;
       fresh.current.add(added.id);
+      if (kind) freshKind.current.set(added.id, kind);
       if (stage === "weave") setWeaveEditId(added.id); else setEditing(added.id);
     });
   };
@@ -412,9 +439,18 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const editBlock = (id: string, t: string) => {
     if (!section) return Promise.resolve();
     const sectionId = section.id;
+    // Text just added was remembered when it was added: Undo takes it out whole.
+    if (!fresh.current.has(id)) remember(sectionId, "the edit");
     return run(() => editBlockAction(sectionId, id, t), next => {
       putBlocks(sectionId)(next);
-      if (fresh.current.has(id) && t.trim()) { fresh.current.delete(id); setChoice({ blockId: id, text: t.trim() }); }
+      if (fresh.current.has(id) && t.trim()) {
+        fresh.current.delete(id);
+        // Add it now, from the gap panel: straight to the card, its kind chosen.
+        const kind = freshKind.current.get(id);
+        freshKind.current.delete(id);
+        if (kind) setUserCard({ blockId: id, text: t.trim(), kind });
+        else setChoice({ blockId: id, text: t.trim() });
+      }
     });
   };
 
@@ -423,6 +459,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     if (!section) return;
     const sectionId = section.id;
     setUserCard(null);
+    remember(sectionId, "turning your text into a card (the card stays in the Story Cards)");
     void run(() => convertToCardAction(sectionId, blockId, cardId), next => {
       putBlocks(sectionId)(next);
       say(saved
@@ -458,6 +495,69 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     reorder(moveItem(blocks, from, overIdx).map(b => b.id), "drag");
   };
 
+  // ---- Undo, and the keyboard ----------------------------------------------
+  const undoList = section ? history[section.id] ?? [] : [];
+  const lastUndo = undoList[undoList.length - 1] ?? null;
+
+  /** Put this answer back as it was before its last change. */
+  const undoLast = () => {
+    if (!section || !lastUndo || locked) return;
+    const sectionId = section.id, entry = lastUndo;
+    setUndo(null);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setHistory(h => ({ ...h, [sectionId]: (h[sectionId] ?? []).slice(0, -1) }));
+    setEditing(null); setTidy(null);
+    void run(() => restoreAnswerAction(sectionId, entry.state), r => {
+      if (!r.ok) {
+        setError(r.error);
+        setHistory(h => ({ ...h, [sectionId]: [] }));
+        return;
+      }
+      putBlocks(sectionId)(r.blocks);
+      say(`Undid ${entry.label}.`);
+    });
+  };
+
+  /** N: new text after the piece the writer is on, or at the end. */
+  const newTextFrom = (el: HTMLElement | null) => {
+    if (!section || locked) return;
+    const at = el?.closest<HTMLElement>("[data-piece]")?.dataset.pieceIndex;
+    const i = at != null ? Number(at) + 1 : blocks.length;
+    insertAt(Number.isFinite(i) ? Math.min(i, blocks.length) : blocks.length);
+  };
+
+  const keys = useRef({ undo: undoLast, newText: newTextFrom, dragging: false });
+  useEffect(() => { keys.current = { undo: undoLast, newText: newTextFrom, dragging: !!(dragging || activeBlock || draggingNew) }; });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      // Typing keeps its own undo and arrows; a window over the page keeps its keys.
+      if (typing || document.querySelector('[aria-modal="true"]')) return;
+      const k = keys.current;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z") {
+        e.preventDefault(); k.undo(); return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || k.dragging) return;
+      if (e.key === "n" || e.key === "N") { e.preventDefault(); k.newText(t); return; }
+      const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      const pieces = Array.from(document.querySelectorAll<HTMLElement>("[data-piece]"));
+      if (!pieces.length) return;
+      const on = t?.closest<HTMLElement>("[data-piece]") ?? null;
+      // From nowhere in particular (the page itself does not scroll), arrows step into the answer.
+      if (!on && t && t !== document.body) return;
+      const i = on ? pieces.indexOf(on) : -1;
+      const next = on ? pieces[i + d] : pieces[d > 0 ? 0 : pieces.length - 1];
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+      next.scrollIntoView({ block: "nearest" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (!section) {
     return <div className="empty">This application has no questions yet. Reopen the questions to add some.</div>;
   }
@@ -466,7 +566,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const unit = section.limitUnit ?? "words";
   const count = countFor(text, unit);
   const lim = limitState(count, section.limitValue);
-  const doneCount = sections.filter(s => statusBy[s.id] === "done").length;
   const startedCount = sections.filter(s => statusBy[s.id] !== "empty").length;
   const slug = section.slugs[0];
   const std = slug ? standards.find(x => x.slug === slug) : undefined;
@@ -483,6 +582,46 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const allBlocks = sections.flatMap(s => blocksBy[s.id] ?? []);
   const draftBlockers = finishBlockers(sections, allBlocks, gateCard);
   const sectionBlockers = draftBlockers.filter(b => b.sectionId === section.id);
+
+  // ---- What each question still needs, and the progress strip -------------
+  const gapCards = ws.cards.map(c => ({ id: c.id, kind: c.kind, status: statusNow[c.id] ?? c.status, placeable: placeable(c) }));
+  const gapsBy: Record<string, GapRow[]> = Object.fromEntries(sections.map(s => [s.id, questionGaps({
+    sectionId: s.id, wantedKinds: s.wantedKinds, blocks: blocksBy[s.id] ?? [], cards: gapCards, asks,
+  })]));
+  const progress = draftProgress({
+    sections, blocksBy, statusBy, toReview: draftBlockers.length, gapsBy,
+    figuresIn: (sid, bi) => {
+      const b = (blocksBy[sid] ?? [])[bi];
+      const c = b?.kind === "card" && b.edited && b.cardId ? cardById.get(b.cardId) : undefined;
+      return c ? untracedFigures(b.text, c.evidence.map(e => e.quote).join("\n")).length : 0;
+    },
+  });
+  const goTo = (i: number | null, st?: "arrange" | "weave") => {
+    if (i == null) return;
+    if (i !== idx) go(i);
+    if (st && st !== stage) switchStage(st);
+  };
+
+  /** Ask the client for what this question needs: returns an error to show, or null once sent. */
+  const sendAsk = async (kind: string, question: string): Promise<string | null> => {
+    const sectionId = section.id;
+    const r = await askClientAction({ sectionId, kind, question }).catch(() => null);
+    if (!r) return "Could not send the question. Please try again.";
+    if (!r.ok) return r.error;
+    setAsks(list => [{ id: r.id, sectionId, kind, question, status: "open", answer: null, cardId: null, askedAt: new Date().toISOString(), answeredAt: null }, ...list]);
+    setAsking(null);
+    say(`Sent. ${tenantName} will see it on their Inven(s)tory page, and their answer comes back here as a ${USER_GENERATED} card. It is worth telling them it is there.`);
+    return null;
+  };
+  const withdrawAsk = (askId: string) => void withdrawAskAction(askId).then(r => {
+    if (!r.ok) { setError(r.error); return; }
+    setAsks(list => list.map(a => (a.id === askId ? { ...a, status: "withdrawn" as const } : a)));
+  }).catch(() => setError("Could not withdraw the question."));
+  /** Use a client's answer: the card it made goes in at the end. */
+  const placeAnswer = (cardId: string) => {
+    if (!cardById.get(cardId)) { say("The client's card is still being filed. Reload the page in a moment to use it."); router.refresh(); return; }
+    addCard(cardId, blocks.length);
+  };
   /** Run `then` once the finish line is clear, or show what stands in the way. */
   const atFinishLine = (scope: "draft" | "section", then: "completed" | "submit" | "approve", next: () => void) => {
     const list = scope === "draft" ? draftBlockers : sectionBlockers;
@@ -526,6 +665,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     const sectionId = section.id;
     // The "Before Weave" version is taken now, just before bridges are written
     // (skipped when nothing changed since the last version).
+    remember(sectionId, "the weave");
     void run(async () => {
       await saveBeforeWeaveAction(draft.id).catch(() => null);
       return weaveSectionAction(sectionId);
@@ -609,7 +749,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
             wantedKinds={section.wantedKinds} locked={readOnly || stage === "weave"} onAdd={id => addCard(id, blocks.length)}
             onNewText={readOnly ? null : () => insertAt(blocks.length)} canDragNew={!readOnly && stage === "arrange"}
-            open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} />
+            open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} kindRequest={panelAsk} />
 
           <div className="ws-main">
             {stripVisible && (
@@ -630,6 +770,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   title="Read the answer as prose, with short bridges between the cards to accept or reject">Weave</button>
                 <button type="button" role="tab" aria-selected="false" className="chip" disabled title="Fit to limit, figure audit, repetition check. Next release.">Polish</button>
               </div>
+
+              <ProgressStrip p={progress} started={startedCount}
+                onReview={() => setBlockers({ scope: "draft", then: null })}
+                onBridges={() => goTo(progress.firstBridge, "weave")}
+                onFigures={() => goTo(progress.firstFigure, "arrange")}
+                onAsks={() => goTo(progress.firstAsk)} />
 
               <nav className="ws-nav" aria-label="Questions">
                 <button type="button" className="btn ghost ap-mini" disabled={navAt <= 0} onClick={() => go(navOrder[navAt - 1])}>← Previous</button>
@@ -663,15 +809,16 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 {stdTooLong && (
                   <div className="ws-warn ws-soft">The standard answer is {stdCount.toLocaleString()} {unit}; this funder allows {section.limitValue!.toLocaleString()}. Starting from it means cutting.</div>
                 )}
-                <div className="ap-kinds">
-                  <span className="ov-muted">Calls for:</span>
-                  {section.wantedKinds.length
-                    ? section.wantedKinds.map(k => <span key={k} className="ov-tag ap-kind">{CARD_KIND_MAP[k]?.label ?? k}</span>)
-                    : <span className="ov-muted">no card kinds set (ranked by wording and evidence only)</span>}
-                </div>
+                {section.wantedKinds.length
+                  ? <GapPanel key={section.id} rows={gapsBy[section.id] ?? []} locked={locked}
+                      onShow={kind => { setPanelAsk(p => ({ kind, n: (p?.n ?? 0) + 1 })); setPanelOpen(true); }}
+                      onAdd={kind => insertAt(blocks.length, kind)}
+                      onAsk={kind => setAsking(kind)}
+                      onUse={placeAnswer}
+                      onWithdraw={withdrawAsk} />
+                  : <div className="ap-kinds"><span className="ov-muted">Calls for: no card kinds set (ranked by wording and evidence only)</span></div>}
               </section>
 
-              <div className="ws-progress">{doneCount} of {sections.length} done · {startedCount} started</div>
 
               {standard && since && sections.some(isNew) && (
                 <div className="ws-notice" role="status">
@@ -731,15 +878,15 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   ? <WeaveView blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked}
                       editId={weaveEditId} onEditOpened={() => setWeaveEditId(null)}
                       handlers={{
-                        onAccept: id => run(() => acceptBridgesAction(section.id, id), putBlocks(section.id)),
+                        onAccept: id => change(section.id, "accepting the bridge", () => acceptBridgesAction(section.id, id), putBlocks(section.id)),
                         onEdit: (id, t) => editBlock(id, t),
                         onInsert: insertAt,
                         onSaveCard: id => { const b = blocks.find(x => x.id === id); if (b) setUserCard({ blockId: id, text: b.text.trim() }); },
-                        onSaveWording: id => run(() => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library."); router.refresh(); }),
+                        onSaveWording: id => change(section.id, "using the saved wording (the Card Library keeps it)", () => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library."); router.refresh(); }),
                         onRemove: id => { const b = blocks.find(x => x.id === id); if (b) requestRemove(b, "button"); },
                         onReview: cardId => setReview({ mode: "review", queue: [{ cardId, position: null }] }),
-                        onRefresh: id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
-                        onKeep: id => run(() => keepWordingAction(section.id, id), putBlocks(section.id)),
+                        onRefresh: id => change(section.id, "the wording change", () => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
+                        onKeep: id => change(section.id, "keeping the wording", () => keepWordingAction(section.id, id), putBlocks(section.id)),
                       }} />
                   : <div className="ws-empty-answer"><p>Nothing to weave yet. Go back to <strong>Arrange</strong> to place cards in this answer.</p></div>
               ) : <AnswerColumn
@@ -751,14 +898,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 onEdit={editBlock}
                 onInsert={insertAt}
                 onSaveCard={b => setUserCard({ blockId: b.id, text: b.text.trim() })}
-                onSaveWording={id => run(() => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library. Every answer that uses the card will be offered the new wording."); router.refresh(); })}
-                onBreak={(id, v) => run(() => setBreakAction(section.id, id, v), putBlocks(section.id))}
-                onRefresh={id => run(() => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
-                onKeep={id => run(() => keepWordingAction(section.id, id), putBlocks(section.id))}
+                onSaveWording={id => change(section.id, "using the saved wording (the Card Library keeps it)", () => saveWordingToLibraryAction(section.id, id), next => { putBlocks(section.id)(next); say("Saved this wording to the card in the Card Library. Every answer that uses the card will be offered the new wording."); router.refresh(); })}
+                onBreak={(id, v) => change(section.id, "the paragraph change", () => setBreakAction(section.id, id, v), putBlocks(section.id))}
+                onRefresh={id => change(section.id, "the wording change", () => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
+                onKeep={id => change(section.id, "keeping the wording", () => keepWordingAction(section.id, id), putBlocks(section.id))}
                 empty={
                   <EmptyAnswer
                     std={!standard && std?.sectionId ? std : undefined}
-                    onStart={() => void run(() => startFromStandardAction(section.id), r => {
+                    onStart={() => void change(section.id, "starting from the standard answer", () => startFromStandardAction(section.id), r => {
                       putBlocks(section.id)(r.blocks);
                       if (r.needsReview.length) {
                         setReview({ mode: "review", queue: r.needsReview.map(cardId => ({ cardId, position: null })),
@@ -822,7 +969,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                     {proposedCount > 0 && (
                       <button type="button" className="btn inline ap-go ws-edit-only" disabled={locked}
                         title="Accept every bridge proposed in this answer"
-                        onClick={() => void run(() => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
+                        onClick={() => void change(section.id, "accepting the bridges", () => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
                     )}
                     {hasBridges || wovenHere.has(section.id)
                       ? <button type="button" className="btn secondary ws-edit-only" disabled={locked || !!weaveBlockedWhy}
@@ -835,7 +982,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 )}
                 {stage === "arrange" && blocks.length === 0 && (
                   <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
-                    onClick={() => void run(() => arrangeForMeAction(section.id), r => {
+                    onClick={() => void change(section.id, "Arrange for me", () => arrangeForMeAction(section.id), r => {
                       putBlocks(section.id)(r.blocks);
                       if (!r.placed && r.needsReview.length) {
                         setReview({ mode: "place", queue: r.needsReview.map(cardId => ({ cardId, position: null })),
@@ -858,6 +1005,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   })}>Tidy</button>}
               </span>
               <span className="ws-bar-group">
+                {!readOnly && (
+                  <button type="button" className="btn ghost ws-undo-btn" disabled={locked || !lastUndo} onClick={undoLast}
+                    title={lastUndo ? `Undo ${lastUndo.label} (Ctrl+Z, or ⌘Z on a Mac)` : "Nothing to undo in this answer yet"}>↶ Undo</button>
+                )}
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
                   onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
                   title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
@@ -865,6 +1016,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   onBlocked={() => setBlockers({ scope: "section", then: null })} />
               </span>
               <span className="spacer" />
+              {!readOnly && (
+                <InfoTip label="Keyboard shortcuts">
+                  <strong>N</strong> adds new text after the piece you are on, or at the end. The <strong>arrow keys</strong> move
+                  between the pieces of the answer, and <strong>Enter</strong> opens one. <strong>Ctrl+Z</strong> (⌘Z on a Mac) undoes
+                  the last change to this answer, as many times as you like; while you type, it undoes typing instead.
+                </InfoTip>
+              )}
               <span className="ws-bar-group ws-edit-only">
                 {statusBy[section.id] === "done"
                   ? <button type="button" className="btn ghost" disabled={locked}
@@ -884,15 +1042,19 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         </div>
         {versionsOpen && (
           <VersionsDrawer draftId={draft.id} readOnly={readOnly} onClose={() => setVersionsOpen(false)}
-            onRestored={(r) => { setVersionsOpen(false); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />
+            onRestored={(r) => { setVersionsOpen(false); setHistory({}); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />
         )}
         {choice && (
           <ChoiceDialog text={choice.text}
             onOwn={() => setChoice(null)}
             onCard={() => { const c = choice; setChoice(null); setUserCard(c); }} />
         )}
+        {asking && (
+          <AskDialog kind={asking} prompt={section.prompt} tenantName={tenantName}
+            onSend={q => sendAsk(asking, q)} onCancel={() => setAsking(null)} />
+        )}
         {userCard && (
-          <UserCardDialog text={userCard.text} sectionId={section.id}
+          <UserCardDialog text={userCard.text} sectionId={section.id} preferKind={userCard.kind ?? null}
             onSaved={cardId => placeUserCard(userCard.blockId, cardId, true)}
             onUseExisting={cardId => placeUserCard(userCard.blockId, cardId, false)}
             onCancel={() => setUserCard(null)} />
@@ -916,7 +1078,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             what={blockers.scope === "draft" ? "this application" : "this answer"}
             then={blockers.then}
             onReview={b => setReview({ mode: "review", queue: [{ cardId: b.cardId, position: null }] })}
-            onWording={(b, keep) => { if (b.blockId) void run(() => (keep ? keepWordingAction : refreshBlockWordingAction)(b.sectionId, b.blockId!), putBlocks(b.sectionId)); }}
+            onWording={(b, keep) => { if (b.blockId) void change(b.sectionId, keep ? "keeping the wording" : "the wording change", () => (keep ? keepWordingAction : refreshBlockWordingAction)(b.sectionId, b.blockId!), putBlocks(b.sectionId)); }}
             onGo={b => { setBlockers(null); const i = sections.findIndex(x => x.id === b.sectionId); if (i >= 0) go(i); }}
             onContinue={() => {
               const t = blockers.then; setBlockers(null);
@@ -941,11 +1103,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         {undo && (
           <div className="ws-undo" role="status">
             <span>{undo.label}</span>
-            <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => {
-              const u = undo; setUndo(null);
-              if (undoTimer.current) clearTimeout(undoTimer.current);
-              void run(() => restoreBlockAction(u.sectionId, u.removed), putBlocks(u.sectionId));
-            }}>Undo</button>
+            <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={undoLast}>Undo</button>
           </div>
         )}
         <DragOverlay dropAnimation={null}>
@@ -990,7 +1148,9 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
 // The card panel.
 // ---------------------------------------------------------------------------
 
-function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKinds, locked, onAdd, open, onClose, removing, onNewText, canDragNew }: {
+function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKinds, locked, onAdd, open, onClose, removing, onNewText, canDragNew, kindRequest }: {
+  /** The gap panel's Show them: filter to this kind (n changes on each press). */
+  kindRequest: { kind: string; n: number } | null;
   /** The blank "New text" box at the top: click to add at the end, or drag it into place. */
   onNewText: (() => void) | null; canDragNew: boolean;
   sectionId: string; ranked: Ranked[]; usedWhere: Map<string, number[]>; current: number;
@@ -1009,6 +1169,12 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [userOnly, setUserOnly] = useState(false);
   const logged = useRef(new Set<string>());
+  // Show them, from the gap panel (adjusting state while rendering, as for props).
+  const [seenRequest, setSeenRequest] = useState(kindRequest?.n ?? 0);
+  if (kindRequest && kindRequest.n !== seenRequest) {
+    setSeenRequest(kindRequest.n);
+    setKind(kindRequest.kind); setLayer(""); setQ(""); setVerifiedOnly(false); setUserOnly(false); setLimit(PANEL_SIZE);
+  }
 
   const statusOf = (c: WsCard) => statusNow[c.id] ?? c.status;
   const filtering = !!(kind || layer || q.trim() || verifiedOnly || userOnly);
@@ -1315,6 +1481,7 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
         </div>
       ) : (
         <p className={`ws-text${!b.text ? " ws-placeholder" : ""}`} role="button" tabIndex={0}
+          data-piece="" data-piece-index={index}
           onClick={startEdit} onKeyDown={e => { if (e.key === "Enter") startEdit(); }}>
           {b.text || "Click to write…"}
         </p>
