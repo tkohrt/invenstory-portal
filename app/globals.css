@@ -1520,3 +1520,36 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .ca-answered .ca-q{color:var(--muted);margin:4px 0}
 .ca-a{margin:0;font-size:13.5px}
 .ca-acts .spacer{flex:1}
+
+/* ---- Polish (9 Oct 2026) ---- */
+.pl{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px 14px;margin:10px 0 14px;font-size:13px}
+.pl-start{display:flex;gap:14px;align-items:center;background:#f4f9f5;border-color:#cfe2d3}
+.pl-start > div{flex:1;line-height:1.5}
+.pl-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.pl-head .spacer{flex:1}
+.pl-sec{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
+.pl-sec h4{margin:0 0 6px;font-size:13.5px}
+.pl-good{color:#1f4d2e}
+.pl-good:before{content:"✓ "}
+.pl-bad{color:#9a3412}
+.pl-warn{color:#8a6100}
+.pl-sub{font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin:10px 0 5px}
+.pl-note{font-size:12px;margin:4px 0}
+.pl-prop{border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin:6px 0;background:#fcfcfd}
+.pl-prop-head{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+.pl-was{margin:0 0 4px;color:var(--muted);text-decoration:line-through;text-decoration-color:#c9cdd4;line-height:1.45}
+.pl-now{margin:0 0 6px;line-height:1.45}
+.pl-drop,.pl-rep{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+.pl-drop > span:first-child,.pl-rep > span:first-child{flex:1;min-width:220px}
+.pl-flag{border:1px solid #f0c9a8;background:#fffaf5;border-radius:9px;padding:8px 10px;margin:6px 0}
+.pl-cleared{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-color:var(--line);background:#f8f9fa;color:var(--muted)}
+.pl-flag-line{display:flex;gap:9px;align-items:baseline}
+.pl-fig{font-weight:700;font-variant-numeric:tabular-nums;color:#9a3412;min-width:34px}
+.pl-cleared .pl-fig{color:var(--muted);text-decoration:line-through}
+.pl-ctx{line-height:1.45}
+.pl-ctx mark{background:#fde2c8;color:inherit;border-radius:3px;padding:0 2px}
+.pl-why{font-size:12px;margin:3px 0 6px 43px}
+.pl-flag .cl-card-acts,.pl-flag .pl-clear{margin-left:43px}
+.pl-clear{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pl-clear input{flex:1;min-width:200px;font-size:13px;padding:5px 8px}
+.fig-list{max-height:52vh;overflow:auto;margin:8px 0}

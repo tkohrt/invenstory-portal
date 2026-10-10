@@ -34,6 +34,7 @@ import { checkAllowance, allowanceState } from "./allowance";
 import { writeCardEdit } from "./card-edit";
 import { lineMicros, shareUsed, levelOf, MICROS_PER_CENT } from "@/lib/allowance";
 import { planRestore, restoreProblem, type StoredBlock, type UndoBlock } from "@/lib/draft-undo";
+import { figureRefusal } from "./polish";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -663,6 +664,9 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
         + "Use the new wording, or keep the old wording, before approving.");
     }
   }
+  // And no number without a source that nobody has cleared (Polish's figure audit, 9 Oct 2026).
+  const figures = await figureRefusal(s.tenantId, [sectionId], "this answer");
+  if (figures) throw new Error(`${figures} Then approve it.`);
 
   const now = new Date().toISOString();
   const { data: ans, error } = await db.from("answer").upsert({
@@ -888,9 +892,9 @@ async function weaveBlockers(tenantId: string, rows: Record<string, unknown>[]):
 }
 
 /** The average cost of one weave so far, or the estimate until weaves have been measured. */
-async function weaveCostMicros(): Promise<number> {
+async function weaveCostMicros(feature: "weave" | "polish" = "weave"): Promise<number> {
   const { data } = await db.from("ai_usage").select("cost_micros")  // tenant-safe: the cost of recent weaves across clients, numbers only, never shown per client
-    .eq("feature", "weave").order("created_at", { ascending: false }).limit(30);
+    .eq("feature", feature).order("created_at", { ascending: false }).limit(30);
   const rows = (data ?? []) as { cost_micros: number }[];
   if (rows.length < 3) return WEAVE_COST_FALLBACK_MICROS;
   return Math.round(rows.reduce((n, r) => n + Number(r.cost_micros), 0) / rows.length);
@@ -912,11 +916,13 @@ export interface WeaveInfo {
 }
 
 /** What the reminder before weaving says, for the person signed in. */
-export async function weaveInfoAction(): Promise<WeaveInfo> {
+export async function weaveInfoAction(feature: "weave" | "polish" = "weave"): Promise<WeaveInfo> {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");
-  const remindersOn = (s.user.ui_prefs as { confirm_weave?: boolean } | null)?.confirm_weave !== false;
-  const [cost, state] = await Promise.all([weaveCostMicros(), allowanceState(s.tenantId).catch(() => null)]);
+  const what = feature === "polish" ? "polish" : "weave";
+  const prefs = (s.user.ui_prefs as { confirm_weave?: boolean; confirm_polish?: boolean } | null);
+  const remindersOn = (what === "polish" ? prefs?.confirm_polish : prefs?.confirm_weave) !== false;
+  const [cost, state] = await Promise.all([weaveCostMicros(what), allowanceState(s.tenantId).catch(() => null)]);
   const perWeaveCents = cost / MICROS_PER_CENT;
   const perWeave = state ? weaveShareLabel(cost, lineMicros(state)) : "a small part";
   if (s.role === "admin") {

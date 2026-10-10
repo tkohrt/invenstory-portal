@@ -10,8 +10,10 @@ import { useEffect, useState } from "react";
 import { weaveInfoAction, type WeaveInfo } from "@/lib/server/workspace-actions";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 
-export default function WeaveReminder({ tenantName, again, onWeave, onCancel }: {
+export default function WeaveReminder({ tenantName, again, onWeave, onCancel, kind = "weave" }: {
   tenantName: string;
+  /** Polish uses the same reminder before it drafts shorter wording (9 October 2026). */
+  kind?: "weave" | "polish";
   /** Weave again, rather than the first weave of this answer. */
   again: boolean;
   onWeave: () => void; onCancel: () => void;
@@ -22,7 +24,7 @@ export default function WeaveReminder({ tenantName, again, onWeave, onCancel }: 
 
   useEffect(() => {
     let live = true;
-    weaveInfoAction().then(i => {
+    weaveInfoAction(kind).then(i => {
       if (!live) return;
       // Reminders off, and nothing worth saying: weave straight away.
       if (!i.due && !i.atCeiling) { onWeave(); return; }
@@ -39,37 +41,40 @@ export default function WeaveReminder({ tenantName, again, onWeave, onCancel }: 
   }, [onCancel]);
 
   const go = () => {
-    if (dontRemind) void setUiPrefAction("confirm_weave", false).catch(() => null);
+    if (dontRemind) void setUiPrefAction(kind === "polish" ? "confirm_polish" : "confirm_weave", false).catch(() => null);
     onWeave();
   };
 
+  const P = kind === "polish";
   if (!info && !failed) return null;
 
   return (
     <div className="ws-modal-back" role="presentation" onClick={onCancel}>
       <div className="ws-modal wv-remind" role="dialog" aria-modal="true" aria-labelledby="wv-rm-title" onClick={e => e.stopPropagation()}>
-        <h3 id="wv-rm-title">{again ? "Weave this answer again?" : "Begin weaving this answer?"}</h3>
-        <p>Weaving drafts short connecting sentences between the Story Cards in this answer. You accept, edit or reject each one; none of them adds facts, numbers or names.</p>
-        {failed && <p className="ov-muted">Weaving uses a small part of the monthly AI allowance.</p>}
+        <h3 id="wv-rm-title">{P ? (again ? "Polish this answer again?" : "Begin polishing this answer?") : again ? "Weave this answer again?" : "Begin weaving this answer?"}</h3>
+        <p>{P
+          ? "This answer is over its limit, so Polish drafts shorter wording for its pieces, alongside pieces you could drop. You accept or reject each; shorter wording keeps every number and name, and adds none."
+          : "Weaving drafts short connecting sentences between the Story Cards in this answer. You accept, edit or reject each one; none of them adds facts, numbers or names."}</p>
+        {failed && <p className="ov-muted">{P ? "Drafting shorter wording" : "Weaving"} uses a small part of the monthly AI allowance.</p>}
         {info && info.admin && (
-          <p className="ov-muted">Each question you weave costs {info.perWeaveCents < 1 ? "less than a cent" : `about ${Math.round(info.perWeaveCents)} cent${Math.round(info.perWeaveCents) === 1 ? "" : "s"}`} of AI use.
-            Weaves by For Granted are recorded as For Granted&rsquo;s own use, so they are not counted toward {tenantName}&rsquo;s monthly allowance.</p>
+          <p className="ov-muted">Each question you {P ? "polish" : "weave"} costs {info.perWeaveCents < 1 ? "less than a cent" : `about ${Math.round(info.perWeaveCents)} cent${Math.round(info.perWeaveCents) === 1 ? "" : "s"}`} of AI use.
+            {P ? " Polishing" : " Weaves"} by For Granted {P ? "is" : "are"} recorded as For Granted&rsquo;s own use, so {P ? "it is" : "they are"} not counted toward {tenantName}&rsquo;s monthly allowance.</p>
         )}
         {info && !info.admin && !info.atCeiling && (
-          <p className="ov-muted">Each question you weave uses a small part of your organization&rsquo;s monthly AI allowance ({info.perWeave}).
+          <p className="ov-muted">Each question you {P ? "polish" : "weave"} uses a small part of your organization&rsquo;s monthly AI allowance ({info.perWeave}).
             {info.usedPct != null ? ` You've used ${info.usedPct}% this month.` : ""}</p>
         )}
         {info && info.atCeiling && (
-          <div className="ap-error">Your organization has reached this month&rsquo;s AI limit, so weaving is paused. Ask For Granted for more and we&rsquo;ll add it, or it renews on the 1st.</div>
+          <div className="ap-error">Your organization has reached this month&rsquo;s AI limit, so {P ? "drafting shorter wording" : "weaving"} is paused. Ask For Granted for more and we&rsquo;ll add it, or it renews on the 1st.</div>
         )}
         {(!info || !info.atCeiling) && (
           <label className="wv-remind-off">
-            <input type="checkbox" checked={dontRemind} onChange={e => setDontRemind(e.target.checked)} /> Don&rsquo;t remind me before weaving
+            <input type="checkbox" checked={dontRemind} onChange={e => setDontRemind(e.target.checked)} /> Don&rsquo;t remind me before {P ? "Polish drafts shorter wording" : "weaving"}
           </label>
         )}
         <div className="ws-modal-acts">
           <button type="button" className="btn secondary" onClick={onCancel} autoFocus>Not now</button>
-          {(!info || !info.atCeiling) && <button type="button" className="btn inline ap-go" onClick={go}>{again ? "Weave again" : "Begin Weaving"}</button>}
+          {(!info || !info.atCeiling) && <button type="button" className="btn inline ap-go" onClick={go}>{P ? (again ? "Polish again" : "Begin Polishing") : again ? "Weave again" : "Begin Weaving"}</button>}
         </div>
       </div>
     </div>

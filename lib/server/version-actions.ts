@@ -16,6 +16,7 @@ import { db } from "./db";
 import { BLOCK_COLS, resolveBlocks } from "./workspace";
 import { assembleAnswer } from "@/lib/section-answer";
 import { describeBlockers, finishBlockers, type GateCard } from "@/lib/card-gate";
+import { figureRefusal } from "./polish";
 import {
   autosavesToThin, canMoveStatus, compareVersion, contentHash, versionLabel,
   type DraftStatus, type SectionDiff, type VersionContent, type VersionReason,
@@ -136,15 +137,15 @@ export async function autosaveVersionAction(draftId: string): Promise<boolean> {
 /**
  * Move to another stage. Entering Weave only changes the view (Shane, 8
  * October 2026): its "Before Weave" version is saved when someone presses Begin
- * Weaving (saveBeforeWeaveAction), the moment worth going back to. Entering
- * Polish still saves "Before Polish".
+ * Weaving (saveBeforeWeaveAction), the moment worth going back to. Polish is
+ * the same (9 October 2026): nothing runs, and nothing is saved, until Begin
+ * Polishing (saveBeforePolishAction).
  */
 export async function enterStageAction(draftId: string, stage: "arrange" | "weave" | "polish") {
   const s = await requireAdmin();
   const d = await loadDraft(s.tenantId, draftId);
   if (!["arrange", "weave", "polish"].includes(stage) || stage === d.stage) return;
   if (["submitted", "won", "lost"].includes(d.status)) throw new Error("A submitted application is locked.");
-  if (stage === "polish") await snapshot(s.tenantId, s.user.id, d, "stage", null, stage);
   const { error } = await db.from("grant_draft").update({ stage }).eq("tenant_id", s.tenantId).eq("id", draftId);
   if (error) throw new Error(`Could not change the stage: ${error.message}`);
   // No revalidatePath here. The page holds the stage itself, and a refresh
@@ -160,10 +161,19 @@ export async function enterStageAction(draftId: string, stage: "arrange" | "weav
  * pressing Weave again does not pile up identical versions.
  */
 export async function saveBeforeWeaveAction(draftId: string) {
+  return saveBeforeStage(draftId, "weave");
+}
+
+/** The same for Polish: "Before Polish" is saved when Begin Polishing is pressed (9 Oct 2026), not when the tab opens. */
+export async function saveBeforePolishAction(draftId: string) {
+  return saveBeforeStage(draftId, "polish");
+}
+
+async function saveBeforeStage(draftId: string, stage: "weave" | "polish") {
   const s = await requireAdmin();
   const d = await loadDraft(s.tenantId, draftId);
   if (["submitted", "won", "lost"].includes(d.status)) return;
-  await snapshot(s.tenantId, s.user.id, d, "stage", null, "weave", { skipIfUnchanged: true });
+  await snapshot(s.tenantId, s.user.id, d, "stage", null, stage, { skipIfUnchanged: true });
 }
 
 /**
@@ -193,7 +203,9 @@ async function finishLineRefusal(tenantId: string, draftId: string): Promise<str
     }
   }
   const list = finishBlockers(sections, blocks, id => cards.get(id));
-  return list.length ? describeBlockers(list) : null;
+  if (list.length) return describeBlockers(list);
+  // Polish's figure audit (9 October 2026): no number without a source, unless a person cleared it.
+  return figureRefusal(tenantId, sections.map(x => x.id), "this application");
 }
 
 /**

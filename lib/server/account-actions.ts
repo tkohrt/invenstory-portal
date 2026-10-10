@@ -32,7 +32,7 @@ export async function requestAccountClosureAction(reason: string): Promise<{ ok:
  * before a card is removed from an answer. Only known keys, only booleans: this
  * is a public endpoint, and the column is not a place for arbitrary data.
  */
-const UI_PREF_KEYS = new Set(["confirm_card_remove", "confirm_weave"]);
+const UI_PREF_KEYS = new Set(["confirm_card_remove", "confirm_weave", "confirm_polish"]);
 export async function setUiPrefAction(key: string, value: boolean) {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");

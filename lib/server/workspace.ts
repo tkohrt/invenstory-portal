@@ -15,6 +15,7 @@ import { userClient } from "./supabase";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { RankCard } from "@/lib/story-card-rank";
 import type { GapAsk } from "@/lib/draft-gaps";
+import type { FigureClearance } from "@/lib/polish";
 import { asksForDraft } from "./asks";
 
 export interface WsEvidence { title: string; layer: string | null; quote: string; speaker: string | null }
@@ -83,7 +84,11 @@ export interface Workspace {
   bank: Record<string, { origin: "seed" | "observed"; observed: number }>;
   /** Questions For Granted asked the client for this draft (0058). */
   asks: GapAsk[];
+  /** Numbers a person cleared in Polish (0059). */
+  clearances: WsClearance[];
 }
+
+export interface WsClearance extends FigureClearance { sectionId: string; byName: string | null }
 
 type Raw = Record<string, unknown>;
 
@@ -170,6 +175,7 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
     s.from("grant_question").select("slug, origin, observed"),
     asksForDraft(tenantId, draftId),
   ]);
+  const clearances = await readClearances(tenantId, ((secRows ?? []) as Raw[]).map(r => r.id as string));
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
 
   const sections: WsSection[] = ((secRows ?? []) as Raw[]).map(r => ({
@@ -199,6 +205,18 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
 
   const bank: Record<string, { origin: "seed" | "observed"; observed: number }> = Object.fromEntries(
     ((bankRows ?? []) as { slug: string; origin: "seed" | "observed"; observed: number }[]).map(q => [q.slug, { origin: q.origin, observed: q.observed }]));
-  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank, asks };
+  return { purpose: ((draft?.purpose as Workspace["purpose"]) ?? "application"), sections, blocks, cards, standards, bank, asks, clearances };
 }
 
+
+/** Numbers cleared in Polish, with the name of who cleared each. A missing table (0059 not run) reads as none. */
+async function readClearances(tenantId: string, sectionIds: string[]): Promise<WsClearance[]> {
+  if (!sectionIds.length) return [];
+  const s = await userClient();
+  const { data, error } = await s.from("figure_clearance")
+    .select("section_id, block_id, figure, reason, cleared_by, cleared_role, cleared_at, who:cleared_by(full_name)")
+    .eq("tenant_id", tenantId).in("section_id", sectionIds);
+  if (error) return [];
+  return ((data ?? []) as unknown as { section_id: string; block_id: string; figure: string; reason: string | null; cleared_by: string | null; cleared_role: string; cleared_at: string; who: { full_name: string } | null }[])
+    .map(r => ({ sectionId: r.section_id, blockId: r.block_id, figure: r.figure, reason: r.reason, by: r.cleared_by, role: r.cleared_role, at: r.cleared_at, byName: r.who?.full_name ?? null }));
+}

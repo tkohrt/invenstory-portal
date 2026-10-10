@@ -223,7 +223,7 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
             </div>
           )}
           {untraced.length > 0 && (
-            <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. The figure audit in Polish will stop the export until it is traced or removed.</div>
+            <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. Until it is traced, changed or cleared in Polish, this answer cannot leave.</div>
           )}
 
           {!editing && (

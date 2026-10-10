@@ -41,11 +41,14 @@ import UserCardDialog from "./UserCardDialog";
 import { USER_GENERATED } from "@/lib/user-card";
 import WeaveView from "./WeaveView";
 import WeaveReminder from "./WeaveReminder";
+import PolishPanel, { type PolishRun } from "./PolishPanel";
+import { clearFigureAction, polishSectionAction, restoreFigureAction } from "@/lib/server/polish-actions";
+import { dropOptions, figureAudit, openFlags, repeats, describeFigureFlags, type FigureFlag, type ShortenProposal } from "@/lib/polish";
 import InfoTip from "./InfoTip";
 import { bridgeGaps } from "@/lib/weave";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import {
-  autosaveVersionAction, compareVersionAction, enterStageAction, saveBeforeWeaveAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
+  autosaveVersionAction, compareVersionAction, enterStageAction, saveBeforeWeaveAction, saveBeforePolishAction, listVersionsAction, newDraftFromAction, restoreVersionAction,
   saveVersionAction, setDraftStatusAction, type VersionItem,
 } from "@/lib/server/version-actions";
 import { LOCKED_STATUSES, STATUS_NAME, type DraftStatus, type SectionDiff } from "@/lib/draft-version";
@@ -58,10 +61,12 @@ import type { LibraryCard } from "@/lib/server/card-library";
 import CardReview, { type ReviewOutcome } from "./CardReview";
 import { assembleAnswer, countFor, limitState, moveItem } from "@/lib/section-answer";
 import { untracedFigures } from "@/lib/story-card";
-import type { Workspace, WsBlock, WsCard, WsSection, WsStandard } from "@/lib/server/workspace";
+import { CLEAR_REASON_MAX } from "@/lib/polish";
+import type { Workspace, WsBlock, WsCard, WsClearance, WsSection, WsStandard } from "@/lib/server/workspace";
 import type { GrantDraft } from "@/lib/types";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
+type Stage = "arrange" | "weave" | "polish";
 const STATUS_LABEL: Record<WsSection["status"], string> = { empty: "Not started", drafting: "Drafting", done: "Done" };
 const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF", docx: "a Word file", url: "a web page", match: "Funder Matches" };
 
@@ -109,7 +114,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   // The finish line: what stands in the way, and what to do once it is clear.
   const [blockers, setBlockers] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | "weave" | null } | null>(null);
   // Weave: which stage the page shows, and the reminder before a weave runs.
-  const [stage, setStage] = useState<"arrange" | "weave">(draft.stage === "weave" ? "weave" : "arrange");
+  const [stage, setStage] = useState<Stage>(draft.stage === "weave" || draft.stage === "polish" ? draft.stage : "arrange");
+  // Polish (9 October 2026): nothing runs until Begin Polishing. What it found,
+  // per question; the numbers people cleared; and the reminder before it drafts
+  // shorter wording; and the finish line stopped by a number with no source.
+  const [polishRuns, setPolishRuns] = useState<Record<string, PolishRun>>({});
+  const [clearances, setClearances] = useState<WsClearance[]>(ws.clearances);
+  const [polishAsk, setPolishAsk] = useState<{ again: boolean } | null>(null);
+  const [figBlock, setFigBlock] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | null } | null>(null);
   const [weaveAsk, setWeaveAsk] = useState<{ again: boolean } | null>(null);
   // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
   const [wovenHere, setWovenHere] = useState<Set<string>>(() => new Set());
@@ -222,6 +234,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     setStatusBy(Object.fromEntries(ws.sections.map(s => [s.id, s.status])));
     setStandards(ws.standards);
     setAsks(ws.asks);
+    setClearances(ws.clearances);
   }
 
   const section = sections[idx];
@@ -431,7 +444,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       if (!added) return;
       fresh.current.add(added.id);
       if (kind) freshKind.current.set(added.id, kind);
-      if (stage === "weave") setWeaveEditId(added.id); else setEditing(added.id);
+      if (stage !== "arrange") setWeaveEditId(added.id); else setEditing(added.id);
     });
   };
 
@@ -588,15 +601,21 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const gapsBy: Record<string, GapRow[]> = Object.fromEntries(sections.map(s => [s.id, questionGaps({
     sectionId: s.id, wantedKinds: s.wantedKinds, blocks: blocksBy[s.id] ?? [], cards: gapCards, asks,
   })]));
+  // Polish's figure audit, for every question: free, and what the finish line holds to.
+  const quotesOf = (cardId: string) => cardById.get(cardId)?.evidence.map(e => e.quote) ?? [];
+  const flagsBy: Record<string, FigureFlag[]> = Object.fromEntries(sections.map(s => [s.id,
+    figureAudit(blocksBy[s.id] ?? [], quotesOf, clearances.filter(c => c.sectionId === s.id))]));
+  const openFlagsBy: Record<string, FigureFlag[]> = Object.fromEntries(sections.map(s => [s.id, openFlags(flagsBy[s.id] ?? [])]));
+  const draftFigures = sections.reduce((n, s) => n + openFlagsBy[s.id].length, 0);
+  const sectionFigures = openFlagsBy[section.id]?.length ?? 0;
   const progress = draftProgress({
     sections, blocksBy, statusBy, toReview: draftBlockers.length, gapsBy,
     figuresIn: (sid, bi) => {
       const b = (blocksBy[sid] ?? [])[bi];
-      const c = b?.kind === "card" && b.edited && b.cardId ? cardById.get(b.cardId) : undefined;
-      return c ? untracedFigures(b.text, c.evidence.map(e => e.quote).join("\n")).length : 0;
+      return b ? (openFlagsBy[sid] ?? []).filter(f => f.blockId === b.id).length : 0;
     },
   });
-  const goTo = (i: number | null, st?: "arrange" | "weave") => {
+  const goTo = (i: number | null, st?: Stage) => {
     if (i == null) return;
     if (i !== idx) go(i);
     if (st && st !== stage) switchStage(st);
@@ -625,7 +644,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   /** Run `then` once the finish line is clear, or show what stands in the way. */
   const atFinishLine = (scope: "draft" | "section", then: "completed" | "submit" | "approve", next: () => void) => {
     const list = scope === "draft" ? draftBlockers : sectionBlockers;
-    if (list.length) setBlockers({ scope, then }); else next();
+    if (list.length) { setBlockers({ scope, then }); return; }
+    // Then the figure audit (Shane, 9 October 2026): a number with no source stops all four ways out.
+    if (scope === "draft" ? draftFigures : sectionFigures) { setFigBlock({ scope, then }); return; }
+    next();
   };
 
   // ---- Weave ---------------------------------------------------------------
@@ -635,7 +657,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const proposedCount = blocks.filter(b => b.proposed).length;
   const hasBridges = blocks.some(b => b.kind === "bridge");
 
-  const switchStage = (st: "arrange" | "weave") => {
+  const switchStage = (st: Stage) => {
     setStage(st); setEditing(null); setTidy(null);
     if (!readOnly) void run(() => enterStageAction(draft.id, st), () => undefined);
   };
@@ -685,6 +707,77 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         ? `Weave proposed ${r.proposed} bridge${r.proposed === 1 ? "" : "s"}, shown in grey. Accept, edit or reject each; none is in the answer until you accept it.${set}`
         : `Weave proposed no bridges: these pieces already read well side by side.${set}`);
     });
+  };
+
+  // ---- Polish ----------------------------------------------------------------
+  // Nothing runs until Begin Polishing (Shane, 9 October 2026). The checks are
+  // worked out here from the answer as it stands, so they follow every change;
+  // only shorter wording, for an answer over its limit, is a model call, and it
+  // comes after the same reminder as Weave.
+  const polishRun = polishRuns[section.id] ?? null;
+  const overBy = section.limitValue ? count - section.limitValue : 0;
+  const pieceLabel = (id: string) => {
+    const b = blocks.find(x => x.id === id);
+    if (!b) return "a piece";
+    return b.kind === "card" ? (b.cardId ? cardById.get(b.cardId)?.kindLabel ?? "Story Card" : "Story Card") : b.kind === "human" ? "Your words" : "Bridge";
+  };
+  const scoreOf = (cardId: string) => ranked.find(r => r.card.id === cardId)?.score ?? 0;
+  const drops = polishRun ? dropOptions({
+    pieces: blocks, limit: section.limitValue ?? 0, unit, wantedKinds: section.wantedKinds,
+    kindOf: id => cardById.get(id)?.kind ?? null, scoreOf,
+  }) : [];
+  const repeated = polishRun ? repeats(blocks) : [];
+
+  /** Begin Polishing (or Polish again): the review gate, then the reminder only when shorter wording will be drafted. */
+  const requestPolish = () => {
+    if (!blocks.length) { say("Place cards in Arrange first."); return; }
+    if (sectionBlockers.length) { setBlockers({ scope: "section", then: null }); say("Review the cards in this answer first; then begin polishing."); return; }
+    if (overBy > 0) setPolishAsk({ again: !!polishRun }); else doPolish(false);
+  };
+  const doPolish = (withAi: boolean) => {
+    setPolishAsk(null);
+    const sectionId = section.id;
+    const original = Object.fromEntries(blocks.map(b => [b.id, b.text]));
+    void run(async () => {
+      await saveBeforePolishAction(draft.id).catch(() => null);
+      return withAi ? polishSectionAction(sectionId) : { ok: true as const, over: 0, proposals: [] as ShortenProposal[], refused: 0 };
+    }, r => {
+      if (!r.ok) { setError(r.error); return; }
+      setPolishRuns(m => ({ ...m, [sectionId]: { at: Date.now(), aiRan: withAi, proposals: r.proposals, refused: r.refused, original } }));
+      const open = openFlagsBy[sectionId]?.length ?? 0;
+      say(withAi
+        ? `Polish drafted shorter wording for ${r.proposals.length} piece${r.proposals.length === 1 ? "" : "s"}, and listed pieces you could take out. Nothing changes until you accept.${open ? ` ${open} number${open === 1 ? "" : "s"} need${open === 1 ? "s" : ""} a source.` : ""}`
+        : `Polished.${open ? ` ${open} number${open === 1 ? "" : "s"} need${open === 1 ? "s" : ""} a source before this answer can leave.` : " Every number is traced to its source."}`);
+    });
+  };
+  const acceptShorter = (ps: ShortenProposal[]) => {
+    const sectionId = section.id;
+    remember(sectionId, ps.length === 1 ? "the shorter wording" : "the shorter wordings");
+    for (const p of ps) void run(() => editBlockAction(sectionId, p.blockId, p.text), putBlocks(sectionId));
+  };
+  const dropPieces = (ids: string[]) => {
+    const sectionId = section.id;
+    remember(sectionId, ids.length === 1 ? "taking the piece out" : "taking the pieces out");
+    setBlocksBy(m => ({ ...m, [sectionId]: (m[sectionId] ?? []).filter(x => !ids.includes(x.id)) }));
+    for (const id of ids) void run(() => removeBlockAction(sectionId, id, "button"), putBlocks(sectionId));
+  };
+  /** Open a piece to change it: in its window, ready to edit, in Polish. */
+  const openPiece = (blockId: string) => setWeaveEditId(blockId);
+  const clearFigure = async (f: FigureFlag, reason: string, sectionId = section.id): Promise<string | null> => {
+    const r = await clearFigureAction({ sectionId, blockId: f.blockId, figure: f.figure, reason }).catch(() => null);
+    if (!r) return "Could not clear it. Please try again.";
+    if (!r.ok) return r.error;
+    setClearances(list => [...list.filter(c => !(c.blockId === f.blockId && c.figure === f.figure)),
+      { sectionId, blockId: f.blockId, figure: f.figure, reason: reason.trim() || null, by: null, role: "admin", at: new Date().toISOString(), byName: "you" }]);
+    return null;
+  };
+  const restoreFigure = (f: FigureFlag) => void restoreFigureAction({ sectionId: section.id, blockId: f.blockId, figure: f.figure }).then(r => {
+    if (!r.ok) { setError(r.error); return; }
+    setClearances(list => list.filter(c => !(c.blockId === f.blockId && c.figure === f.figure)));
+  }).catch(() => setError("Could not put the flag back."));
+  const whoCleared = (f: FigureFlag) => {
+    const c = clearances.find(x => x.blockId === f.blockId && x.figure === f.figure);
+    return c?.byName ?? (c?.role === "client" ? tenantName : "For Granted");
   };
 
   const money = draft.amount_cents == null ? null : "$" + (draft.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -747,7 +840,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
-            wantedKinds={section.wantedKinds} locked={readOnly || stage === "weave"} onAdd={id => addCard(id, blocks.length)}
+            wantedKinds={section.wantedKinds} locked={readOnly || stage !== "arrange"} onAdd={id => addCard(id, blocks.length)}
             onNewText={readOnly ? null : () => insertAt(blocks.length)} canDragNew={!readOnly && stage === "arrange"}
             open={panelOpen} onClose={() => setPanelOpen(false)} removing={!!activeBlock} kindRequest={panelAsk} />
 
@@ -768,7 +861,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   disabled={pending > 0}
                   onClick={() => { if (stage !== "weave") switchStage("weave"); }}
                   title="Read the answer as prose, with short bridges between the cards to accept or reject">Weave</button>
-                <button type="button" role="tab" aria-selected="false" className="chip" disabled title="Fit to limit, figure audit, repetition check. Next release.">Polish</button>
+                <button type="button" role="tab" aria-selected={stage === "polish"} className={`chip${stage === "polish" ? " active" : ""}`}
+                  disabled={pending > 0}
+                  onClick={() => { if (stage !== "polish") switchStage("polish"); }}
+                  title="Check length, every number's source, and repetition before the answer goes out. Nothing runs until you press Begin Polishing.">Polish</button>
               </div>
 
               <ProgressStrip p={progress} started={startedCount}
@@ -873,7 +969,15 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                     title={weaveBlockedWhy ?? "Uses a small part of the monthly AI allowance"} onClick={requestWeave}>Begin Weaving</button>
                 </div>
               )}
-              {stage === "weave" ? (
+              {stage === "polish" && blocks.length > 0 && (
+                <PolishPanel run={polishRun} locked={locked || readOnly} count={count} limit={section.limitValue} unit={unit} standard={standard}
+                  drops={drops} flags={flagsBy[section.id] ?? []} repeated={repeated}
+                  textOf={id => blocks.find(b => b.id === id)?.text ?? null} labelOf={pieceLabel} whoCleared={whoCleared}
+                  current={id => blocks.find(b => b.id === id)?.text ?? null}
+                  onBegin={requestPolish} onAccept={p => acceptShorter([p])} onAcceptAll={acceptShorter}
+                  onDrop={dropPieces} onOpen={openPiece} onClear={(f, r) => clearFigure(f, r)} onRestore={restoreFigure} />
+              )}
+              {stage !== "arrange" ? (
                 blocks.length
                   ? <WeaveView blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked}
                       editId={weaveEditId} onEditOpened={() => setWeaveEditId(null)}
@@ -888,7 +992,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                         onRefresh: id => change(section.id, "the wording change", () => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
                         onKeep: id => change(section.id, "keeping the wording", () => keepWordingAction(section.id, id), putBlocks(section.id)),
                       }} />
-                  : <div className="ws-empty-answer"><p>Nothing to weave yet. Go back to <strong>Arrange</strong> to place cards in this answer.</p></div>
+                  : <div className="ws-empty-answer"><p>Nothing to {stage === "polish" ? "polish" : "weave"} yet. Go back to <strong>Arrange</strong> to place cards in this answer.</p></div>
               ) : <AnswerColumn
                 blocks={blocks} cardById={cardById} gateCard={gateCard} locked={locked} editing={editing} setEditing={setEditing}
                 dropBefore={dragging && overId && overId !== "answer" && overId !== "panel" ? overId : null}
@@ -980,6 +1084,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                           onClick={requestWeave}>Begin Weaving</button>}
                   </>
                 )}
+                {stage === "polish" && !readOnly && blocks.length > 0 && (
+                  <button type="button" className={`btn ${polishRun ? "secondary" : "inline ap-go"} ws-edit-only`} disabled={locked} onClick={requestPolish}
+                    title={overBy > 0 ? "Check this answer and draft shorter wording. Drafting uses a small part of the monthly AI allowance." : "Check length, numbers and repetition. Free."}>
+                    {polishRun ? "Polish again" : "Begin Polishing"}</button>
+                )}
                 {stage === "arrange" && blocks.length === 0 && (
                   <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
                     onClick={() => void change(section.id, "Arrange for me", () => arrangeForMeAction(section.id), r => {
@@ -1012,8 +1121,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
                   onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
                   title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
-                <CopyButton text={text} blocked={sectionBlockers.length > 0}
-                  onBlocked={() => setBlockers({ scope: "section", then: null })} />
+                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionFigures > 0}
+                  onBlocked={() => (sectionBlockers.length ? setBlockers({ scope: "section", then: null }) : setFigBlock({ scope: "section", then: null }))} />
               </span>
               <span className="spacer" />
               {!readOnly && (
@@ -1059,6 +1168,29 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             onUseExisting={cardId => placeUserCard(userCard.blockId, cardId, false)}
             onCancel={() => setUserCard(null)} />
         )}
+        {polishAsk && (
+          <WeaveReminder kind="polish" tenantName={tenantName} again={polishAsk.again}
+            onWeave={() => doPolish(true)} onCancel={() => setPolishAsk(null)} />
+        )}
+        {figBlock && (
+          <FiguresDialog what={figBlock.scope === "draft" ? "this application" : "this answer"} then={figBlock.then}
+            items={sections.map((s, i) => ({ s, i })).filter(({ s }) => figBlock.scope === "draft" || s.id === section.id)
+              .flatMap(({ s, i }) => (openFlagsBy[s.id] ?? []).map(f => ({ f, sectionId: s.id, question: i + 1,
+                text: (blocksBy[s.id] ?? []).find(b => b.id === f.blockId)?.text ?? "" })))}
+            onClear={(f, sectionId, reason) => clearFigure(f, reason, sectionId)}
+            onGo={sectionId => {
+              setFigBlock(null);
+              const i = sections.findIndex(x => x.id === sectionId);
+              if (i >= 0) goTo(i, "polish");
+              // Arriving from the finish line is asking for the checks: show them (free; no wording is drafted).
+              setPolishRuns(m => m[sectionId] ? m : { ...m, [sectionId]: { at: Date.now(), aiRan: false, proposals: [], refused: 0, original: {} } });
+            }}
+            onContinue={() => {
+              const t = figBlock.then; setFigBlock(null);
+              if (t === "completed") markCompleted(); else if (t === "submit") setSubmitting(true); else if (t === "approve") approveNow();
+            }}
+            onClose={() => setFigBlock(null)} />
+        )}
         {weaveAsk && (
           <WeaveReminder tenantName={tenantName} again={weaveAsk.again}
             onWeave={doWeave} onCancel={() => setWeaveAsk(null)} />
@@ -1082,7 +1214,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             onGo={b => { setBlockers(null); const i = sections.findIndex(x => x.id === b.sectionId); if (i >= 0) go(i); }}
             onContinue={() => {
               const t = blockers.then; setBlockers(null);
-              if (t === "completed") markCompleted(); else if (t === "submit") setSubmitting(true); else if (t === "approve") approveNow();
+              if (t === "completed") atFinishLine("draft", "completed", markCompleted);
+              else if (t === "submit") atFinishLine("draft", "submit", () => setSubmitting(true));
+              else if (t === "approve") atFinishLine("section", "approve", approveNow);
               else if (t === "weave") requestWeave();
             }}
             onClose={() => setBlockers(null)} />
@@ -1128,6 +1262,61 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         aria-current={i === idx ? "step" : undefined}>{i + 1}</button>
     );
   }
+}
+
+/** The finish line, stopped by numbers with no source: clear each here, or go and change it. */
+function FiguresDialog({ what, then, items, onClear, onGo, onContinue, onClose }: {
+  what: string; then: "completed" | "submit" | "approve" | null;
+  items: { f: FigureFlag; sectionId: string; question: number; text: string }[];
+  onClear: (f: FigureFlag, sectionId: string, reason: string) => Promise<string | null>;
+  onGo: (sectionId: string) => void; onContinue: () => void; onClose: () => void;
+}) {
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const key = (x: { f: FigureFlag }) => `${x.f.blockId}|${x.f.figure}`;
+  const verb = then === "completed" ? "marked completed" : then === "submit" ? "marked submitted" : then === "approve" ? "approved" : "copied";
+  return (
+    <div className="ws-modal-back" role="presentation" onClick={onClose}>
+      <div className="ws-modal" role="dialog" aria-modal="true" aria-labelledby="fig-title" onClick={e => e.stopPropagation()}>
+        <h3 id="fig-title">{items.length ? `Numbers without a source` : "Every number is traced or cleared"}</h3>
+        {items.length > 0 && <p>{describeFigureFlags(items.length, what)} Until then, {what} cannot be {verb}.</p>}
+        <div className="fig-list">
+          {items.map(x => {
+            const k = key(x);
+            const at = x.text.indexOf(x.f.figure);
+            return (
+              <div key={k} className="pl-flag">
+                <div className="pl-flag-line"><span className="pl-fig">{x.f.figure}</span>
+                  <span className="pl-ctx">Q{x.question}: {at > 60 ? "…" : ""}{x.text.slice(Math.max(0, at - 60), at)}<mark>{x.f.figure}</mark>{x.text.slice(at + x.f.figure.length, at + x.f.figure.length + 60)}…</span></div>
+                <div className="ov-muted pl-why">{x.f.where === "card" ? "Not in this card's sources." : "Not in the sources of any card in this answer."}</div>
+                <div className="pl-clear">
+                  <input value={reasons[k] ?? ""} onChange={e => setReasons(r => ({ ...r, [k]: e.target.value }))} maxLength={CLEAR_REASON_MAX}
+                    placeholder="Why it is right (optional)" aria-label="Why the number is right (optional)" />
+                  <button type="button" className="btn secondary ap-mini" disabled={busy === k} onClick={async () => {
+                    setBusy(k); setErr(null);
+                    const e = await onClear(x.f, x.sectionId, reasons[k] ?? "");
+                    setBusy(null); if (e) setErr(e);
+                  }}>It&rsquo;s right: clear it</button>
+                  <button type="button" className="btn ghost ap-mini" onClick={() => onGo(x.sectionId)}>Change it in Polish</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {err && <div className="ap-error">{err}</div>}
+        <div className="ws-modal-acts">
+          <button type="button" className="btn secondary" onClick={onClose}>Close</button>
+          {then && <button type="button" className="btn inline ap-go" disabled={items.length > 0} onClick={onContinue}>Continue</button>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** The page's description, behind an ⓘ that opens on hover. */
@@ -1488,7 +1677,7 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
       )}
 
       {untraced.length > 0 && (
-        <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. The figure audit in Polish will stop the export until it is traced or removed.</div>
+        <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. Until it is traced, changed or cleared in Polish, this answer cannot leave.</div>
       )}
       {reworded && (
         <div className="ws-warn ws-soft">

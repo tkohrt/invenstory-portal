@@ -25,6 +25,7 @@ export default async function AccountPage() {
       stats={stats}
       confirmCardRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false}
       confirmWeave={(session.user.ui_prefs as { confirm_weave?: boolean } | null)?.confirm_weave !== false}
+      confirmPolish={(session.user.ui_prefs as { confirm_polish?: boolean } | null)?.confirm_polish !== false}
     />
   );
 }
