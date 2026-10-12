@@ -15,6 +15,7 @@ import { monthRange, recentMonths, dayKey, topicCounts, stallState, FEATURES, FE
 import { getAllMilestones } from "./milestones";
 
 import { ALLOWANCE, ceilingMicros, MICROS_PER_CENT } from "@/lib/allowance";
+import { clientTenants } from "@/lib/brain";
 
 type Users = { id: string; tenant_id: string | null; role: string; full_name: string; email: string; created_at: string; auth_id?: string | null }[];
 
@@ -72,7 +73,7 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
   const s = start.toISOString(), e = end.toISOString();
   const [{ data: tenants }, { data: users }, { data: msgs }, { data: usage }, { data: docs }, { data: drafts }, { data: sections }, { data: events },
     { data: grants }, { data: reqs }, { data: lastDocs }, { data: lastMsgs }, { data: first }] = await Promise.all([
-    db.from("tenant").select("id, name").order("name"),
+    db.from("tenant").select("*").order("name"),
     db.from("app_user").select("id, tenant_id, role, full_name, email, created_at"),  // tenant-safe: admin portfolio across every client
     db.from("chat_message").select("tenant_id, author_user_id").eq("role", "user").gte("created_at", s).lt("created_at", e),  // tenant-safe: admin portfolio across every client
     db.from("ai_usage").select("tenant_id, actor, cost_micros").gte("created_at", s).lt("created_at", e),  // tenant-safe: admin portfolio across every client
@@ -107,7 +108,8 @@ export async function getPortfolioActivity(month: string): Promise<PortfolioActi
   const edits = lastEdits(dr, (sections ?? []) as { draft_id: string; updated_at: string }[], (events ?? []) as { draft_id: string | null; created_at: string }[]);
   const now = new Date();
 
-  const rows: PortfolioRow[] = ((tenants ?? []) as { id: string; name: string }[]).map(t => {
+  // Clients only: the Brain is not a client (Auto-Draft patch 3).
+  const rows: PortfolioRow[] = clientTenants(tenants as { id: string; name: string; is_brain?: boolean | null }[] | null).map(t => {
     const people = userList.filter(u => u.tenant_id === t.id && u.role === "client");
     const myMsgs = ms.filter(m => m.tenant_id === t.id && m.author_user_id && clientIds.has(m.author_user_id));
     const myUsage = us.filter(u => u.tenant_id === t.id);

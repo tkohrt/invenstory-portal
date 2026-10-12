@@ -12,10 +12,12 @@ import { getLastRunQueries, pendingRationaleCount } from "@/lib/server/matching"
 import { latestJob } from "@/lib/server/jobs";
 import { getJudgments } from "@/lib/server/triage";
 import FunderMatchesView from "@/components/FunderMatchesView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function FunderMatchesPage() {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   // Hidden for every client by default (workspace.ts, defaultVisible:false);
   // admins always pass so For Granted can run matches on a client's behalf.
   await gateFeature(session.role, session.tenantId, "funder_matches");

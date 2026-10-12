@@ -5,6 +5,7 @@ import "server-only";
 import { db } from "./db";
 import type { GardenState, PlantHealth, PlantSpecies } from "@/lib/types";
 import { getContentCoverage, readiness } from "./gap-agent";
+import { clientTenants } from "@/lib/brain";
 
 const DAY = 86400000;
 
@@ -230,13 +231,13 @@ export async function getGardenState(tenantId: string): Promise<GardenState> {
 export interface GardenSummary { tenantId: string; species: PlantSpecies; size: 1 | 2 | 3; health: PlantHealth; hidden: boolean; pot: string; trinket: string | null; variegation: string | null }
 export async function getGardenSummaries(): Promise<Record<string, GardenSummary>> {
   const [{ data: tenants }, { data: docs }, { data: plants }, { data: achs }] = await Promise.all([
-    db.from("tenant").select("id"),
+    db.from("tenant").select("*"),
     db.from("document").select("tenant_id, layer, created_at").eq("status", "ready"),  // tenant-safe: admin greenhouse cross-tenant aggregate
     db.from("plant_state").select("*"),  // tenant-safe: admin greenhouse cross-tenant aggregate
     db.from("achievement").select("tenant_id"),  // tenant-safe: admin greenhouse cross-tenant aggregate
   ]);
   const out: Record<string, GardenSummary> = {};
-  for (const t of tenants ?? []) {
+  for (const t of clientTenants(tenants as { id: string; is_brain?: boolean | null }[] | null)) {
     const D = (docs ?? []).filter(d => d.tenant_id === t.id);
     const plant = (plants ?? []).find(p => p.tenant_id === t.id);
     const nAch = (achs ?? []).filter(a => a.tenant_id === t.id).length;

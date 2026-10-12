@@ -6,10 +6,12 @@ import { gateFeature } from "@/lib/server/gate";
 import { getTenant } from "@/lib/server/data";
 import { getClientCards } from "@/lib/server/client-cards";
 import StoryCardsView from "@/components/StoryCardsView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function StoryCardsPage() {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   await gateFeature(session.role, session.tenantId, "card_review");
   const [tenant, cards] = await Promise.all([getTenant(session.tenantId), getClientCards(session.tenantId)]);
   return <StoryCardsView orgName={tenant?.name ?? "Your organization"} cards={cards} isAdmin={session.role === "admin"} />;

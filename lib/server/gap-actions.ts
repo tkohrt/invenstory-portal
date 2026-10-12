@@ -7,6 +7,8 @@ import { checkAllowance } from "./allowance";
 import { onAnalysis } from "./analysis-source";
 import { applyReadiness } from "./analysis-switch";
 import { getEligibilityProfile } from "./eligibility";
+import { clientTenants } from "@/lib/brain";
+import { tenantIsBrain } from "./brain";
 
 async function storeExtractionCoverage(
   tenantId: string, orgType: string | null,
@@ -37,6 +39,8 @@ async function storeExtractionCoverage(
 export async function runGapAnalysisAction(): Promise<{ ok: true } | { ok: false; allowance: string }> {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
+  // The Brain has no readiness (Auto-Draft patch 3); its page shows no checklist.
+  if (await tenantIsBrain(s.tenantId)) return { ok: true };
   // Phase D: on the analysis, readiness is worked out from what it stored. Free,
   // so it is never held to the allowance.
   if (await onAnalysis(s.tenantId)) {
@@ -57,9 +61,10 @@ export interface RefreshResult { tenant: string; ok: boolean; covered?: number; 
 export async function refreshAllReadinessAction(): Promise<{ results: RefreshResult[] }> {
   const s = await getSession();
   if (!s || s.role !== "admin") throw new Error("unauthorized");
-  const { data: tenants } = await db.from("tenant").select("id, name").order("name");
+  const { data: rows } = await db.from("tenant").select("*").order("name");
   const results: RefreshResult[] = [];
-  for (const t of tenants ?? []) {
+  // Clients only: the Brain has no readiness (Auto-Draft patch 3).
+  for (const t of clientTenants(rows as { id: string; name: string; is_brain?: boolean | null }[] | null)) {
     try {
       if (await onAnalysis(t.id)) {
         // On the analysis: free, from what it stored.

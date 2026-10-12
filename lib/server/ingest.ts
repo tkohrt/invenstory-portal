@@ -186,6 +186,9 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
         // now (patch 4), instead of by this older per-upload readiness read.
         const { readOnArrival } = await import("./analysis-arrival");
         if ((await readOnArrival(doc, actor)) !== "not_on_analysis") return;
+        // The Brain has no readiness (Auto-Draft patch 3): no per-upload readiness read.
+        const { tenantIsBrain } = await import("./brain");
+        if (await tenantIsBrain(doc.tenant_id)) return;
         if (actor === "client") {
           if (sameText) return;  // processed again with nothing new to read
           if (!uploadReadNow(actor, await uploadReadsLastDay(doc.tenant_id))) {

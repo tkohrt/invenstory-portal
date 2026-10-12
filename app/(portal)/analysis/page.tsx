@@ -7,10 +7,12 @@ import { getTenant } from "@/lib/server/data";
 import { getClientAnalysis } from "@/lib/server/analysis-client-read";
 import { latestJob } from "@/lib/server/jobs";
 import ClientAnalysisView from "@/components/ClientAnalysisView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function AnalyzePage() {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: readiness and eligibility are a client's; use Admin, Analysis
   await gateFeature(session.role, session.tenantId, "analysis");
   const [tenant, data, job] = await Promise.all([
     getTenant(session.tenantId),

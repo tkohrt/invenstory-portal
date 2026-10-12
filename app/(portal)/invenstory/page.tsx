@@ -5,17 +5,20 @@ import InvenstoryView from "@/components/InvenstoryView";
 import { getGaps } from "@/lib/server/eligibility";
 import { asksForClient } from "@/lib/server/asks";
 import ClientAsks from "@/components/ClientAsks";
+import { tenantIsBrain } from "@/lib/server/brain";
 
-export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string }> }) {
+export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string; brain?: string }> }) {
   const sp = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
+  // The Brain (Auto-Draft patch 3) has documents only: no readiness, contact or asks.
+  const brain = await tenantIsBrain(session.tenantId);
   const [tenant, docs, contact, gapData, asks] = await Promise.all([
     getTenant(session.tenantId),
     getDocumentsWithTags(session.tenantId, session.role !== "admin"),
-    getPrimaryContact(session.tenantId),
-    getGaps(session.tenantId),
-    asksForClient(session.tenantId),
+    brain ? Promise.resolve(null) : getPrimaryContact(session.tenantId),
+    brain ? Promise.resolve(null) : getGaps(session.tenantId),
+    brain ? Promise.resolve([]) : asksForClient(session.tenantId),
   ]);
   if (!tenant) redirect("/");
   return (
@@ -30,6 +33,7 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
       readinessComputedAt={gapData ? gapData.computedAt : null}
       isAdmin={session.role === "admin"}
       openItem={sp.item ?? null}
+      brain={brain ? { closedPage: sp.brain === "closed" } : null}
       asks={asks.length ? <ClientAsks asks={asks} isAdmin={session.role === "admin"} tenantName={tenant.name} /> : null}
     />
   );

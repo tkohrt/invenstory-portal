@@ -10,12 +10,14 @@ import PlantVisual from "./PlantVisual";
 import BuildNotice from "./BuildNotice";
 import BackButton from "./BackButton";
 import { promptHref } from "@/lib/garden-prompt";
+import { brainAllows, clientTenants, isBrain } from "@/lib/brain";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
   tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number; overlayPendingCount: number;
   workspaceVis: Record<string, boolean>;
-  garden: GardenState;
+  /** Null in the Brain, which grows no plant (Auto-Draft patch 3). */
+  garden: GardenState | null;
   /** Story Cards waiting for the client to look at (0 when the page is off). */
   storyCardsWaiting?: number;
   children?: React.ReactNode;
@@ -71,7 +73,11 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   };
   const initials = user.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const tenantName = tenants.find(t => t.id === tenantId)?.name ?? "";
-  const plantHealthLabel = garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty";
+  // The Brain (Auto-Draft patch 3): For Granted's own writing, not a client. No
+  // plant, no Story Intelligence, and only the pages that make sense for it.
+  const brain = isBrain(tenants.find(t => t.id === tenantId));
+  const brainRow = tenants.find(isBrain);
+  const plantHealthLabel = !garden ? "" : garden.health === "thriving" ? "Thriving" : garden.health === "okay" ? "Doing okay" : "Thirsty";
   const plantOwner = tenantName ? `${tenantName}${tenantName.endsWith("s") ? "’" : "’s"}` : "Your";
   // Exact segment match, so /draft is not lit up while on /drafts.
   const nav = (href: string) => `nav-item${path === href || path.startsWith(href + "/") ? " active" : ""}`;
@@ -124,12 +130,28 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <div className="client-switch">
               <label style={{ marginTop: 0 }}>Viewing client</label>
               <select value={tenantId} onChange={async e => { await switchTenantAction(e.target.value); router.refresh(); }}>
-                {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {brainRow
+                  ? <>
+                      <optgroup label="Clients">
+                        {clientTenants(tenants).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </optgroup>
+                      <optgroup label="For Granted, not a client">
+                        <option value={brainRow.id}>{brainRow.name}</option>
+                      </optgroup>
+                    </>
+                  : tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
           </div>
         )}
-        <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
+        {brain && (
+          <div className="sidebar-brain" role="note">
+            <div className="sb-title">The Brain</div>
+            <p>For Granted&rsquo;s own writing and de-identified examples. Auto-draft learns house style from it. Run its analysis on Admin, Analysis. Not a client:
+              no plant, readiness or funder matching, and clients never see it.</p>
+          </div>
+        )}
+        {garden && <Link href="/plant" onClick={closeNav} className={`sidebar-plant${path.startsWith("/plant") ? " active" : ""}`} title="Your plant">
           {garden.hidden
             ? <div className="sp-hidden">🌱 Your plant</div>
             : <>
@@ -143,13 +165,22 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
                   </div>
                 </div>
               </>}
-        </Link>
-        {!garden.hidden && garden.prompt?.text && (
+        </Link>}
+        {garden && !garden.hidden && garden.prompt?.text && (
           <Link href={promptHref(garden.prompt)} onClick={closeNav} className="sidebar-prompt">🌱 {garden.prompt.text} <span className="sp-prompt-cta">Add now →</span></Link>
         )}
         <div className="nav-section-label">Workspace</div>
         {workspaceNav.map(item => {
           if (item.adminOnly && !admin) return null;
+          if (brain && !brainAllows(item.href)) return null;
+          // In the Brain there is no client to show or hide a page from.
+          if (brain) {
+            return (
+              <Link key={item.href} onClick={closeNav} className={nav(item.href)} href={item.href} title={collapsed ? item.label : undefined}>
+                <span className="ic">{item.ic}</span> {item.label}
+              </Link>
+            );
+          }
           const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;
           if (item.toggle && !admin && !visible) return null;
           return (
@@ -170,8 +201,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           );
         })}
         <Link onClick={closeNav} className={nav("/account")} href="/account" title={collapsed ? "Account" : undefined}><span className="ic">◔</span> Account</Link>
-        <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>
-        {artifactTypes.map(t => (
+        {!brain && <div className="nav-section-label" style={{ marginTop: 16 }}>Story Intelligence</div>}
+        {!brain && artifactTypes.map(t => (
           <Link key={t.slug} onClick={closeNav}
             className={`${nav(`/story-intelligence/${t.slug}`)}${admin && !t.visible ? " nav-hidden" : ""}`}
             href={`/story-intelligence/${t.slug}`}
@@ -199,7 +230,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               <span className="ic">◈</span> Ground Truth review
               {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
             </Link>
-            <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit" title={collapsed ? "Readiness audit" : undefined}><span className="ic">◍</span> Readiness audit</Link>
+            {!brain && <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit" title={collapsed ? "Readiness audit" : undefined}><span className="ic">◍</span> Readiness audit</Link>}
             <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library" title={collapsed ? "Card Library" : undefined}><span className="ic">▣</span> Card Library</Link>
             <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis" title={collapsed ? "Analysis (trial)" : undefined}><span className="ic">◎</span> Analysis (trial)</Link>
           </div>

@@ -14,6 +14,8 @@ export interface Tenant {
   website: string | null;
   slack_channel_id: string | null;
   created_at: string;
+  /** 0061: the Brain, For Granted's own writing (lib/brain.ts). Never a client. */
+  is_brain?: boolean | null;
 }
 
 export interface AppUser {

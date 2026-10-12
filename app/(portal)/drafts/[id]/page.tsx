@@ -6,6 +6,7 @@ import { getBankOptions, getDraft, getSections } from "@/lib/server/drafts";
 import ApplicationDraftView from "@/components/ApplicationDraftView";
 import DraftWorkspace from "@/components/DraftWorkspace";
 import { getWorkspace } from "@/lib/server/workspace";
+import { closedInBrain } from "@/lib/server/brain";
 
 // Confirming an application's questions re-matches any edited question to the
 // question bank, which is a model call inside the confirm action.
@@ -18,6 +19,7 @@ export default async function DraftDetailPage({ params, searchParams }: {
   const { q, since } = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   await gateFeature(session.role, session.tenantId, "drafts");
   const [tenant, draft] = await Promise.all([getTenant(session.tenantId), getDraft(session.tenantId, id)]);
   if (!tenant) redirect("/");

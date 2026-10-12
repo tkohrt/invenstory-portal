@@ -8,6 +8,7 @@ import { lastEdits } from "./activity-read";
 import { getAllMilestones } from "./milestones";
 import { lastWeek, stallState } from "@/lib/activity";
 import { renderDigest, DUE_SOON_DAYS, type DigestData, type DigestDraft } from "@/lib/digest";
+import { clientTenants } from "@/lib/brain";
 
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const SLACK_WEBHOOK = process.env.SLACK_ADMIN_WEBHOOK_URL;
@@ -19,7 +20,7 @@ export async function gatherDigest(now = new Date()): Promise<DigestData> {
   const s = start.toISOString(), e = end.toISOString();
   const [{ data: tenants }, { data: users }, { data: msgs }, { data: docs }, { data: visits }, { data: usage },
     { data: drafts }, { data: sections }, { data: events }, { data: usageReqs }, milestones] = await Promise.all([
-    db.from("tenant").select("id, name").order("name"),
+    db.from("tenant").select("*").order("name"),
     db.from("app_user").select("id, tenant_id, role, full_name"),  // tenant-safe: admin digest across every client
     db.from("chat_message").select("tenant_id, author_user_id").eq("role", "user").gte("created_at", s).lt("created_at", e),  // tenant-safe: admin digest across every client
     db.from("document").select("tenant_id, source").gte("created_at", s).lt("created_at", e),  // tenant-safe: admin digest across every client
@@ -36,7 +37,8 @@ export async function gatherDigest(now = new Date()): Promise<DigestData> {
   const userList = (users ?? []) as U[];
   const clientIds = new Set(userList.filter(u => u.role === "client").map(u => u.id));
   const nameOf = new Map(userList.map(u => [u.id, u.full_name]));
-  const tenantList = (tenants ?? []) as { id: string; name: string }[];
+  // Clients only: the Brain is For Granted's own (Auto-Draft patch 3).
+  const tenantList = clientTenants(tenants as { id: string; name: string; is_brain?: boolean | null }[] | null);
   const tenantName = new Map(tenantList.map(t => [t.id, t.name]));
   const ms = ((msgs ?? []) as { tenant_id: string; author_user_id: string | null }[]).filter(m => m.author_user_id && clientIds.has(m.author_user_id));
   const ds = (docs ?? []) as { tenant_id: string; source: string | null }[];

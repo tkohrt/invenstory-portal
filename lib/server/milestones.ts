@@ -8,10 +8,11 @@ import "server-only";
 //   first draft, first submission grant_draft.created_at and submitted_at
 import { db } from "./db";
 import { milestoneTimeline, nthEarliest, type Milestone } from "@/lib/activity";
+import { clientTenants } from "@/lib/brain";
 
 export async function getAllMilestones(): Promise<Map<string, Milestone[]>> {
   const [{ data: tenants }, { data: docs }, { data: jobs }, { data: states }, { data: visits }, { data: drafts }] = await Promise.all([
-    db.from("tenant").select("id, created_at"),
+    db.from("tenant").select("*"),
     db.from("document").select("tenant_id, created_at").limit(50000),  // tenant-safe: admin milestones across every client
     db.from("job").select("tenant_id, finished_at").eq("kind", "analysis").eq("status", "done"),  // tenant-safe: admin milestones across every client
     db.from("analysis_client_state").select("tenant_id, eligibility_confirmed_at"),  // tenant-safe: admin milestones across every client
@@ -21,7 +22,7 @@ export async function getAllMilestones(): Promise<Map<string, Milestone[]>> {
   type T = { tenant_id: string };
   const of = <R extends T>(rows: R[] | null, id: string) => (rows ?? []).filter(r => r.tenant_id === id);
   const out = new Map<string, Milestone[]>();
-  for (const t of (tenants ?? []) as { id: string; created_at: string }[]) {
+  for (const t of clientTenants(tenants as { id: string; created_at: string; is_brain?: boolean | null }[] | null)) {
     const myDocs = of(docs as (T & { created_at: string })[] | null, t.id).map(d => d.created_at);
     const myDrafts = of(drafts as (T & { created_at: string; submitted_at: string | null; purpose: string | null })[] | null, t.id)
       .filter(d => d.purpose !== "standard_answers");

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { userClient } from "./supabase";
 import { db } from "./db";
 import type { AppUser, Role } from "@/lib/types";
+import { clientTenants } from "@/lib/brain";
 
 export interface PortalSession { user: AppUser; role: Role; tenantId: string }
 
@@ -21,8 +22,9 @@ export async function getSession(): Promise<PortalSession | null> {
     const jar = await cookies();
     tenantId = jar.get("active_tenant")?.value ?? null;
     if (!tenantId) {
-      const { data: t } = await db.from("tenant").select("id").order("name").limit(1).single();
-      tenantId = t?.id ?? null;
+      // The first client by name, never the Brain (Auto-Draft patch 3).
+      const { data: ts } = await db.from("tenant").select("*").order("name");
+      tenantId = (clientTenants(ts as { id: string; is_brain?: boolean | null }[] | null)[0]?.id) ?? null;
     }
   }
   if (!tenantId) return null;

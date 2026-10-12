@@ -4,12 +4,14 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { getMatchPrefill } from "@/lib/server/drafts";
 import NewApplicationView from "@/components/NewApplicationView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function NewApplicationPage({ searchParams }: {
   searchParams: Promise<{ grant?: string; funder?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
   const [tenant, prefill] = await Promise.all([

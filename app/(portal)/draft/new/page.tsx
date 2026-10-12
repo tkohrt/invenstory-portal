@@ -10,10 +10,12 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { standardAnswersProgress } from "@/lib/server/draft-start";
 import StandardAnswersIntro from "@/components/StandardAnswersIntro";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function DraftNewPage({ searchParams }: { searchParams: Promise<{ grant?: string; funder?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
   const carry = sp.grant ? `?grant=${encodeURIComponent(sp.grant)}` : sp.funder ? `?funder=${encodeURIComponent(sp.funder)}` : "";

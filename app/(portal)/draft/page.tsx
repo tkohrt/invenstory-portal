@@ -7,10 +7,12 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { lastApplication } from "@/lib/server/draft-start";
 import DraftStartView from "@/components/DraftStartView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function DraftStartPage() {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   if (session.role !== "admin") redirect("/invenstory");
   const [tenant, last] = await Promise.all([getTenant(session.tenantId), lastApplication(session.tenantId)]);
   return <DraftStartView tenantName={tenant?.name ?? "this client"} last={last} />;

@@ -7,6 +7,7 @@ import "server-only";
 import { WORKSPACE_FEATURES, WORKSPACE_FEATURE_MAP } from "@/lib/workspace";
 import { userClient } from "./supabase";
 import { db } from "./db";
+import { clientTenants } from "@/lib/brain";
 import type {
   ArtifactBundle, ArtifactCard, ArtifactSet, ArtifactType, CiteDoc,
   Document, DocumentWithTags, Tenant,
@@ -137,7 +138,9 @@ export async function getClientStats(tenantId: string): Promise<import("@/lib/ty
 }
 
 export async function getPortfolioStats(): Promise<import("@/lib/types").PortfolioStats> {
-  const { data: tenants } = await db.from("tenant").select("id, name").order("name");
+  // Clients only: the Brain is not a client (Auto-Draft patch 3).
+  const { data: tenantRows } = await db.from("tenant").select("*").order("name");
+  const tenants = clientTenants(tenantRows as { id: string; name: string; is_brain?: boolean | null }[] | null);
   const { data: docs } = await db.from("document").select("tenant_id");  // tenant-safe: admin portfolio cross-tenant aggregate
   const { data: drafts } = await db.from("grant_draft").select("tenant_id, status, amount_cents");  // tenant-safe: admin portfolio cross-tenant aggregate
   const dr = (drafts ?? []) as { tenant_id: string; status: string; amount_cents: number | null }[];

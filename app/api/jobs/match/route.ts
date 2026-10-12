@@ -16,6 +16,7 @@ import { getTenant } from "@/lib/server/data";
 import { runMatch } from "@/lib/server/matching";
 import { createJob, updateJob, finishJob, failJob, recordEvent } from "@/lib/server/jobs";
 import { db } from "@/lib/server/db";
+import { BRAIN_REFUSAL, isBrain } from "@/lib/brain";
 
 // The plan's ceiling, not a wish. This Vercel team is on Hobby, which caps a
 // function at 60 seconds, so a larger number here is silently ignored rather
@@ -40,6 +41,8 @@ export async function POST(req: Request) {
 
   const tenantId = session.tenantId;
   const tenant = await getTenant(tenantId);
+  // The Brain is not a client and is never matched to funders (Auto-Draft patch 3).
+  if (isBrain(tenant)) return NextResponse.json({ error: BRAIN_REFUSAL }, { status: 400 });
   const orgName = tenant?.name ?? "the organization";
   const jobId = await createJob(tenantId, "match", `Searching for funding for ${orgName}`, session.user.id);
 

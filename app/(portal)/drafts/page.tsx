@@ -5,10 +5,12 @@ import { getTenant } from "@/lib/server/data";
 import { getDraftProgress, getDrafts as listDrafts } from "@/lib/server/drafts";
 import { standardAnswersProgress } from "@/lib/server/draft-start";
 import DraftsView from "@/components/DraftsView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function DraftsPage() {
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   await gateFeature(session.role, session.tenantId, "drafts");
   const isAdmin = session.role === "admin";
   const [tenant, drafts, progress, standard] = await Promise.all([

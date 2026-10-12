@@ -6,21 +6,25 @@ import { userClient } from "@/lib/server/supabase";
 import { getGardenState } from "@/lib/server/garden";
 import { getOverlayPendingCount } from "@/lib/server/ledger-overlay";
 import { clientCardsWaiting } from "@/lib/server/client-cards";
+import { tenantIsBrain } from "@/lib/server/brain";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/");
   const db = await userClient();
+  // The Brain grows no plant (Auto-Draft patch 3): its garden is never read, so
+  // no achievement is ever written for it.
+  const brain = await tenantIsBrain(session.tenantId);
   const [tenants, types, pending, workspaceVis, garden, overlayPending] = await Promise.all([
     getTenants(),
     getNavArtifactTypes(session.tenantId, session.role === "admin"),
     session.role === "admin" ? getPendingReviews() : Promise.resolve([]),
     getWorkspaceVisibility(session.tenantId),
-    getGardenState(session.tenantId),
+    brain ? Promise.resolve(null) : getGardenState(session.tenantId),
     session.role === "admin" ? getOverlayPendingCount() : Promise.resolve(0),
   ]);
   // The sidebar badge on Story Cards, only where the page is on.
-  const storyCardsWaiting = workspaceVis.card_review ? await clientCardsWaiting(session.tenantId).catch(() => 0) : 0;
+  const storyCardsWaiting = workspaceVis.card_review && !brain ? await clientCardsWaiting(session.tenantId).catch(() => 0) : 0;
   return (
     <Shell user={session.user} role={session.role} tenantId={session.tenantId}
       tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}>

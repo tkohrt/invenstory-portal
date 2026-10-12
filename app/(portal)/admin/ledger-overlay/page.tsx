@@ -3,6 +3,7 @@ import { getSession } from "@/lib/server/session";
 import { getOverlayQueue, getOverlayDecided, getLastScoutRun } from "@/lib/server/ledger-overlay";
 import { getTenants } from "@/lib/server/data";
 import AdminLedgerOverlayView from "@/components/AdminLedgerOverlayView";
+import { clientTenants } from "@/lib/brain";
 
 export default async function LedgerOverlayPage() {
   const session = await getSession();
@@ -16,5 +17,5 @@ export default async function LedgerOverlayPage() {
   // `base` stays empty until the Ledger service client lands (step 2 of the
   // build order: lib/server/ledger.ts + GET /funder|/grant). Corrections then
   // render as a real side-by-side diff instead of proposed values alone.
-  return <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={tenants} base={{}} />;
+  return <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={clientTenants(tenants)} base={{}} />;
 }

@@ -10,11 +10,13 @@ import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openItem, asks }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openItem, asks, brain = null }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
   contactName: string | null; docs: DocumentWithTags[]; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean; openItem?: string | null;
   /** Questions For Granted asked from the Storyboard (0058), shown under the heading. */
   asks?: ReactNode;
+  /** Set when this is the Brain (Auto-Draft patch 3): documents only, no client profile or readiness. */
+  brain?: { closedPage: boolean } | null;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -36,8 +38,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
       <div className="page-head">
         <div>
           <h2>{tenantName}</h2>
-          <p>The complete Inven(s)tory — {docs.length} documents across three layers.</p>
-          {!editingProfile && (
+          <p>{brain ? "For Granted\u2019s Brain" : "The complete Inven(s)tory"} — {docs.length} documents across three layers.</p>
+          {!brain && !editingProfile && (
             <p className="profile-line">
               {contactName && <span>{contactLabel(orgType)}: {contactName}</span>}
               {contactName && website && <span className="sep"> | </span>}
@@ -67,8 +69,19 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         </div>
         <div className="spacer" />
       </div>
-      {asks}
-      {readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} openKey={openItem ?? null} />}
+      {brain && (
+        <div className="brain-note" role="note">
+          {brain.closedPage && <p className="brain-closed">That page is about a client&rsquo;s funding, so it is closed in the Brain. Switch to a client to use it.</p>}
+          <p><strong>The Brain holds For Granted&rsquo;s own writing:</strong> the house style guide, exemplar answers, and
+            de-identified examples. Auto-draft learns voice and structure from it, never facts. Upload and document types work here as
+            for a client, and the analysis is run and read on Admin, Analysis. It has no readiness, plant or funder matches, it is left out of every client
+            list, and clients never see it.</p>
+          <p className="brain-warn">Only de-identified material belongs here: no client&rsquo;s name, people, figures or
+            other details unless they have agreed.</p>
+        </div>
+      )}
+      {!brain && asks}
+      {!brain && readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} openKey={openItem ?? null} />}
       <div className="layers-zone">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>

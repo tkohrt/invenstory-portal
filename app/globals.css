@@ -1562,3 +1562,14 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .win-tag{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#7a5a12;background:#fbf3dc;border:1px solid #ecd9a3;border-radius:6px;padding:1px 7px;white-space:nowrap}
 .oc-pick{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px}
 .oc-note{font-size:12px;color:var(--muted)}
+
+/* ---- The Brain (Auto-Draft patch 3, 12 Oct 2026) ---- */
+.sidebar-brain{margin:10px 0 6px;padding:10px 12px;border:1px solid #d9cdea;background:#f6f2fb;border-radius:10px;font-size:12.5px;line-height:1.45;color:var(--ink)}
+.sidebar-brain .sb-title{font-weight:700;color:#4b2f73;margin-bottom:3px}
+.sidebar-brain p{margin:0;color:var(--muted)}
+.nav-collapsed .sidebar-brain{display:none}
+.brain-note{margin:4px 0 16px;padding:12px 14px;border:1px solid #d9cdea;background:#f6f2fb;border-radius:10px;font-size:13.5px;line-height:1.5}
+.brain-note p{margin:0 0 6px}
+.brain-note p:last-child{margin-bottom:0}
+.brain-closed{font-weight:600;color:#4b2f73}
+.brain-warn{color:#7a4a12}

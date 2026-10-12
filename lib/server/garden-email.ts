@@ -5,6 +5,7 @@ import "server-only";
 import { db } from "./db";
 import { getGardenState } from "./garden";
 import type { GardenState } from "@/lib/types";
+import { clientTenants } from "@/lib/brain";
 
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://portal.forgranted.com";
@@ -81,9 +82,9 @@ async function send(to: string[], subject: string, html: string): Promise<boolea
 // Real client sending (monthly digest): HARD-GATED. Not scheduled anywhere yet.
 export async function sendGrowthReports(): Promise<{ sent: number; skipped: string }> {
   if (!GROWTH_EMAILS_ENABLED) return { sent: 0, skipped: "GROWTH_EMAILS_ENABLED is not true — no client emails sent" };
-  const { data: tenants } = await db.from("tenant").select("id, name");
+  const { data: rows } = await db.from("tenant").select("*");
   let sent = 0;
-  for (const t of tenants ?? []) {
+  for (const t of clientTenants(rows as { id: string; name: string; is_brain?: boolean | null }[] | null)) {
     const { data: contact } = await db.from("app_user").select("email").eq("tenant_id", t.id).eq("role", "client").order("created_at").limit(1).maybeSingle();
     if (!contact?.email) continue;
     const g = await getGardenState(t.id);

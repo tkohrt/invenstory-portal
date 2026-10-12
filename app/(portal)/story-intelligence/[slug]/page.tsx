@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { getArtifactBundles, getDocumentsWithTags, getTenant } from "@/lib/server/data";
 import SIView from "@/components/SIView";
+import { closedInBrain } from "@/lib/server/brain";
 
 export default async function StoryIntelligencePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await getSession();
   if (!session) redirect("/");
+  await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
   const [tenant, bundles, docs] = await Promise.all([
     getTenant(session.tenantId),
     getArtifactBundles(session.tenantId),
