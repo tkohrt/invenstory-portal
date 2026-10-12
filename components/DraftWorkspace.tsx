@@ -165,8 +165,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       const el = splitRef.current;
       if (!el) return;
       if (window.innerWidth <= 860) { setSplitHeight(null); return; }
-      const top = el.getBoundingClientRect().top + (document.querySelector(".main")?.scrollTop ?? 0);
-      setSplitHeight(Math.max(420, window.innerHeight - top - 16));
+      const main = document.querySelector<HTMLElement>(".main");
+      const top = el.getBoundingClientRect().top + (main?.scrollTop ?? 0);
+      // Leave exactly the page's own bottom padding, so nothing is left to scroll.
+      const pad = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 16;
+      setSplitHeight(Math.max(420, window.innerHeight - top - pad));
     };
     fit();
     window.addEventListener("resize", fit);
@@ -1126,7 +1129,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               </span>
               <span className="spacer" />
               {!readOnly && (
-                <InfoTip label="Keyboard shortcuts">
+                <InfoTip label="Keyboard shortcuts" side="up" align="right">
                   <strong>N</strong> adds new text after the piece you are on, or at the end. The <strong>arrow keys</strong> move
                   between the pieces of the answer, and <strong>Enter</strong> opens one. <strong>Ctrl+Z</strong> (⌘Z on a Mac) undoes
                   the last change to this answer, as many times as you like; while you type, it undoes typing instead.

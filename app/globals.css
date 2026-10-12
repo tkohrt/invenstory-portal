@@ -1137,9 +1137,15 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .info-tip:hover .info-tip-i,.info-tip.open .info-tip-i,.info-tip-i:focus-visible{border-color:var(--ink);color:var(--ink)}
 .info-tip-pop{position:absolute;z-index:40;top:26px;width:min(400px,80vw);background:var(--panel);border:1px solid var(--line);border-radius:10px;
   padding:10px 12px;font-size:13px;line-height:1.5;color:var(--ink);box-shadow:var(--shadow);font-weight:400;text-transform:none;letter-spacing:0;
-  opacity:0;visibility:hidden;transition:opacity .12s;pointer-events:none}
+  display:none;opacity:0;transition:opacity .12s,display .12s allow-discrete}
 .info-tip-left{left:-6px} .info-tip-right{right:-6px}
-.info-tip:hover .info-tip-pop,.info-tip:focus-within .info-tip-pop,.info-tip.open .info-tip-pop{opacity:1;visibility:visible;pointer-events:auto}
+/* Opens upward, for a tip at the bottom of the window (the Storyboard's action bar). */
+.info-tip-up{top:auto;bottom:26px}
+/* Hidden with display:none, not visibility:hidden: a hidden box still takes up
+   room, and one hanging below the Storyboard's action bar made the page scroll
+   (12 Oct 2026). @starting-style keeps the fade in. */
+.info-tip:hover .info-tip-pop,.info-tip:focus-within .info-tip-pop,.info-tip.open .info-tip-pop{display:block;opacity:1}
+@starting-style{.info-tip:hover .info-tip-pop,.info-tip:focus-within .info-tip-pop,.info-tip.open .info-tip-pop{opacity:0}}
 /* The portal's Back button, at the right of the top bar. */
 .back-btn{white-space:nowrap;margin-left:auto}
 .ws-split{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;min-height:0}

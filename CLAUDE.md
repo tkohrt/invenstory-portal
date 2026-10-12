@@ -45,8 +45,8 @@ Primary engine = **document-level extraction** (`lib/server/doc-extract.ts`):
 
 ## The Garden (plant) — tie-in
 - `lib/server/garden.ts` `getGardenState`. **Size** is readiness+eligibility-weighted and ratcheted (never shrinks, via persisted `size_2/size_3` achievements). **Health "thriving"** requires freshness AND substance (Essentials covered / readiness ≥ bar) AND a complete eligibility profile — gated on having been analyzed. Tunables in `GARDEN_TUNING`.
-- **The page never scrolls as a whole** (7 Oct 2026): `.shell` is exactly the window (`100dvh`, `overflow:hidden`), and `.sidebar` and `.main` each scroll on their own. On wide screens the ☰ button folds the sidebar to a rail of icons (`nav-collapsed`, remembered per browser in `localStorage` through `useSyncExternalStore`; on phones it still opens the drawer). The Storyboard sizes its split to the window and refits when anything above it changes height, so there is no space to scroll past it.
-- **Back, ⓘ and layer colours** (8 Oct 2026): one portal-wide Back button in the top bar (`components/BackButton.tsx`; returns to the previous in-portal page from a per-tab trail in `sessionStorage`, else one level up via `parentOf`, hidden on `/invenstory`); explanations sit behind a hover ⓘ (`components/InfoTip.tsx`, also opens on focus and tap); layer colours are `--l1` gold, `--l2` purple, `--l3` light green (Option A), set once in `globals.css` and used everywhere.
+- **The page never scrolls as a whole** (7 Oct 2026): `.shell` is exactly the window (`100dvh`, `overflow:hidden`), and `.sidebar` and `.main` each scroll on their own. On wide screens the ☰ button folds the sidebar to a rail of icons (`nav-collapsed`, remembered per browser in `localStorage` through `useSyncExternalStore`; on phones it still opens the drawer). The Storyboard sizes its split to the window, leaving exactly `.main`'s bottom padding (it once left 16px against a 24px padding, 8px to scroll), and refits when anything above it changes height, so there is no space to scroll past it. Anything positioned out of the action bar must open upward or it brings the scroll back.
+- **Back, ⓘ and layer colours** (8 Oct 2026): one portal-wide Back button in the top bar (`components/BackButton.tsx`; returns to the previous in-portal page from a per-tab trail in `sessionStorage`, else one level up via `parentOf`, hidden on `/invenstory`); explanations sit behind a hover ⓘ (`components/InfoTip.tsx`, also opens on focus and tap; its box is hidden with `display:none`, never `visibility:hidden`, because a hidden box still takes room and one hanging below the Storyboard's action bar made the page scroll, fixed 12 Oct 2026; `side="up"` opens it above the ⓘ for anything at the bottom of the window, as the action bar's keyboard-shortcuts tip does); layer colours are `--l1` gold, `--l2` purple, `--l3` light green (Option A), set once in `globals.css` and used everywhere.
 - The plant lives in the **left sidebar** (`components/Shell.tsx`) linking to `/plant` (`components/GardenPanel.tsx`). Retargeted growth prompts (`garden.prompt`) deep-link to `/invenstory?item=<key>` which opens that Readiness item's detail modal.
 
 ## Ingestion
@@ -92,7 +92,11 @@ Primary engine = **document-level extraction** (`lib/server/doc-extract.ts`):
 ## Handing a patch to Shane
 
 Shane applies every patch by hand in `~/Desktop/fg-portal-push` and pushes from
-there. The agent never pushes to his repo: "let's keep things manual for now, I
+there. **Patches are read from `~/Downloads`** (12 Oct 2026, Shane: "draw from
+downloads always"): that is where clicking the file card saves it, so the block
+below points there and nobody has to move the file. Give every patch a name
+never used before, or the browser saves it as `<name> (1).patch` and the check
+reads the old one. The agent never pushes to his repo: "let's keep things manual for now, I
 like our review loop."
 
 **The preflight must GATE, not merely print.** The first version of this rule
@@ -104,7 +108,7 @@ anybody could read it. That is not a check, it is a caption.
 cd ~/Desktop/fg-portal-push
 git fetch -q origin main
 git status --short && git log --oneline -1
-git apply --check ~/Desktop/<name>.patch && git am ~/Desktop/<name>.patch && git push origin main
+git apply --check ~/Downloads/<name>.patch && git am ~/Downloads/<name>.patch && git push origin main
 ```
 
 `git apply --check` is a dry run. If the patch cannot apply, for any reason
