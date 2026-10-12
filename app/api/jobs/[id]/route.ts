@@ -17,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Watching a server-carried run is enough to keep it going: a page polling
   // its own analysis (a client's Analyze page has no other poll) restarts the
   // chain if Vercel stopped it (see reviveStalledChains). Cheap when nothing stalled.
-  if (job.status === "running" && (job.kind === "analysis" || job.kind === "cards")) {
+  if (job.status === "running" && (job.kind === "analysis" || job.kind === "cards" || job.kind === "autodraft")) {
     const origin = new URL(req.url).origin;
     const tenantId = session.tenantId;
     afterResponse(async () => { await reviveStalledChains(origin, { tenantId }).catch(() => undefined); });
@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   //
   // And for reading a funder's application into a card-mode draft, which is the
   // drafter itself (same decision).
-  if ((job.kind === "search_profile" || job.kind === "cards" || job.kind === "parse_application")
+  if ((job.kind === "search_profile" || job.kind === "cards" || job.kind === "parse_application" || job.kind === "autodraft")
       && session.role !== "admin") {
     return NextResponse.json({ error: "no such job" }, { status: 404 });
   }

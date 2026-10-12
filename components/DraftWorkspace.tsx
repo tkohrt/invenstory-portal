@@ -66,6 +66,9 @@ import type { Workspace, WsBlock, WsCard, WsClearance, WsSection, WsStandard } f
 import type { GrantDraft } from "@/lib/types";
 import GrantContextBox from "./GrantContextBox";
 import type { ContextItem } from "@/lib/server/draft-context";
+import AutoDraftDialog from "./AutoDraftDialog";
+import { autodraftQuestionAction } from "@/lib/server/autodraft-actions";
+import { stageBlocks } from "@/lib/autodraft";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 type Stage = "arrange" | "weave" | "polish";
@@ -110,6 +113,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [panelOpen, setPanelOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  // Auto-draft (Auto-Draft patch 6): the confirm window, and a whole-draft run in progress.
+  const [autoAsk, setAutoAsk] = useState<{ scope: "draft" | "question" } | null>(null);
+  const [autoRun, setAutoRun] = useState<{ jobId: string; done: number; total: number } | null>(null);
+  const [autoDraftedHere, setAutoDraftedHere] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Reviewing cards before they are used (decided 2 October 2026). `place` puts
   // each card into the answer once verified; `review` only verifies.
@@ -304,6 +311,63 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     return run(work, apply);
   };
 
+  // ---- Auto-draft (Auto-Draft patch 6) ---------------------------------------
+  // A whole-draft run is carried by the server; the page follows it, and picks
+  // it up again if the page was closed and reopened while it ran.
+  useEffect(() => {
+    if (readOnly) return;
+    let live = true;
+    fetch("/api/jobs/active", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(b => {
+      const a = b?.autodraft?.running as { jobId: string; draftId: string; done: number; total: number } | undefined;
+      if (live && a && a.draftId === draft.id) setAutoRun({ jobId: a.jobId, done: a.done, total: a.total });
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [draft.id, readOnly]);
+  useEffect(() => {
+    if (!autoRun) return;
+    let live = true;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${autoRun.jobId}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const { job } = await res.json() as { job: { status: string; done: number; total: number; detail: string | null; error: string | null } };
+        if (!live) return;
+        if (job.status === "running") { setAutoRun(a => a && { ...a, done: job.done, total: job.total }); return; }
+        setAutoRun(null); setAutoDraftedHere(true);
+        router.refresh();
+        if (job.status === "done") say(job.detail ?? "Auto-draft finished."); else setError(job.error ?? "Auto-draft stopped. Everything placed so far is kept.");
+      } catch { /* the next tick tries again */ }
+    }, 4000);
+    return () => { live = false; clearInterval(timer); };
+  }, [autoRun, router, say]);
+
+  const startAutoDraft = async () => {
+    setAutoAsk(null); setError(null);
+    try {
+      const res = await fetch("/api/jobs/autodraft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ draftId: draft.id }) });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok || !r.jobId) { setError(r.error ?? "Auto-draft could not start. Nothing was changed."); return; }
+      setAutoRun({ jobId: r.jobId, done: 0, total: r.total ?? 0 });
+      say("Auto-draft started. A version named \u201cBefore auto-draft\u201d was saved first. Questions fill in as it goes; the page can be closed.");
+    } catch { setError("Could not reach the portal. Check the connection and try again."); }
+  };
+  const stopAutoDraft = async () => {
+    await fetch("/api/jobs/autodraft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ draftId: draft.id, stop: true }) }).catch(() => null);
+  };
+  const autoDraftQuestion = (sectionId: string) => {
+    setAutoAsk(null);
+    void change(sectionId, "the auto-draft", () => autodraftQuestionAction(draft.id, sectionId), r => {
+      if (!r.ok) { setError(r.error); return; }
+      putBlocks(sectionId)(r.blocks);
+      setAutoDraftedHere(true);
+      const o = r.outcome;
+      say(o.placed
+        ? `Auto-drafted: ${o.placed} ${o.start === "standard_answer" ? "piece" : "card"}${o.placed === 1 ? "" : "s"} placed${o.start === "standard_answer" ? " from the approved Standard Answer" : ""}.${o.gaps ? ` ${o.gaps} kind${o.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for.` : ""}${o.fallback ? " The model's reply could not be used, so the code's own pick was placed." : ""} Undo puts the answer back.`
+        : "Auto-draft found nothing more to add to this answer from the Story Cards.");
+      router.refresh();
+    });
+  };
+
   // ---- Ranking --------------------------------------------------------------
   const usedWhere = useMemo(() => {
     const m = new Map<string, number[]>();
@@ -330,7 +394,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const noSensors = useSensors();
-  const locked = pending > 0 || readOnly;
+  // While a whole-draft auto-draft run is filling this draft, editing waits for it.
+  const locked = pending > 0 || readOnly || !!autoRun;
 
   /** The card as the gate sees it now, including what was decided on this page since it loaded. */
   const gateCard = useCallback((id: string): GateCard | null => {
@@ -603,6 +668,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const allBlocks = sections.flatMap(s => blocksBy[s.id] ?? []);
   const draftBlockers = finishBlockers(sections, allBlocks, gateCard);
   const sectionBlockers = draftBlockers.filter(b => b.sectionId === section.id);
+  // Begin Weaving and Begin Polishing: once the draft has been auto-drafted, only a
+  // retired card stops them (Auto-Draft patch 6, spec section 5). The finish line
+  // still uses every blocker.
+  const autoDrafted = !!draft.auto_drafted_at || autoDraftedHere;
+  const stageBlockers = sectionBlockers.filter(b => stageBlocks(b.issue, autoDrafted));
 
   // ---- What each question still needs, and the progress strip -------------
   const gapCards = ws.cards.map(c => ({ id: c.id, kind: c.kind, status: statusNow[c.id] ?? c.status, placeable: placeable(c) }));
@@ -685,7 +755,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
    * about the AI allowance, unless the person turned it off.
    */
   const requestWeave = () => {
-    if (sectionBlockers.length) { setBlockers({ scope: "section", then: "weave" }); return; }
+    if (stageBlockers.length) { setBlockers({ scope: "section", then: "weave" }); return; }
     if (weaveBlockedWhy) { say(weaveBlockedWhy); return; }
     setWeaveAsk({ again: hasBridges });
   };
@@ -739,7 +809,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   /** Begin Polishing (or Polish again): the review gate, then the reminder only when shorter wording will be drafted. */
   const requestPolish = () => {
     if (!blocks.length) { say("Place cards in Arrange first."); return; }
-    if (sectionBlockers.length) { setBlockers({ scope: "section", then: null }); say("Review the cards in this answer first; then begin polishing."); return; }
+    if (stageBlockers.length) { setBlockers({ scope: "section", then: null }); say(autoDrafted ? "Remove the retired card from this answer first; then begin polishing." : "Review the cards in this answer first; then begin polishing."); return; }
     if (overBy > 0) setPolishAsk({ again: !!polishRun }); else doPolish(false);
   };
   const doPolish = (withAi: boolean) => {
@@ -876,7 +946,19 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   disabled={pending > 0}
                   onClick={() => { if (stage !== "polish") switchStage("polish"); }}
                   title="Check length, every number's source, and repetition before the answer goes out. Nothing runs until you press Begin Polishing.">Polish</button>
+                {stage === "arrange" && !readOnly && (
+                  <button type="button" className="btn ad-btn ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "draft" })}
+                    title="Fill every question that is not done with Story Cards, the way this client builds answers. A version is saved first; nothing leaves until a person has dealt with every flag.">
+                    ✦ Auto-draft{standard ? " Standard Answers" : " the draft"}</button>
+                )}
               </div>
+              {autoRun && (
+                <div className="ad-running" role="status" aria-live="polite">
+                  <span className="jp-spin" aria-hidden="true" />
+                  <span><strong>Auto-drafting.</strong> {autoRun.total ? `${Math.min(autoRun.done, autoRun.total)} of ${autoRun.total} questions done.` : "Starting."} Editing waits until it finishes; it keeps going if you leave this page.</span>
+                  <button type="button" className="btn ghost ap-mini" onClick={() => void stopAutoDraft()}>Stop</button>
+                </div>
+              )}
 
               <ProgressStrip p={progress} started={startedCount}
                 onReview={() => setBlockers({ scope: "draft", then: null })}
@@ -1113,6 +1195,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                       setArrangeReview(r.needsReview.length ? r.needsReview : null);
                     })}>Arrange for me</button>
                 )}
+                {stage === "arrange" && !readOnly && (
+                  <button type="button" className="btn ad-btn-q ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "question" })}
+                    title="Fill this question with Story Cards: from its approved Standard Answer if it has one and is empty, otherwise chosen and ordered for this question. Cards already here stay.">
+                    ✦ Auto-draft this question</button>
+                )}
                 {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked}
                   title="Add text at the end. Or click between any two pieces of the answer to add it there."
                   onClick={() => insertAt(blocks.length)}>＋ Write your own text</button>}
@@ -1160,6 +1247,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             </div>
           </div>
         </div>
+        {autoAsk && (
+          <AutoDraftDialog draftId={draft.id} sectionId={autoAsk.scope === "question" ? section.id : null} questionNumber={idx + 1}
+            onCancel={() => setAutoAsk(null)}
+            onAddContext={() => { setAutoAsk(null); setContextOpen(true); }}
+            onConfirm={() => (autoAsk.scope === "question" ? autoDraftQuestion(section.id) : void startAutoDraft())} />
+        )}
         {contextOpen && (
           <div className="ws-modal-back" role="presentation" onClick={() => setContextOpen(false)}>
             <aside className="ws-versions gc-drawer" role="dialog" aria-modal="true" aria-label="Grant context" onClick={e => e.stopPropagation()}>

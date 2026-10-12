@@ -35,6 +35,8 @@ import { writeCardEdit } from "./card-edit";
 import { lineMicros, shareUsed, levelOf, MICROS_PER_CENT } from "@/lib/allowance";
 import { planRestore, restoreProblem, type StoredBlock, type UndoBlock } from "@/lib/draft-undo";
 import { figureRefusal } from "./polish";
+import { isAutoDrafted } from "./autodraft";
+import { stageBlocks } from "@/lib/autodraft";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -875,7 +877,7 @@ export async function fillFromStandardsAction(draftId: string): Promise<{ filled
  * card verified, decided and live, and none in wording the library has since
  * replaced. Returns the number of cards in the way.
  */
-async function weaveBlockers(tenantId: string, rows: Record<string, unknown>[]): Promise<number> {
+async function weaveBlockers(tenantId: string, rows: Record<string, unknown>[], autoDrafted = false): Promise<number> {
   const cards = rows.filter(r => r.kind === "card" && r.card_id);
   if (!cards.length) return 0;
   const issues = await cardIssues(tenantId, cards.map(r => r.card_id as string));
@@ -886,7 +888,9 @@ async function weaveBlockers(tenantId: string, rows: Record<string, unknown>[]):
   for (const r of cards) {
     const id = r.card_id as string;
     const stale = !r.edited && r.card_version != null && (now.get(id) ?? 0) > (r.card_version as number);
-    if (issues.has(id) || stale) n += 1;
+    // Auto-Draft patch 6: once a draft is auto-drafted, only a retired card stops the weave.
+    const issue = issues.get(id) ?? (stale ? "reworded" : null);
+    if (stageBlocks(issue, autoDrafted)) n += 1;
   }
   return n;
 }
@@ -980,7 +984,7 @@ export async function weaveSectionAction(sectionId: string): Promise<WeaveResult
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : "That question could not be read." }; }
 
   let rows = await rawBlocks(s.tenantId, sectionId);
-  const blocked = await weaveBlockers(s.tenantId, rows);
+  const blocked = await weaveBlockers(s.tenantId, rows, await isAutoDrafted(s.tenantId, section.draft_id));
   if (blocked) {
     return { ok: false, blocked: true, error: `${blocked} card${blocked === 1 ? " in this answer needs" : "s in this answer need"} review before it can be woven.` };
   }

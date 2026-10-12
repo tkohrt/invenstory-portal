@@ -166,6 +166,8 @@ export interface GrantDraft {
   outcome_note: string | null; created_by: string;
   created_at: string; updated_at: string;
   mode?: DraftMode;
+  /** 0064: when an auto-draft run first changed this draft (Auto-Draft patch 6). */
+  auto_drafted_at?: string | null;
   /** 0042: one built-in Standard Answers draft per client (spec 16.1). */
   purpose?: "application" | "standard_answers";
   source_kind?: "url" | "pdf" | "docx" | "paste" | "match" | null;

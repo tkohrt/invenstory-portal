@@ -17,6 +17,9 @@ import { roughly } from "@/lib/job";
 
 interface Running { jobId: string; done: number; total: number; startedAt: string; etaMs: number | null; resuming: boolean }
 interface Finished { jobId: string; status: string; finishedAt: string; created: number; cards: number; sensitive: number; error: string | null }
+/** An auto-draft run (Auto-Draft patch 6), For Granted only. */
+interface AutoRun { jobId: string; draftId: string; title: string; done: number; total: number; resuming: boolean }
+interface AutoDone { jobId: string; draftId: string; title: string; status: string; text: string | null }
 
 const DISMISS = (id: string) => `build-notice-dismissed:${id}`;
 
@@ -25,15 +28,17 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
   const [running, setRunning] = useState<Running | null>(null);
   const [finished, setFinished] = useState<Finished | null>(null);
   const [hidden, setHidden] = useState<string | null>(null);
+  const [auto, setAuto] = useState<{ running: AutoRun | null; finished: AutoDone | null } | null>(null);
   const admin = role === "admin";
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/jobs/active", { cache: "no-store" });
       if (!res.ok) return null;
-      const body = await res.json() as { running: Running | null; finished: Finished | null; analysis?: boolean };
+      const body = await res.json() as { running: Running | null; finished: Finished | null; analysis?: boolean; autodraft?: { running: AutoRun | null; finished: AutoDone | null } | null };
       setRunning(body.running);
       setFinished(body.finished);
+      setAuto(body.autodraft ?? null);
       return body;
     } catch { return null; }
   }, []);
@@ -47,7 +52,7 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
       if (!live) return;
       // Quickly while anything is building: each poll also restarts a build
       // whose server-carried chain has stopped (lib/server/job-chain.ts).
-      timer = setTimeout(tick, body?.running || body?.analysis ? 8_000 : 60_000);
+      timer = setTimeout(tick, body?.running || body?.analysis || body?.autodraft?.running ? 8_000 : 60_000);
     };
     void tick();
     return () => { live = false; if (timer) clearTimeout(timer); };
@@ -63,6 +68,28 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
   };
 
   if (!cardsVisible) return null;
+  // An auto-draft run first: it is For Granted's, and the draft it is filling may be open.
+  const autoNotice = auto?.running ? (
+    <div className="bn bn-run" role="status" aria-live="polite">
+      <span className="jp-spin" aria-hidden="true" />
+      <span>
+        <strong>Auto-drafting {auto.running.title}.</strong>{" "}
+        {auto.running.total > 0 && `${Math.min(auto.running.done, auto.running.total)} of ${auto.running.total} questions done. `}
+        {auto.running.resuming ? "It paused and is being picked up again." : "It keeps going if you leave this page."}
+      </span>
+      {!path.startsWith(`/drafts/${auto.running.draftId}`) && <Link href={`/drafts/${auto.running.draftId}`} className="bn-link">Open the draft</Link>}
+    </div>
+  ) : auto?.finished && !dismissed(auto.finished.jobId) ? (
+    <div className={`bn ${auto.finished.status === "done" ? "bn-done" : "bn-fail"}`} role="status">
+      <span>
+        <strong>{auto.finished.status === "done" ? "Auto-draft finished" : "Auto-draft stopped"}.</strong>{" "}
+        {auto.finished.text ?? "Everything placed so far is kept."}
+      </span>
+      {!path.startsWith(`/drafts/${auto.finished.draftId}`) && <Link href={`/drafts/${auto.finished.draftId}`} className="bn-link">Open the draft</Link>}
+      <button type="button" className="bn-x" onClick={() => dismiss(auto.finished!.jobId)} aria-label="Dismiss">×</button>
+    </div>
+  ) : null;
+  if (autoNotice) return autoNotice;
   // The Card Library page shows the full log already.
   if (admin && path.startsWith("/admin/card-library")) return null;
   const href = admin ? "/admin/card-library" : "/story-cards";

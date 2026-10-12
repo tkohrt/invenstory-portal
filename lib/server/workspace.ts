@@ -12,6 +12,7 @@ import "server-only";
 // lib/story-card-rank.ts, so placing a card re-ranks the panel at once and the
 // position logged with a `shown` event is the position the writer saw.
 import { userClient } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { RankCard } from "@/lib/story-card-rank";
 import type { GapAsk } from "@/lib/draft-gaps";
@@ -101,8 +102,9 @@ type Raw = Record<string, unknown>;
  * rewrites an answer someone already arranged. The page offers the newer wording
  * instead.
  */
-export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBlock[]> {
-  const s = await userClient();
+export async function resolveBlocks(tenantId: string, rows: Raw[], via?: SupabaseClient): Promise<WsBlock[]> {
+  // `via`: the service client, for a server-carried run with no session (auto-draft). Still scoped by tenant below.
+  const s = via ?? await userClient();
   const want = rows.filter(r => r.kind === "card" && !r.edited && r.card_id);
   const texts = new Map<string, string>();
   if (want.length) {
@@ -131,8 +133,9 @@ export async function resolveBlocks(tenantId: string, rows: Raw[]): Promise<WsBl
 export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before, proposed";
 
 /** The client's live cards, with what ranking and placement need. */
-export async function loadCards(tenantId: string): Promise<WsCard[]> {
-  const s = await userClient();
+export async function loadCards(tenantId: string, via?: SupabaseClient): Promise<WsCard[]> {
+  // `via`: the service client, for a server-carried run with no session (auto-draft). Still scoped by tenant below.
+  const s = via ?? await userClient();
   const { data: cardRows, error: cErr } = await s.from("story_card")
       .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, created_from, source_line, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
       .eq("tenant_id", tenantId).neq("status", "retired");

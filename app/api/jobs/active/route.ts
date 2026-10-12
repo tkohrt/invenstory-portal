@@ -17,6 +17,9 @@ import { getFeatureVisible } from "@/lib/server/data";
 import { estimateRemainingMs, STALL_AFTER_MS } from "@/lib/job";
 import { analysisRunning, reviveStalledChains } from "@/lib/server/job-chain";
 
+interface AutoRun { jobId: string; draftId: string; title: string; done: number; total: number; resuming: boolean }
+interface AutoDone { jobId: string; draftId: string; title: string; status: string; text: string | null }
+
 /** Quiet this long, and the hand-off is presumed lost: longer than one stage plus its hand-off. */
 const REVIVE_AFTER_MS = 100_000;
 
@@ -74,5 +77,22 @@ export async function GET(req: Request) {
     error: session.role === "admin" ? last.error : null,
   } : null;
 
-  return NextResponse.json({ running, finished, analysis });
+  // Auto-draft runs (Auto-Draft patch 6), For Granted only: the newest for the client being viewed.
+  let autodraft: { running: AutoRun | null; finished: AutoDone | null } | null = null;
+  if (admin) {
+    const { data: ad } = await db.from("job")
+      .select("id, status, done, total, updated_at, finished_at, result, detail, error")
+      .eq("tenant_id", tenantId).eq("kind", "autodraft")
+      .or(`status.eq.running,finished_at.gte.${since}`)
+      .order("started_at", { ascending: false }).limit(1).maybeSingle();
+    const a = ad as { id: string; status: string; done: number; total: number; updated_at: string; finished_at: string | null; result: { draftId?: string; title?: string } | null; detail: string | null; error: string | null } | null;
+    if (a?.result?.draftId) {
+      const base = { jobId: a.id, draftId: a.result.draftId, title: a.result.title ?? "the draft" };
+      autodraft = a.status === "running" && now - new Date(a.updated_at).getTime() < STALL_AFTER_MS
+        ? { running: { ...base, done: a.done, total: a.total, resuming: now - new Date(a.updated_at).getTime() > REVIVE_AFTER_MS }, finished: null }
+        : a.status !== "running" ? { running: null, finished: { ...base, status: a.status, text: a.status === "done" ? a.detail : a.error } } : null;
+    }
+  }
+
+  return NextResponse.json({ running, finished, analysis, autodraft });
 }

@@ -126,6 +126,19 @@ export async function saveVersionAction(draftId: string, name?: string | null) {
   await snapshot(s.tenantId, s.user.id, d, "manual", name ?? null);
 }
 
+/**
+ * "Before auto-draft" (Auto-Draft patch 6, spec section 4): saved before a run
+ * changes anything, for the whole draft or one question. Always saved, even if
+ * nothing changed since the last version, so a person looking for the version
+ * by its name finds it.
+ */
+export async function saveBeforeAutoDraftAction(draftId: string) {
+  const s = await requireAdmin();
+  const d = await loadDraft(s.tenantId, draftId);
+  if (["submitted", "won", "lost"].includes(d.status)) throw new Error("A submitted application is locked.");
+  await snapshot(s.tenantId, s.user.id, d, "manual", "Before auto-draft");
+}
+
 /** The ten-minute checkpoint. Skipped when nothing has changed since the last version. */
 export async function autosaveVersionAction(draftId: string): Promise<boolean> {
   const s = await requireAdmin();

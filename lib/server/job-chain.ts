@@ -27,7 +27,7 @@ function secret(): string {
  * Which chain a signature is for. A Card Library signature cannot continue an
  * analysis, or the reverse: the scope is part of what is signed.
  */
-export type ChainScope = "card-chain" | "analysis-chain";
+export type ChainScope = "card-chain" | "analysis-chain" | "autodraft-chain";
 
 export function signChain(tenantId: string, jobId: string, scope: ChainScope = "card-chain"): string {
   return createHmac("sha256", secret()).update(`${scope}:v1:${tenantId}:${jobId}`).digest("hex");
@@ -86,6 +86,24 @@ export async function scheduleAnalysisPass(origin: string, tenantId: string, job
   }
 }
 
+/** The same, for a whole-draft auto-draft run (lib/server/autodraft-run.ts). */
+export async function scheduleAutodraftPass(origin: string, tenantId: string, jobId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${origin}/api/jobs/autodraft/continue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantId, jobId, sig: signChain(tenantId, jobId, "autodraft-chain") }),
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+    if (!res.ok) console.error(`[chain] auto-draft continuation refused: ${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error("[chain] could not schedule the next auto-draft stage", e);
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Picking a chain back up.
 // ---------------------------------------------------------------------------
@@ -110,7 +128,7 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     let q = db.from("job")  // tenant-safe: scoped to one tenant below, or every tenant only for an admin session (the caller decides)
       .select("id, tenant_id, kind, updated_at, claimed_at, chain_passes")
-      .in("kind", ["cards", "analysis"]).eq("status", "running").gte("started_at", since)
+      .in("kind", ["cards", "analysis", "autodraft"]).eq("status", "running").gte("started_at", since)
       .order("started_at", { ascending: false });
     if ("tenantId" in scope) q = q.eq("tenant_id", scope.tenantId);
     const { data, error } = await q.limit(20);
@@ -133,7 +151,9 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
       if (!(won ?? []).length) continue;
       const ok = j.kind === "analysis"
         ? await scheduleAnalysisPass(origin, j.tenant_id, j.id)
-        : await scheduleCardPass(origin, j.tenant_id, j.id);
+        : j.kind === "autodraft"
+          ? await scheduleAutodraftPass(origin, j.tenant_id, j.id)
+          : await scheduleCardPass(origin, j.tenant_id, j.id);
       if (ok) revived += 1;
     }
     return revived;
