@@ -39,6 +39,8 @@ const TENANT_SCOPED = new Set([
   "client_ask",
   // Polish: figures cleared by a person (0059).
   "figure_clearance",
+  // Auto-Draft (0062).
+  "voice_profile",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

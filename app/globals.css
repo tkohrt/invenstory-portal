@@ -1573,3 +1573,24 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .brain-note p:last-child{margin-bottom:0}
 .brain-closed{font-weight:600;color:#4b2f73}
 .brain-warn{color:#7a4a12}
+
+/* ---- Voice profile, plumbing (Auto-Draft patch 4, 12 Oct 2026) ---- */
+.vp{max-width:860px}
+.vp-intro{margin:4px 0 12px;line-height:1.5}
+.vp-min{padding:8px 12px;border-radius:9px;font-size:13px;margin-bottom:12px}
+.vp-min.vp-ok{background:#eef5ef;border:1px solid #cfe2d3;color:#1f4d2e}
+.vp-min.vp-no{background:#fff6dc;border:1px solid #ecd9a3;color:#7a6320}
+.vp-changed{padding:10px 12px;border-radius:9px;background:#f6f2fb;border:1px solid #d9cdea;font-size:13px;margin-bottom:12px}
+.vp-changed ul{margin:6px 0 6px 18px;padding:0}
+.vp-label{font-weight:600;display:block;margin:6px 0 4px}
+.vp-text{width:100%;font-size:13.5px;line-height:1.5;font-family:inherit}
+.vp-acts{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
+.vp-acts .btn{margin-left:auto}
+.vp-saved{color:#1f4d2e;font-weight:600;font-size:13px}
+.vp-err{margin:0}
+.vp-h{margin-top:22px}
+.vp-sources{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px}
+.vp-sources li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}
+.vp-kind{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;min-width:170px}
+.vp-title{flex:1;min-width:180px}
+.vp-weight{font-size:12px}

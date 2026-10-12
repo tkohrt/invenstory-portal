@@ -12,8 +12,10 @@ import { monthLabel, STALL } from "@/lib/activity";
 import { LIMITS } from "@/lib/usage-limits";
 import { grantChatAction, grantAllowanceAction, setAllowanceAction, dismissUsageRequestAction } from "@/lib/server/usage-actions";
 import { ALLOWANCE, usdFromCents } from "@/lib/allowance";
+import VoiceProfilePanel from "./VoiceProfilePanel";
+import type { VoiceProfileView } from "@/lib/server/voice-profile";
 
-type Tab = "overview" | "usage" | "documents" | "grants" | "people";
+type Tab = "overview" | "usage" | "documents" | "grants" | "people" | "voice";
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 const money = (cents: number | null) => (cents == null ? "" : `$${Math.round(cents / 100).toLocaleString()}`);
 const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "");
@@ -49,7 +51,7 @@ function Stat({ label, value, sub, warn }: { label: string; value: string; sub?:
   );
 }
 
-export default function ClientActivityView({ data }: { data: ClientActivity }) {
+export default function ClientActivityView({ data, voice = null }: { data: ClientActivity; voice?: VoiceProfileView | null }) {
   const [tab, setTab] = useState<Tab>("overview");
   const d = data;
   const apps = d.drafts.filter(x => x.purpose !== "standard_answers");
@@ -73,7 +75,8 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
       </div>
 
       <div className="cl-filters" role="tablist">
-        {([["overview", "Overview"], ["usage", "Usage and limits"], ["documents", `Documents (${docsAdded})`], ["grants", `Grants (${d.drafts.length})`], ["people", `People (${d.people.length})`]] as [Tab, string][])
+        {([["overview", "Overview"], ["usage", "Usage and limits"], ["documents", `Documents (${docsAdded})`], ["grants", `Grants (${d.drafts.length})`], ["people", `People (${d.people.length})`],
+          ...(voice ? [["voice", "Voice profile"] as [Tab, string]] : [])] as [Tab, string][])
           .map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`chip${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{label}</button>)}
       </div>
 
@@ -127,6 +130,7 @@ export default function ClientActivityView({ data }: { data: ClientActivity }) {
       {tab === "usage" && <UsageTab d={d} />}
       {tab === "documents" && <DocumentsTab d={d} />}
       {tab === "grants" && <GrantsTab d={d} />}
+      {tab === "voice" && voice && <VoiceProfilePanel v={voice} />}
       {tab === "people" && (
         <>
         {!d.visitsRecorded && <p className="cl-note an-warn">Visits are not being recorded yet: run migration 0052.</p>}
