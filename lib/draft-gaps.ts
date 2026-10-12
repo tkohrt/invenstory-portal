@@ -120,3 +120,24 @@ export function draftProgress(input: {
     firstBridge, firstFigure, firstAsk,
   };
 }
+
+/**
+ * The gap panel's summary line and its button (Auto-Draft spec section 9,
+ * 12 October 2026). The panel starts collapsed for every question; the summary
+ * stays visible and the button opens it. "Missing" means a wanted kind with no
+ * card in the answer, whatever else stands behind it (asked, answered, in the
+ * Story Cards).
+ */
+export function gapSummary(rows: Pick<GapRow, "state">[]): {
+  inAnswer: number; missing: number; settled: boolean; line: string;
+  button: (open: boolean) => string;
+} {
+  const inAnswer = rows.filter(r => r.state === "in_answer").length;
+  const missing = rows.length - inAnswer;
+  const settled = missing === 0;
+  return {
+    inAnswer, missing, settled,
+    line: settled ? "all in the answer" : `${inAnswer} of ${rows.length} in the answer`,
+    button: open => open ? "Hide details" : settled ? "Show details" : `See what's missing (${missing})`,
+  };
+}

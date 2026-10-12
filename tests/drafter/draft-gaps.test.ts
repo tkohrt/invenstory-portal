@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { askDraft, askProblem, draftProgress, questionGaps, type GapAsk } from "@/lib/draft-gaps";
+import { describe, expect, it, test } from "vitest";
+import { askDraft, askProblem, draftProgress, gapSummary, questionGaps, type GapAsk, type GapState } from "@/lib/draft-gaps";
 
 const cards = [
   { id: "c1", kind: "program_model", status: "verified", placeable: true },
@@ -60,5 +60,30 @@ describe("the gap panel", () => {
       gapsBy: { s1: [], s2: [{ kind: "x", state: "asked", inLibrary: 0, ask: null }], s3: [{ kind: "y", state: "answered", inLibrary: 0, ask: null }] },
     });
     expect(p).toMatchObject({ questions: 3, done: 1, toReview: 2, bridgesWaiting: 2, figuresToTrace: 1, asksOpen: 1, answersReady: 1, firstBridge: 1, firstFigure: 2, firstAsk: 1 });
+  });
+});
+
+describe("gapSummary (Calls for collapsed, 12 October 2026)", () => {
+  const rows = (...states: GapState[]) => states.map(state => ({ state }));
+
+  it("counts every kind not in the answer as missing, whatever stands behind it", () => {
+    const s = gapSummary(rows("in_answer", "answered", "asked", "in_library", "none"));
+    expect(s.inAnswer).toBe(1);
+    expect(s.missing).toBe(4);
+    expect(s.settled).toBe(false);
+    expect(s.line).toBe("1 of 5 in the answer");
+    expect(s.button(false)).toBe("See what's missing (4)");
+  });
+
+  it("offers Show details once every kind is in", () => {
+    const s = gapSummary(rows("in_answer", "in_answer"));
+    expect(s.settled).toBe(true);
+    expect(s.line).toBe("all in the answer");
+    expect(s.button(false)).toBe("Show details");
+  });
+
+  it("says Hide details while open, settled or not", () => {
+    expect(gapSummary(rows("none")).button(true)).toBe("Hide details");
+    expect(gapSummary(rows("in_answer")).button(true)).toBe("Hide details");
   });
 });

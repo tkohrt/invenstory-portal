@@ -1473,10 +1473,8 @@ a.dl-row:hover{background:#f6f8f5}
 
 /* ---- Storyboard: gap panel, progress strip, Undo, asking the client (9 Oct 2026) ---- */
 .gp{font-size:12.5px;margin-top:8px}
-.gp > summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:5px;align-items:center;list-style:none}
-.gp > summary::-webkit-details-marker{display:none}
-.gp > summary:before{content:"▸";color:var(--muted);font-size:10px;margin-right:2px}
-.gp[open] > summary:before{content:"▾"}
+.gp-head{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.gp-toggle{margin-left:6px;white-space:nowrap}
 .gp-sum{margin-left:4px}
 .gp-k.gp-in_answer{background:#eef5ef;border-color:#cfe2d3;color:#1f4d2e}
 .gp-k.gp-none{border-style:dashed}

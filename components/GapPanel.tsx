@@ -4,8 +4,11 @@
 // found in the Story Cards (Show them), written now as a user-generated card
 // (Add it now), or asked of the client (Ask the client); once the client
 // answers, the card their answer made is offered here (Use it).
-import { useEffect, useState } from "react";
-import { askDraft, askProblem, type DraftProgress, type GapRow } from "@/lib/draft-gaps";
+// Since 12 October 2026 (Auto-Draft spec section 9) it starts collapsed for
+// every question: the summary line stays in view, and a button beside it
+// ("See what's missing (n)", or "Show details" once all are in) opens the rows.
+import { useEffect, useId, useState } from "react";
+import { askDraft, askProblem, gapSummary, type DraftProgress, type GapRow } from "@/lib/draft-gaps";
 import { CARD_KIND_MAP } from "@/lib/story-card";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
@@ -16,54 +19,63 @@ export default function GapPanel({ rows, locked, onShow, onAdd, onAsk, onUse, on
   onUse: (cardId: string) => void; onWithdraw: (askId: string) => void;
 }) {
   const label = (k: string) => CARD_KIND_MAP[k]?.label ?? k;
-  const inAnswer = rows.filter(r => r.state === "in_answer").length;
-  const settled = inAnswer === rows.length;
+  // Starts collapsed for every question (12 October 2026); the parent keys this
+  // panel by question, so moving to another question collapses it again.
+  const [open, setOpen] = useState(false);
+  const sum = gapSummary(rows);
+  const detailsId = useId();
   return (
-    <details className="gp" open={!settled}>
-      <summary>
+    <div className="gp">
+      <div className="gp-head">
         <span className="ov-muted">Calls for:</span>{" "}
         {rows.map(r => (
           <span key={r.kind} className={`ov-tag ap-kind gp-k gp-${r.state}`}>{r.state === "in_answer" ? "✓ " : ""}{label(r.kind)}</span>
         ))}
-        <span className="ov-muted gp-sum">{settled ? "all in the answer" : `${inAnswer} of ${rows.length} in the answer`}</span>
-      </summary>
-      <ul className="gp-rows">
-        {rows.map(r => (
-          <li key={r.kind} className={`gp-row gp-${r.state}`}>
-            <span className="gp-name">{label(r.kind)}</span>
-            {r.state === "in_answer" && <span className="gp-what">✓ In the answer</span>}
-            {r.state === "answered" && r.ask && (
-              <>
-                <span className="gp-what">The client answered: <em>&ldquo;{(r.ask.answer ?? "").slice(0, 140)}{(r.ask.answer ?? "").length > 140 ? "…" : ""}&rdquo;</em></span>
-                {!locked && r.ask.cardId && <button type="button" className="btn inline ap-go ap-mini" onClick={() => onUse(r.ask!.cardId!)}>Use it</button>}
-              </>
-            )}
-            {r.state === "asked" && r.ask && (
-              <>
-                <span className="gp-what" title={r.ask.question}>Asked the client on {day(r.ask.askedAt)}; waiting for their answer.</span>
-                {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onWithdraw(r.ask!.id)}>Withdraw</button>}
-              </>
-            )}
-            {r.state === "in_library" && (
-              <>
-                <span className="gp-what">{r.inLibrary} in the Story Cards, not used here.</span>
-                <button type="button" className="btn secondary ap-mini" onClick={() => onShow(r.kind)}>Show them</button>
-                {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onAdd(r.kind)}>Add it now</button>}
-              </>
-            )}
-            {r.state === "none" && (
-              <>
-                <span className="gp-what gp-missing">No card yet.</span>
-                {!locked && <button type="button" className="btn secondary ap-mini" onClick={() => onAdd(r.kind)}
-                  title="Write it yourself now; it is saved as a User-generated Story Card">Add it now</button>}
-                {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onAsk(r.kind)}
-                  title="Ask the client to answer in their own words, on their Inven(s)tory page">Ask the client</button>}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
-    </details>
+        <span className="ov-muted gp-sum">{sum.line}</span>
+        <button type="button" className={`btn ap-mini gp-toggle ${!open && !sum.settled ? "secondary" : "ghost"}`}
+          aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(o => !o)}>
+          {sum.button(open)}
+        </button>
+      </div>
+      {open && (
+        <ul className="gp-rows" id={detailsId}>
+          {rows.map(r => (
+            <li key={r.kind} className={`gp-row gp-${r.state}`}>
+              <span className="gp-name">{label(r.kind)}</span>
+              {r.state === "in_answer" && <span className="gp-what">✓ In the answer</span>}
+              {r.state === "answered" && r.ask && (
+                <>
+                  <span className="gp-what">The client answered: <em>&ldquo;{(r.ask.answer ?? "").slice(0, 140)}{(r.ask.answer ?? "").length > 140 ? "…" : ""}&rdquo;</em></span>
+                  {!locked && r.ask.cardId && <button type="button" className="btn inline ap-go ap-mini" onClick={() => onUse(r.ask!.cardId!)}>Use it</button>}
+                </>
+              )}
+              {r.state === "asked" && r.ask && (
+                <>
+                  <span className="gp-what" title={r.ask.question}>Asked the client on {day(r.ask.askedAt)}; waiting for their answer.</span>
+                  {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onWithdraw(r.ask!.id)}>Withdraw</button>}
+                </>
+              )}
+              {r.state === "in_library" && (
+                <>
+                  <span className="gp-what">{r.inLibrary} in the Story Cards, not used here.</span>
+                  <button type="button" className="btn secondary ap-mini" onClick={() => onShow(r.kind)}>Show them</button>
+                  {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onAdd(r.kind)}>Add it now</button>}
+                </>
+              )}
+              {r.state === "none" && (
+                <>
+                  <span className="gp-what gp-missing">No card yet.</span>
+                  {!locked && <button type="button" className="btn secondary ap-mini" onClick={() => onAdd(r.kind)}
+                    title="Write it yourself now; it is saved as a User-generated Story Card">Add it now</button>}
+                  {!locked && <button type="button" className="btn ghost ap-mini" onClick={() => onAsk(r.kind)}
+                    title="Ask the client to answer in their own words, on their Inven(s)tory page">Ask the client</button>}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
