@@ -82,15 +82,17 @@ export async function GET(req: Request) {
   if (admin) {
     const { data: ad } = await db.from("job")
       .select("id, status, done, total, updated_at, finished_at, result, detail, error")
-      .eq("tenant_id", tenantId).eq("kind", "autodraft")
+      .eq("tenant_id", tenantId).eq("kind", "autodraft").gte("started_at", since)
       .or(`status.eq.running,finished_at.gte.${since}`)
       .order("started_at", { ascending: false }).limit(1).maybeSingle();
     const a = ad as { id: string; status: string; done: number; total: number; updated_at: string; finished_at: string | null; result: { draftId?: string; title?: string } | null; detail: string | null; error: string | null } | null;
     if (a?.result?.draftId) {
       const base = { jobId: a.id, draftId: a.result.draftId, title: a.result.title ?? "the draft" };
-      autodraft = a.status === "running" && now - new Date(a.updated_at).getTime() < STALL_AFTER_MS
+      // A running auto-draft counts however quiet it has gone: this very poll revives it,
+      // so its draft stays locked and the notice says it is being picked up (review fix).
+      autodraft = a.status === "running"
         ? { running: { ...base, done: a.done, total: a.total, resuming: now - new Date(a.updated_at).getTime() > REVIVE_AFTER_MS }, finished: null }
-        : a.status !== "running" ? { running: null, finished: { ...base, status: a.status, text: a.status === "done" ? a.detail : a.error } } : null;
+        : { running: null, finished: { ...base, status: a.status, text: a.status === "done" ? a.detail : a.error } };
     }
   }
 

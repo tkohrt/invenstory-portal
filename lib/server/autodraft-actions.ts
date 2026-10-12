@@ -10,6 +10,7 @@ import { resolveBlocks, BLOCK_COLS, type WsBlock } from "./workspace";
 import { autodraftPreview, autodraftSection, loadRunCtx, markAutoDrafted, type AutodraftPreview, type SectionOutcome } from "./autodraft";
 import { saveBeforeAutoDraftAction } from "./version-actions";
 import { SKIP_LABEL } from "@/lib/autodraft";
+import { runningAutodraft } from "./autodraft-run";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -28,6 +29,11 @@ export async function autodraftQuestionAction(draftId: string, sectionId: string
   const p = await autodraftPreview(s.tenantId, draftId, sectionId);
   if ("error" in p) return { ok: false, error: p.error };
   if (!p.minimum.met) return { ok: false, error: p.minimum.message };
+  // Never alongside a whole-draft run on the same draft (review fix, 12 October 2026).
+  const running = await runningAutodraft(s.tenantId);
+  if (running?.draftId === draftId) {
+    return { ok: false, error: "Auto-draft is already running on this whole draft. Wait for it to finish, or stop it." };
+  }
   const item = p.plan.run[0];
   if (!item) {
     const why = p.plan.skipped[0];

@@ -323,23 +323,38 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     }).catch(() => undefined);
     return () => { live = false; };
   }, [draft.id, readOnly]);
+  // Follows the run by its id, so the timer is set once per run, not on every tick.
+  const autoJobId = autoRun?.jobId ?? null;
+  const autoDoneRef = useRef(0);
+  autoDoneRef.current = autoRun?.done ?? 0;
   useEffect(() => {
-    if (!autoRun) return;
+    if (!autoJobId) return;
     let live = true;
+    // What the page already shows; a question finished since is refreshed in on the first tick.
+    let seenDone = autoDoneRef.current;
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`/api/jobs/${autoRun.jobId}`, { cache: "no-store" });
+        // after=1e12: the job row only, not its whole log.
+        const res = await fetch(`/api/jobs/${autoJobId}?after=1000000000000`, { cache: "no-store" });
         if (!res.ok) return;
         const { job } = await res.json() as { job: { status: string; done: number; total: number; detail: string | null; error: string | null } };
         if (!live) return;
-        if (job.status === "running") { setAutoRun(a => a && { ...a, done: job.done, total: job.total }); return; }
+        if (job.status === "running") {
+          if (job.done !== seenDone) {
+            // Each finished question shows as it lands.
+            router.refresh();
+            seenDone = job.done;
+            setAutoRun(a => a && a.jobId === autoJobId ? { ...a, done: job.done, total: job.total } : a);
+          }
+          return;
+        }
         setAutoRun(null); setAutoDraftedHere(true);
         router.refresh();
         if (job.status === "done") say(job.detail ?? "Auto-draft finished."); else setError(job.error ?? "Auto-draft stopped. Everything placed so far is kept.");
       } catch { /* the next tick tries again */ }
     }, 4000);
     return () => { live = false; clearInterval(timer); };
-  }, [autoRun, router, say]);
+  }, [autoJobId, router, say]);
 
   const startAutoDraft = async () => {
     setAutoAsk(null); setError(null);
@@ -347,7 +362,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       const res = await fetch("/api/jobs/autodraft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ draftId: draft.id }) });
       const r = await res.json().catch(() => ({}));
       if (!res.ok || !r.jobId) { setError(r.error ?? "Auto-draft could not start. Nothing was changed."); return; }
-      setAutoRun({ jobId: r.jobId, done: 0, total: r.total ?? 0 });
+      setAutoRun({ jobId: r.jobId, done: r.done ?? 0, total: r.total ?? 0 });
       say("Auto-draft started. A version named \u201cBefore auto-draft\u201d was saved first. Questions fill in as it goes; the page can be closed.");
     } catch { setError("Could not reach the portal. Check the connection and try again."); }
   };
@@ -356,8 +371,11 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   };
   const autoDraftQuestion = (sectionId: string) => {
     setAutoAsk(null);
-    void change(sectionId, "the auto-draft", () => autodraftQuestionAction(draft.id, sectionId), r => {
+    // Remembered for Undo only once something was placed, so a refusal leaves no empty step.
+    const before = undoState(blocksBy[sectionId] ?? []);
+    void run(() => autodraftQuestionAction(draft.id, sectionId), r => {
       if (!r.ok) { setError(r.error); return; }
+      setHistory(h => ({ ...h, [sectionId]: pushUndo(h[sectionId] ?? [], { label: "the auto-draft", state: before }) }));
       putBlocks(sectionId)(r.blocks);
       setAutoDraftedHere(true);
       const o = r.outcome;

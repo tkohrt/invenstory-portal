@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrangeUser, fitToBudget, parseArrangeReply, planRun, shortlist, stageBlocks } from "@/lib/autodraft";
+import { arrangeUser, fitToBudget, keepPieces, parseArrangeReply, planRun, shortlist, stageBlocks } from "@/lib/autodraft";
 import type { Ranked } from "@/lib/story-card-rank";
 
 const r = (id: string, kind: string, position: number, status: "suggested" | "verified" | "retired" = "verified"): Ranked => ({
@@ -66,12 +66,38 @@ describe("auto-draft (Auto-Draft patch 6)", () => {
     it("drops a break on the first card or on a card not chosen", () => {
       expect(parseArrangeReply('{"order": [2, 4], "breaks_before": [2, 6, 4]}', 6)).toEqual({ order: [2, 4], breaksBefore: [4] });
     });
+    it("lets the first new card start its own paragraph after pieces already in the answer", () => {
+      expect(parseArrangeReply('{"order": [2, 4], "breaks_before": [2]}', 6, { followsExisting: true })).toEqual({ order: [2, 4], breaksBefore: [2] });
+      expect(parseArrangeReply('{"order": [2, 4], "breaks_before": [2]}', 6)).toEqual({ order: [2, 4], breaksBefore: [] });
+    });
     it("refuses a number off the list, a repeat, or something that is not a choice", () => {
       expect(parseArrangeReply('{"order": [1, 7]}', 6)).toBeNull();
       expect(parseArrangeReply('{"order": [1, 1]}', 6)).toBeNull();
       expect(parseArrangeReply('{"order": [1.5]}', 6)).toBeNull();
       expect(parseArrangeReply('{"text": "a new paragraph"}', 6)).toBeNull();
       expect(parseArrangeReply("no json here", 6)).toBeNull();
+    });
+  });
+
+  describe("copying a Standard Answer with a retired card", () => {
+    const P = (kind: string, drop = false, breakBefore = false) => ({ kind, drop, breakBefore });
+    const idx = (r: { index: number }[]) => r.map(x => x.index);
+    it("keeps everything when nothing is dropped", () => {
+      expect(idx(keepPieces([P("card"), P("bridge"), P("card")]))).toEqual([0, 1, 2]);
+    });
+    it("drops the retired card and any bridge beside it", () => {
+      expect(idx(keepPieces([P("card"), P("bridge"), P("card", true), P("bridge"), P("card")]))).toEqual([0, 4]);
+    });
+    it("keeps a bridge whose two neighbours both stay, and the writer's own words", () => {
+      expect(idx(keepPieces([P("human"), P("bridge"), P("card"), P("card", true)]))).toEqual([0, 1, 2]);
+    });
+    it("passes a dropped card's paragraph break to the next piece kept", () => {
+      expect(keepPieces([P("card"), P("card", true, true), P("card")])).toEqual([
+        { index: 0, breakBefore: false }, { index: 2, breakBefore: true },
+      ]);
+      expect(keepPieces([P("card"), P("card", false, true)])).toEqual([
+        { index: 0, breakBefore: false }, { index: 1, breakBefore: true },
+      ]);
     });
   });
 

@@ -89,7 +89,9 @@ export default function BuildNotice({ role, tenantId, cardsVisible }: { role: "c
       <button type="button" className="bn-x" onClick={() => dismiss(auto.finished!.jobId)} aria-label="Dismiss">×</button>
     </div>
   ) : null;
-  if (autoNotice) return autoNotice;
+  // A run in progress comes first; a finished run's notice waits while a Card Library build is running.
+  if (auto?.running) return autoNotice;
+  if (autoNotice && !running) return autoNotice;
   // The Card Library page shows the full log already.
   if (admin && path.startsWith("/admin/card-library")) return null;
   const href = admin ? "/admin/card-library" : "/story-cards";

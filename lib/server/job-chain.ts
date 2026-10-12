@@ -123,6 +123,8 @@ export async function scheduleAutodraftPass(origin: string, tenantId: string, jo
  * polling at once restart it once, not several times.
  */
 
+const AUTODRAFT_AT_LIMIT = `Auto-draft stopped after ${MAX_CHAIN_PASSES} stages without finishing. Everything placed so far is kept; auto-draft again to carry on.`;
+
 export async function reviveStalledChains(origin: string, scope: { tenantId: string } | { allTenants: true }): Promise<number> {
   try {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
@@ -143,7 +145,17 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
       const key = `${j.tenant_id}|${j.kind}`;
       if (newest.has(key)) continue;
       newest.add(key);
-      if ((j.chain_passes ?? 0) >= MAX_CHAIN_PASSES) continue;
+      if ((j.chain_passes ?? 0) >= MAX_CHAIN_PASSES) {
+        // An auto-draft run at its stage limit that has stopped will never be
+        // continued, and while it shows as running it locks its draft: end it
+        // (review fix, 12 October 2026).
+        if (j.kind === "autodraft" && chainStalled({ updatedAt: j.updated_at, claimedAt: j.claimed_at }, now)) {
+          const at = new Date().toISOString();
+          const ended = { status: "failed", finished_at: at, updated_at: at, claimed_at: null, error: AUTODRAFT_AT_LIMIT };
+          await db.from("job").update(ended).eq("tenant_id", j.tenant_id).eq("id", j.id).eq("status", "running").eq("updated_at", j.updated_at);
+        }
+        continue;
+      }
       if (!chainStalled({ updatedAt: j.updated_at, claimedAt: j.claimed_at }, now)) continue;
       // Compare-and-set, so only one poller restarts it.
       const { data: won } = await db.from("job").update({ updated_at: new Date().toISOString() })

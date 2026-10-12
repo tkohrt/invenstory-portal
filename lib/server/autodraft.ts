@@ -21,7 +21,7 @@ import { placeIssue } from "@/lib/card-gate";
 import { MINIMUM_MESSAGE, minimumMet } from "@/lib/voice-profile";
 import { contextNotes, type ContextPart } from "@/lib/draft-context";
 import {
-  ARRANGE_SYSTEM, arrangeUser, fitToBudget, parseArrangeReply, planRun, shortlist, words,
+  ARRANGE_SYSTEM, arrangeUser, fitToBudget, keepPieces, parseArrangeReply, planRun, shortlist, words,
   type PlanSection, type RunPlan, type Start,
 } from "@/lib/autodraft";
 
@@ -122,6 +122,7 @@ export interface RunCtx {
 export async function loadRunCtx(tenantId: string, userId: string | null, draftId: string): Promise<RunCtx> {
   const d = await draftRow(tenantId, draftId);
   if (!d) throw new Error("That draft could not be found.");
+  if (LOCKED_STATUSES.has(d.status as DraftStatus)) throw new Error("This application is locked, so auto-draft placed nothing more.");
   const [{ data: secs }, cards, voice, { data: ctx }] = await Promise.all([
     db.from("draft_section").select("id").eq("tenant_id", tenantId).eq("draft_id", draftId),
     loadCards(tenantId, db),
@@ -162,7 +163,7 @@ export interface SectionOutcome {
 type Ev = { card_id: string | null; block_id: string | null; position?: number | null; rank_score?: number | null; via: string };
 
 async function logAdded(ctx: RunCtx, sectionId: string, evs: Ev[]) {
-  if (!evs.length || !ctx.userId) return;
+  if (!evs.length) return;
   const { error } = await db.from("card_event").insert(evs.map(e => ({  // tenant-safe: every row carries tenant_id from the run
     tenant_id: ctx.tenantId, draft_id: ctx.draftId, section_id: sectionId, card_id: e.card_id, block_id: e.block_id,
     event: "added", position: e.position ?? null, rank_score: e.rank_score ?? null,
@@ -208,8 +209,14 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
       // A bridge nobody accepted is not part of the Standard Answer; a retired card cannot come back.
       const live = new Map(ctx.cards.map(c => [c.id, c]));
       const source = ((srcData ?? []) as Record<string, unknown>[]).filter(b => !b.proposed);
-      const keep = source.filter(b => b.kind !== "card" || !b.card_id || placeIssue(live.get(b.card_id as string) ?? null) !== "retired");
-      out.leftOut = source.length - keep.length;
+      const marks = source.map(b => ({
+        kind: b.kind as string, breakBefore: !!b.break_before,
+        drop: b.kind === "card" && !!b.card_id && placeIssue(live.get(b.card_id as string) ?? null) === "retired",
+      }));
+      const keepAt = keepPieces(marks);
+      const keep: Record<string, unknown>[] = keepAt.map(k => ({ ...source[k.index], break_before: k.breakBefore }));
+      // Retired cards left out; bridges beside them go too, but are not counted.
+      out.leftOut = marks.filter(m => m.drop).length;
       if (keep.length) {
         const { data: ins, error } = await db.from("section_block").insert(keep.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the run
           tenant_id: ctx.tenantId, section_id: sectionId, sort_order: i, kind: b.kind,
@@ -256,7 +263,7 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
   let breaks = new Set<string>();
   const res = await withAiUsage({ tenantId: ctx.tenantId, userId: ctx.userId, actor: "admin", feature: "autodraft" },
     () => chatComplete({ system: ARRANGE_SYSTEM, user, maxTokens: 300, temperature: 0 })).catch(() => null);
-  const reply = res ? parseArrangeReply(res.text, offered.length) : null;
+  const reply = res ? parseArrangeReply(res.text, offered.length, { followsExisting: existing.length > 0 }) : null;
   if (reply) {
     chosen = reply.order.map(n => offered[n - 1]);
     breaks = new Set(reply.breaksBefore.map(n => offered[n - 1].card.id));
@@ -264,14 +271,18 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
     if (res) console.error(`[autodraft] reply not usable: ${res.text.slice(0, 300)}`);
     // The code's own pick, from the same shortlist, with the gate lifted (a retired card is never offered).
     chosen = arrangePicks(offered, wanted, budget, () => true);
+    // No card of a wanted kind on the shortlist: take the shortlist in rank order instead.
+    if (!chosen.length) chosen = offered;
     out.fallback = true;
   }
   const existingWords = existing.reduce((n, b) => n + words(b.text), 0);
   chosen = chosen.slice(0, fitToBudget(chosen.map(r => words(r.card.statement)), existingWords, budget));
   if (!chosen.length) { out.gaps = gapsAfter([...inAnswer]); return out; }
 
+  // After the largest position in use, whatever gaps the stored order may have.
+  const after = rows.reduce((m, r) => Math.max(m, Number(r.sort_order ?? -1)), -1) + 1;
   const { data: ins, error } = await db.from("section_block").insert(chosen.map((r, i) => ({  // tenant-safe: every row carries tenant_id from the run
-    tenant_id: ctx.tenantId, section_id: sectionId, sort_order: rows.length + i, kind: "card",
+    tenant_id: ctx.tenantId, section_id: sectionId, sort_order: after + i, kind: "card",
     card_id: r.card.id, card_version: byId.get(r.card.id)?.version ?? 1,
     break_before: breaks.has(r.card.id),
     created_by: ctx.userId,

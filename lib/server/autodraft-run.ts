@@ -13,6 +13,7 @@ import { claimJob, releaseJob, failJob, finishJob, recordEvent } from "./jobs";
 import { MAX_CHAIN_PASSES } from "./job-chain";
 import { autodraftSection, loadRunCtx, type SectionOutcome } from "./autodraft";
 import type { Start } from "@/lib/autodraft";
+import { LOCKED_STATUSES, type DraftStatus } from "@/lib/draft-version";
 
 /** Leave room in the 60-second function for the last question's model call and the hand-off. */
 const STAGE_BUDGET_MS = 30_000;
@@ -54,6 +55,29 @@ export function summaryText(st: RunState): string {
   return parts.join(" ");
 }
 
+async function stillRunning(tenantId: string, jobId: string): Promise<boolean> {
+  const { data } = await db.from("job").select("status").eq("tenant_id", tenantId).eq("id", jobId).maybeSingle();
+  return (data as { status: string } | null)?.status === "running";
+}
+
+/** Open, locked (submitted, won, lost), or gone. A failed read counts as open: the next question checks again. */
+async function draftLock(tenantId: string, draftId: string): Promise<"open" | "locked" | "gone"> {
+  const { data, error } = await db.from("grant_draft").select("status").eq("tenant_id", tenantId).eq("id", draftId).maybeSingle();
+  if (error) return "open";
+  const st = (data as { status: string } | null)?.status;
+  if (!st) return "gone";
+  return LOCKED_STATUSES.has(st as DraftStatus) ? "locked" : "open";
+}
+
+/** The client's running auto-draft, however quiet it has gone (a quiet run is revived, not abandoned). */
+export async function runningAutodraft(tenantId: string): Promise<{ jobId: string; draftId: string; done: number; total: number } | null> {
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const { data } = await db.from("job").select("id, result, done, total").eq("tenant_id", tenantId).eq("kind", "autodraft")
+    .eq("status", "running").gte("started_at", since).order("started_at", { ascending: false }).limit(1).maybeSingle();
+  const j = data as { id: string; result: { draftId?: string } | null; done: number; total: number } | null;
+  return j?.result?.draftId ? { jobId: j.id, draftId: j.result.draftId, done: j.done, total: j.total } : null;
+}
+
 export async function runAutodraftPass(tenantId: string, jobId: string, opts: { chained?: boolean } = {}): Promise<PassOutcome> {
   if (!await claimJob(tenantId, jobId)) return { kind: "busy" };
   try {
@@ -79,6 +103,17 @@ export async function runAutodraftPass(tenantId: string, jobId: string, opts: { 
     const ctx = await loadRunCtx(tenantId, job?.started_by ?? null, st.draftId);
     const started = Date.now();
     while (st.next < st.run.length && (st.next === 0 || Date.now() - started < STAGE_BUDGET_MS)) {
+      // Stopped (or failed) since this stage began: place nothing more (review fix, 12 Oct 2026).
+      if (!(await stillRunning(tenantId, jobId))) { await releaseJob(tenantId, jobId); return { kind: "failed", error: "stopped" }; }
+      // Locked since the run began (marked submitted elsewhere): a submitted application does not change.
+      const lock = await draftLock(tenantId, st.draftId);
+      if (lock !== "open") {
+        await releaseJob(tenantId, jobId);
+        await failJob(tenantId, jobId, lock === "locked"
+          ? "The draft was marked submitted while auto-draft was running, so it stopped. Everything placed before that is kept."
+          : "The draft is no longer there, so auto-draft stopped.");
+        return { kind: "failed", error: lock };
+      }
       const item = st.run[st.next];
       const o = await autodraftSection(ctx, item.id, item.start).catch(e => ({
         sectionId: item.id, start: item.start, placed: 0, fallback: false, leftOut: 0, gaps: 0,
@@ -99,8 +134,10 @@ export async function runAutodraftPass(tenantId: string, jobId: string, opts: { 
       if (Date.now() - started >= STAGE_BUDGET_MS) break;
     }
     await releaseJob(tenantId, jobId);
+    if (!(await stillRunning(tenantId, jobId))) return { kind: "failed", error: "stopped" };
     if (st.next >= st.run.length) {
-      await finishJob(tenantId, jobId, st as unknown as Record<string, unknown>, summaryText(st));
+      // Only while still running: a Stop pressed at the very end is not overwritten with "finished".
+      await finishJob(tenantId, jobId, st as unknown as Record<string, unknown>, summaryText(st), { onlyIfRunning: true });
       return { kind: "done" };
     }
     return { kind: "more" };

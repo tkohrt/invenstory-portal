@@ -118,7 +118,7 @@ export interface ArrangeReply {
  * falls back to the code's own pick. An empty choice is allowed: the model may
  * judge that nothing on the shortlist answers the question.
  */
-export function parseArrangeReply(raw: string, shortlistSize: number): ArrangeReply | null {
+export function parseArrangeReply(raw: string, shortlistSize: number, opts: { followsExisting?: boolean } = {}): ArrangeReply | null {
   const m = raw.match(/\{[\s\S]*\}/);
   if (!m) return null;
   let j: unknown;
@@ -132,8 +132,38 @@ export function parseArrangeReply(raw: string, shortlistSize: number): ArrangeRe
   const rawBreaks = Array.isArray(o.breaks_before) ? o.breaks_before : Array.isArray(o.breaksBefore) ? o.breaksBefore : [];
   const breaksBefore = rawBreaks
     .map(n => (typeof n === "string" ? Number(n) : n))
-    .filter((n): n is number => Number.isInteger(n) && order.includes(n as number) && n !== order[0]);
+    // A break on the first card means nothing in an empty answer; after existing
+    // pieces it starts the new cards in a paragraph of their own.
+    .filter((n): n is number => Number.isInteger(n) && order.includes(n as number) && (n !== order[0] || !!opts.followsExisting));
   return { order, breaksBefore: [...new Set(breaksBefore)] };
+}
+
+// ---------------------------------------------------------------------------
+// Copying a Standard Answer whose card has since been retired.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which pieces of a Standard Answer to copy, by index, when some cards are
+ * left out (retired). A bridge stays only if both pieces it joined stay: a
+ * bridge beside a removed card would join two pieces that are no longer next
+ * to each other (review fix, 12 October 2026).
+ */
+export function keepPieces(pieces: { kind: string; drop: boolean; breakBefore?: boolean }[]): { index: number; breakBefore: boolean }[] {
+  const keep: number[] = [];
+  pieces.forEach((p, i) => {
+    if (p.drop) return;
+    if (p.kind === "bridge") {
+      const before = pieces[i - 1], after = pieces[i + 1];
+      if (!before || !after || before.drop || after.drop) return;
+    }
+    keep.push(i);
+  });
+  // A paragraph that began at a piece left out now begins at the next piece kept.
+  return keep.map((index, k) => {
+    const from = k === 0 ? 0 : keep[k - 1] + 1;
+    const carried = pieces.slice(from, index).some(p => !!p.breakBefore);
+    return { index, breakBefore: !!pieces[index].breakBefore || (k > 0 && carried) };
+  });
 }
 
 // ---------------------------------------------------------------------------

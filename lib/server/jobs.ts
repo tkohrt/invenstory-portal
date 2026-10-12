@@ -115,13 +115,18 @@ export async function updateJob(
 
 export async function finishJob(
   tenantId: string, id: string, result: Record<string, unknown>, detail?: string,
+  opts: { onlyIfRunning?: boolean } = {},
 ): Promise<void> {
-  const { error } = await db.from("job")
+  let q = db.from("job")
     .update({
       status: "done", result, detail: detail ?? null,
       updated_at: new Date().toISOString(), finished_at: new Date().toISOString(),
     })
     .eq("tenant_id", tenantId).eq("id", id);
+  // A run someone stopped stays stopped, however close the stop came to the end.
+  if (opts.onlyIfRunning) q = q.eq("status", "running");
+  const { data: changed, error } = await q.select("id");
+  if (opts.onlyIfRunning && !error && !(changed ?? []).length) return;
   if (error) console.error("[job] finish failed", error);
   // The closing line is written here rather than by each caller, because a run
   // whose log simply stops is indistinguishable from one that was killed.
