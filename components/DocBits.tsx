@@ -5,6 +5,8 @@ import Drawer from "./Drawer";
 import { updateDocTagsAction, renameDocAction, reprocessDocAction, deleteDocAction, changeDocLayerAction, finishIndexingAction } from "@/lib/server/doc-actions";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 import { DOC_TYPES } from "@/lib/analysis";
+import { OUTCOMES, asksOutcomeAtUpload, isWinning, parseOutcome } from "@/lib/doc-outcome";
+import { setDocOutcomeAction } from "@/lib/server/doc-outcome-actions";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 import Busy from "./Busy";
 import { browserClient } from "@/lib/supabase-browser";
@@ -46,6 +48,7 @@ export function DocCard({ d, onOpen, isAdmin }: { d: DocumentWithTags; onOpen: (
         <span>{new Date(d.created_at).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</span>
         {isAdmin && <StatusChip status={d.status} />}
         <span className="provenance">{d.source === "for_granted" ? "Added by For Granted" : "Added by you"}</span>
+        {isWinning(d) && <span className="win-tag" title="A winning grant: its outcome is Won">★ Winning grant</span>}
         {isAdmin && <button className="doc-dl" title="Download original" aria-label="Download original"
           onClick={async (e) => { e.stopPropagation();
             const res = await fetch(`/api/file?documentId=${d.id}`);
@@ -164,6 +167,7 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
       </div></div>
       <div className="kv"><div className="k">File type</div><div>{fileTypeLabel(d)}</div></div>
       <div className="kv"><div className="k">Added</div><div>{new Date(d.created_at).toLocaleDateString()} by {d.source === "for_granted" ? "For Granted" : d.uploader_name}</div></div>
+      <div className="kv"><div className="k">Outcome</div><div><OutcomePicker d={d} /></div></div>
       {isAdmin && <div className="kv"><div className="k">Status</div><div>{d.status}{d.error_detail ? ` — ${d.error_detail}` : ""}</div></div>}
       {indexPending && (
         <div className="metric-gap" style={{ marginTop: 6 }}>
@@ -242,6 +246,45 @@ export function DocDrawer({ d, onClose, isAdmin }: { d: DocumentWithTags; onClos
   );
 }
 
+/**
+ * A document's grant outcome (Auto-Draft spec, section 8): Won, Not funded,
+ * Pending, Unknown, or not set. Any document can be given one; Won is the
+ * winning-grant tag. A client cannot change an outcome For Granted set (the
+ * server says so).
+ */
+function OutcomePicker({ d }: { d: DocumentWithTags }) {
+  const router = useRouter();
+  const [value, setValue] = useState<string>(d.outcome ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Follow the stored value when the page refreshes with a newer one.
+  const [seen, setSeen] = useState(d.outcome ?? "");
+  if ((d.outcome ?? "") !== seen) { setSeen(d.outcome ?? ""); setValue(d.outcome ?? ""); }
+  const save = async (next: string) => {
+    const before = value;
+    setValue(next); setErr(null); setBusy(true);
+    try {
+      const r = await setDocOutcomeAction(d.id, next || null);
+      if (!r.ok) { setValue(before); setErr(r.error); }
+      else router.refresh();
+    } catch { setValue(before); setErr("Could not reach the portal. Check the connection and try again."); }
+    setBusy(false);
+  };
+  const current = parseOutcome(value);
+  return (
+    <span className="oc-pick">
+      <select className="cl-select" value={value} disabled={busy} aria-label="Grant outcome" onChange={e => void save(e.target.value)}>
+        <option value="">Not set</option>
+        {OUTCOMES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      {current === "won" && <span className="win-tag">★ Winning grant</span>}
+      {busy && <span className="oc-note">Saving…</span>}
+      {err && <span className="cl-error">{err}</span>}
+      {!current && !err && <span className="oc-note">For a grant application: Won marks it as a winning grant.</span>}
+    </span>
+  );
+}
+
 export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
   tenantName: string; onClose: () => void; onDone: () => void; initialLayer?: "I" | "II" | "III";
 }) {
@@ -250,6 +293,7 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
   const [layer, setLayer] = useState<string>(initialLayer ?? "I");
   const [tags, setTags] = useState("");
   const [typeTag, setTypeTag] = useState("");
+  const [outcome, setOutcome] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,6 +314,7 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
       if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
       const c = await fetch("/api/upload/complete", json({
         docId: sb.docId, filename: file.name, contentType: file.type, title, layer, tags, typeTag,
+        outcome: asksOutcomeAtUpload(typeTag) ? outcome : "",
       }));
       const cb = await c.json().catch(() => ({}));
       if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
@@ -314,6 +359,16 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
         {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
       </select>
       <div className="hint" style={{ marginTop: 4 }}>A pitch deck, an IRS 990, a budget and similar documents count on the readiness checklist once their type is set.</div>
+      {asksOutcomeAtUpload(typeTag) && (
+        <>
+          <label>How did this application turn out?</label>
+          <select value={outcome} onChange={e => setOutcome(e.target.value)}>
+            <option value="">Not set</option>
+            {OUTCOMES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          <div className="hint" style={{ marginTop: 4 }}>Won marks it as a winning grant. You can set or change this later from the document.</div>
+        </>
+      )}
       <label>Tags (comma-separated)</label>
       <input value={tags} onChange={e => setTags(e.target.value)} placeholder="budget, transportation" />
       {error && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {error}</div>}

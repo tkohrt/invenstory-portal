@@ -1557,3 +1557,8 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .pl-clear{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pl-clear input{flex:1;min-width:200px;font-size:13px;padding:5px 8px}
 .fig-list{max-height:52vh;overflow:auto;margin:8px 0}
+
+/* ---- Document outcomes and the winning tag (Auto-Draft patch 2, 12 Oct 2026) ---- */
+.win-tag{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#7a5a12;background:#fbf3dc;border:1px solid #ecd9a3;border-radius:6px;padding:1px 7px;white-space:nowrap}
+.oc-pick{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px}
+.oc-note{font-size:12px;color:var(--muted)}

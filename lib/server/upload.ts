@@ -18,6 +18,7 @@ import { markStaleOnUpload } from "./artifacts";
 import { notifyClientUpload } from "./notify";
 import { EXT_TO_KIND } from "@/lib/uploads";
 import { DOC_TYPE_MAP } from "@/lib/analysis";
+import { asksOutcomeAtUpload, parseOutcome } from "@/lib/doc-outcome";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -41,6 +42,8 @@ export interface FileInput {
   tags: string[];
   /** The document's type, if the uploader picked one (decision 33). */
   typeTag?: string | null;
+  /** 0060: how the grant turned out, asked at upload for a past grant application only. */
+  outcome?: string | null;
 }
 
 /** Create the document rows for a file already in storage, then read it. */
@@ -59,6 +62,9 @@ export async function fileUploadedDocument(i: FileInput): Promise<{ id: string }
     // Only when picked, so an upload without one never touches the 0056 columns.
     ...(i.typeTag && DOC_TYPE_MAP[i.typeTag]
       ? { type_tag: i.typeTag, type_tagged_by: i.userId, type_tagged_at: new Date().toISOString() } : {}),
+    // Likewise only when given, and only for a past grant application (0060).
+    ...(asksOutcomeAtUpload(i.typeTag) && parseOutcome(i.outcome)
+      ? { outcome: parseOutcome(i.outcome), outcome_set_by: i.userId, outcome_set_at: new Date().toISOString() } : {}),
   });
   if (docErr) return { error: docErr.message, status: 500 };
   await db.from("document_version").insert({

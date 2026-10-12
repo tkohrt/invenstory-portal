@@ -45,6 +45,12 @@ export interface Document {
   snippet: string; // derived preview (first chunk); denormalized for cards
   created_at: string;
   updated_at: string;
+  /** 0056: the type a person gave it. */
+  type_tag?: string | null;
+  /** 0060: how the grant it holds turned out (lib/doc-outcome.ts); "won" is a winning grant. */
+  outcome?: "won" | "not_funded" | "pending" | "unknown" | null;
+  outcome_set_by?: string | null;
+  outcome_set_at?: string | null;
 }
 
 export interface DocumentVersion {
