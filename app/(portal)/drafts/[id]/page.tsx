@@ -7,16 +7,17 @@ import ApplicationDraftView from "@/components/ApplicationDraftView";
 import DraftWorkspace from "@/components/DraftWorkspace";
 import { getWorkspace } from "@/lib/server/workspace";
 import { closedInBrain } from "@/lib/server/brain";
+import { getDraftContext } from "@/lib/server/draft-context";
 
 // Confirming an application's questions re-matches any edited question to the
 // question bank, which is a model call inside the confirm action.
 export const maxDuration = 60;
 
 export default async function DraftDetailPage({ params, searchParams }: {
-  params: Promise<{ id: string }>; searchParams: Promise<{ q?: string; since?: string }>;
+  params: Promise<{ id: string }>; searchParams: Promise<{ q?: string; since?: string; ctx?: string }>;
 }) {
   const { id } = await params;
-  const { q, since } = await searchParams;
+  const { q, since, ctx } = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
   await closedInBrain(session.tenantId);  // Auto-Draft patch 3: not a client page
@@ -29,6 +30,10 @@ export default async function DraftDetailPage({ params, searchParams }: {
   // sessions; this is the second lock on the same door.
   if (session.role !== "admin") return <div className="empty">This draft doesn&rsquo;t exist.</div>;
   const { source_text, ...rest } = draft as typeof draft & { source_text?: string | null };
+  // The grant context box (Auto-Draft patch 5). Items that could not be added
+  // from /drafts/new come back as ?ctx=failed-<n>.
+  const context = await getDraftContext(session.tenantId, id);
+  const contextFailed = /^failed-\d+$/.test(ctx ?? "") ? Number((ctx as string).slice(7)) : 0;
   // Confirmed questions open the Storyboard. Until then the page is the
   // reading and confirmation screen.
   if (draft.confirmed_at) {
@@ -36,8 +41,10 @@ export default async function DraftDetailPage({ params, searchParams }: {
     return <DraftWorkspace tenantName={tenant.name} draft={rest} ws={ws} sourceText={source_text ?? ""}
       initialQuestion={Math.max(1, Number.parseInt(q ?? "1", 10) || 1)}
       since={since && !Number.isNaN(Date.parse(since)) ? since : null}
-      confirmRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false} />;
+      confirmRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false}
+      context={context} />;
   }
   const [sections, bank] = await Promise.all([getSections(session.tenantId, id), getBankOptions(session.tenantId)]);
-  return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} bank={bank} sourceText={source_text ?? ""} />;
+  return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} bank={bank} sourceText={source_text ?? ""}
+    context={context} contextFailed={contextFailed} />;
 }

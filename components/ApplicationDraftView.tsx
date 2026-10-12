@@ -12,6 +12,8 @@ import { confirmSectionsAction, saveDraftDetailsAction, saveSectionsAction, type
 import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { BankOption } from "@/lib/server/drafts";
 import type { DraftSection, GrantDraft } from "@/lib/types";
+import GrantContextBox from "./GrantContextBox";
+import type { ContextItem } from "@/lib/server/draft-context";
 
 const HAND = "Chosen by hand on the confirmation screen.";
 const NEW = "__new";
@@ -56,8 +58,12 @@ const toInput = (r: Row): SectionInput => {
 
 const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF", docx: "a Word file", url: "a web page", match: "Funder Matches" };
 
-export default function ApplicationDraftView({ tenantName, draft, sections, bank, sourceText }: {
+export default function ApplicationDraftView({ tenantName, draft, sections, bank, sourceText, context, contextFailed = 0 }: {
   tenantName: string; draft: GrantDraft; sections: DraftSection[]; bank: BankOption[]; sourceText: string;
+  /** The grant context box (Auto-Draft patch 5). */
+  context: { ready: boolean; items: ContextItem[] };
+  /** Items that could not be added from /drafts/new. */
+  contextFailed?: number;
 }) {
   const router = useRouter();
   const { job, events, syncJob, gaveUp } = useJob(null);
@@ -125,6 +131,15 @@ export default function ApplicationDraftView({ tenantName, draft, sections, bank
           </p>
         </div>
       </div>
+
+      <details className="gc-wrap" open={contextFailed > 0 || context.items.length > 0 || undefined}>
+        <summary>Grant context{context.items.length ? ` (${context.items.length})` : ""}
+          <span className="ov-muted"> · the funder&rsquo;s overview and what the client wants this application to say. Optional; auto-draft reads it.</span></summary>
+        {contextFailed > 0 && (
+          <div className="ap-error" role="alert">{contextFailed} item{contextFailed === 1 ? "" : "s"} of grant context could not be added. Add {contextFailed === 1 ? "it" : "them"} again here.</div>
+        )}
+        <GrantContextBox mode="live" draftId={draft.id} items={context.items} ready={context.ready} locked={false} />
+      </details>
 
       {job && (running || needsRun) && <JobProgress job={job} events={events} lostContact={gaveUp} />}
       {running && !job && <div className="ov-note">Starting to read the application&hellip;</div>}

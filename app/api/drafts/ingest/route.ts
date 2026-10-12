@@ -14,60 +14,19 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import {
-  pdfToText, docxToText, htmlToText, looksLikeLoginWall, fetchableUrl, uploadKind, tidyText, MAX_SOURCE_CHARS,
+  pdfToText, docxToText, uploadKind, tidyText, MAX_SOURCE_CHARS,
 } from "@/lib/application-text";
+import { Plain, readUrl, type Original } from "@/lib/server/read-url";
 
 export const maxDuration = 60;
 
 /** Vercel refuses request bodies over 4.5 MB before this code runs. */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const MAX_FETCH_BYTES = 8 * 1024 * 1024;
-const FETCH_TIMEOUT_MS = 15_000;
 
-class Plain extends Error {}
-
-/** The original file, kept with the draft so For Granted can open it later (patch 2, 6 October 2026). */
-interface Original { bytes: Uint8Array; mime: string; name: string }
-
+/** The funder's application from a web address (the reader is shared with the grant context box). */
 async function fromUrl(raw: string): Promise<{ text: string; url: string; kind: "url"; original?: Original }> {
-  const check = fetchableUrl(raw);
-  if (!check.ok) throw new Plain(check.reason);
-  let res: Response;
-  try {
-    res = await fetch(check.url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { "user-agent": "ForGrantedPortal/1.0 (grant application reader; +https://forgranted.com)", accept: "text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5" },
-    });
-  } catch {
-    throw new Plain("That page did not respond in time. Paste the questions instead.");
-  }
-  if (!res.ok) {
-    throw new Plain(res.status === 401 || res.status === 403
-      ? "That page needs a sign-in. Open it yourself and paste the questions instead."
-      : `That page answered with an error (${res.status}). Paste the questions instead.`);
-  }
-  const buf = new Uint8Array(await res.arrayBuffer());
-  if (buf.byteLength > MAX_FETCH_BYTES) throw new Plain("That file is too large to read from a link. Paste the questions instead.");
-  const type = (res.headers.get("content-type") ?? "").toLowerCase();
-  const base = (check.url.pathname.split("/").pop() || "application").slice(0, 120);
-  if (type.includes("pdf") || uploadKind(check.url.pathname, buf) === "pdf") {
-    return { text: await pdfToText(buf), url: res.url || check.url.href, kind: "url",
-      original: { bytes: buf, mime: "application/pdf", name: /\.pdf$/i.test(base) ? base : `${base}.pdf` } };
-  }
-  if (type.includes("officedocument.wordprocessingml") || uploadKind(check.url.pathname, buf) === "docx") {
-    return { text: await docxToText(buf), url: res.url || check.url.href, kind: "url",
-      original: { bytes: buf, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", name: /\.docx$/i.test(base) ? base : `${base}.docx` } };
-  }
-  const body = new TextDecoder("utf-8", { fatal: false }).decode(buf);
-  const text = type.includes("html") || /<html|<body|<p[\s>]/i.test(body.slice(0, 5000)) ? htmlToText(body) : tidyText(body);
-  if (looksLikeLoginWall(body, text)) {
-    throw new Plain("That page is a sign-in screen, so the questions are behind a login. Open it yourself and paste the questions instead.");
-  }
-  if (text.split(/\s+/).length < 40) {
-    throw new Plain("That page has almost no readable text (it may be built in JavaScript). Paste the questions instead.");
-  }
-  return { text, url: res.url || check.url.href, kind: "url" };
+  const r = await readUrl(raw, "Paste the questions instead.");
+  return { ...r, kind: "url" };
 }
 
 export async function POST(req: Request) {

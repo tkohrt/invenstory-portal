@@ -1594,3 +1594,35 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .vp-kind{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;min-width:170px}
 .vp-title{flex:1;min-width:180px}
 .vp-weight{font-size:12px}
+
+/* ---- The grant context box (Auto-Draft patch 5, 12 Oct 2026) ---- */
+.gc-new{margin:18px 0 6px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.gc-new h3{margin:0 0 4px}
+.gc-optional{font-size:12px;font-weight:400;margin-left:6px}
+.gc-new > p{margin:0 0 10px;font-size:13px;line-height:1.5}
+.gc-wrap{margin:10px 0 14px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.gc-wrap > summary{cursor:pointer;font-weight:600}
+.gc-wrap > summary .ov-muted{font-weight:400;font-size:13px}
+.gc-wrap[open] > summary{margin-bottom:10px}
+.gc-parts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.gc-drawer .gc-parts{grid-template-columns:1fr}
+@media (max-width:860px){.gc-parts{grid-template-columns:1fr}}
+.gc-part{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.gc-part h4{margin:0 0 2px;font-size:14px}
+.gc-n{font-weight:400;font-size:12px}
+.gc-describe{margin:0 0 8px;font-size:12.5px;line-height:1.45}
+.gc-items{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:5px}
+.gc-item{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}
+.gc-kind{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);min-width:64px}
+.gc-title{flex:1;min-width:140px;font-weight:600}
+.gc-meta{font-size:12px}
+.gc-acts{display:flex;gap:8px}
+.gc-remove{color:#9a3412}
+.gc-rename{flex:1;display:flex;gap:6px;align-items:center;min-width:200px}
+.gc-rename input{flex:1}
+.gc-form{display:flex;flex-direction:column;gap:7px;padding:8px;border:1px dashed var(--line);border-radius:8px;background:var(--panel)}
+.gc-form textarea{width:100%;font:inherit;font-size:13px;line-height:1.45}
+.gc-form .ap-tabs{margin:0}
+.gc-form-acts{display:flex;justify-content:flex-end;gap:8px}
+.gc-read{max-width:760px;width:min(760px,94vw)}
+.gc-text{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.5;max-height:60vh;overflow:auto;background:var(--bg);padding:10px 12px;border-radius:8px;border:1px solid var(--line)}

@@ -64,6 +64,8 @@ import { untracedFigures } from "@/lib/story-card";
 import { CLEAR_REASON_MAX } from "@/lib/polish";
 import type { Workspace, WsBlock, WsCard, WsClearance, WsSection, WsStandard } from "@/lib/server/workspace";
 import type { GrantDraft } from "@/lib/types";
+import GrantContextBox from "./GrantContextBox";
+import type { ContextItem } from "@/lib/server/draft-context";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 type Stage = "arrange" | "weave" | "polish";
@@ -72,8 +74,10 @@ const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF
 
 const layerClass = (l: string | null) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "");
 
-export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion, since, confirmRemove = true }: {
+export default function DraftWorkspace({ tenantName, draft, ws, sourceText, initialQuestion, since, confirmRemove = true, context = { ready: false, items: [] } }: {
   tenantName: string; draft: GrantDraft; ws: Workspace; sourceText: string; initialQuestion: number;
+  /** The grant context box (Auto-Draft patch 5), opened from the top bar. */
+  context?: { ready: boolean; items: ContextItem[] };
   /** Standard Answers: when it was last opened, to mark questions added since. */
   since?: string | null;
   /** Ask before removing a plain card (the person's "Don't ask me again" setting). */
@@ -105,6 +109,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [showOptional, setShowOptional] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Reviewing cards before they are used (decided 2 October 2026). `place` puts
   // each card into the answer once verified; `review` only verifies.
@@ -826,6 +831,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "lost"), () => router.refresh())}>Mark declined</button>
           </>
         )}
+        <button type="button" className="btn ghost ap-mini" onClick={() => setContextOpen(true)}
+          title="The funder's overview and what the client wants this application to say. Auto-draft reads it.">
+          Grant context{context.items.length ? ` (${context.items.length})` : ""}</button>
         <button type="button" className="btn ghost ap-mini" onClick={() => setVersionsOpen(true)}>Versions</button>
         <span className="ws-flag">Admin · {tenantName} · For Granted only</span>
         <span className="ws-saved" aria-live="polite">{pending ? "Saving…" : savedAt ? "All changes saved" : ""}</span>
@@ -1152,6 +1160,19 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
             </div>
           </div>
         </div>
+        {contextOpen && (
+          <div className="ws-modal-back" role="presentation" onClick={() => setContextOpen(false)}>
+            <aside className="ws-versions gc-drawer" role="dialog" aria-modal="true" aria-label="Grant context" onClick={e => e.stopPropagation()}>
+              <div className="ws-versions-head">
+                <h3>Grant context</h3>
+                <button type="button" className="bn-x" onClick={() => setContextOpen(false)} aria-label="Close">×</button>
+              </div>
+              <p className="ov-muted">What auto-draft should know beyond the questions. It teaches nothing about facts: every figure and name
+                in the answer still comes from a Story Card. None of it is added to {tenantName}&rsquo;s Inven(s)tory.</p>
+              <GrantContextBox mode="live" draftId={draft.id} items={context.items} ready={context.ready} locked={readOnly} />
+            </aside>
+          </div>
+        )}
         {versionsOpen && (
           <VersionsDrawer draftId={draft.id} readOnly={readOnly} onClose={() => setVersionsOpen(false)}
             onRestored={(r) => { setVersionsOpen(false); setHistory({}); say(`Restored ${r.restored} question${r.restored === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} no longer in this application were skipped` : ""}. The previous state was saved as a version first.`); router.refresh(); }} />

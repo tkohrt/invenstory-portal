@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { MatchPrefill } from "@/lib/server/drafts";
+import GrantContextBox, { sendPendingContext, type PendingContext } from "./GrantContextBox";
 
 type Source = "paste" | "file" | "url";
 
@@ -23,6 +24,8 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
     text: "", url: prefill?.url ?? "",
   });
   const [file, setFile] = useState<File | null>(null);
+  // The grant context box (Auto-Draft patch 5): held here until the draft exists.
+  const [context, setContext] = useState<PendingContext[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +46,10 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
       const res = await fetch("/api/drafts/ingest", { method: "POST", body: fd });
       const r = await res.json().catch(() => ({}));
       if (!res.ok || !r.id) throw new Error(r.error ?? (res.status === 413 ? "That file is too large. Paste the questions instead." : "Could not bring that application in."));
-      router.push(`/drafts/${r.id}`);
+      // Then the grant context, item by item. The draft stands either way; any
+      // item that could not be added is reported on the draft, to add again there.
+      const sent = context.length ? await sendPendingContext(r.id, context) : { failed: 0 };
+      router.push(`/drafts/${r.id}${sent.failed ? `?ctx=failed-${sent.failed}` : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not bring that application in.");
       setBusy(false);
@@ -98,6 +104,14 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
         </label>
       )}
 
+      <div className="gc-new">
+        <h3>Grant context <span className="ov-muted gc-optional">optional</span></h3>
+        <p className="ov-muted">What auto-draft should know beyond the questions: the funder&rsquo;s overview, FAQ and website, and anything
+          the client wants this application to say. Auto-draft is much more useful and accurate with the funder&rsquo;s own material.
+          None of it is added to {tenantName}&rsquo;s Inven(s)tory. You can add more on the draft later.</p>
+        <GrantContextBox mode="pending" items={context} onChange={setContext} />
+      </div>
+
       <p className="ov-muted ap-optional">Optional. The opportunity, funder and deadline are read from the application if you leave them blank, and you confirm them on the next screen.</p>
       <div className="ap-grid">
         <label>Opportunity<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Read from the application if left blank" /></label>
@@ -109,7 +123,7 @@ export default function NewApplicationView({ tenantName, prefill }: { tenantName
       {error && <div className="ap-error" role="alert">{error}</div>}
 
       <button className="btn inline ap-go" disabled={!ready || busy} onClick={() => void submit()} aria-busy={busy}>
-        {busy ? (source === "url" ? "Fetching the page…" : "Bringing it in…") : "Bring in the application"}
+        {busy ? (source === "url" ? "Fetching the page…" : "Bringing it in…") : `Bring in the application${context.length ? ` and ${context.length} context item${context.length === 1 ? "" : "s"}` : ""}`}
       </button>
     </div>
   );
