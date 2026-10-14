@@ -50,6 +50,11 @@ export interface WsBlock {
   breakBefore: boolean;
   /** A bridge Weave proposed that no one has accepted yet: shown, never part of the answer's text. */
   proposed: boolean;
+  /**
+   * Wording auto-draft suggested for an unedited card (Auto-Draft patch 8),
+   * waiting on a person; never part of the answer's text. Null otherwise.
+   */
+  suggested: string | null;
 }
 
 export interface WsSection {
@@ -129,11 +134,12 @@ export async function resolveBlocks(tenantId: string, rows: Raw[], via?: Supabas
       cardId: (r.card_id as string | null) ?? null, cardVersion: (r.card_version as number | null) ?? null,
       text, ownText: (r.text as string | null) ?? null, edited, breakBefore: !!r.break_before,
       proposed: r.kind === "bridge" && !!r.proposed,
+      suggested: r.kind === "card" && !edited ? ((r.suggested_text as string | null | undefined) ?? null) : null,
     };
   });
 }
 
-export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before, proposed";
+export const BLOCK_COLS = "id, section_id, sort_order, kind, card_id, card_version, text, edited, break_before, proposed, suggested_text";
 
 /** The client's live cards, with what ranking and placement need. */
 export async function loadCards(tenantId: string, via?: SupabaseClient): Promise<WsCard[]> {

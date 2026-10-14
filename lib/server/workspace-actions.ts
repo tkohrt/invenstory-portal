@@ -38,6 +38,7 @@ import { figureRefusal } from "./polish";
 import { isAutoDrafted } from "./autodraft";
 import { approvedSnapshot, standardAnswerPieces } from "./standard-blocks";
 import { stageBlocks } from "@/lib/autodraft";
+import { pendingSuggestion, suggestionRefusal } from "@/lib/suggest-wording";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -87,7 +88,8 @@ async function renumber(tenantId: string, rows: Record<string, unknown>[], order
 
 interface EventIn {
   event: "shown" | "added" | "removed" | "reordered" | "edited"
-    | "bridge_proposed" | "bridge_accepted" | "bridge_rejected" | "bridge_edited";
+    | "bridge_proposed" | "bridge_accepted" | "bridge_rejected" | "bridge_edited"
+    | "wording_accepted" | "wording_rejected";
   card_id?: string | null; block_id?: string | null;
   position?: number | null; rank_score?: number | null; payload?: Record<string, unknown> | null;
 }
@@ -120,6 +122,16 @@ async function finish(s: Session, section: SectionRow): Promise<WsBlock[]> {
 
 const SENSITIVE_REFUSAL = "That card ties an identifiable person to protected information. Record consent, "
   + "de-identify it, or rule it not sensitive in the Card Library before it can go into an answer.";
+
+/**
+ * Clears a card block's suggested wording (Auto-Draft patch 8). Any change to
+ * a card's words in this draft clears it: the suggestion was about the words as
+ * they stood, and the person has now dealt with them.
+ */
+const NO_SUGGESTION = { suggested_text: null, suggested_at: null } as const;
+
+type SuggestResult = { ok: true; blocks: WsBlock[] } | { ok: false; error: string };
+const SUGGESTION_GONE = "That suggestion has changed or already been dealt with. The page has been brought up to date.";
 
 const UNVERIFIED_REFUSAL = "That card has not been verified yet. Review it first: verifying it, or editing it, "
   + "places it in the answer.";
@@ -303,6 +315,19 @@ export async function restoreAnswerAction(sectionId: string, target: UndoBlock[]
   const section = await loadSection(s.tenantId, sectionId);
   const problem = restoreProblem(target);
   if (problem) return { ok: false, error: problem };
+  // A suggestion coming back must still pass the check against the card's words
+  // at its version (patch 8 review): Undo never shows wording the check refused.
+  const withSugg = target.filter(b => b.kind === "card" && !b.edited && b.suggested && b.cardId);
+  if (withSugg.length) {
+    const { data: vs } = await db.from("story_card_version").select("card_id, version, statement")
+      .eq("tenant_id", s.tenantId).in("card_id", [...new Set(withSugg.map(b => b.cardId as string))]);
+    const words = new Map(((vs ?? []) as { card_id: string; version: number; statement: string }[]).map(v => [`${v.card_id}:${v.version}`, v.statement]));
+    target = target.map(b => {
+      if (!(b.kind === "card" && !b.edited && b.suggested && b.cardId)) return b;
+      const own = words.get(`${b.cardId}:${b.cardVersion}`);
+      return own != null && !suggestionRefusal(own, b.suggested) ? b : { ...b, suggested: null };
+    });
+  }
   const rows = await rawBlocks(s.tenantId, sectionId);
   const plan = planRestore(rows as unknown as StoredBlock[], target);
 
@@ -319,14 +344,16 @@ export async function restoreAnswerAction(sectionId: string, target: UndoBlock[]
     if (error) return { ok: false, error: `Could not undo: ${error.message}` };
   }
   const stamp = new Date().toISOString();
+  // A suggestion put back is dated now; one taken away loses its date too.
+  const dated = (set: Record<string, unknown>) => ("suggested_text" in set ? { ...set, suggested_at: set.suggested_text ? stamp : null } : set);
   for (const u of plan.updates) {
-    const { error } = await db.from("section_block").update({ ...u.set, updated_at: stamp })
+    const { error } = await db.from("section_block").update({ ...dated(u.set), updated_at: stamp })
       .eq("tenant_id", s.tenantId).eq("section_id", sectionId).eq("id", u.id);
     if (error) return { ok: false, error: `Could not undo: ${error.message}` };
   }
   if (plan.inserts.length) {
     const { error } = await db.from("section_block").insert(plan.inserts.map(x => ({
-      ...x.row, id: x.id, tenant_id: s.tenantId, section_id: sectionId, created_by: s.user.id, updated_at: stamp,
+      ...dated(x.row), id: x.id, tenant_id: s.tenantId, section_id: sectionId, created_by: s.user.id, updated_at: stamp,
     })));
     if (error) return { ok: false, error: `Could not undo: ${error.message}` };
   }
@@ -389,12 +416,12 @@ export async function editBlockAction(sectionId: string, blockId: string, text: 
     const same = next.replace(/\s+/g, " ").trim() === original.replace(/\s+/g, " ").trim();
     if (before.text.trim() === next.trim()) return finish(s, section);
     const { error } = await db.from("section_block").update({
-      text: same ? null : next, edited: !same, updated_at: new Date().toISOString(),
+      text: same ? null : next, edited: !same, ...NO_SUGGESTION, updated_at: new Date().toISOString(),
     }).eq("tenant_id", s.tenantId).eq("id", blockId);
     if (error) throw new Error(`Could not save the edit: ${error.message}`);
     await logEvents(s, section, [{
       event: "edited", card_id: row.card_id as string, block_id: blockId,
-      payload: { before: before.text, after: next, reverted: same },
+      payload: { before: before.text, after: next, reverted: same, ...(row.suggested_text ? { cleared_suggestion: row.suggested_text } : {}) },
     }]);
   } else if (row.kind === "bridge") {
     // A writer's edit of a bridge is also their acceptance of it. It is theirs
@@ -430,7 +457,7 @@ export async function refreshBlockWordingAction(sectionId: string, blockId: stri
     .eq("tenant_id", s.tenantId).eq("id", row.card_id as string).maybeSingle();
   if (!card) throw new Error("That card is not in this client's library.");
   const { error } = await db.from("section_block").update({
-    card_version: card.version, text: null, edited: false, updated_at: new Date().toISOString(),
+    card_version: card.version, text: null, edited: false, ...NO_SUGGESTION, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", blockId);
   if (error) throw new Error(`Could not update the wording: ${error.message}`);
   return finish(s, section);
@@ -451,7 +478,7 @@ export async function keepWordingAction(sectionId: string, blockId: string): Pro
   if (row.edited) return finish(s, section);
   const [resolved] = await resolveBlocks(s.tenantId, [row]);
   const { error } = await db.from("section_block").update({
-    text: resolved.text.slice(0, 8000), edited: true, updated_at: new Date().toISOString(),
+    text: resolved.text.slice(0, 8000), edited: true, ...NO_SUGGESTION, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", blockId);
   if (error) throw new Error(`Could not keep the wording: ${error.message}`);
   await logEvents(s, section, [{
@@ -459,6 +486,58 @@ export async function keepWordingAction(sectionId: string, blockId: string): Pro
     payload: { before: resolved.text, after: resolved.text, kept_old_wording: true, placed_version: row.card_version },
   }]);
   return finish(s, section);
+}
+
+/**
+ * Accept the wording auto-draft suggested for a card (Auto-Draft patch 8, spec
+ * section 6): it becomes this draft's own edit of the card. `shown` is the
+ * suggestion the person saw (accepted only if it is still the one stored);
+ * `text` is their adjustment of it (Edit), absent to take it as suggested. The
+ * library card is untouched and NOT verified by this: verifying is still done
+ * in the card's review, and saving the wording to the library its own step.
+ * Wording set back to the card's own words is no edit at all.
+ */
+export async function acceptSuggestionAction(sectionId: string, blockId: string, shown: string, text?: string): Promise<SuggestResult> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const row = rows.find(r => r.id === blockId);
+  if (!row || row.kind !== "card") return { ok: false, error: "That card is no longer in this answer. The page has been brought up to date." };
+  const suggested = (row.suggested_text as string | null) ?? null;
+  if (!suggested || row.edited || suggested !== shown) return { ok: false, error: SUGGESTION_GONE };
+  const next = (typeof text === "string" ? text : suggested).replace(/\s+/g, " ").trim().slice(0, 8000);
+  if (!next) return { ok: false, error: "A card cannot be left with no words. Reject the suggestion to keep the card's own wording." };
+  const [before] = await resolveBlocks(s.tenantId, [row]);
+  const same = next === before.text.replace(/\s+/g, " ").trim();
+  // Only while this suggestion still stands, so two people (or two tabs) cannot both act on it.
+  const { data: done, error } = await db.from("section_block").update({
+    text: same ? null : next, edited: !same, ...NO_SUGGESTION, updated_at: new Date().toISOString(),
+  }).eq("tenant_id", s.tenantId).eq("id", blockId).eq("edited", false).eq("suggested_text", suggested).select("id");
+  if (error) return { ok: false, error: `Could not accept the wording: ${error.message}` };
+  if (!(done ?? []).length) return { ok: false, error: SUGGESTION_GONE };
+  await logEvents(s, section, [{
+    event: same ? "wording_rejected" : "wording_accepted", card_id: row.card_id as string, block_id: blockId,
+    payload: { before: before.text, suggested, after: next, adjusted: next !== suggested, ...(same ? { kept_own_words: true } : {}) },
+  }]);
+  return { ok: true, blocks: await finish(s, section) };
+}
+
+/** Reject the wording auto-draft suggested for a card: the card keeps its own words. */
+export async function rejectSuggestionAction(sectionId: string, blockId: string): Promise<SuggestResult> {
+  const s = await requireAdmin();
+  const section = await loadSection(s.tenantId, sectionId);
+  const rows = await rawBlocks(s.tenantId, sectionId);
+  const row = rows.find(r => r.id === blockId);
+  if (!row || row.kind !== "card") return { ok: false, error: "That card is no longer in this answer. The page has been brought up to date." };
+  const suggested = (row.suggested_text as string | null) ?? null;
+  if (!suggested) return { ok: true, blocks: await finish(s, section) };
+  const { data: done, error } = await db.from("section_block").update({ ...NO_SUGGESTION, updated_at: new Date().toISOString() })
+    .eq("tenant_id", s.tenantId).eq("id", blockId).eq("suggested_text", suggested).select("id");
+  if (error) return { ok: false, error: `Could not reject the wording: ${error.message}` };
+  if ((done ?? []).length) {
+    await logEvents(s, section, [{ event: "wording_rejected", card_id: row.card_id as string, block_id: blockId, payload: { suggested } }]);
+  }
+  return { ok: true, blocks: await finish(s, section) };
 }
 
 /** Start a new paragraph before this block, or join it to the one before. */
@@ -666,6 +745,12 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
       throw new Error(`${stale} card${stale === 1 ? " in this answer was" : "s in this answer were"} reworded in the library after being placed. `
         + "Use the new wording, or keep the old wording, before approving.");
     }
+  }
+  // And no suggested wording waiting on a person (Auto-Draft patch 8).
+  const waiting = rows.filter(r => pendingSuggestion({ kind: String(r.kind), edited: !!r.edited, suggested: r.suggested_text as string | null })).length;
+  if (waiting) {
+    throw new Error(`${waiting} card${waiting === 1 ? " in this answer has" : "s in this answer have"} suggested wording nobody has chosen on yet. `
+      + "Accept, edit or reject each before approving.");
   }
   // And no number without a source that nobody has cleared (Polish's figure audit, 9 Oct 2026).
   const figures = await figureRefusal(s.tenantId, [sectionId], "this answer");
@@ -1119,7 +1204,7 @@ export async function saveWordingToLibraryAction(sectionId: string, blockId: str
   const version = await writeCardEdit(s.tenantId, s.user.id, row.card_id as string, String(row.text ?? ""), "admin");
   const { data: card } = await db.from("story_card").select("version").eq("tenant_id", s.tenantId).eq("id", row.card_id as string).maybeSingle();
   const { error } = await db.from("section_block").update({
-    card_version: version ?? card?.version ?? row.card_version, text: null, edited: false, updated_at: new Date().toISOString(),
+    card_version: version ?? card?.version ?? row.card_version, text: null, edited: false, ...NO_SUGGESTION, updated_at: new Date().toISOString(),
   }).eq("tenant_id", s.tenantId).eq("id", blockId);
   if (error) throw new Error(`Could not update the answer: ${error.message}`);
   await logEvents(s, section, [{ event: "edited", card_id: row.card_id as string, block_id: blockId, payload: { saved_to_library: true } }]);

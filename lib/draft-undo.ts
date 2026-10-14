@@ -24,6 +24,8 @@ export interface UndoBlock {
   edited: boolean;
   breakBefore: boolean;
   proposed: boolean;
+  /** Wording auto-draft suggested for an unedited card, still waiting (Auto-Draft patch 8). Absent means none. */
+  suggested?: string | null;
 }
 
 /** How many changes back Undo reaches, per question. */
@@ -36,12 +38,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The page's blocks as Undo remembers them. Blocks still being saved (tmp-) are left out. */
 export function undoState(blocks: {
   id: string; kind: UndoBlock["kind"]; cardId: string | null; cardVersion: number | null;
-  ownText: string | null; edited: boolean; breakBefore: boolean; proposed: boolean;
+  ownText: string | null; edited: boolean; breakBefore: boolean; proposed: boolean; suggested?: string | null;
 }[]): UndoBlock[] {
   return blocks.filter(b => UUID.test(b.id)).map(b => ({
     id: b.id, kind: b.kind, cardId: b.cardId, cardVersion: b.cardVersion,
     text: b.ownText, edited: b.edited, breakBefore: b.breakBefore, proposed: b.kind === "bridge" && b.proposed,
+    suggested: suggestedOf(b),
   }));
+}
+
+/** A block's waiting suggestion, as Undo keeps it: only on an unedited card. */
+function suggestedOf(b: { kind: string; edited: boolean; suggested?: string | null }): string | null {
+  return b.kind === "card" && !b.edited && typeof b.suggested === "string" && b.suggested ? b.suggested.slice(0, 4000) : null;
 }
 
 /** Two remembered answers are the same: nothing to undo between them. */
@@ -49,7 +57,8 @@ export function sameState(a: UndoBlock[], b: UndoBlock[]): boolean {
   return a.length === b.length && a.every((x, i) => {
     const y = b[i];
     return x.id === y.id && x.kind === y.kind && x.cardId === y.cardId && x.cardVersion === y.cardVersion
-      && (x.text ?? null) === (y.text ?? null) && x.edited === y.edited && x.breakBefore === y.breakBefore && x.proposed === y.proposed;
+      && (x.text ?? null) === (y.text ?? null) && x.edited === y.edited && x.breakBefore === y.breakBefore && x.proposed === y.proposed
+      && suggestedOf(x) === suggestedOf(y);
   });
 }
 
@@ -63,7 +72,7 @@ export function pushUndo<T extends { state: UndoBlock[] }>(list: T[], entry: T):
 /** A stored section_block row, as the server reads it. */
 export interface StoredBlock {
   id: string; kind: string; card_id: string | null; card_version: number | null; text: string | null;
-  edited: boolean; break_before: boolean; proposed: boolean; sort_order: number;
+  edited: boolean; break_before: boolean; proposed: boolean; sort_order: number; suggested_text?: string | null;
 }
 
 export interface RestorePlan {
@@ -114,6 +123,7 @@ export function planRestore(current: StoredBlock[], target: UndoBlock[]): Restor
     edited: b.kind !== "human" && !!b.edited,
     break_before: !!b.breakBefore,
     proposed: b.kind === "bridge" && !!b.proposed,
+    suggested_text: suggestedOf(b),
   });
 
   const updates: RestorePlan["updates"] = [];

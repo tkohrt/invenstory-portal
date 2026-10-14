@@ -18,6 +18,8 @@ import {
   type AdaptSummary, type OriginalPiece, type SaAdaptation, type SourcePiece,
 } from "@/lib/sa-adapt";
 import { UNDO_MAX_BLOCKS } from "@/lib/draft-undo";
+import { MAX_SUGGESTIONS, SUGGEST_SYSTEM, parseSuggestReply, screenSuggestions, suggestUser } from "@/lib/suggest-wording";
+import { assembleAnswer } from "@/lib/section-answer";
 import { chatComplete } from "./llm";
 import { withAiUsage } from "./ai-usage";
 import { BLOCK_COLS, loadCards, resolveBlocks, type WsCard } from "./workspace";
@@ -125,6 +127,14 @@ export interface RunCtx {
   funderContext: string;
   clientContext: string;
   application: string;
+  /**
+   * For a server-carried stage: after this time (ms) no suggested-wording call
+   * starts, so the stage ends well inside the function's 60 seconds rather
+   * than being cut off mid-question (review of patch 8). Absent: no limit.
+   */
+  suggestBy?: number;
+  /** For a server-carried stage: false once the run was stopped or its draft locked. */
+  stillOn?: () => Promise<boolean>;
 }
 
 export async function loadRunCtx(tenantId: string, userId: string | null, draftId: string): Promise<RunCtx> {
@@ -167,6 +177,8 @@ export interface SectionOutcome {
   gaps: number;
   /** Started from a Standard Answer and adapted for this funder (a choice now waits on the question). */
   adapted?: boolean;
+  /** Cards given suggested wording, waiting on a person (patch 8). */
+  suggested?: number;
   error?: string;
 }
 
@@ -194,6 +206,63 @@ async function logEvent(ctx: RunCtx, sectionId: string, event: string, payload: 
     event, actor: ctx.userId, actor_role: "admin", payload,
   });
   if (error) console.error(`[autodraft] ${event} not logged: ${error.message}`);
+}
+
+/**
+ * Step 3, suggested wording (spec sections 4 and 6, patch 8): one model call
+ * over the cards this run placed in the question, suggesting new wording only
+ * where it would read better here. Each suggestion passes the code check in
+ * lib/suggest-wording.ts or is discarded unseen, and is stored on its block
+ * (suggested_text) to wait on a person; the card's own words stay in the
+ * answer. Returns how many were stored. Never fails the question: a model or
+ * write failure means no suggestions, logged.
+ */
+async function suggestWording(ctx: RunCtx, section: SectionRow, placedBlockIds: string[]): Promise<number> {
+  if (!placedBlockIds.length) return 0;
+  if (ctx.suggestBy && Date.now() > ctx.suggestBy) { console.info("[autodraft] no time left in this stage for suggested wording"); return 0; }
+  if (ctx.stillOn && !(await ctx.stillOn())) return 0;
+  const { data, error: rErr } = await db.from("section_block").select(BLOCK_COLS)
+    .eq("tenant_id", ctx.tenantId).eq("section_id", section.id).order("sort_order");
+  if (rErr) { console.error(`[autodraft] wording not suggested, answer unreadable: ${rErr.message}`); return 0; }
+  const all = await resolveBlocks(ctx.tenantId, (data ?? []) as Record<string, unknown>[], db);
+  const placed = new Set(placedBlockIds);
+  const targets = all.filter(b => placed.has(b.id) && b.kind === "card" && !b.edited && !b.suggested && b.text.trim()).slice(0, MAX_SUGGESTIONS);
+  if (!targets.length) return 0;
+  const kindOf = new Map(ctx.cards.map(c => [c.id, c.kind]));
+  const user = suggestUser({
+    question: section.prompt, guidance: section.guidance, answer: assembleAnswer(all),
+    cards: targets.map((b, i) => {
+      const k = kindOf.get(b.cardId ?? "") ?? "";
+      return { n: i + 1, kindLabel: CARD_KIND_MAP[k]?.label ?? (k || "Story Card"), text: b.text };
+    }),
+    voiceProfile: ctx.voice, funderContext: ctx.funderContext, clientContext: ctx.clientContext,
+  });
+  const res = await withAiUsage({ tenantId: ctx.tenantId, userId: ctx.userId, actor: "admin", feature: "autodraft" },
+    () => chatComplete({ system: SUGGEST_SYSTEM, user, maxTokens: 2000, temperature: 0.2 })).catch(() => null);
+  if (!res) return 0;
+  const reply = parseSuggestReply(res.text, targets.length);
+  if (!reply) { console.error(`[autodraft] wording reply not usable: ${res.text.slice(0, 300)}`); return 0; }
+  const { kept, refused } = screenSuggestions(targets.map(t => t.text), reply);
+  const at = new Date().toISOString();
+  let stored = 0;
+  for (const [n, text] of kept) {
+    const b = targets[n - 1];
+    // Only on a card still as placed, at the version it was written for: a person
+    // may have changed it, or brought in the library's new wording, while the call ran.
+    const { data: up, error } = await db.from("section_block").update({ suggested_text: text, suggested_at: at })
+      .eq("tenant_id", ctx.tenantId).eq("id", b.id).eq("edited", false).eq("card_version", b.cardVersion ?? -1)
+      .is("suggested_text", null).select("id");
+    if (error) { console.error(`[autodraft] wording not stored: ${error.message}`); break; }
+    if (!(up ?? []).length) continue;
+    stored++;
+    const { error: evErr } = await db.from("card_event").insert({  // tenant-safe: the row carries tenant_id from the run
+      tenant_id: ctx.tenantId, draft_id: ctx.draftId, section_id: section.id, card_id: b.cardId, block_id: b.id,
+      event: "wording_suggested", actor: ctx.userId, actor_role: "admin", payload: { before: b.text, suggested: text },
+    });
+    if (evErr) console.error(`[autodraft] wording_suggested not logged: ${evErr.message}`);
+  }
+  if (refused) console.info(`[autodraft] ${refused} suggested wording${refused === 1 ? "" : "s"} set aside by the check`);
+  return stored;
 }
 
 type SectionRow = { id: string; draft_id: string; status: string; prompt: string; guidance: string | null; wanted_kinds: string[] | null; limit_value: number | null; limit_unit: "words" | "characters" | null; question_slugs: string[] | null };
@@ -340,6 +409,7 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
         }
         out.placed = final.length;
         await settle(ctx.tenantId, sectionId, section.status, final.length);
+        out.suggested = await suggestWording(ctx, section, placedCards.map(b => b.id));
         out.gaps = gapsAfter(placedCards.map(b => b.card_id as string));
         return out;
       }
@@ -407,6 +477,7 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
   for (const r of chosen) ctx.usedInDraft.add(r.card.id);
   out.placed = chosen.length;
   await settle(ctx.tenantId, sectionId, section.status, rows.length + chosen.length);
+  out.suggested = await suggestWording(ctx, section, [...blockOf.values()]);
   out.gaps = gapsAfter([...inAnswer, ...chosen.map(r => r.card.id)]);
   return out;
 }

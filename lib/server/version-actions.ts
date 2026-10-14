@@ -15,6 +15,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { BLOCK_COLS, resolveBlocks } from "./workspace";
 import { adaptationOpen, parseAdaptation } from "@/lib/sa-adapt";
+import { pendingSuggestion } from "@/lib/suggest-wording";
 import { assembleAnswer } from "@/lib/section-answer";
 import { describeBlockers, finishBlockers, type GateCard } from "@/lib/card-gate";
 import { figureRefusal } from "./polish";
@@ -61,6 +62,7 @@ async function currentContent(tenantId: string, draftId: string): Promise<Versio
         blocks: mine.map(b => ({
           kind: b.kind, card_id: b.cardId, card_version: b.cardVersion, own_text: b.ownText,
           text: b.text, edited: b.edited, break_before: b.breakBefore, ...(b.proposed ? { proposed: true } : {}),
+          ...(b.suggested ? { suggested: b.suggested } : {}),
         })),
       };
     }),
@@ -202,7 +204,7 @@ async function finishLineRefusal(tenantId: string, draftId: string): Promise<str
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
   const sections = (secs ?? []) as { id: string; prompt: string; sa_adaptation?: unknown }[];
   if (!sections.length) return null;
-  const { data: rows, error: bErr } = await db.from("section_block").select("id, section_id, kind, card_id, card_version, edited, proposed")
+  const { data: rows, error: bErr } = await db.from("section_block").select("id, section_id, kind, card_id, card_version, edited, proposed, suggested_text")
     .eq("tenant_id", tenantId).in("section_id", sections.map(x => x.id));
   if (bErr) throw new Error(`Could not read the answers: ${bErr.message}`);
   const blocks = ((rows ?? []) as { id: string; section_id: string; kind: string; card_id: string | null; card_version: number | null; edited: boolean }[])
@@ -226,6 +228,13 @@ async function finishLineRefusal(tenantId: string, draftId: string): Promise<str
   if (open) {
     return `${open} answer${open === 1 ? " was" : "s were"} adapted from a Standard Answer and need${open === 1 ? "s" : ""} a choice first: `
       + "keep it for this grant only, also update the Standard Answer, or go back to the Standard Answer.";
+  }
+  // Suggested wording nobody has accepted, edited or rejected (Auto-Draft patch 8, spec section 5).
+  const waiting = ((rows ?? []) as { kind: string; edited: boolean; suggested_text?: string | null }[])
+    .filter(r => pendingSuggestion({ kind: r.kind, edited: !!r.edited, suggested: r.suggested_text })).length;
+  if (waiting) {
+    return `${waiting} card${waiting === 1 ? " has" : "s have"} suggested wording nobody has chosen on yet. `
+      + "Under each card marked \"New wording suggested\", accept it, edit it or reject it.";
   }
   // Polish's figure audit (9 October 2026): no number without a source, unless a person cleared it.
   return figureRefusal(tenantId, sections.map(x => x.id), "this application");
@@ -289,6 +298,7 @@ export async function restoreVersionAction(draftId: string, versionId: string): 
         tenant_id: s.tenantId, section_id: sec.section_id, sort_order: i, kind: b.kind,
         card_id: b.card_id, card_version: b.card_version, text: b.own_text, edited: b.edited,
         break_before: b.break_before, proposed: b.kind === "bridge" && !!b.proposed, created_by: s.user.id,
+        ...(b.kind === "card" && !b.edited && b.suggested ? { suggested_text: b.suggested, suggested_at: new Date().toISOString() } : {}),
       })));
       if (error) throw new Error(`Could not restore a question: ${error.message}`);
     }

@@ -17,6 +17,8 @@ import { LOCKED_STATUSES, type DraftStatus } from "@/lib/draft-version";
 
 /** Leave room in the 60-second function for the last question's model call and the hand-off. */
 const STAGE_BUDGET_MS = 30_000;
+/** No suggested-wording call starts after this much of a stage (patch 8 review): about 20 seconds left for it. */
+const SUGGEST_BY_MS = 38_000;
 
 export interface RunState {
   draftId: string;
@@ -31,6 +33,8 @@ export interface RunState {
   leftOut: number;
   /** Questions whose Standard Answer was adapted for this funder: a choice waits on each. */
   adapted?: number;
+  /** Cards given suggested wording, waiting on a person (patch 8). */
+  suggested?: number;
   failed: number;
   skipped: number;
 }
@@ -43,6 +47,7 @@ function add(st: RunState, o: SectionOutcome) {
   if (o.start === "standard_answer" && o.placed) st.fromStandard += 1; else if (o.placed) st.arranged += 1;
   if (o.fallback) st.fallback += 1;
   if (o.adapted) st.adapted = (st.adapted ?? 0) + 1;
+  if (o.suggested) st.suggested = (st.suggested ?? 0) + o.suggested;
   st.gaps += o.gaps;
   st.leftOut += o.leftOut;
 }
@@ -50,6 +55,7 @@ function add(st: RunState, o: SectionOutcome) {
 export function summaryText(st: RunState): string {
   const parts = [`Auto-drafted ${st.run.length} question${st.run.length === 1 ? "" : "s"} of "${st.title}": ${st.placed} piece${st.placed === 1 ? "" : "s"} placed.`];
   if (st.fromStandard) parts.push(`${st.fromStandard} started from an approved Standard Answer${st.adapted ? `, ${st.adapted} of them adapted for this funder: choose under each whether the Standard Answer should change too` : ""}.`);
+  if (st.suggested) parts.push(`${st.suggested} card${st.suggested === 1 ? " has" : "s have"} suggested wording waiting: accept, edit or reject each before the draft can leave.`);
   if (st.gaps) parts.push(`${st.gaps} kind${st.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for under each question.`);
   if (st.fallback) parts.push(`${st.fallback} question${st.fallback === 1 ? " was" : "s were"} arranged by the code's own pick because the model's reply could not be used.`);
   if (st.leftOut) parts.push(`${st.leftOut} piece${st.leftOut === 1 ? "" : "s"} of a Standard Answer left out because the card was retired.`);
@@ -105,6 +111,10 @@ export async function runAutodraftPass(tenantId: string, jobId: string, opts: { 
 
     const ctx = await loadRunCtx(tenantId, job?.started_by ?? null, st.draftId);
     const started = Date.now();
+    // A question started late in the stage still places its cards, but skips the
+    // second model call (suggested wording) rather than risk the 60-second cut-off.
+    ctx.suggestBy = started + SUGGEST_BY_MS;
+    ctx.stillOn = async () => (await stillRunning(tenantId, jobId)) && (await draftLock(tenantId, st.draftId)) === "open";
     while (st.next < st.run.length && (st.next === 0 || Date.now() - started < STAGE_BUDGET_MS)) {
       // Stopped (or failed) since this stage began: place nothing more (review fix, 12 Oct 2026).
       if (!(await stillRunning(tenantId, jobId))) { await releaseJob(tenantId, jobId); return { kind: "failed", error: "stopped" }; }
@@ -128,7 +138,7 @@ export async function runAutodraftPass(tenantId: string, jobId: string, opts: { 
         kind: o.error ? "warn" : "progress",
         text: o.error
           ? `Question ${item.n}: ${o.error}`
-          : `Question ${item.n}: ${o.placed ? `${o.placed} placed${o.start === "standard_answer" ? ` from the Standard Answer${o.adapted ? ", adapted for this funder" : ""}` : ""}` : "nothing to add"}${o.gaps ? `, ${o.gaps} kind${o.gaps === 1 ? "" : "s"} still missing` : ""}${o.fallback ? " (the code's own pick)" : ""}.`,
+          : `Question ${item.n}: ${o.placed ? `${o.placed} placed${o.start === "standard_answer" ? ` from the Standard Answer${o.adapted ? ", adapted for this funder" : ""}` : ""}` : "nothing to add"}${o.suggested ? `, new wording suggested for ${o.suggested}` : ""}${o.gaps ? `, ${o.gaps} kind${o.gaps === 1 ? "" : "s"} still missing` : ""}${o.fallback ? " (the code's own pick)" : ""}.`,
       });
       // Where it got to, on the job, after every question: a stage killed at its
       // limit loses at most the question it was on.

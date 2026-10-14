@@ -68,10 +68,11 @@ export default function AutoDraftDialog({ draftId, sectionId, questionNumber, on
                   {p.fromStandard ? `: ${p.fromStandard} from ${p.fromStandard === 1 ? "its" : "their"} approved Standard Answer, adapted for this funder${p.toArrange ? `; ${p.toArrange} arranged from the Story Cards` : ""}` : ", arranged from the Story Cards"}.</li>
                 {p.fromStandard > 0 && <li>An adapted Standard Answer is flagged on its question, with what changed, and asks whether the client&rsquo;s Standard Answer should change too. The approved Standard Answer itself is never changed by the run.</li>}
                 {!one && p.plan.skipped.length > 0 && <li>{plural(p.plan.skipped.length, "question is", "questions are")} left alone: {[...new Set(p.plan.skipped.map(s => SKIP_LABEL[s.reason]))].join("; ")}.</li>}
-                <li>Story Cards only: nothing is written for you. Cards already in an answer stay where they are; new cards follow them. A kind with no card stays a gap, shown under the question.</li>
-                <li>It may place cards that still need review. Copy, Mark completed, Mark submitted and approving stay stopped until each is dealt with.</li>
+                <li>Story Cards only: no new facts are written for you. Cards already in an answer stay where they are; new cards follow them. A kind with no card stays a gap, shown under the question.</li>
+                <li>Where a placed card would read better for this funder, new wording may be suggested beside it. The card&rsquo;s own words stay in the answer until you accept, edit or reject the suggestion.</li>
+                <li>It may place cards that still need review. Copy, Mark completed, Mark submitted and approving stay stopped until each is dealt with, and until every suggested wording is chosen on.</li>
                 <li>A version named &ldquo;Before auto-draft&rdquo; is saved first.{one ? " Undo also puts this answer back." : " Restore it from Versions to undo the whole run."}</li>
-                {p.toArrange + p.fromStandard > 0 && <li className="ov-muted">{plural(p.toArrange + p.fromStandard, "model call", "model calls")}, For Granted&rsquo;s spend, never the client&rsquo;s.{!one ? " It runs on the server; this page can be closed." : ""}</li>}
+                {p.toArrange + p.fromStandard > 0 && <li className="ov-muted">Up to {plural(2 * (p.toArrange + p.fromStandard), "model call", "model calls")} (placing, then suggested wording), For Granted&rsquo;s spend, never the client&rsquo;s.{!one ? " It runs on the server; this page can be closed." : ""}</li>}
                 {p.context.client === "missing" && <li className="ov-muted">There is no Client context for this draft. Add it from Grant context if the client has said what to lead with or avoid.</li>}
               </ul>
             )}

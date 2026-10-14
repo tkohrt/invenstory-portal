@@ -18,6 +18,7 @@ import { placeIssue, ISSUE_LABEL, type GateCard } from "@/lib/card-gate";
 import { untracedFigures } from "@/lib/story-card";
 import type { WsBlock, WsCard } from "@/lib/server/workspace";
 import { USER_GENERATED } from "@/lib/user-card";
+import SuggestedWording from "./SuggestedWording";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 const layerClass = (l: string | null | undefined) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "l0");
@@ -36,6 +37,9 @@ export interface WeaveHandlers {
   onSaveCard: (blockId: string) => void;
   /** Save an edited card's wording to the card in the Card Library. */
   onSaveWording: (blockId: string) => Promise<unknown>;
+  /** Suggested wording on a card (patch 8): take it, or a person's adjustment of it. */
+  onAcceptSuggestion: (blockId: string, shown: string, text?: string) => Promise<unknown>;
+  onRejectSuggestion: (blockId: string) => Promise<unknown>;
 }
 
 export default function WeaveView({ blocks, cardById, gateCard, locked, handlers, editId, onEditOpened }: {
@@ -86,8 +90,9 @@ export default function WeaveView({ blocks, cardById, gateCard, locked, handlers
                   return (
                     <span key={b.id}>{sep}
                       <span role="button" tabIndex={0} aria-expanded={open === b.id} data-piece="" data-piece-index={at}
-                        className={`wv-card ${layerClass(card?.layer)}${open === b.id ? " wv-open" : ""}${issue || reworded ? " wv-flag" : ""}`}
-                        title={issue ? `This card is ${ISSUE_LABEL[issue]}. Click to see it.` : reworded ? "Reworded in the library since it was placed. Click to choose." : undefined}
+                        className={`wv-card ${layerClass(card?.layer)}${open === b.id ? " wv-open" : ""}${issue || reworded ? " wv-flag" : ""}${b.suggested ? " wv-sugg" : ""}`}
+                        title={issue ? `This card is ${ISSUE_LABEL[issue]}. Click to see it.` : reworded ? "Reworded in the library since it was placed. Click to choose."
+                          : b.suggested ? "New wording is suggested for this card. Click to accept, edit or reject it." : undefined}
                         onClick={() => toggle(b.id)} onKeyDown={keyOpen(b.id)}>{text}</span>
                     </span>
                   );
@@ -224,6 +229,10 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
           )}
           {untraced.length > 0 && (
             <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. Until it is traced, changed or cleared in Polish, this answer cannot leave.</div>
+          )}
+          {isCard && b.suggested && !editing && (
+            <SuggestedWording key={`${b.id}:${b.suggested}`} current={b.text} suggested={b.suggested} locked={locked}
+              onAccept={t => handlers.onAcceptSuggestion(b.id, b.suggested!, t)} onReject={() => handlers.onRejectSuggestion(b.id)} />
           )}
 
           {!editing && (

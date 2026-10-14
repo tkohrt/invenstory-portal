@@ -119,12 +119,12 @@ export function AskDialog({ kind, prompt, tenantName, onSend, onCancel }: {
 }
 
 /** Where the whole application stands, with a way to each thing still to do. */
-export function ProgressStrip({ p, started, onReview, onBridges, onFigures, onAsks }: {
+export function ProgressStrip({ p, started, onReview, onBridges, onWording, onFigures, onAsks }: {
   p: DraftProgress; started: number;
-  onReview: () => void; onBridges: () => void; onFigures: () => void; onAsks: () => void;
+  onReview: () => void; onBridges: () => void; onWording: () => void; onFigures: () => void; onAsks: () => void;
 }) {
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-  const clear = !p.toReview && !p.bridgesWaiting && !p.figuresToTrace && !p.asksOpen && !p.answersReady;
+  const clear = !p.toReview && !p.bridgesWaiting && !p.wordingWaiting && !p.figuresToTrace && !p.asksOpen && !p.answersReady;
   return (
     <div className="ws-progress-strip" role="status" aria-label="Progress">
       <span className="wps-item wps-done">
@@ -133,6 +133,7 @@ export function ProgressStrip({ p, started, onReview, onBridges, onFigures, onAs
       </span>
       {p.toReview > 0 && <button type="button" className="wps-item wps-warn" onClick={onReview}>{plural(p.toReview, "card to review", "cards to review")}</button>}
       {p.bridgesWaiting > 0 && <button type="button" className="wps-item" onClick={onBridges}>{plural(p.bridgesWaiting, "bridge waiting", "bridges waiting")}</button>}
+      {p.wordingWaiting > 0 && <button type="button" className="wps-item wps-warn" onClick={onWording}>{plural(p.wordingWaiting, "suggested wording to choose on", "suggested wordings to choose on")}</button>}
       {p.figuresToTrace > 0 && <button type="button" className="wps-item wps-warn" onClick={onFigures}>{plural(p.figuresToTrace, "figure to trace", "figures to trace")}</button>}
       {p.answersReady > 0 && <button type="button" className="wps-item wps-good" onClick={onAsks}>{plural(p.answersReady, "client answer to use", "client answers to use")}</button>}
       {p.asksOpen > 0 && <button type="button" className="wps-item" onClick={onAsks}>{plural(p.asksOpen, "question waiting on the client", "questions waiting on the client")}</button>}

@@ -1655,3 +1655,11 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .sa-key{font-size:12px;margin:8px 0 0}
 .fl-list{list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .fl-list li{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}
+/* Suggested wording on a card (Auto-Draft patch 8) */
+.sw-box{margin-top:8px;padding:9px 11px;border:1px solid #c9b6e4;background:#f6f2fb;border-radius:9px;font-size:13px;line-height:1.5}
+.sw-head{margin-bottom:4px}
+.sw-diff{margin:4px 0 6px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
+.sw-diff del{background:#fbeceb;color:#8a2f22;text-decoration:line-through}
+.sw-diff ins{background:#e6f3e9;color:#1f4d2e;text-decoration:none}
+.ws-tag-sugg{background:#efe7f8;color:#4b2a7a;border-color:#c9b6e4}
+.wv-card.wv-sugg{outline:1px dashed #9a7cc7;outline-offset:1px}

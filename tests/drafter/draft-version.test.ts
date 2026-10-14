@@ -15,6 +15,9 @@ describe("contentHash", () => {
     const b = { sections: [{ ...a.sections[0], status: "done" as const }] };
     expect(contentHash(a)).toBe(contentHash(b));
     expect(contentHash(a)).not.toBe(contentHash(content("One.", "Edited.")));
+    // A suggestion waiting on a card is part of what a version keeps (patch 8).
+    const sugg = { sections: [{ ...a.sections[0], blocks: [{ ...a.sections[0].blocks[0], suggested: "New." }] }] };
+    expect(contentHash(sugg)).not.toBe(contentHash(a));
   });
 });
 

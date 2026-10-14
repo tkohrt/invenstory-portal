@@ -78,6 +78,8 @@ export interface DraftProgress {
   toReview: number;
   /** Bridges Weave proposed that nobody has accepted or rejected yet. */
   bridgesWaiting: number;
+  /** Cards with wording auto-draft suggested that nobody has accepted, edited or rejected (patch 8). */
+  wordingWaiting: number;
   /** Numbers in edited cards that the card's sources do not hold. */
   figuresToTrace: number;
   /** Questions to the client still waiting for an answer, and answers waiting to be used. */
@@ -85,13 +87,14 @@ export interface DraftProgress {
   answersReady: number;
   /** The first question (index) with each, so the strip can go there. */
   firstBridge: number | null;
+  firstWording: number | null;
   firstFigure: number | null;
   firstAsk: number | null;
 }
 
 export function draftProgress(input: {
   sections: { id: string }[];
-  blocksBy: Record<string, { kind: string; proposed: boolean }[]>;
+  blocksBy: Record<string, { kind: string; proposed: boolean; edited?: boolean; suggested?: string | null }[]>;
   statusBy: Record<string, string>;
   toReview: number;
   /** How many untraced figures a block holds. */
@@ -99,12 +102,14 @@ export function draftProgress(input: {
   /** Per section, from questionGaps. */
   gapsBy: Record<string, GapRow[]>;
 }): DraftProgress {
-  let bridgesWaiting = 0, figuresToTrace = 0, asksOpen = 0, answersReady = 0;
-  let firstBridge: number | null = null, firstFigure: number | null = null, firstAsk: number | null = null;
+  let bridgesWaiting = 0, wordingWaiting = 0, figuresToTrace = 0, asksOpen = 0, answersReady = 0;
+  let firstBridge: number | null = null, firstWording: number | null = null, firstFigure: number | null = null, firstAsk: number | null = null;
   input.sections.forEach((s, i) => {
     const blocks = input.blocksBy[s.id] ?? [];
     const b = blocks.filter(x => x.kind === "bridge" && x.proposed).length;
     if (b) { bridgesWaiting += b; firstBridge ??= i; }
+    const w = blocks.filter(x => x.kind === "card" && !x.edited && !!x.suggested).length;
+    if (w) { wordingWaiting += w; firstWording ??= i; }
     let f = 0;
     blocks.forEach((_, bi) => { f += input.figuresIn(s.id, bi); });
     if (f) { figuresToTrace += f; firstFigure ??= i; }
@@ -116,8 +121,8 @@ export function draftProgress(input: {
   return {
     questions: input.sections.length,
     done: input.sections.filter(s => input.statusBy[s.id] === "done").length,
-    toReview: input.toReview, bridgesWaiting, figuresToTrace, asksOpen, answersReady,
-    firstBridge, firstFigure, firstAsk,
+    toReview: input.toReview, bridgesWaiting, wordingWaiting, figuresToTrace, asksOpen, answersReady,
+    firstBridge, firstWording, firstFigure, firstAsk,
   };
 }
 

@@ -53,13 +53,14 @@ describe("the gap panel", () => {
     const sections = [{ id: "s1" }, { id: "s2" }, { id: "s3" }];
     const p = draftProgress({
       sections,
-      blocksBy: { s1: [{ kind: "card", proposed: false }], s2: [{ kind: "bridge", proposed: true }, { kind: "bridge", proposed: true }], s3: [{ kind: "card", proposed: false }] },
+      blocksBy: { s1: [{ kind: "card", proposed: false }], s2: [{ kind: "bridge", proposed: true }, { kind: "bridge", proposed: true }],
+        s3: [{ kind: "card", proposed: false, edited: false, suggested: "new words" }, { kind: "card", proposed: false, edited: true, suggested: "stale" }] },
       statusBy: { s1: "done", s2: "drafting", s3: "drafting" },
       toReview: 2,
-      figuresIn: (sid) => (sid === "s3" ? 1 : 0),
+      figuresIn: (sid, bi) => (sid === "s3" && bi === 0 ? 1 : 0),
       gapsBy: { s1: [], s2: [{ kind: "x", state: "asked", inLibrary: 0, ask: null }], s3: [{ kind: "y", state: "answered", inLibrary: 0, ask: null }] },
     });
-    expect(p).toMatchObject({ questions: 3, done: 1, toReview: 2, bridgesWaiting: 2, figuresToTrace: 1, asksOpen: 1, answersReady: 1, firstBridge: 1, firstFigure: 2, firstAsk: 1 });
+    expect(p).toMatchObject({ questions: 3, done: 1, toReview: 2, bridgesWaiting: 2, wordingWaiting: 1, firstWording: 2, figuresToTrace: 1, asksOpen: 1, answersReady: 1, firstBridge: 1, firstFigure: 2, firstAsk: 1 });
   });
 });
 

@@ -67,6 +67,23 @@ describe("Undo for everything", () => {
     expect(plan.cardsOut).toEqual([id(150)]);
   });
 
+  test("a suggested wording is remembered and put back, only ever on an unedited card (patch 8)", () => {
+    const s = undoState([
+      { id: id(1), kind: "card", cardId: id(101), cardVersion: 1, ownText: null, edited: false, breakBefore: false, proposed: false, suggested: "New words." },
+      { id: id(2), kind: "card", cardId: id(102), cardVersion: 1, ownText: "Mine", edited: true, breakBefore: false, proposed: false, suggested: "Stale." },
+    ]);
+    expect(s.map(b => b.suggested)).toEqual(["New words.", null]);
+    expect(sameState([card(1, 1)], [card(1, 1, { suggested: "x" })])).toBe(false);
+    expect(sameState([card(1, 1)], [card(1, 1, { suggested: null })])).toBe(true);
+    // Undo of an Accept: the edit goes and the suggestion comes back.
+    const now = [stored(card(1, 1, { text: "New words.", edited: true }), 0)];
+    const plan = planRestore(now, [card(1, 1, { suggested: "New words." })]);
+    expect(plan.updates).toEqual([{ id: id(1), set: { text: null, edited: false, suggested_text: "New words." } }]);
+    // Undo of a Reject brings it back too; undoing back past auto-draft clears it.
+    expect(planRestore([{ ...stored(card(1, 1), 0), suggested_text: "New words." }], [card(1, 1)]).updates)
+      .toEqual([{ id: id(1), set: { suggested_text: null } }]);
+  });
+
   test("what the page sends is checked", () => {
     expect(restoreProblem([card(1, 1), card(2, 2)])).toBeNull();
     expect(restoreProblem([])).toBeNull();

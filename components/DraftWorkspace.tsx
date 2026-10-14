@@ -29,7 +29,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
-  keepWordingAction, refreshBlockWordingAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
+  acceptSuggestionAction, keepWordingAction, refreshBlockWordingAction, rejectSuggestionAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   startFromStandardAction, tidyAction,
   acceptBridgesAction, weaveSectionAction, convertToCardAction, saveWordingToLibraryAction, restoreAnswerAction,
 } from "@/lib/server/workspace-actions";
@@ -70,8 +70,10 @@ import AutoDraftDialog from "./AutoDraftDialog";
 import { autodraftQuestionAction } from "@/lib/server/autodraft-actions";
 import { stageBlocks } from "@/lib/autodraft";
 import AdaptBanner from "./AdaptBanner";
+import SuggestedWording from "./SuggestedWording";
 import { keepAdaptationAction, revertAdaptationAction, updateStandardFromAdaptationAction } from "@/lib/server/sa-adapt-actions";
 import { adaptationOpen } from "@/lib/sa-adapt";
+import { pendingSuggestion } from "@/lib/suggest-wording";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 type Stage = "arrange" | "weave" | "polish";
@@ -138,6 +140,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [polishAsk, setPolishAsk] = useState<{ again: boolean } | null>(null);
   // Auto-Draft patch 7: the finish line stops on an adapted Standard Answer nobody has chosen on.
   const [adaptBlock, setAdaptBlock] = useState<{ scope: "draft" | "section" } | null>(null);
+  const [suggBlock, setSuggBlock] = useState<{ scope: "draft" | "section" } | null>(null);
   const [figBlock, setFigBlock] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | null } | null>(null);
   const [weaveAsk, setWeaveAsk] = useState<{ again: boolean } | null>(null);
   // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
@@ -295,6 +298,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     return queue.current;
   }, [router]);
 
+  // Suggested wording's actions return their reason when refused (production hides thrown messages).
+  const suggestOk = (r: { ok: true; blocks: WsBlock[] } | { ok: false; error: string }) => {
+    if (!r.ok) throw new Error(r.error);
+    return r.blocks;
+  };
+
   const putBlocks = useCallback((sectionId: string) => (next: WsBlock[]) => {
     setBlocksBy(m => ({ ...m, [sectionId]: next }));
     setStatusBy(m => {
@@ -385,7 +394,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       setAutoDraftedHere(true);
       const o = r.outcome;
       say(o.placed
-        ? `Auto-drafted: ${o.placed} ${o.start === "standard_answer" ? "piece" : "card"}${o.placed === 1 ? "" : "s"} placed${o.start === "standard_answer" ? ` from the approved Standard Answer${o.adapted ? ", adapted for this funder (see the note under the question)" : ""}` : ""}.${o.gaps ? ` ${o.gaps} kind${o.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for.` : ""}${o.fallback ? " The model's reply could not be used, so the code's own pick was placed." : ""} Undo puts the answer back.`
+        ? `Auto-drafted: ${o.placed} ${o.start === "standard_answer" ? "piece" : "card"}${o.placed === 1 ? "" : "s"} placed${o.start === "standard_answer" ? ` from the approved Standard Answer${o.adapted ? ", adapted for this funder (see the note under the question)" : ""}` : ""}.${o.suggested ? ` New wording suggested for ${o.suggested} card${o.suggested === 1 ? "" : "s"}: accept, edit or reject each.` : ""}${o.gaps ? ` ${o.gaps} kind${o.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for.` : ""}${o.fallback ? " The model's reply could not be used, so the code's own pick was placed." : ""} Undo puts the answer back.`
         : "Auto-draft found nothing more to add to this answer from the Story Cards.");
       router.refresh();
     });
@@ -433,7 +442,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     const r = ranked.find(x => x.card.id === cardId);
     const temp: WsBlock = {
       id: `tmp-${cardId}`, sectionId: section.id, kind: "card", cardId, cardVersion: cardById.get(cardId)?.version ?? 1,
-      text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false, proposed: false,
+      text: cardById.get(cardId)?.statement ?? "", ownText: null, edited: false, breakBefore: false, proposed: false, suggested: null,
     };
     remember(section.id, "adding a card");
     setBlocksBy(m => {
@@ -710,6 +719,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const pieceIds = (id: string) => (blocksBy[id] ?? []).filter(b => !b.proposed).map(b => b.id);
   const openAdapts = sections.filter(s => adaptationOpen(s.saAdaptation, pieceIds(s.id)));
   const sectionAdaptOpen = openAdapts.some(s => s.id === section.id);
+  // Suggested wording still waiting on a person (Auto-Draft patch 8): a finish-line issue.
+  const suggBy: Record<string, number> = Object.fromEntries(sections.map(s => [s.id, (blocksBy[s.id] ?? []).filter(pendingSuggestion).length]));
+  const draftSugg = sections.reduce((n, s) => n + suggBy[s.id], 0);
+  const sectionSugg = suggBy[section.id] ?? 0;
   const draftFigures = sections.reduce((n, s) => n + openFlagsBy[s.id].length, 0);
   const sectionFigures = openFlagsBy[section.id]?.length ?? 0;
   const progress = draftProgress({
@@ -751,6 +764,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
     if (list.length) { setBlockers({ scope, then }); return; }
     // Then any adapted Standard Answer still waiting for a choice (Auto-Draft patch 7).
     if (scope === "draft" ? openAdapts.length : sectionAdaptOpen) { setAdaptBlock({ scope }); return; }
+    // Then any suggested wording nobody has accepted, edited or rejected (patch 8).
+    if (scope === "draft" ? draftSugg : sectionSugg) { setSuggBlock({ scope }); return; }
     // Then the figure audit (Shane, 9 October 2026): a number with no source stops all four ways out.
     if (scope === "draft" ? draftFigures : sectionFigures) { setFigBlock({ scope, then }); return; }
     next();
@@ -991,6 +1006,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               <ProgressStrip p={progress} started={startedCount}
                 onReview={() => setBlockers({ scope: "draft", then: null })}
                 onBridges={() => goTo(progress.firstBridge, "weave")}
+                onWording={() => goTo(progress.firstWording, "arrange")}
                 onFigures={() => goTo(progress.firstFigure, "arrange")}
                 onAsks={() => goTo(progress.firstAsk)} />
 
@@ -1135,6 +1151,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                         onReview: cardId => setReview({ mode: "review", queue: [{ cardId, position: null }] }),
                         onRefresh: id => change(section.id, "the wording change", () => refreshBlockWordingAction(section.id, id), putBlocks(section.id)),
                         onKeep: id => change(section.id, "keeping the wording", () => keepWordingAction(section.id, id), putBlocks(section.id)),
+                        onAcceptSuggestion: (id, shown, t) => change(section.id, "accepting the suggested wording", () => acceptSuggestionAction(section.id, id, shown, t).then(suggestOk), putBlocks(section.id)),
+                        onRejectSuggestion: id => change(section.id, "rejecting the suggested wording", () => rejectSuggestionAction(section.id, id).then(suggestOk), putBlocks(section.id)),
                       }} />
                   : <div className="ws-empty-answer"><p>Nothing to {stage === "polish" ? "polish" : "weave"} yet. Go back to <strong>Arrange</strong> to place cards in this answer.</p></div>
               ) : <AnswerColumn
@@ -1150,6 +1168,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 onBreak={(id, v) => change(section.id, "the paragraph change", () => setBreakAction(section.id, id, v), putBlocks(section.id))}
                 onRefresh={id => change(section.id, "the wording change", () => refreshBlockWordingAction(section.id, id), putBlocks(section.id))}
                 onKeep={id => change(section.id, "keeping the wording", () => keepWordingAction(section.id, id), putBlocks(section.id))}
+                onAcceptSuggestion={(id, shown, t) => change(section.id, "accepting the suggested wording", () => acceptSuggestionAction(section.id, id, shown, t).then(suggestOk), putBlocks(section.id))}
+                onRejectSuggestion={id => change(section.id, "rejecting the suggested wording", () => rejectSuggestionAction(section.id, id).then(suggestOk), putBlocks(section.id))}
                 empty={
                   <EmptyAnswer
                     std={!standard && std?.sectionId ? std : undefined}
@@ -1270,9 +1290,10 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
                   onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
                   title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
-                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionAdaptOpen || sectionFigures > 0}
+                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionAdaptOpen || sectionSugg > 0 || sectionFigures > 0}
                   onBlocked={() => (sectionBlockers.length ? setBlockers({ scope: "section", then: null })
-                    : sectionAdaptOpen ? setAdaptBlock({ scope: "section" }) : setFigBlock({ scope: "section", then: null }))} />
+                    : sectionAdaptOpen ? setAdaptBlock({ scope: "section" })
+                    : sectionSugg ? setSuggBlock({ scope: "section" }) : setFigBlock({ scope: "section", then: null }))} />
               </span>
               <span className="spacer" />
               {!readOnly && (
@@ -1359,6 +1380,27 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 })}
               </ul>
               <div className="ws-modal-acts"><button type="button" className="btn secondary" onClick={() => setAdaptBlock(null)}>Close</button></div>
+            </div>
+          </div>
+        )}
+        {suggBlock && (
+          <div className="ws-modal-back" role="presentation" onClick={() => setSuggBlock(null)}>
+            <div className="ws-modal" role="dialog" aria-modal="true" aria-labelledby="sugg-block-title" onClick={e => e.stopPropagation()}>
+              <h3 id="sugg-block-title">Deal with the suggested wording first</h3>
+              <p className="ov-muted">Auto-draft suggested new wording for {suggBlock.scope === "draft" ? "cards in these answers" : "cards in this answer"}.
+                Under each card marked &ldquo;New wording suggested&rdquo;, accept it, edit it or reject it. Then carry on.</p>
+              <ul className="fl-list">
+                {sections.filter(s => suggBy[s.id] > 0 && (suggBlock.scope === "draft" || s.id === section.id)).map(s => {
+                  const i = sections.indexOf(s);
+                  return (
+                    <li key={s.id}>
+                      <span><strong>Q{i + 1}</strong> {s.prompt.length > 80 ? `${s.prompt.slice(0, 77)}…` : s.prompt} ({suggBy[s.id]} card{suggBy[s.id] === 1 ? "" : "s"})</span>
+                      {i !== idx && <button type="button" className="btn secondary ap-mini" onClick={() => { setSuggBlock(null); goTo(i, "arrange"); }}>Go to it</button>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="ws-modal-acts"><button type="button" className="btn secondary" onClick={() => setSuggBlock(null)}>Close</button></div>
             </div>
           </div>
         )}
@@ -1695,7 +1737,7 @@ function Evidence({ card }: { card: WsCard }) {
 // The answer.
 // ---------------------------------------------------------------------------
 
-function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, empty, dropBefore, dropAtEnd, onInsert, onSaveCard, onSaveWording }: {
+function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, onAcceptSuggestion, onRejectSuggestion, empty, dropBefore, dropAtEnd, onInsert, onSaveCard, onSaveWording }: {
   blocks: WsBlock[]; cardById: Map<string, WsCard>; gateCard: (id: string) => GateCard | null; locked: boolean;
   /** Add text at this position: the "+" between pieces. */
   onInsert: (position: number) => void;
@@ -1706,6 +1748,7 @@ function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing,
   onMove: (from: number, to: number) => void; onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => Promise<unknown>; onBreak: (id: string, v: boolean) => Promise<unknown>;
   onRefresh: (id: string) => Promise<unknown>; onKeep: (id: string) => Promise<unknown>; empty: ReactNode;
+  onAcceptSuggestion: (id: string, shown: string, text?: string) => Promise<unknown>; onRejectSuggestion: (id: string) => Promise<unknown>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: "answer" });
   return (
@@ -1720,7 +1763,8 @@ function AnswerColumn({ blocks, cardById, gateCard, locked, editing, setEditing,
               card={b.cardId ? cardById.get(b.cardId) : undefined} locked={locked}
               blocked={b.kind === "card" && b.cardId ? placeIssue(gateCard(b.cardId)) : null}
               editing={editing === b.id} setEditing={setEditing}
-              onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} onKeep={onKeep} />
+              onMove={onMove} onRemove={onRemove} onEdit={onEdit} onBreak={onBreak} onRefresh={onRefresh} onKeep={onKeep}
+              onAcceptSuggestion={onAcceptSuggestion} onRejectSuggestion={onRejectSuggestion} />
             </div>
           ))}
           {!locked && <InsertLine onClick={() => onInsert(blocks.length)} />}
@@ -1784,8 +1828,9 @@ function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }
   );
 }
 
-function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, dropBefore, onSaveCard, onSaveWording }: {
+function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEditing, onMove, onRemove, onEdit, onBreak, onRefresh, onKeep, onAcceptSuggestion, onRejectSuggestion, dropBefore, onSaveCard, onSaveWording }: {
   block: WsBlock; index: number; last: boolean; card?: WsCard; locked: boolean; dropBefore: boolean;
+  onAcceptSuggestion: (id: string, shown: string, text?: string) => Promise<unknown>; onRejectSuggestion: (id: string) => Promise<unknown>;
   onSaveCard: (b: WsBlock) => void; onSaveWording: (id: string) => Promise<unknown>;
   /** What stops this card leaving in an answer, from lib/card-gate.ts. */
   blocked: string | null;
@@ -1828,6 +1873,7 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {b.kind === "bridge" && b.proposed && <span className="ov-tag" title="Proposed in Weave and not accepted yet, so it is not part of the answer.">Proposed, not in the answer</span>}
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
+        {isCard && b.suggested && <span className="ov-tag ws-tag-sugg" title="Auto-draft suggests new wording for this card. Accept, edit or reject it before this answer can leave.">New wording suggested</span>}
         {isCard && card?.createdFrom === "manual" && <span className="uc-tag" title={card.sourceLine ?? USER_GENERATED}>{USER_GENERATED}</span>}
         {isCard && blocked === "unverified" && <span className="ov-tag ws-tag-review" title="Placed before verification was required, or un-verified since. Review it before this answer is used.">Needs review</span>}
         {isCard && blocked === "retired" && <span className="ov-tag ws-tag-sens" title="Retired from the library. Remove it before this answer is used.">Retired card</span>}
@@ -1868,6 +1914,10 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
 
       {untraced.length > 0 && (
         <div className="ws-warn">{untraced.join(", ")} {untraced.length === 1 ? "is" : "are"} not in this card&rsquo;s sources. Until it is traced, changed or cleared in Polish, this answer cannot leave.</div>
+      )}
+      {isCard && b.suggested && !editing && (
+        <SuggestedWording key={`${b.id}:${b.suggested}`} current={b.text} suggested={b.suggested} locked={locked || temp}
+          onAccept={t => onAcceptSuggestion(b.id, b.suggested!, t)} onReject={() => onRejectSuggestion(b.id)} />
       )}
       {reworded && (
         <div className="ws-warn ws-soft">
