@@ -230,6 +230,18 @@ export function checkShortening(original: string, shortened: string): ShortenRef
   const ow = o ? o.split(" ").length : 0, sw = s ? s.split(" ").length : 0;
   if (!sw || sw >= ow) return "not_shorter";
   if (sw < Math.max(3, Math.ceil(ow / 3))) return "too_short";
+  return wordingRefusal(o, s);
+}
+
+/**
+ * Why new wording of a piece is refused on its facts, or null: it keeps every
+ * number exactly (dropping one is allowed; changing or adding one is not),
+ * adds no name, and leaves any quotation whole or out. Shared by Polish's
+ * shortening and by auto-draft's rewording of the writer's own words (Auto-Draft
+ * patch 7), so the rule is one rule.
+ */
+export function wordingRefusal(original: string, rewritten: string): "number" | "name" | "quote" | null {
+  const o = original.replace(/\s+/g, " ").trim(), s = rewritten.replace(/\s+/g, " ").trim();
   const figs = new Set(figuresIn(o));
   if (figuresIn(s).some(f => !figs.has(f))) return "number";
   const words = new Set(o.split(/[^A-Za-z0-9'’-]+/).filter(Boolean));

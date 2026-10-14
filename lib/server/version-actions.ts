@@ -14,6 +14,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { BLOCK_COLS, resolveBlocks } from "./workspace";
+import { adaptationOpen, parseAdaptation } from "@/lib/sa-adapt";
 import { assembleAnswer } from "@/lib/section-answer";
 import { describeBlockers, finishBlockers, type GateCard } from "@/lib/card-gate";
 import { figureRefusal } from "./polish";
@@ -195,12 +196,13 @@ async function saveBeforeStage(draftId: string, stage: "weave" | "polish") {
  * cards for review; this is the backstop, so it holds whatever the page does.
  */
 async function finishLineRefusal(tenantId: string, draftId: string): Promise<string | null> {
-  const { data: secs, error: sErr } = await db.from("draft_section").select("id, prompt, sort_order")
+  // Every column, so sa_adaptation (0065) is read when it is there.
+  const { data: secs, error: sErr } = await db.from("draft_section").select("*")
     .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order");
   if (sErr) throw new Error(`Could not read the questions: ${sErr.message}`);
-  const sections = (secs ?? []) as { id: string; prompt: string }[];
+  const sections = (secs ?? []) as { id: string; prompt: string; sa_adaptation?: unknown }[];
   if (!sections.length) return null;
-  const { data: rows, error: bErr } = await db.from("section_block").select("id, section_id, kind, card_id, card_version, edited")
+  const { data: rows, error: bErr } = await db.from("section_block").select("id, section_id, kind, card_id, card_version, edited, proposed")
     .eq("tenant_id", tenantId).in("section_id", sections.map(x => x.id));
   if (bErr) throw new Error(`Could not read the answers: ${bErr.message}`);
   const blocks = ((rows ?? []) as { id: string; section_id: string; kind: string; card_id: string | null; card_version: number | null; edited: boolean }[])
@@ -217,6 +219,14 @@ async function finishLineRefusal(tenantId: string, draftId: string): Promise<str
   }
   const list = finishBlockers(sections, blocks, id => cards.get(id));
   if (list.length) return describeBlockers(list);
+  // An adapted Standard Answer nobody has chosen on (Auto-Draft patch 7, spec 4b).
+  const piecesOf = (sid: string) => ((rows ?? []) as { id: string; section_id: string; proposed?: boolean | null }[])
+    .filter(r => r.section_id === sid && !r.proposed).map(r => r.id);
+  const open = sections.filter(x => adaptationOpen(parseAdaptation(x.sa_adaptation), piecesOf(x.id))).length;
+  if (open) {
+    return `${open} answer${open === 1 ? " was" : "s were"} adapted from a Standard Answer and need${open === 1 ? "s" : ""} a choice first: `
+      + "keep it for this grant only, also update the Standard Answer, or go back to the Standard Answer.";
+  }
   // Polish's figure audit (9 October 2026): no number without a source, unless a person cleared it.
   return figureRefusal(tenantId, sections.map(x => x.id), "this application");
 }

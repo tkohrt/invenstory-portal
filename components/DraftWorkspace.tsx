@@ -69,6 +69,9 @@ import type { ContextItem } from "@/lib/server/draft-context";
 import AutoDraftDialog from "./AutoDraftDialog";
 import { autodraftQuestionAction } from "@/lib/server/autodraft-actions";
 import { stageBlocks } from "@/lib/autodraft";
+import AdaptBanner from "./AdaptBanner";
+import { keepAdaptationAction, revertAdaptationAction, updateStandardFromAdaptationAction } from "@/lib/server/sa-adapt-actions";
+import { adaptationOpen } from "@/lib/sa-adapt";
 
 const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 type Stage = "arrange" | "weave" | "polish";
@@ -133,6 +136,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [polishRuns, setPolishRuns] = useState<Record<string, PolishRun>>({});
   const [clearances, setClearances] = useState<WsClearance[]>(ws.clearances);
   const [polishAsk, setPolishAsk] = useState<{ again: boolean } | null>(null);
+  // Auto-Draft patch 7: the finish line stops on an adapted Standard Answer nobody has chosen on.
+  const [adaptBlock, setAdaptBlock] = useState<{ scope: "draft" | "section" } | null>(null);
   const [figBlock, setFigBlock] = useState<{ scope: "draft" | "section"; then: "completed" | "submit" | "approve" | null } | null>(null);
   const [weaveAsk, setWeaveAsk] = useState<{ again: boolean } | null>(null);
   // Answers woven on this page that came back with no bridges: no "not woven yet" invitation for them.
@@ -380,7 +385,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       setAutoDraftedHere(true);
       const o = r.outcome;
       say(o.placed
-        ? `Auto-drafted: ${o.placed} ${o.start === "standard_answer" ? "piece" : "card"}${o.placed === 1 ? "" : "s"} placed${o.start === "standard_answer" ? " from the approved Standard Answer" : ""}.${o.gaps ? ` ${o.gaps} kind${o.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for.` : ""}${o.fallback ? " The model's reply could not be used, so the code's own pick was placed." : ""} Undo puts the answer back.`
+        ? `Auto-drafted: ${o.placed} ${o.start === "standard_answer" ? "piece" : "card"}${o.placed === 1 ? "" : "s"} placed${o.start === "standard_answer" ? ` from the approved Standard Answer${o.adapted ? ", adapted for this funder (see the note under the question)" : ""}` : ""}.${o.gaps ? ` ${o.gaps} kind${o.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for.` : ""}${o.fallback ? " The model's reply could not be used, so the code's own pick was placed." : ""} Undo puts the answer back.`
         : "Auto-draft found nothing more to add to this answer from the Story Cards.");
       router.refresh();
     });
@@ -702,6 +707,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const flagsBy: Record<string, FigureFlag[]> = Object.fromEntries(sections.map(s => [s.id,
     figureAudit(blocksBy[s.id] ?? [], quotesOf, clearances.filter(c => c.sectionId === s.id))]));
   const openFlagsBy: Record<string, FigureFlag[]> = Object.fromEntries(sections.map(s => [s.id, openFlags(flagsBy[s.id] ?? [])]));
+  const pieceIds = (id: string) => (blocksBy[id] ?? []).filter(b => !b.proposed).map(b => b.id);
+  const openAdapts = sections.filter(s => adaptationOpen(s.saAdaptation, pieceIds(s.id)));
+  const sectionAdaptOpen = openAdapts.some(s => s.id === section.id);
   const draftFigures = sections.reduce((n, s) => n + openFlagsBy[s.id].length, 0);
   const sectionFigures = openFlagsBy[section.id]?.length ?? 0;
   const progress = draftProgress({
@@ -741,6 +749,8 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const atFinishLine = (scope: "draft" | "section", then: "completed" | "submit" | "approve", next: () => void) => {
     const list = scope === "draft" ? draftBlockers : sectionBlockers;
     if (list.length) { setBlockers({ scope, then }); return; }
+    // Then any adapted Standard Answer still waiting for a choice (Auto-Draft patch 7).
+    if (scope === "draft" ? openAdapts.length : sectionAdaptOpen) { setAdaptBlock({ scope }); return; }
     // Then the figure audit (Shane, 9 October 2026): a number with no source stops all four ways out.
     if (scope === "draft" ? draftFigures : sectionFigures) { setFigBlock({ scope, then }); return; }
     next();
@@ -1013,6 +1023,29 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                     {section.criteria && <div className="ap-guidance"><strong>Scoring:</strong> {section.criteria}</div>}
                   </details>
                 )}
+                {section.saAdaptation && !standard && (
+                  <AdaptBanner key={section.id} sectionId={section.id} adaptation={section.saAdaptation} pieceIds={pieceIds(section.id)} locked={locked}
+                    onKeep={() => void run(() => keepAdaptationAction(section.id), r => {
+                      if (!r.ok) { setError(r.error); return; }
+                      say("Kept for this grant only. The Standard Answer is unchanged."); router.refresh();
+                    })}
+                    onUpdate={() => void run(() => updateStandardFromAdaptationAction(section.id), r => {
+                      if (!r.ok) { setError(r.error); return; }
+                      say("Copied into Standard Answers as that question's working version. Approve it there to use it; until then the old approved answer stays in use. A version of Standard Answers was saved first.");
+                      router.refresh();
+                    })}
+                    onRevert={() => {
+                      const sectionId = section.id;
+                      const before = undoState(blocksBy[sectionId] ?? []);
+                      void run(() => revertAdaptationAction(sectionId), r => {
+                        if (!r.ok) { setError(r.error); return; }
+                        setHistory(h => ({ ...h, [sectionId]: pushUndo(h[sectionId] ?? [], { label: "going back to the Standard Answer", state: before }) }));
+                        putBlocks(sectionId)(r.blocks);
+                        say("Back to the Standard Answer as it was copied in. Undo brings the adapted version back.");
+                        router.refresh();
+                      });
+                    }} />
+                )}
                 {stdTooLong && (
                   <div className="ws-warn ws-soft">The standard answer is {stdCount.toLocaleString()} {unit}; this funder allows {section.limitValue!.toLocaleString()}. Starting from it means cutting.</div>
                 )}
@@ -1237,8 +1270,9 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
                   onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
                   title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
-                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionFigures > 0}
-                  onBlocked={() => (sectionBlockers.length ? setBlockers({ scope: "section", then: null }) : setFigBlock({ scope: "section", then: null }))} />
+                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionAdaptOpen || sectionFigures > 0}
+                  onBlocked={() => (sectionBlockers.length ? setBlockers({ scope: "section", then: null })
+                    : sectionAdaptOpen ? setAdaptBlock({ scope: "section" }) : setFigBlock({ scope: "section", then: null }))} />
               </span>
               <span className="spacer" />
               {!readOnly && (
@@ -1306,6 +1340,27 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         {polishAsk && (
           <WeaveReminder kind="polish" tenantName={tenantName} again={polishAsk.again}
             onWeave={() => doPolish(true)} onCancel={() => setPolishAsk(null)} />
+        )}
+        {adaptBlock && (
+          <div className="ws-modal-back" role="presentation" onClick={() => setAdaptBlock(null)}>
+            <div className="ws-modal" role="dialog" aria-modal="true" aria-labelledby="adapt-block-title" onClick={e => e.stopPropagation()}>
+              <h3 id="adapt-block-title">Choose what happens to the Standard Answer first</h3>
+              <p className="ov-muted">{adaptBlock.scope === "draft" ? "These answers were" : "This answer was"} adapted from the client&rsquo;s Standard Answer for this
+                funder. For each, keep it for this grant only, also update the Standard Answer, or go back to the Standard Answer. Then carry on.</p>
+              <ul className="fl-list">
+                {openAdapts.filter(s => adaptBlock.scope === "draft" || s.id === section.id).map(s => {
+                  const i = sections.indexOf(s);
+                  return (
+                    <li key={s.id}>
+                      <span><strong>Q{i + 1}</strong> {s.prompt.length > 90 ? `${s.prompt.slice(0, 87)}…` : s.prompt}</span>
+                      {i !== idx && <button type="button" className="btn secondary ap-mini" onClick={() => { setAdaptBlock(null); goTo(i, "arrange"); }}>Go to it</button>}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="ws-modal-acts"><button type="button" className="btn secondary" onClick={() => setAdaptBlock(null)}>Close</button></div>
+            </div>
+          </div>
         )}
         {figBlock && (
           <FiguresDialog what={figBlock.scope === "draft" ? "this application" : "this answer"} then={figBlock.then}

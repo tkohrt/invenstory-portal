@@ -1637,3 +1637,21 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .ad-warn{padding:10px 12px;border:1px solid #ecd9a3;background:#fff6dc;color:#5c4a14;border-radius:9px;font-size:13.5px;line-height:1.5;margin:6px 0 10px}
 .ad-warn-acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .ad-what{margin:6px 0 4px 18px;padding:0;font-size:13.5px;line-height:1.5;display:flex;flex-direction:column;gap:5px}
+
+/* ---- Adapted Standard Answers (Auto-Draft patch 7, 14 Oct 2026) ---- */
+.sa-note{margin-top:10px;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.5}
+.sa-open{border:1px solid #c9b6e4;background:#f6f2fb}
+.sa-decided{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:7px 11px}
+.sa-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.sa-confirm{flex-basis:100%;margin-top:8px;padding:9px 11px;border:1px solid #ecd9a3;background:#fff6dc;border-radius:8px;color:var(--ink)}
+.sa-confirm p{margin:0}
+.sa-compare{max-width:1000px;width:min(1000px,96vw)}
+.sa-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.sa-cols{grid-template-columns:1fr}}
+.sa-cols h4{margin:0 0 6px;font-size:13px;color:var(--muted)}
+.sa-text{white-space:pre-wrap;font-size:13.5px;line-height:1.6;max-height:56vh;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.sa-text del{background:#fbeceb;color:#8a2f22;text-decoration:line-through}
+.sa-text ins{background:#e6f3e9;color:#1f4d2e;text-decoration:none}
+.sa-key{font-size:12px;margin:8px 0 0}
+.fl-list{list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.fl-list li{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px}

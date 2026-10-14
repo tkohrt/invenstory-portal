@@ -29,6 +29,8 @@ export interface RunState {
   fallback: number;
   gaps: number;
   leftOut: number;
+  /** Questions whose Standard Answer was adapted for this funder: a choice waits on each. */
+  adapted?: number;
   failed: number;
   skipped: number;
 }
@@ -40,13 +42,14 @@ function add(st: RunState, o: SectionOutcome) {
   st.placed += o.placed;
   if (o.start === "standard_answer" && o.placed) st.fromStandard += 1; else if (o.placed) st.arranged += 1;
   if (o.fallback) st.fallback += 1;
+  if (o.adapted) st.adapted = (st.adapted ?? 0) + 1;
   st.gaps += o.gaps;
   st.leftOut += o.leftOut;
 }
 
 export function summaryText(st: RunState): string {
   const parts = [`Auto-drafted ${st.run.length} question${st.run.length === 1 ? "" : "s"} of "${st.title}": ${st.placed} piece${st.placed === 1 ? "" : "s"} placed.`];
-  if (st.fromStandard) parts.push(`${st.fromStandard} started from an approved Standard Answer.`);
+  if (st.fromStandard) parts.push(`${st.fromStandard} started from an approved Standard Answer${st.adapted ? `, ${st.adapted} of them adapted for this funder: choose under each whether the Standard Answer should change too` : ""}.`);
   if (st.gaps) parts.push(`${st.gaps} kind${st.gaps === 1 ? "" : "s"} of card asked for still missing: see Calls for under each question.`);
   if (st.fallback) parts.push(`${st.fallback} question${st.fallback === 1 ? " was" : "s were"} arranged by the code's own pick because the model's reply could not be used.`);
   if (st.leftOut) parts.push(`${st.leftOut} piece${st.leftOut === 1 ? "" : "s"} of a Standard Answer left out because the card was retired.`);
@@ -125,7 +128,7 @@ export async function runAutodraftPass(tenantId: string, jobId: string, opts: { 
         kind: o.error ? "warn" : "progress",
         text: o.error
           ? `Question ${item.n}: ${o.error}`
-          : `Question ${item.n}: ${o.placed ? `${o.placed} placed${o.start === "standard_answer" ? " from the Standard Answer" : ""}` : "nothing to add"}${o.gaps ? `, ${o.gaps} kind${o.gaps === 1 ? "" : "s"} still missing` : ""}${o.fallback ? " (the code's own pick)" : ""}.`,
+          : `Question ${item.n}: ${o.placed ? `${o.placed} placed${o.start === "standard_answer" ? ` from the Standard Answer${o.adapted ? ", adapted for this funder" : ""}` : ""}` : "nothing to add"}${o.gaps ? `, ${o.gaps} kind${o.gaps === 1 ? "" : "s"} still missing` : ""}${o.fallback ? " (the code's own pick)" : ""}.`,
       });
       // Where it got to, on the job, after every question: a stage killed at its
       // limit loses at most the question it was on.

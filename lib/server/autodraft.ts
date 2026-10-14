@@ -9,7 +9,15 @@ import "server-only";
 //
 // For Granted's spend: every model call is metered as feature "autodraft",
 // actor admin, never the client's (spec section 11).
+import { randomUUID } from "node:crypto";
 import { db } from "./db";
+import { standardAnswerPieces, type CopyRow } from "./standard-blocks";
+import {
+  adaptableCopy,
+  ADAPT_SYSTEM, adaptBudget, adaptUser, numberedPieces, parseAdaptReply, planAdaptation,
+  type AdaptSummary, type OriginalPiece, type SaAdaptation, type SourcePiece,
+} from "@/lib/sa-adapt";
+import { UNDO_MAX_BLOCKS } from "@/lib/draft-undo";
 import { chatComplete } from "./llm";
 import { withAiUsage } from "./ai-usage";
 import { BLOCK_COLS, loadCards, resolveBlocks, type WsCard } from "./workspace";
@@ -157,6 +165,8 @@ export interface SectionOutcome {
   leftOut: number;
   /** Wanted kinds still not in the answer: gaps for Add it now or Ask the client. */
   gaps: number;
+  /** Started from a Standard Answer and adapted for this funder (a choice now waits on the question). */
+  adapted?: boolean;
   error?: string;
 }
 
@@ -178,16 +188,83 @@ async function settle(tenantId: string, sectionId: string, status: string, count
   }
 }
 
+async function logEvent(ctx: RunCtx, sectionId: string, event: string, payload: Record<string, unknown>) {
+  const { error } = await db.from("card_event").insert({  // tenant-safe: the row carries tenant_id from the run
+    tenant_id: ctx.tenantId, draft_id: ctx.draftId, section_id: sectionId, card_id: null, block_id: null,
+    event, actor: ctx.userId, actor_role: "admin", payload,
+  });
+  if (error) console.error(`[autodraft] ${event} not logged: ${error.message}`);
+}
+
+type SectionRow = { id: string; draft_id: string; status: string; prompt: string; guidance: string | null; wanted_kinds: string[] | null; limit_value: number | null; limit_unit: "words" | "characters" | null; question_slugs: string[] | null };
+
+/**
+ * Adapt a copied Standard Answer for this funder (spec 4b): one model call that
+ * may reorder, take out, add cards from a shortlist, and reword the writer's
+ * own words, held to the rules in lib/sa-adapt.ts. Null when the reply cannot
+ * be used or changes nothing: the Standard Answer then goes in as copied.
+ */
+async function adaptStandard(ctx: RunCtx, section: SectionRow, keep: CopyRow[]): Promise<{
+  rows: CopyRow[]; summary: AdaptSummary; addedCardIds: string[]; refusedRewrites: number; droppedForLength: number;
+} | null> {
+  const resolved = await resolveBlocks(ctx.tenantId, keep.map((b, i) => ({ ...b, id: `k${i}`, section_id: section.id, proposed: false })), db);
+  const sourcePieces: SourcePiece[] = keep.map((b, i) => ({
+    kind: b.kind as SourcePiece["kind"], cardId: b.card_id, text: resolved[i]?.text ?? b.text ?? "", breakBefore: b.break_before,
+  }));
+  const nums = numberedPieces(sourcePieces);
+  if (!nums.length) return null;
+  const wanted = section.wanted_kinds ?? [];
+  const inAnswer = new Set(keep.map(b => b.card_id).filter((x): x is string => !!x));
+  const layerOf = new Map(ctx.cards.map(c => [c.id, c.layer]));
+  const ranked = rankCards(ctx.cards, {
+    prompt: section.prompt, guidance: section.guidance, wantedKinds: wanted, slugs: section.question_slugs ?? [],
+  }, { now: new Date(), usedElsewhere: ctx.usedInDraft, inSection: inAnswer, sectionHasVoice: [...inAnswer].some(id => layerOf.get(id) === "III") });
+  const offered = shortlist(ranked, { wantedKinds: wanted, inAnswer, usedInDraft: ctx.usedInDraft, size: 8 });
+  const kindLabel = (id: string | null) => {
+    const k = ctx.cards.find(c => c.id === id)?.kind;
+    return k ? CARD_KIND_MAP[k]?.label ?? k : "";
+  };
+  const originalWords = sourcePieces.reduce((n, p) => n + words(p.text), 0);
+  const budget = adaptBudget(section.limit_value, section.limit_unit, originalWords);
+  const user = adaptUser({
+    question: section.prompt, guidance: section.guidance, limit: { value: section.limit_value, unit: section.limit_unit }, budgetWords: budget,
+    pieces: nums.map((idx, n) => ({
+      ref: `P${n + 1}`, kind: sourcePieces[idx].kind === "human" ? "your words" : "card",
+      label: sourcePieces[idx].kind === "card" ? kindLabel(sourcePieces[idx].cardId) : "", text: sourcePieces[idx].text,
+    })),
+    offered: offered.map((r, n) => ({ ref: `C${n + 1}`, kind: "card", label: CARD_KIND_MAP[r.card.kind]?.label ?? r.card.kind, text: r.card.statement })),
+    voiceProfile: ctx.voice, application: ctx.application, funderContext: ctx.funderContext, clientContext: ctx.clientContext,
+  });
+  const res = await withAiUsage({ tenantId: ctx.tenantId, userId: ctx.userId, actor: "admin", feature: "autodraft" },
+    () => chatComplete({ system: ADAPT_SYSTEM, user, maxTokens: 1500, temperature: 0.2 })).catch(() => null);
+  if (!res) return null;
+  const reply = parseAdaptReply(res.text, nums.length, offered.length);
+  if (reply === null) { console.error(`[autodraft] adaptation reply not usable: ${res.text.slice(0, 300)}`); return null; }
+  if (reply === "keep") return null;
+  const plan = planAdaptation({
+    source: sourcePieces, offered: offered.map(r => ({ id: r.card.id, words: words(r.card.statement) })), reply, budgetWords: budget,
+  });
+  if (!plan.changed || !plan.items.length) return null;
+  const versionOf = new Map(ctx.cards.map(c => [c.id, c.version]));
+  const rows: CopyRow[] = plan.items.map(it => it.from === "source"
+    ? { ...keep[it.index], text: it.text ?? keep[it.index].text, break_before: it.breakBefore }
+    : { kind: "card", card_id: it.cardId, card_version: versionOf.get(it.cardId) ?? 1, text: null, edited: false, break_before: it.breakBefore });
+  return {
+    rows, summary: plan.summary, refusedRewrites: plan.refusedRewrites, droppedForLength: plan.droppedForLength,
+    addedCardIds: plan.items.filter((i): i is Extract<typeof i, { from: "card" }> => i.from === "card").map(i => i.cardId),
+  };
+}
+
 /**
  * Auto-draft one question: start it from its Standard Answer, or arrange cards
  * after what it already holds. Never moves or removes anything already there.
  */
 export async function autodraftSection(ctx: RunCtx, sectionId: string, start: Start): Promise<SectionOutcome> {
-  const out: SectionOutcome = { sectionId, start, placed: 0, fallback: false, leftOut: 0, gaps: 0 };
+  const out: SectionOutcome = { sectionId, start, placed: 0, fallback: false, leftOut: 0, gaps: 0, adapted: false };
   const { data: sec } = await db.from("draft_section")
     .select("id, draft_id, status, prompt, guidance, wanted_kinds, limit_value, limit_unit, question_slugs")
     .eq("tenant_id", ctx.tenantId).eq("id", sectionId).maybeSingle();
-  const section = sec as { id: string; draft_id: string; status: string; prompt: string; guidance: string | null; wanted_kinds: string[] | null; limit_value: number | null; limit_unit: "words" | "characters" | null; question_slugs: string[] | null } | null;
+  const section = sec as SectionRow | null;
   if (!section || section.draft_id !== ctx.draftId) return { ...out, error: "That question is not in this draft." };
   if (section.status === "done") return out;
   const { data: rowData } = await db.from("section_block").select(BLOCK_COLS).eq("tenant_id", ctx.tenantId).eq("section_id", sectionId).order("sort_order");
@@ -196,39 +273,73 @@ export async function autodraftSection(ctx: RunCtx, sectionId: string, start: St
   const cardKind = new Map(ctx.cards.map(c => [c.id, c.kind]));
   const gapsAfter = (cardIds: string[]) => wanted.filter(k => !cardIds.some(id => cardKind.get(id) === k)).length;
 
-  // Step 1: an empty answer with an approved Standard Answer starts from it, whole.
+  // Step 1: an empty answer with an approved Standard Answer starts from it, whole,
+  // then is adapted for this funder (spec 4b, patch 7).
   if (start === "standard_answer" && rows.filter(r => !r.proposed).length === 0) {
     const slug = section.question_slugs?.[0];
     const { data: q } = slug ? await db.from("grant_question").select("id").eq("slug", slug).maybeSingle() : { data: null };
+    // Every column, so approved_blocks (0065) is read when it is there.
     const { data: ans } = q
-      ? await db.from("answer").select("draft_section_id, status").eq("tenant_id", ctx.tenantId).eq("question_id", (q as { id: string }).id).maybeSingle()
+      ? await db.from("answer").select("*").eq("tenant_id", ctx.tenantId).eq("question_id", (q as { id: string }).id).maybeSingle()
       : { data: null };
-    const from = (ans as { draft_section_id: string | null; status: string } | null);
+    const from = (ans as { draft_section_id: string | null; status: string; approved_blocks?: unknown } | null);
     if (from?.status === "published" && from.draft_section_id) {
-      const { data: srcData } = await db.from("section_block").select(BLOCK_COLS).eq("tenant_id", ctx.tenantId).eq("section_id", from.draft_section_id).order("sort_order");
-      // A bridge nobody accepted is not part of the Standard Answer; a retired card cannot come back.
+      // The pieces as approved; a retired card cannot come back, nor a bridge beside it.
       const live = new Map(ctx.cards.map(c => [c.id, c]));
-      const source = ((srcData ?? []) as Record<string, unknown>[]).filter(b => !b.proposed);
+      const source = await standardAnswerPieces(ctx.tenantId, from);
       const marks = source.map(b => ({
-        kind: b.kind as string, breakBefore: !!b.break_before,
-        drop: b.kind === "card" && !!b.card_id && placeIssue(live.get(b.card_id as string) ?? null) === "retired",
+        kind: b.kind, breakBefore: b.break_before,
+        drop: b.kind === "card" && !!b.card_id && placeIssue(live.get(b.card_id) ?? null) === "retired",
       }));
-      const keepAt = keepPieces(marks);
-      const keep: Record<string, unknown>[] = keepAt.map(k => ({ ...source[k.index], break_before: k.breakBefore }));
+      const keep: CopyRow[] = keepPieces(marks).map(k => ({ ...source[k.index], break_before: k.breakBefore }));
       // Retired cards left out; bridges beside them go too, but are not counted.
       out.leftOut = marks.filter(m => m.drop).length;
       if (keep.length) {
-        const { data: ins, error } = await db.from("section_block").insert(keep.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the run
-          tenant_id: ctx.tenantId, section_id: sectionId, sort_order: i, kind: b.kind,
+        // Adapted only when Go back could restore the copy through Undo.
+        let adapted = adaptableCopy(keep, UNDO_MAX_BLOCKS) ? await adaptStandard(ctx, section, keep) : null;
+        let final = adapted?.rows ?? keep;
+        const ids = final.map(() => randomUUID());
+        if (adapted) {
+          // The record on the question, written BEFORE the adapted pieces go in, so
+          // an adapted answer never stands without its Go back: what it came from,
+          // the Standard Answer as copied in, what changed, which pieces were
+          // placed (the record speaks for the answer only while one of them is
+          // there), and no choice made yet. If it cannot be written, the
+          // Standard Answer goes in as copied instead.
+          const record: SaAdaptation = {
+            fromSectionId: from.draft_section_id, state: "open", adaptedAt: new Date().toISOString(),
+            summary: adapted.summary, blockIds: ids, original: keep.map(b => ({
+              id: randomUUID(), kind: b.kind as OriginalPiece["kind"], cardId: b.card_id, cardVersion: b.card_version,
+              text: b.text, edited: b.edited, breakBefore: b.break_before, proposed: false,
+            })),
+          };
+          const { error: recErr } = await db.from("draft_section").update({ sa_adaptation: record })
+            .eq("tenant_id", ctx.tenantId).eq("id", sectionId);
+          if (recErr) {
+            console.error(`[autodraft] adaptation not recorded, copying the Standard Answer as it was: ${recErr.message}`);
+            adapted = null; final = keep;
+            ids.splice(0, ids.length, ...final.map(() => randomUUID()));
+          }
+        }
+        const { data: ins, error } = await db.from("section_block").insert(final.map((b, i) => ({  // tenant-safe: every row carries tenant_id from the run
+          id: ids[i], tenant_id: ctx.tenantId, section_id: sectionId, sort_order: i, kind: b.kind,
           card_id: b.card_id ?? null, card_version: b.card_version ?? null, text: b.text ?? null,
           edited: !!b.edited, break_before: !!b.break_before, created_by: ctx.userId,
         }))).select("id, card_id");
         if (error) return { ...out, error: `Could not copy the Standard Answer: ${error.message}` };
         const placedCards = ((ins ?? []) as { id: string; card_id: string | null }[]).filter(b => b.card_id);
-        await logAdded(ctx, sectionId, placedCards.map(b => ({ card_id: b.card_id, block_id: b.id, via: "autodraft_standard_answer" })));
+        const addedIds = new Set(adapted?.addedCardIds ?? []);
+        await logAdded(ctx, sectionId, placedCards.map(b => ({
+          card_id: b.card_id, block_id: b.id, via: addedIds.has(b.card_id as string) ? "autodraft_adapt" : "autodraft_standard_answer",
+        })));
         for (const b of placedCards) ctx.usedInDraft.add(b.card_id as string);
-        out.placed = keep.length;
-        await settle(ctx.tenantId, sectionId, section.status, keep.length);
+        if (adapted) {
+          await logEvent(ctx, sectionId, "sa_adapted", { from_section_id: from.draft_section_id, ...adapted.summary,
+            added_cards: adapted.addedCardIds, refused_rewrites: adapted.refusedRewrites, dropped_for_length: adapted.droppedForLength });
+          out.adapted = true;
+        }
+        out.placed = final.length;
+        await settle(ctx.tenantId, sectionId, section.status, final.length);
         out.gaps = gapsAfter(placedCards.map(b => b.card_id as string));
         return out;
       }

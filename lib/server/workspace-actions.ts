@@ -36,6 +36,7 @@ import { lineMicros, shareUsed, levelOf, MICROS_PER_CENT } from "@/lib/allowance
 import { planRestore, restoreProblem, type StoredBlock, type UndoBlock } from "@/lib/draft-undo";
 import { figureRefusal } from "./polish";
 import { isAutoDrafted } from "./autodraft";
+import { approvedSnapshot, standardAnswerPieces } from "./standard-blocks";
 import { stageBlocks } from "@/lib/autodraft";
 
 async function requireAdmin() {
@@ -675,6 +676,10 @@ export async function approveStandardAnswerAction(sectionId: string): Promise<{ 
     tenant_id: s.tenantId, question_id: q.id, short_answer: shortFrom(text), long_answer: text,
     completeness: "strong", source: "human", status: "published",
     reviewed_by: s.user.id, reviewed_at: now, stale: false, updated_at: now, draft_section_id: sectionId,
+    // The pieces as approved (0065), written with the answer so the two never
+    // disagree: a later working version never reaches a new draft until it is
+    // approved too.
+    approved_blocks: approvedSnapshot(rows),
   }, { onConflict: "tenant_id,question_id" }).select("id").single();
   if (error || !ans) throw new Error(`Could not write the answer: ${error?.message ?? "no row"}`);
 
@@ -714,14 +719,16 @@ export async function startFromStandardAction(sectionId: string): Promise<{ bloc
   if ((await rawBlocks(s.tenantId, sectionId)).length) throw new Error("Clear this answer first; a standard answer only starts an empty one.");
 
   const { data: q } = await db.from("grant_question").select("id").eq("slug", slug).maybeSingle();
+  // Every column, so approved_blocks (0065) is read when it is there.
   const { data: ans } = q
-    ? await db.from("answer").select("draft_section_id, status").eq("tenant_id", s.tenantId).eq("question_id", q.id).maybeSingle()
+    ? await db.from("answer").select("*").eq("tenant_id", s.tenantId).eq("question_id", q.id).maybeSingle()
     : { data: null };
   if (!ans || ans.status !== "published" || !ans.draft_section_id) {
     throw new Error("There is no approved standard answer built from cards for this question yet.");
   }
-  // A bridge Weave proposed there and nobody accepted is not part of the standard answer.
-  const source = (await rawBlocks(s.tenantId, ans.draft_section_id as string)).filter(b => !b.proposed);
+  // The pieces as approved (or, for an answer approved before 0065, as they stand);
+  // a bridge Weave proposed and nobody accepted is never part of it.
+  const source = (await standardAnswerPieces(s.tenantId, ans)) as unknown as Record<string, unknown>[];
   if (!source.length) throw new Error("The standard answer has no blocks to start from.");
   // Approved answers were checked when approved, but a card's status can change
   // afterwards (un-verified, reopened as sensitive, retired), and answers
@@ -827,11 +834,12 @@ export async function fillFromStandardsAction(draftId: string): Promise<{ filled
 
   const [{ data: secs }, { data: answers }] = await Promise.all([
     db.from("draft_section").select("id, question_slugs").eq("tenant_id", s.tenantId).eq("draft_id", draftId),
-    db.from("answer").select("draft_section_id, status, question:question_id(slug)")
+    db.from("answer").select("*, question:question_id(slug)")
       .eq("tenant_id", s.tenantId).eq("status", "published").not("draft_section_id", "is", null),
   ]);
-  const stdBySlug = new Map(((answers ?? []) as unknown as { draft_section_id: string; question: { slug: string } | null }[])
-    .filter(a => a.question?.slug).map(a => [a.question!.slug, a.draft_section_id]));
+  type Ans = { draft_section_id: string; approved_blocks?: unknown; question: { slug: string } | null };
+  const stdBySlug = new Map(((answers ?? []) as unknown as Ans[])
+    .filter(a => a.question?.slug).map(a => [a.question!.slug, a]));
   const sections = (secs ?? []) as { id: string; question_slugs: string[] }[];
   if (!sections.length) return { filled: 0, skipped: 0, needsReview: 0 };
 
@@ -843,7 +851,7 @@ export async function fillFromStandardsAction(draftId: string): Promise<{ filled
   for (const sec of sections) {
     const from = sec.question_slugs[0] ? stdBySlug.get(sec.question_slugs[0]) : undefined;
     if (!from || started.has(sec.id)) continue;
-    const source = (await rawBlocks(s.tenantId, from)).filter(b => !b.proposed);
+    const source = (await standardAnswerPieces(s.tenantId, from)) as unknown as Record<string, unknown>[];
     if (!source.length) { skipped += 1; continue; }
     const issues = await cardIssues(s.tenantId, source.filter(b => b.kind === "card" && b.card_id).map(b => b.card_id as string));
     if (issues.size) {

@@ -17,6 +17,7 @@ import { CARD_KIND_MAP } from "@/lib/story-card";
 import type { RankCard } from "@/lib/story-card-rank";
 import type { GapAsk } from "@/lib/draft-gaps";
 import type { FigureClearance } from "@/lib/polish";
+import { parseAdaptation, type SaAdaptation } from "@/lib/sa-adapt";
 import { asksForDraft } from "./asks";
 
 export interface WsEvidence { title: string; layer: string | null; quote: string; speaker: string | null }
@@ -63,6 +64,8 @@ export interface WsSection {
   wantedKinds: string[];
   status: "empty" | "drafting" | "done";
   createdAt: string;
+  /** Auto-Draft patch 7: a Standard Answer adapted for this funder, and the choice made. */
+  saAdaptation: SaAdaptation | null;
 }
 
 /** A client's approved standard answer, by bank slug. */
@@ -168,8 +171,8 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
 
   const [{ data: draft }, { data: secRows, error: sErr }, cards, { data: ansRows }, { data: bankRows }, asks] = await Promise.all([
     s.from("grant_draft").select("purpose").eq("tenant_id", tenantId).eq("id", draftId).maybeSingle(),
-    s.from("draft_section")
-      .select("id, sort_order, prompt, guidance, criteria, limit_value, limit_unit, question_slugs, wanted_kinds, status, created_at")
+    // Every column, so sa_adaptation (0065) is read when it is there.
+    s.from("draft_section").select("*")
       .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order"),
     loadCards(tenantId),
     s.from("answer")
@@ -188,6 +191,7 @@ export async function getWorkspace(tenantId: string, draftId: string): Promise<W
     slugs: (r.question_slugs as string[]) ?? [], wantedKinds: (r.wanted_kinds as string[]) ?? [],
     status: (r.status as WsSection["status"]) ?? "empty",
     createdAt: (r.created_at as string | null) ?? "",
+    saAdaptation: parseAdaptation(r.sa_adaptation),
   }));
 
   let blocks: WsBlock[] = [];
