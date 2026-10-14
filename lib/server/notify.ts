@@ -130,3 +130,30 @@ export async function notifyAskAnswered(d: { org: string; answerer: string; kind
     } catch { /* best-effort */ }
   }
 }
+
+/** Someone sent an Interest Cart from forgranted.com (website intake, 14 October 2026). */
+export async function notifySiteInterest(d: { name: string; org: string; email: string; cards: string[] }) {
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const list = d.cards.join(", ");
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "For Granted Website <noreply@forgranted.com>", to: ["info@forgranted.com"], reply_to: d.email,
+          subject: `New Interest Cart: ${d.org}`,
+          html: `<p><strong>${esc(d.name)}</strong> (${esc(d.org)}, <a href="mailto:${esc(d.email)}">${esc(d.email)}</a>) sent an Interest Cart from forgranted.com.</p>`
+            + `<p>Their org needs:</p><ul>${d.cards.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`
+            + `<p>Reply to this email to answer them directly.</p>`,
+        }),
+      });
+    } catch { /* best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `:shopping_trolley: *New Interest Cart* from ${d.name} (${d.org}, ${d.email}). Their org needs: ${list}` }) });
+    } catch { /* best-effort */ }
+  }
+}
