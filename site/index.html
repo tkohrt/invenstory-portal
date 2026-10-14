@@ -5,11 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#13120F">
-<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiM5QTdCMkYiLz48dGV4dCB4PSIzMiIgeT0iNDMiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLHNlcmlmIiBmb250LXNpemU9IjMwIiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjRkZGRkZGIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5GRzwvdGV4dD48L3N2Zz4=">
-<meta property="og:title" content="For Granted">
-<meta property="og:description" content="Find your story. Fund your mission. For Granted turns everything that makes your organization fundable into a story-centric engine for fund seeking.">
+<link rel="canonical" href="https://forgranted.com/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:site_name" content="For Granted">
+<meta property="og:title" content="For Granted: Find your story. Fund your mission.">
+<meta property="og:description" content="For Granted captures everything that makes your organization fundable and turns it into a story-centric engine for fund seeking.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://forgranted.com/">
+<meta property="og:image" content="https://forgranted.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="For Granted logo with the line: Find your story. Fund your mission.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://forgranted.com/og-image.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"For Granted","url":"https://forgranted.com/","logo":"https://forgranted.com/icon-512.png","description":"Story intelligence for mission-driven organizations. For Granted captures everything that makes an organization fundable and turns it into a story-centric engine for fund seeking.","address":{"@type":"PostalAddress","addressLocality":"Cleveland","addressRegion":"OH","addressCountry":"US"},"founder":[{"@type":"Person","name":"Tyler Kohrt","sameAs":"https://www.linkedin.com/in/tylerkohrt/"},{"@type":"Person","name":"Shane Winnyk","sameAs":"https://www.linkedin.com/in/shanewinnyk/"}]}</script>
 <style>html,body{margin:0}img{max-width:100%}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
 <title>For Granted</title>
 <meta name="description" content="For Granted captures everything that makes your organization fundable and turns it into a story-centric engine for fund seeking.">
@@ -89,6 +101,8 @@ button{font:inherit;color:inherit}
 .nav .wrap{display:flex;align-items:center;gap:20px;min-height:64px;flex-wrap:wrap}
 .mark{font-family:var(--serif);font-size:24px;font-weight:600;text-decoration:none;color:var(--ink);margin-right:auto;letter-spacing:-.01em}
 .mark b{color:var(--gold);font-weight:600}
+.mark{display:inline-flex;align-items:center;gap:10px}
+.mark img{height:30px;width:auto;display:block}
 .nav nav{display:flex;gap:22px;flex-wrap:wrap}
 .nav nav a{color:var(--ink-2);text-decoration:none;font-size:14.5px;font-weight:500}
 .nav nav a:hover{color:var(--gold)}
@@ -417,7 +431,7 @@ footer .tl{font-family:var(--serif);font-size:20px;color:var(--ink);font-style:i
 
 <header class="nav">
   <div class="wrap">
-    <a class="mark" href="#top">For <b>Granted</b></a>
+    <a class="mark" href="#top"><img src="data:image/png;base64,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" alt="" width="28" height="30">For <b>Granted</b></a>
     <nav aria-label="Sections">
       <a href="#invenstory">Inven(s)tory</a>
       <a href="#app">Storyboard</a>
