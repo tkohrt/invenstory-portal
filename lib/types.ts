@@ -193,6 +193,18 @@ export interface DraftSection {
   origin: "parsed" | "manual"; in_source: boolean;
   match_reason: string | null; matched_prompt: string | null;
   confirmed: boolean;
+  /** The question's place on the funder's form, counting every item (0068); null before Form Items or when added by hand. */
+  form_position?: number | null;
+}
+
+/** An item on a funder's form that is not written: a fact or a confirmation (Form Items step 1, 0068). */
+export interface DraftFormItem {
+  id: string; draft_id: string; sort_order: number; form_position: number | null;
+  kind: "fact" | "confirmation";
+  answer_type: "short_text" | "number" | "date" | "choice" | "yes_no" | null;
+  options: string[];
+  prompt: string; guidance: string | null;
+  in_source: boolean; origin: "parsed" | "manual";
 }
 
 // ---- Dashboard stats ----

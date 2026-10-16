@@ -1013,6 +1013,14 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ap-actions .spacer{flex:1}
 .ap-source{margin-top:24px;font-size:13px}
 .ap-source summary{cursor:pointer;color:var(--muted)}
+/* Form Items step 1: the form fields that are not written */
+.ap-pos{font-size:12px}
+.ap-fields{margin:22px 0 6px;border-top:1px solid var(--line);padding-top:14px}
+.ap-fields h3{margin:0 0 4px;font-size:15px}
+.ap-fields > p{font-size:13px;margin:0 0 10px}
+.ap-field{background:#fcfcfa}
+.ap-field-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:640px){.ap-row,.ap-field-row{grid-template-columns:1fr}}
 .ap-source pre{white-space:pre-wrap;font:inherit;font-size:12px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:#fff}
 .fm-draft{display:inline-block;margin-top:4px;font-size:12px;color:#1f4d2e}
 @media (max-width:760px){.ap-grid{grid-template-columns:1fr 1fr}.ap-row{grid-template-columns:1fr}}

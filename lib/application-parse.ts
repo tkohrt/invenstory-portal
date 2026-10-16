@@ -18,6 +18,7 @@
 // Pure and free of `server-only`, so every rule is tested without a model.
 import { z } from "zod";
 import { normalizeText, claimTokens, kindsFor } from "./story-card";
+import { readKind, readAnswerType, readOptions, answerTypeFor, type ItemKind, type FormKind, type AnswerType } from "./form-items";
 
 // ---------------------------------------------------------------------------
 // Windows.
@@ -72,6 +73,11 @@ export const RawQuestionSchema = z.object({
     return null;
   }),
   criteria: optStr,
+  // Form Items step 1: what kind of item this is. Absent (a window answer saved
+  // before kinds existed) reads as written, which it was.
+  kind: z.unknown().optional().transform(readKind),
+  answer_type: z.unknown().optional().transform(v => (v == null || v === "" ? null : readAnswerType(v))),
+  options: z.unknown().optional().transform(readOptions),
 });
 
 export const WindowAnswerSchema = z.object({
@@ -79,7 +85,10 @@ export const WindowAnswerSchema = z.object({
   funder: optStr,
   deadline: optStr,
   attachments: z.array(z.union([str, z.null()])).optional().transform(a => (a ?? []).filter((x): x is string => !!x)),
-  questions: z.array(z.unknown()).optional().default([]),
+  // `items` is the reader's list since Form Items step 1; `questions` is what
+  // it returned before, and what window answers saved mid-read still hold.
+  items: z.array(z.unknown()).optional(),
+  questions: z.array(z.unknown()).optional(),
 });
 
 export type RawQuestion = z.infer<typeof RawQuestionSchema>;
@@ -111,7 +120,7 @@ export function parseWindowAnswer(raw: string): WindowAnswer | null {
   if (!top.success) return null;
   const questions: RawQuestion[] = [];
   let invalid = 0;
-  for (const q of top.data.questions) {
+  for (const q of top.data.items ?? top.data.questions ?? []) {
     const r = RawQuestionSchema.safeParse(q);
     if (r.success) questions.push(r.data);
     else invalid++;
@@ -223,10 +232,26 @@ export interface ParsedSection {
   limit_unit: "words" | "characters" | null;
   criteria: string | null;
   in_source: boolean;
+  /** The item's place on the funder's form, counting every kind, from 1. */
+  form_position: number;
+}
+
+/** A fact or confirmation: an item on the form that is not written (Form Items step 1). */
+export interface ParsedFormItem {
+  kind: FormKind;
+  answer_type: AnswerType | null;
+  options: string[];
+  prompt: string;
+  guidance: string | null;
+  in_source: boolean;
+  form_position: number;
 }
 
 export interface ParseResult {
+  /** The written questions, in form order. */
   sections: ParsedSection[];
+  /** Everything else on the form, in form order. */
+  formItems: ParsedFormItem[];
   title: string | null;
   funder: string | null;
   deadline: string | null;
@@ -235,6 +260,7 @@ export interface ParseResult {
   stats: {
     proposed: number; duplicates: number; notInSource: number;
     limitsKept: number; limitsFilled: number; limitsRemoved: number; invalid: number;
+    written: number; facts: number; confirmations: number;
   };
 }
 
@@ -268,22 +294,40 @@ const longer = (a: string | null, b: string | null) =>
  * the longer prompt and whichever copy carried a limit, guidance or criteria.
  */
 export function mergeWindows(answers: (WindowAnswer | null)[], source: string): ParseResult {
-  const stats = { proposed: 0, duplicates: 0, notInSource: 0, limitsKept: 0, limitsFilled: 0, limitsRemoved: 0, invalid: 0 };
+  const stats = {
+    proposed: 0, duplicates: 0, notInSource: 0, limitsKept: 0, limitsFilled: 0, limitsRemoved: 0, invalid: 0,
+    written: 0, facts: 0, confirmations: 0,
+  };
   const merged: RawQuestion[] = [];
   let title: string | null = null, funder: string | null = null, deadline: string | null = null;
   const attachments: string[] = [];
 
-  for (const a of answers) {
+  // Which part each merged item was first read in. Form Items step 1: an item
+  // is only the same as one read in the PREVIOUS part, where the two parts
+  // overlap. Within one part, and between parts that do not touch, a repeated
+  // label is a different item on the form ("Email" under the primary contact
+  // and again under the secondary one), and merging it would drop a field.
+  const from: number[] = [];
+  const { windows } = applicationWindows(source);
+  const aligned = windows.length === answers.length;
+
+  for (const [w, a] of answers.entries()) {
     if (!a) continue;
     stats.invalid += a.invalid;
     title ??= a.title; funder ??= a.funder; deadline ??= a.deadline;
     for (const at of a.attachments) {
       if (!attachments.some(x => normalizeText(x) === normalizeText(at))) attachments.push(at);
     }
+    // The text both this part and the previous one contain.
+    const overlap = aligned && w > 0 ? windows[w].slice(0, WINDOW_OVERLAP) : "";
+    const claimed = new Set<number>();
     for (const q of a.questions) {
       stats.proposed++;
-      const i = merged.findIndex(m => sameQuestion(m.prompt, q.prompt));
-      if (i < 0) { merged.push({ ...q }); continue; }
+      const i = merged.findIndex((m, k) => from[k] === w - 1 && !claimed.has(k) && sameQuestion(m.prompt, q.prompt)
+        // A short label is too common to match on wording alone: it must sit in the overlap itself.
+        && (cleanForMatch(q.prompt).length >= 25 || (!!overlap && promptInSource(q.prompt, overlap))));
+      if (i < 0) { merged.push({ ...q }); from.push(w); continue; }
+      claimed.add(i);
       stats.duplicates++;
       const m = merged[i];
       merged[i] = {
@@ -292,27 +336,48 @@ export function mergeWindows(answers: (WindowAnswer | null)[], source: string): 
         criteria: longer(m.criteria, q.criteria),
         limit_value: m.limit_value ?? q.limit_value,
         limit_unit: m.limit_value ? m.limit_unit : q.limit_unit,
+        // The first reading of an item decides its kind; a person can move it.
+        kind: kindOf(m),
+        answer_type: m.answer_type ?? q.answer_type ?? null,
+        options: (q.options?.length ?? 0) > (m.options?.length ?? 0) ? q.options : (m.options ?? []),
       };
     }
   }
 
-  const sections: ParsedSection[] = merged.map(q => {
+  const sections: ParsedSection[] = [];
+  const formItems: ParsedFormItem[] = [];
+  merged.forEach((q, i) => {
+    const form_position = i + 1;
+    const in_source = promptInSource(q.prompt, source);
+    if (!in_source) stats.notInSource++;
+    const prompt = stripNumbering(q.prompt) || q.prompt;
+    const kind = kindOf(q);
+    if (kind !== "written") {
+      if (kind === "fact") stats.facts++; else stats.confirmations++;
+      const answer_type = answerTypeFor(kind, q.answer_type);
+      formItems.push({
+        kind, answer_type, options: answer_type === "choice" ? (q.options ?? []) : [],
+        prompt, guidance: q.guidance, in_source, form_position,
+      });
+      return;
+    }
+    stats.written++;
     const { limit, changed } = resolveLimit(q, source);
     if (changed === "kept") stats.limitsKept++;
     if (changed === "filled") stats.limitsFilled++;
     if (changed === "removed") stats.limitsRemoved++;
-    const in_source = promptInSource(q.prompt, source);
-    if (!in_source) stats.notInSource++;
-    return {
-      prompt: stripNumbering(q.prompt) || q.prompt,
-      guidance: q.guidance, criteria: q.criteria,
+    sections.push({
+      prompt, guidance: q.guidance, criteria: q.criteria,
       limit_value: limit?.value ?? null, limit_unit: limit?.unit ?? null,
-      in_source,
-    };
+      in_source, form_position,
+    });
   });
 
-  return { sections, title, funder, deadline, attachments, stats };
+  return { sections, formItems, title, funder, deadline, attachments, stats };
 }
+
+/** An item's kind; a window answer saved before kinds existed has none and was a written question. */
+const kindOf = (q: Partial<Pick<RawQuestion, "kind">>): ItemKind => q.kind ?? "written";
 
 // ---------------------------------------------------------------------------
 // Deadlines.

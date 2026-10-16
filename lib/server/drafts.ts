@@ -1,6 +1,6 @@
 import "server-only";
 import { userClient } from "./supabase";
-import type { DraftSection, GrantDraft } from "@/lib/types";
+import type { DraftFormItem, DraftSection, GrantDraft } from "@/lib/types";
 
 export async function getDrafts(tenantId: string): Promise<GrantDraft[]> {
   const s = await userClient();
@@ -23,10 +23,24 @@ export async function getDraft(tenantId: string, id: string): Promise<GrantDraft
 export async function getSections(tenantId: string, draftId: string): Promise<DraftSection[]> {
   const s = await userClient();
   const { data, error } = await s.from("draft_section")
-    .select("id, draft_id, sort_order, prompt, guidance, limit_value, limit_unit, criteria, question_slugs, wanted_kinds, origin, in_source, match_reason, matched_prompt, confirmed")
+    .select("id, draft_id, sort_order, prompt, guidance, limit_value, limit_unit, criteria, question_slugs, wanted_kinds, origin, in_source, match_reason, matched_prompt, confirmed, form_position")
     .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order");
   if (error) throw new Error(`Could not read the questions: ${error.message}`);
   return (data ?? []) as DraftSection[];
+}
+
+/**
+ * A draft's facts and confirmations (Form Items step 1, 0068), in the order a
+ * person last left them. Read under RLS, which lets through whoever can open
+ * the draft.
+ */
+export async function getFormItems(tenantId: string, draftId: string): Promise<DraftFormItem[]> {
+  const s = await userClient();
+  const { data, error } = await s.from("draft_form_item")
+    .select("id, draft_id, sort_order, form_position, kind, answer_type, options, prompt, guidance, in_source, origin")
+    .eq("tenant_id", tenantId).eq("draft_id", draftId).order("sort_order");
+  if (error) throw new Error(`Could not read the form fields: ${error.message}`);
+  return (data ?? []) as DraftFormItem[];
 }
 
 export interface BankOption { slug: string; category: string; prompt_text: string; audience: string }

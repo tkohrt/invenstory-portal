@@ -15,6 +15,7 @@ import { db } from "./db";
 import { HAND_MATCH, loadBank, matchToBank, matchFields, orgTypeOf } from "./application-parse";
 import { promptInSource, SLUG_KINDS } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
+import { ANSWER_TYPES, MAX_FORM_ITEMS, answerTypeFor, readOptions, type AnswerType, type FormKind } from "@/lib/form-items";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -35,6 +36,23 @@ export interface SectionInput {
    * null for "a new topic". Absent means leave the match to the model.
    */
   handSlug?: string | null;
+  /** The item's place on the funder's form (Form Items, 0068), kept when it moves between lists. */
+  form_position?: number | null;
+  /** "parsed" for an item the reader found, moved here from the form fields; anything else is added by hand. */
+  origin?: "parsed" | "manual";
+}
+
+/** A fact or confirmation on the confirmation screen (Form Items step 1). */
+export interface FormItemInput {
+  /** Absent for an item a person added, or one moved here from the questions. */
+  id?: string;
+  kind: FormKind;
+  answer_type: AnswerType | null;
+  options: string[];
+  prompt: string;
+  guidance: string | null;
+  form_position: number | null;
+  origin?: "parsed" | "manual";
 }
 
 interface Existing {
@@ -81,6 +99,7 @@ async function writeSections(tenantId: string, draftId: string, inputs: SectionI
     const value = q.limit_value && Number.isInteger(q.limit_value) && q.limit_value > 0 && q.limit_value < 1_000_000 ? q.limit_value : null;
     const base = {
       sort_order: i, prompt,
+      form_position: Number.isInteger(q.form_position) && (q.form_position as number) > 0 ? q.form_position : null,
       guidance: clean(q.guidance, 6000), criteria: clean(q.criteria, 4000),
       limit_value: value && unit ? value : null, limit_unit: value && unit ? unit : null,
       in_source: promptInSource(prompt, source),
@@ -106,7 +125,7 @@ async function writeSections(tenantId: string, draftId: string, inputs: SectionI
       if (e) throw new Error(`Could not save question ${i + 1}: ${e.message}`);
     } else {
       const { data: ins, error: e } = await db.from("draft_section").insert({
-        tenant_id: tenantId, draft_id: draftId, origin: "manual", ...base, ...match,
+        tenant_id: tenantId, draft_id: draftId, origin: q.origin === "parsed" ? "parsed" : "manual", ...base, ...match,
       }).select("id").single();
       if (e || !ins) throw new Error(`Could not add question ${i + 1}: ${e?.message ?? "no row"}`);
       keep.add((ins as { id: string }).id);
@@ -122,10 +141,67 @@ async function writeSections(tenantId: string, draftId: string, inputs: SectionI
   }
 }
 
+/**
+ * Replace a draft's facts and confirmations with the edited list (Form Items
+ * step 1). In two halves around writeSections, so an item moving between the
+ * lists is never in neither: first every kept or new item is written, then,
+ * once the questions are saved, the items that left are deleted. A failure in
+ * between leaves an item in both lists, which a person sees and fixes.
+ */
+async function writeFormItems(tenantId: string, draftId: string, items: FormItemInput[]): Promise<() => Promise<void>> {
+  const draft = await draftFor(tenantId, draftId);
+  if (draft.confirmed_at) throw new Error("These questions are confirmed. Reopen them to change anything.");
+  if (items.length > MAX_FORM_ITEMS) throw new Error("That is more form fields than an application holds; check for a reading problem.");
+
+  const { data: rows, error } = await db.from("draft_form_item").select("id").eq("tenant_id", tenantId).eq("draft_id", draftId);
+  if (error) throw new Error(`Could not read the form fields: ${error.message}`);
+  const existing = new Set(((rows ?? []) as { id: string }[]).map(r => r.id));
+  const source = draft.source_text ?? "";
+
+  const keep = new Set<string>();
+  for (const [i, f] of items.entries()) {
+    const prompt = clean(f.prompt, 4000);
+    if (!prompt) throw new Error(`Form field ${i + 1} is empty. Delete it or give it the funder's wording.`);
+    const kind: FormKind = f.kind === "confirmation" ? "confirmation" : "fact";
+    const type = answerTypeFor(kind, (ANSWER_TYPES as readonly string[]).includes(f.answer_type ?? "") ? f.answer_type : null);
+    const base = {
+      sort_order: i, kind, answer_type: type, options: type === "choice" ? readOptions(f.options) : [],
+      prompt, guidance: clean(f.guidance, 6000),
+      form_position: Number.isInteger(f.form_position) && (f.form_position as number) > 0 ? f.form_position : null,
+      in_source: promptInSource(prompt, source), updated_at: new Date().toISOString(),
+    };
+    if (f.id && existing.has(f.id)) {
+      keep.add(f.id);
+      const { error: e } = await db.from("draft_form_item").update(base).eq("tenant_id", tenantId).eq("id", f.id);
+      if (e) throw new Error(`Could not save form field ${i + 1}: ${e.message}`);
+    } else {
+      const { data: ins, error: e } = await db.from("draft_form_item").insert({
+        tenant_id: tenantId, draft_id: draftId, origin: f.origin === "parsed" ? "parsed" : "manual", ...base,
+      }).select("id").single();
+      if (e || !ins) throw new Error(`Could not add form field ${i + 1}: ${e?.message ?? "no row"}`);
+      keep.add((ins as { id: string }).id);
+    }
+  }
+
+  const gone = [...existing].filter(id => !keep.has(id));
+  return async () => {
+    if (!gone.length) return;
+    const { error: e } = await db.from("draft_form_item").delete().eq("tenant_id", tenantId).in("id", gone);
+    if (e) throw new Error(`Could not remove form fields: ${e.message}`);
+  };
+}
+
+/** Questions and form fields together, in the order that never loses an item. Form fields are left alone when not sent. */
+async function writeAll(tenantId: string, draftId: string, inputs: SectionInput[], formItems: FormItemInput[] | undefined, orgType: string | null) {
+  const finish = formItems ? await writeFormItems(tenantId, draftId, formItems) : null;
+  await writeSections(tenantId, draftId, inputs, orgType);
+  if (finish) await finish();
+}
+
 /** Save the edits without confirming. */
-export async function saveSectionsAction(draftId: string, inputs: SectionInput[]) {
+export async function saveSectionsAction(draftId: string, inputs: SectionInput[], formItems?: FormItemInput[]) {
   const s = await requireAdmin();
-  await writeSections(s.tenantId, draftId, inputs, await orgTypeOf(s.tenantId));
+  await writeAll(s.tenantId, draftId, inputs, formItems, await orgTypeOf(s.tenantId));
   revalidatePath(`/drafts/${draftId}`);
   return { ok: true };
 }
@@ -134,11 +210,13 @@ export async function saveSectionsAction(draftId: string, inputs: SectionInput[]
  * Save, re-match anything edited since it was matched, log every question as an
  * observation, and mark the questions confirmed.
  */
-export async function confirmSectionsAction(draftId: string, inputs: SectionInput[]) {
+export async function confirmSectionsAction(draftId: string, inputs: SectionInput[], formItems?: FormItemInput[]) {
   const s = await requireAdmin();
   const tenantId = s.tenantId;
   const orgType = await orgTypeOf(tenantId);
-  await writeSections(tenantId, draftId, inputs, orgType);
+  // Only written questions are matched and logged as observations below: a
+  // checkbox is not a question the bank should learn from.
+  await writeAll(tenantId, draftId, inputs, formItems, orgType);
   const draft = await draftFor(tenantId, draftId);
 
   const { data: rows, error } = await db.from("draft_section")

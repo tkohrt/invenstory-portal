@@ -330,7 +330,7 @@ export async function newDraftFromAction(draftId: string): Promise<string> {
   const newId = made.id as string;
 
   const { data: secs } = await db.from("draft_section")
-    .select("id, sort_order, prompt, guidance, limit_value, limit_unit, criteria, question_slugs, wanted_kinds, origin, in_source, match_reason, matched_prompt, status")
+    .select("id, sort_order, prompt, guidance, limit_value, limit_unit, criteria, question_slugs, wanted_kinds, origin, in_source, match_reason, matched_prompt, status, form_position")
     .eq("tenant_id", s.tenantId).eq("draft_id", draftId).order("sort_order");
   for (const sec of (secs ?? []) as Record<string, unknown>[]) {
     const { id: oldId, ...rest } = sec;
@@ -344,6 +344,16 @@ export async function newDraftFromAction(draftId: string): Promise<string> {
         (bl as Record<string, unknown>[]).map(b => ({ ...b, tenant_id: s.tenantId, section_id: ns.id, created_by: s.user.id })));
       if (bErr) throw new Error(`Could not copy an answer: ${bErr.message}`);
     }
+  }
+  // Form Items (0068): the form's facts and confirmations come along too.
+  const { data: items, error: fErr } = await db.from("draft_form_item")
+    .select("sort_order, form_position, kind, answer_type, options, prompt, guidance, in_source, origin")
+    .eq("tenant_id", s.tenantId).eq("draft_id", draftId).order("sort_order");
+  if (fErr) throw new Error(`Could not read the form fields: ${fErr.message}`);
+  if (items?.length) {
+    const { error: iErr } = await db.from("draft_form_item").insert(  // tenant-safe: every row carries tenant_id from the session
+      (items as Record<string, unknown>[]).map(f => ({ ...f, tenant_id: s.tenantId, draft_id: newId })));
+    if (iErr) throw new Error(`Could not copy the form fields: ${iErr.message}`);
   }
   revalidatePath("/drafts");
   return newId;

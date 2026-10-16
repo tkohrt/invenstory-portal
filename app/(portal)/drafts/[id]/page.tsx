@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { gateFeature } from "@/lib/server/gate";
 import { getTenant } from "@/lib/server/data";
-import { getBankOptions, getDraft, getSections } from "@/lib/server/drafts";
+import { getBankOptions, getDraft, getFormItems, getSections } from "@/lib/server/drafts";
 import ApplicationDraftView from "@/components/ApplicationDraftView";
 import DraftWorkspace from "@/components/DraftWorkspace";
 import { getWorkspace } from "@/lib/server/workspace";
@@ -44,7 +44,9 @@ export default async function DraftDetailPage({ params, searchParams }: {
       confirmRemove={(session.user.ui_prefs as { confirm_card_remove?: boolean } | null)?.confirm_card_remove !== false}
       context={context} />;
   }
-  const [sections, bank] = await Promise.all([getSections(session.tenantId, id), getBankOptions(session.tenantId)]);
-  return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} bank={bank} sourceText={source_text ?? ""}
+  const [sections, formItems, bank] = await Promise.all([
+    getSections(session.tenantId, id), getFormItems(session.tenantId, id), getBankOptions(session.tenantId),
+  ]);
+  return <ApplicationDraftView tenantName={tenant.name} draft={rest} sections={sections} formItems={formItems} bank={bank} sourceText={source_text ?? ""}
     context={context} contextFailed={contextFailed} />;
 }
