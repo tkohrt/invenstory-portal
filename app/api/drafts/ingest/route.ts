@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const { data, error } = await db.from("grant_draft").insert({
       tenant_id: tenantId, title: title.slice(0, 200), funder: field("funder").slice(0, 200) || null,
       amount_cents: amount && Number.isFinite(Number(amount)) ? Math.round(Number(amount) * 100) : null,
-      deadline, body: "", created_by: session.user.id,
+      deadline, created_by: session.user.id,
       mode: "cards", source_kind: kind, source_url: url ?? (field("sourceUrl") || null),
       source_text: text, source_filename: filename, opportunity_ref,
     }).select("id").single();
