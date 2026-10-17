@@ -343,6 +343,10 @@ function ConfirmQuestions({ draft, draftId, sections, formItems, bank, attachmen
           {stats?.limitsRemoved ? ` ${stats.limitsRemoved} limit(s) the reader proposed were removed because the application does not state them.` : ""}
           {truncated ? " The application was longer than the reader takes, so the end was not read: check its last questions by hand." : ""}
         </span>
+        <div className="ap-reread">
+          <button type="button" className="btn secondary ap-mini" disabled={!!busy} onClick={onReread}>Read the application again</button>
+          <span className="ov-muted">Starts the reading over. Edits on this screen are replaced.</span>
+        </div>
       </div>
 
       <ol className="ap-list">
@@ -469,8 +473,6 @@ function ConfirmQuestions({ draft, draftId, sections, formItems, bank, attachmen
         <button type="button" className="btn secondary" disabled={!!busy || !dirty || !!blocked} onClick={() => void save()}>
           {busy === "save" ? "Saving…" : dirty ? "Save without confirming" : "Saved"}
         </button>
-        <span className="spacer" />
-        <button type="button" className="btn ghost" disabled={!!busy} onClick={onReread}>Read the application again</button>
       </div>
     </div>
   );

@@ -1015,6 +1015,7 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ap-source summary{cursor:pointer;color:var(--muted)}
 /* Form Items step 1: the form fields that are not written */
 .ap-pos{font-size:12px}
+.ap-reread{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px}
 .ap-fields{margin:22px 0 6px;border-top:1px solid var(--line);padding-top:14px}
 .ap-fields h3{margin:0 0 4px;font-size:15px}
 .ap-fields > p{font-size:13px;margin:0 0 10px}
