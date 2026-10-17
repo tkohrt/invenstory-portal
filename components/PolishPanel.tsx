@@ -42,7 +42,7 @@ export default function PolishPanel({ run, locked, count, limit, unit, standard,
           every number against the sources behind it; and wording repeated between pieces. Nothing runs until you begin, and nothing
           changes unless you accept it. Drafting shorter wording uses a small part of the monthly AI allowance; the other checks are free.
         </div>
-        <button type="button" className="btn inline ap-go" disabled={locked} onClick={onBegin}>Begin Polishing</button>
+        <button type="button" className="sb-btn sb-secondary" disabled={locked} onClick={onBegin}>Begin Polishing</button>
       </div>
     );
   }

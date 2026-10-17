@@ -18,7 +18,7 @@
 // a reminder about the AI allowance comes first (components/WeaveReminder.tsx).
 // Opening the Weave tab costs nothing; Begin Weaving, inside it, is what weaves.
 // Polish (fit to limit, figure audit) is next; its tab is shown, disabled.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor, closestCenter, pointerWithin, useDraggable, useDroppable,
@@ -27,7 +27,7 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, arrangeForMeAction, editBlockAction,
+  addCardBlockAction, addHumanBlockAction, approveStandardAnswerAction, editBlockAction,
   fillFromStandardsAction, logShownAction, openStandardAnswersAction,
   acceptSuggestionAction, keepWordingAction, refreshBlockWordingAction, rejectSuggestionAction, removeBlockAction, reorderBlocksAction, setBreakAction, setSectionDoneAction,
   startFromStandardAction, tidyAction,
@@ -45,6 +45,7 @@ import PolishPanel, { type PolishRun } from "./PolishPanel";
 import { clearFigureAction, polishSectionAction, restoreFigureAction } from "@/lib/server/polish-actions";
 import { dropOptions, figureAudit, openFlags, repeats, describeFigureFlags, type FigureFlag, type ShortenProposal } from "@/lib/polish";
 import InfoTip from "./InfoTip";
+import MenuButton, { MenuItem, DOTS } from "./MenuButton";
 import { bridgeGaps } from "@/lib/weave";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import {
@@ -79,6 +80,17 @@ const LAYER_NAME: Record<string, string> = { I: "Public story", II: "Internal", 
 type Stage = "arrange" | "weave" | "polish";
 const STATUS_LABEL: Record<WsSection["status"], string> = { empty: "Not started", drafting: "Drafting", done: "Done" };
 const SOURCE_LABEL: Record<string, string> = { paste: "pasted text", pdf: "a PDF", docx: "a Word file", url: "a web page", match: "Funder Matches" };
+/** Subscribers to the Standard Answers note's dismissal (a tiny store for useSyncExternalStore). */
+const saNoteListeners = new Set<() => void>();
+const subscribeSaNote = (fn: () => void) => { saNoteListeners.add(fn); return () => { saNoteListeners.delete(fn); }; };
+const notifySaNote = () => { for (const fn of saNoteListeners) fn(); };
+
+/** The mark on every button that uses AI (Storyboard cleanup, 17 October 2026): purple, outlined, never filled. */
+const SPARK = (
+  <svg className="sb-spark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+  </svg>
+);
 
 const layerClass = (l: string | null) => (l === "I" ? "l1" : l === "II" ? "l2" : l === "III" ? "l3" : "");
 
@@ -118,6 +130,28 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [panelOpen, setPanelOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  // Storyboard cleanup (17 October 2026): the funder's application opens in a
+  // window from the ⋯ menu; the keyboard shortcuts open inside More.
+  const [sourceOpen, setSourceOpen] = useState(false);
+  useEffect(() => {
+    if (!sourceOpen && !contextOpen) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setSourceOpen(false); setContextOpen(false); } };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [sourceOpen, contextOpen]);
+  const [keysOpen, setKeysOpen] = useState(false);
+  // The Standard Answers note shows until dismissed, once per draft, per browser.
+  // Hidden until read, so it never flashes in and out on load.
+  // Read through useSyncExternalStore, like the sidebar's nav-collapsed: false on
+  // the server and while hydrating, the browser's answer after that.
+  const saKey = `ws-sa-note:${draft.id}`;
+  const saNote = useSyncExternalStore(subscribeSaNote,
+    () => { try { return localStorage.getItem(saKey) !== "dismissed"; } catch { return true; } },
+    () => false);
+  const dismissSaNote = () => {
+    try { localStorage.setItem(saKey, "dismissed"); } catch { /* this browser keeps nothing: it shows again next time */ }
+    notifySaNote();
+  };
   // Auto-draft (Auto-Draft patch 6): the confirm window, and a whole-draft run in progress.
   const [autoAsk, setAutoAsk] = useState<{ scope: "draft" | "question" } | null>(null);
   const [autoRun, setAutoRun] = useState<{ jobId: string; done: number; total: number } | null>(null);
@@ -151,7 +185,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const [choice, setChoice] = useState<{ blockId: string; text: string } | null>(null);
   const [userCard, setUserCard] = useState<{ blockId: string; text: string; kind?: string | null } | null>(null);
   const [weaveEditId, setWeaveEditId] = useState<string | null>(null);
-  const [arrangeReview, setArrangeReview] = useState<string[] | null>(null);
   // Removing a block: which is being dragged, where a card would land, the
   // question being asked, and the Undo on offer.
   const [activeBlock, setActiveBlock] = useState<string | null>(null);
@@ -189,7 +222,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
       const top = el.getBoundingClientRect().top + (main?.scrollTop ?? 0);
       // Leave exactly the page's own bottom padding, so nothing is left to scroll.
       const pad = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 16;
-      setSplitHeight(Math.max(420, window.innerHeight - top - pad));
+      setSplitHeight(Math.max(320, window.innerHeight - top - pad));
     };
     fit();
     window.addEventListener("resize", fit);
@@ -272,7 +305,7 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   }, [idx, section]);
 
   const go = (i: number) => {
-    setIdx(i); setTidy(null); setEditing(null); setNotice(null); setPanelOpen(false); setArrangeReview(null);
+    setIdx(i); setTidy(null); setEditing(null); setNotice(null); setPanelOpen(false);
     scrollRef.current?.scrollTo({ top: 0 });
   };
   const recommendedIdx = sections.map((_, i) => i).filter(i => advice[i].recommended);
@@ -684,7 +717,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const unit = section.limitUnit ?? "words";
   const count = countFor(text, unit);
   const lim = limitState(count, section.limitValue);
-  const startedCount = sections.filter(s => statusBy[s.id] !== "empty").length;
   const slug = section.slugs[0];
   const std = slug ? standards.find(x => x.slug === slug) : undefined;
   const changedSinceApproval = standard && std && std.sectionId === section.id && std.text !== text;
@@ -921,35 +953,53 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
   const countLabel = target
     ? `${count.toLocaleString()} ${standard ? "of about" : "/"} ${target.toLocaleString()} ${unit}`
     : `${count.toLocaleString()} ${unit}`;
+  const limitText = target
+    ? (standard ? `Typical length: about ${target.toLocaleString()} ${unit}` : `Limit: ${target.toLocaleString()} ${unit}`)
+    : (standard ? "No typical length" : "No length limit stated");
 
   return (
     <div className={`ws ws-page${readOnly ? " ws-readonly" : ""}`}>
+      {/* Storyboard cleanup (17 October 2026): one calm header. The draft's own
+          actions live behind the ⋯ menu; Mark completed also appears, as the one
+          primary action, once every question is done (below the toolbar). */}
       <header className="ws-top">
-        <h2 className="ws-title">{draft.title}</h2>
-        <About standard={standard} tenantName={tenantName}
-          meta={standard ? null : [draft.funder, money, draft.deadline ? `due ${new Date(draft.deadline + "T12:00:00").toLocaleDateString()}` : null].filter(Boolean).join(" · ")} />
-        {!standard && <span className={`status-pill ${draft.status ?? "drafting"}`}>{STATUS_NAME[(draft.status ?? "drafting") as DraftStatus]}</span>}
-        <span className="spacer" />
-        {!standard && !readOnly && (draft.status === "completed"
-          ? <>
-              <button type="button" className="btn ghost ap-mini" disabled={locked} onClick={() => void run(() => setDraftStatusAction(draft.id, "drafting"), () => router.refresh())}>Back to drafting</button>
-              <button type="button" className="btn secondary ap-mini" disabled={locked} onClick={() => atFinishLine("draft", "submit", () => setSubmitting(true))}>Mark submitted…</button>
+        <div className="ws-top-main">
+          <div className="ws-title-row">
+            <h2 className="ws-title">{draft.title}</h2>
+            {!standard && <span className={`status-pill ${draft.status ?? "drafting"}`}>{STATUS_NAME[(draft.status ?? "drafting") as DraftStatus]}</span>}
+            <span className="ws-admin" title={`For Granted only: ${tenantName} cannot see this draft`}>Admin</span>
+          </div>
+          <About standard={standard} tenantName={tenantName}
+            meta={standard ? null : [draft.funder, money, draft.deadline ? `due ${new Date(draft.deadline + "T12:00:00").toLocaleDateString()}` : null].filter(Boolean).join(" · ")} />
+        </div>
+        <div className="ws-top-acts">
+          <span className="ws-saved" aria-live="polite">{pending ? "Saving…" : savedAt ? <><span className="ws-saved-tick" aria-hidden="true">✓</span> Saved</> : ""}</span>
+          {!standard && !readOnly && draft.status === "completed" && (
+            <button type="button" className="sb-btn sb-primary" disabled={locked} onClick={() => atFinishLine("draft", "submit", () => setSubmitting(true))}>Mark submitted…</button>
+          )}
+          {!standard && draft.status === "submitted" && (
+            <>
+              <button type="button" className="sb-btn sb-secondary" onClick={() => void run(() => setDraftStatusAction(draft.id, "won"), () => router.refresh())}>Mark awarded</button>
+              <button type="button" className="sb-btn sb-secondary" onClick={() => void run(() => setDraftStatusAction(draft.id, "lost"), () => router.refresh())}>Mark declined</button>
             </>
-          : <button type="button" className="btn secondary ap-mini" disabled={locked}
-              title="Finished and ready to send. Still editable; a version is saved."
-              onClick={() => atFinishLine("draft", "completed", markCompleted)}>Mark completed</button>)}
-        {!standard && draft.status === "submitted" && (
-          <>
-            <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "won"), () => router.refresh())}>Mark awarded</button>
-            <button type="button" className="btn ghost ap-mini" onClick={() => void run(() => setDraftStatusAction(draft.id, "lost"), () => router.refresh())}>Mark declined</button>
-          </>
-        )}
-        <button type="button" className="btn ghost ap-mini" onClick={() => setContextOpen(true)}
-          title="The funder's overview and what the client wants this application to say. Auto-draft reads it.">
-          Grant context{context.items.length ? ` (${context.items.length})` : ""}</button>
-        <button type="button" className="btn ghost ap-mini" onClick={() => setVersionsOpen(true)}>Versions</button>
-        <span className="ws-flag">Admin · {tenantName} · For Granted only</span>
-        <span className="ws-saved" aria-live="polite">{pending ? "Saving…" : savedAt ? "All changes saved" : ""}</span>
+          )}
+          <button type="button" className="sb-btn sb-secondary" onClick={() => setContextOpen(true)}
+            title="The funder's overview and what the client wants this application to say. Auto-draft reads it.">
+            Grant context{context.items.length ? <span className="sb-count"> ({context.items.length})</span> : null}</button>
+          <MenuButton label="Draft menu" icon={DOTS}>
+            <MenuItem title="Versions" hint="Saved copies of the whole draft" onClick={() => setVersionsOpen(true)} />
+            {!standard && !readOnly && <MenuItem title="Edit the questions" hint="Back to the confirmation screen" onClick={() => void reopen()} />}
+            {!standard && sourceText && <MenuItem title="The funder’s application" hint="The text the questions were read from" onClick={() => setSourceOpen(true)} />}
+            {!standard && !readOnly && draft.status !== "completed" && (
+              <MenuItem title="Mark completed" hint="Finished and ready to send; still editable. A version is saved." disabled={locked}
+                onClick={() => atFinishLine("draft", "completed", markCompleted)} />
+            )}
+            {!standard && !readOnly && draft.status === "completed" && (
+              <MenuItem title="Back to drafting" hint="Undo Mark completed" disabled={locked}
+                onClick={() => void run(() => setDraftStatusAction(draft.id, "drafting"), () => router.refresh())} />
+            )}
+          </MenuButton>
+        </div>
       </header>
       {readOnly && (
         <div className="ws-locked" role="status">
@@ -960,7 +1010,46 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
         </div>
       )}
 
-      <DndContext sensors={readOnly ? noSensors : sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
+      {/* The toolbar (Storyboard cleanup, 17 October 2026): where you are, in one row. */}
+      <div className="ws-toolbar">
+        <div className="ws-stages" role="tablist" aria-label="Drafting stage">
+          {(["arrange", "weave", "polish"] as const).map((st, n) => (
+            <button key={st} type="button" role="tab" aria-selected={stage === st} className={`ws-stage${stage === st ? " active" : ""}`}
+              disabled={pending > 0} onClick={() => { if (stage !== st) switchStage(st); }}
+              title={st === "arrange" ? "Choose and order the cards"
+                : st === "weave" ? "Read the answer as prose, with short bridges between the cards to accept or reject"
+                : "Check length, every number's source, and repetition before the answer goes out. Nothing runs until you press Begin Polishing."}>
+              <span className="ws-stage-n" aria-hidden="true">{n + 1}</span>{st === "arrange" ? "Arrange" : st === "weave" ? "Weave" : "Polish"}
+            </button>
+          ))}
+        </div>
+        <nav className="ws-nav" aria-label="Questions">
+          <span className="ws-done-count"><strong>{progress.done} of {progress.questions}</strong> done</span>
+          <button type="button" className="sb-btn sb-quiet sb-icon" disabled={navAt <= 0} onClick={() => go(navOrder[navAt - 1])} aria-label="Previous question">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+          <div className="ws-pills">
+            {recommendedIdx.map(i => <Pill key={sections[i].id} i={i} />)}
+            {optionalIdx.length > 0 && (
+              <button type="button" className="sb-btn sb-quiet ws-opt-toggle" onClick={() => setShowOptional(v => !v)}
+                title="Questions fewer funders ask, or that this client has no cards for yet">
+                {showOptional || optionalIdx.includes(idx) ? "Optional:" : `＋ ${optionalIdx.length} optional`}
+              </button>
+            )}
+            {(showOptional || optionalIdx.includes(idx)) && optionalIdx.map(i => <Pill key={sections[i].id} i={i} optional />)}
+          </div>
+          <button type="button" className="sb-btn sb-quiet sb-icon" disabled={navAt < 0 || navAt >= navOrder.length - 1} onClick={() => go(navOrder[navAt + 1])} aria-label="Next question">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+        </nav>
+        {stage === "arrange" && !readOnly && (
+          <button type="button" className="sb-btn sb-ai ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "draft" })}
+            title="Fill every question that is not done with Story Cards, the way this client builds answers. A version is saved first; nothing leaves until a person has dealt with every flag.">
+            {SPARK} Auto-draft {standard ? "all Standard Answers" : "all questions"}</button>
+        )}
+      </div>
+      {/* A fixed id: dnd-kit numbers its accessibility ids per render, which differed between server and browser (a hydration mismatch). */}
+      <DndContext id="storyboard-dnd" sensors={readOnly ? noSensors : sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver}
         onDragEnd={onDragEnd} onDragCancel={endDrag}>
         <div className="ws-split" ref={splitRef} style={splitHeight ? { height: splitHeight } : undefined}>
           <CardPanel key={section.id} sectionId={section.id} ranked={ranked} usedWhere={usedWhere} current={idx + 1} statusNow={statusNow}
@@ -977,24 +1066,18 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               </button>
             )}
             <div className="ws-scroll" ref={scrollRef}>
-              <div className="ws-stages" role="tablist" aria-label="Drafting stage">
-                <button type="button" role="tab" aria-selected={stage === "arrange"} className={`chip${stage === "arrange" ? " active" : ""}`}
-                  disabled={pending > 0} onClick={() => { if (stage !== "arrange") switchStage("arrange"); }}
-                  title="Choose and order the cards">Arrange</button>
-                <button type="button" role="tab" aria-selected={stage === "weave"} className={`chip${stage === "weave" ? " active" : ""}`}
-                  disabled={pending > 0}
-                  onClick={() => { if (stage !== "weave") switchStage("weave"); }}
-                  title="Read the answer as prose, with short bridges between the cards to accept or reject">Weave</button>
-                <button type="button" role="tab" aria-selected={stage === "polish"} className={`chip${stage === "polish" ? " active" : ""}`}
-                  disabled={pending > 0}
-                  onClick={() => { if (stage !== "polish") switchStage("polish"); }}
-                  title="Check length, every number's source, and repetition before the answer goes out. Nothing runs until you press Begin Polishing.">Polish</button>
-                {stage === "arrange" && !readOnly && (
-                  <button type="button" className="btn ad-btn ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "draft" })}
-                    title="Fill every question that is not done with Story Cards, the way this client builds answers. A version is saved first; nothing leaves until a person has dealt with every flag.">
-                    ✦ Auto-draft{standard ? " Standard Answers" : " the draft"}</button>
-                )}
-              </div>
+              <ProgressStrip p={progress}
+                onReview={() => setBlockers({ scope: "draft", then: null })}
+                onBridges={() => goTo(progress.firstBridge, "weave")}
+                onWording={() => goTo(progress.firstWording, "arrange")}
+                onFigures={() => goTo(progress.firstFigure, "arrange")}
+                onAsks={() => goTo(progress.firstAsk)} />
+              {!standard && !readOnly && draft.status !== "completed" && progress.questions > 0 && progress.done >= progress.questions && (
+                <div className="ws-alldone" role="status">
+                  <span>Every answer is done. Mark the application completed to save a version and run the final checks.</span>
+                  <button type="button" className="sb-btn sb-primary" disabled={locked} onClick={() => atFinishLine("draft", "completed", markCompleted)}>Mark completed</button>
+                </div>
+              )}
               {autoRun && (
                 <div className="ad-running" role="status" aria-live="polite">
                   <span className="jp-spin" aria-hidden="true" />
@@ -1003,35 +1086,14 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </div>
               )}
 
-              <ProgressStrip p={progress} started={startedCount}
-                onReview={() => setBlockers({ scope: "draft", then: null })}
-                onBridges={() => goTo(progress.firstBridge, "weave")}
-                onWording={() => goTo(progress.firstWording, "arrange")}
-                onFigures={() => goTo(progress.firstFigure, "arrange")}
-                onAsks={() => goTo(progress.firstAsk)} />
-
-              <nav className="ws-nav" aria-label="Questions">
-                <button type="button" className="btn ghost ap-mini" disabled={navAt <= 0} onClick={() => go(navOrder[navAt - 1])}>← Previous</button>
-                <div className="ws-pills">
-                  {recommendedIdx.map(i => <Pill key={sections[i].id} i={i} />)}
-                  {optionalIdx.length > 0 && (
-                    <button type="button" className="btn ghost ap-mini ws-opt-toggle" onClick={() => setShowOptional(v => !v)}
-                      title="Questions fewer funders ask, or that this client has no cards for yet">
-                      {showOptional || optionalIdx.includes(idx) ? "Optional:" : `＋ ${optionalIdx.length} optional`}
-                    </button>
-                  )}
-                  {(showOptional || optionalIdx.includes(idx)) && optionalIdx.map(i => <Pill key={sections[i].id} i={i} optional />)}
-                </div>
-                <button type="button" className="btn ghost ap-mini" disabled={navAt < 0 || navAt >= navOrder.length - 1} onClick={() => go(navOrder[navAt + 1])}>Next →</button>
-              </nav>
 
               <section className="ws-question" ref={questionRef}>
                 <div className="ws-q-head">
                   <span className="ws-q-num">Question {idx + 1} of {sections.length}</span>
-                  <span className={`ov-tag ws-st-${statusBy[section.id]}`}>{STATUS_LABEL[statusBy[section.id]]}</span>
+                  {statusBy[section.id] === "done" && <span className="ws-q-done">Done</span>}
                   {standard && !advice[idx].recommended && <span className="ov-muted">Optional: {advice[idx].why}</span>}
                 </div>
-                <p className="ws-prompt">{section.prompt}</p>
+                <h3 className="ws-prompt">{section.prompt}</h3>
                 {(section.guidance || section.criteria) && (
                   <details className="ws-guide">
                     <summary>Guidance{section.criteria ? " and scoring" : ""}</summary>
@@ -1066,13 +1128,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   <div className="ws-warn ws-soft">The standard answer is {stdCount.toLocaleString()} {unit}; this funder allows {section.limitValue!.toLocaleString()}. Starting from it means cutting.</div>
                 )}
                 {section.wantedKinds.length
-                  ? <GapPanel key={section.id} rows={gapsBy[section.id] ?? []} locked={locked}
+                  ? <GapPanel key={section.id} rows={gapsBy[section.id] ?? []} locked={locked} lead={limitText}
                       onShow={kind => { setPanelAsk(p => ({ kind, n: (p?.n ?? 0) + 1 })); setPanelOpen(true); }}
                       onAdd={kind => insertAt(blocks.length, kind)}
                       onAsk={kind => setAsking(kind)}
                       onUse={placeAnswer}
                       onWithdraw={withdrawAsk} />
-                  : <div className="ap-kinds"><span className="ov-muted">Calls for: no card kinds set (ranked by wording and evidence only)</span></div>}
+                  : <div className="gp"><div className="gp-head"><span className="gp-lead">{limitText}</span><span>No card kinds set (ranked by wording and evidence only)</span></div></div>}
               </section>
 
 
@@ -1082,12 +1144,13 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                   learned from funders&rsquo; applications: {sections.filter(isNew).map(s => sections.indexOf(s) + 1).join(", ")}. They are marked in the list above.
                 </div>
               )}
-              {noStandards && (
-                <div className="ws-notice ws-soft-notice">
-                  <strong>Start with Standard Answers.</strong> {tenantName} has no approved standard answers yet. Answer the questions
-                  funders ask most once, and every application, this one included, can start from them.{" "}
-                  <button type="button" className="cl-link" onClick={() => void openStandardAnswersAction()
-                    .then(r => router.push(`/drafts/${r.draftId}`)).catch(e => setError(e instanceof Error ? e.message : "Could not open Standard Answers."))}>Open Standard Answers</button>
+              {noStandards && saNote && (
+                <div className="ws-notice ws-notice-x ws-sa-note" role="note">
+                  <span>{tenantName} has no approved Standard Answers yet. Answering the questions funders ask most once lets every
+                    application, this one included, start from them.{" "}
+                    <button type="button" className="ws-inline-link" onClick={() => void openStandardAnswersAction()
+                      .then(r => router.push(`/drafts/${r.draftId}`)).catch(e => setError(e instanceof Error ? e.message : "Could not open Standard Answers."))}>Open Standard Answers</button></span>
+                  <button type="button" className="bn-x" onClick={dismissSaNote} aria-label="Dismiss for this draft">×</button>
                 </div>
               )}
               {fillable > 0 && (
@@ -1105,14 +1168,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               )}
 
               {error && <div className="ap-error" role="alert">{error} <button className="btn ghost ap-mini" onClick={() => setError(null)}>Dismiss</button></div>}
-              {arrangeReview && arrangeReview.length > 0 && (
-                <div className="ws-notice ws-notice-x" role="status">
-                  <span>{arrangeReview.length} more card{arrangeReview.length === 1 ? "" : "s"} would fit this question but {arrangeReview.length === 1 ? "is" : "are"} not verified yet.{" "}
-                    <button type="button" className="btn secondary ap-mini" disabled={locked}
-                      onClick={() => { setReview({ mode: "place", queue: arrangeReview.map(cardId => ({ cardId, position: null })) }); setArrangeReview(null); }}>Review {arrangeReview.length === 1 ? "it" : "them"}</button></span>
-                  <button type="button" className="bn-x" onClick={() => setArrangeReview(null)} aria-label="Dismiss">×</button>
-                </div>
-              )}
               {notice && (
                 <div className="ws-notice ws-notice-x" role="status">
                   <span>{notice}</span>
@@ -1120,13 +1175,20 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </div>
               )}
 
+              <div className="ws-ans-head">
+                <span className="ws-ans-label">Your answer</span>
+                <span className={`ws-count ws-lim-${lim}`} title={target ? `${standard ? "Typical length" : "Limit"}: ${target.toLocaleString()} ${unit}` : "No limit stated"}>
+                  {countLabel}{lim === "over" ? (standard ? " · long" : " · over") : ""}{!target ? <span className="ws-count-sub"> · no limit</span> : null}
+                </span>
+              </div>
+
               {stage === "weave" && blocks.length > 0 && !hasBridges && !readOnly && !wovenHere.has(section.id) && (
                 <div className="ws-notice wv-start">
                   <span>{weaveBlockedWhy
                     ? weaveBlockedWhy
                     : "Read the cards as one passage. Begin Weaving drafts short connecting sentences between them, for you to accept, edit or reject."}</span>
-                  <button type="button" className="btn inline ap-go" disabled={locked || !!weaveBlockedWhy}
-                    title={weaveBlockedWhy ?? "Uses a small part of the monthly AI allowance"} onClick={requestWeave}>Begin Weaving</button>
+                  <button type="button" className="sb-btn sb-ai" disabled={locked || !!weaveBlockedWhy}
+                    title={weaveBlockedWhy ?? "Uses a small part of the monthly AI allowance"} onClick={requestWeave}>{SPARK} Begin Weaving</button>
                 </div>
               )}
               {stage === "polish" && blocks.length > 0 && (
@@ -1199,16 +1261,6 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </p>
               )}
 
-              <div className="ws-foot">
-                {!standard && !readOnly && <button type="button" className="btn ghost" onClick={() => void reopen()}>Edit the questions</button>}
-                {!standard && sourceText && (
-                  <details className="ap-source">
-                    <summary>The funder&rsquo;s application ({SOURCE_LABEL[draft.source_kind ?? "paste"] ?? "text"}, {sourceText.length.toLocaleString()} characters)</summary>
-                    <pre>{sourceText}</pre>
-                  </details>
-                )}
-              </div>
-
               {/* Opened by buttons in the bar, so they appear just above it. */}
               {seams && blocks.length > 0 && <SeamsView blocks={blocks} />}
               {tidy && (
@@ -1225,92 +1277,84 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               <div ref={endRef} />
             </div>
 
-            {/* The action bar: always on screen, grouped as the work goes. */}
+            {/* The action bar (Storyboard cleanup, 17 October 2026): one row, right-aligned,
+                one primary action; rarely used tools behind More, which opens upward. */}
             <div className="ws-bar" role="toolbar" aria-label="Answer actions">
-              <span className={`ws-count ws-lim-${lim}`} title={target ? `${standard ? "Typical length" : "Limit"}: ${target.toLocaleString()} ${unit}` : "No limit stated"}>
-                {countLabel}{lim === "over" ? (standard ? " · long" : " · over") : ""}
-              </span>
-              <span className="ws-bar-group">
-                <button type="button" className="btn ghost ws-panel-toggle" onClick={() => setPanelOpen(true)}>Story Cards</button>
-                {stage === "weave" && !readOnly && (
-                  <>
-                    {proposedCount > 0 && (
-                      <button type="button" className="btn inline ap-go ws-edit-only" disabled={locked}
-                        title="Accept every bridge proposed in this answer"
-                        onClick={() => void change(section.id, "accepting the bridges", () => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
-                    )}
-                    {hasBridges || wovenHere.has(section.id)
-                      ? <button type="button" className="btn secondary ws-edit-only" disabled={locked || !!weaveBlockedWhy}
-                          title={weaveBlockedWhy ?? "Propose bridges again: replaces the ones not yet accepted, and fills any gap without one"}
-                          onClick={requestWeave}>Weave again</button>
-                      : <button type="button" className="btn inline ap-go ws-edit-only" disabled={locked || !!weaveBlockedWhy}
-                          title={weaveBlockedWhy ?? "Draft connecting sentences between the cards. Uses a small part of the monthly AI allowance."}
-                          onClick={requestWeave}>Begin Weaving</button>}
-                  </>
-                )}
-                {stage === "polish" && !readOnly && blocks.length > 0 && (
-                  <button type="button" className={`btn ${polishRun ? "secondary" : "inline ap-go"} ws-edit-only`} disabled={locked} onClick={requestPolish}
-                    title={overBy > 0 ? "Check this answer and draft shorter wording. Drafting uses a small part of the monthly AI allowance." : "Check length, numbers and repetition. Free."}>
-                    {polishRun ? "Polish again" : "Begin Polishing"}</button>
-                )}
-                {stage === "arrange" && blocks.length === 0 && (
-                  <button type="button" className="btn secondary ws-edit-only" disabled={locked} title="Places the best cards for this question, in order. Cards only: nothing is written for you."
-                    onClick={() => void change(section.id, "Arrange for me", () => arrangeForMeAction(section.id), r => {
-                      putBlocks(section.id)(r.blocks);
-                      if (!r.placed && r.needsReview.length) {
-                        setReview({ mode: "place", queue: r.needsReview.map(cardId => ({ cardId, position: null })),
-                          note: "None of the best cards for this question is verified yet. Review each; verifying one places it." });
-                        return;
-                      }
-                      say(`Placed ${r.placed} verified card${r.placed === 1 ? "" : "s"}: one of each kind this question asks for first, then more while about four-fifths of the ${standard ? "typical length" : "limit"} allowed. Nothing was written; edit, reorder or remove as you like.`);
-                      setArrangeReview(r.needsReview.length ? r.needsReview : null);
-                    })}>Arrange for me</button>
-                )}
-                {stage === "arrange" && !readOnly && (
-                  <button type="button" className="btn ad-btn-q ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "question" })}
+              <button type="button" className="sb-btn sb-secondary ws-panel-toggle" onClick={() => setPanelOpen(true)}>Story Cards</button>
+              <span className="spacer" />
+              {!readOnly && (
+                <button type="button" className="sb-btn sb-secondary" disabled={locked || !lastUndo} onClick={undoLast}
+                  title={lastUndo ? `Undo ${lastUndo.label} (Ctrl+Z, or ⌘Z on a Mac)` : "Nothing to undo in this answer yet"}>
+                  <span aria-hidden="true">↶</span> Undo</button>
+              )}
+              {stage === "weave" && !readOnly && (
+                <>
+                  {proposedCount > 0 && (
+                    <button type="button" className="sb-btn sb-secondary ws-edit-only" disabled={locked}
+                      title="Accept every bridge proposed in this answer"
+                      onClick={() => void change(section.id, "accepting the bridges", () => acceptBridgesAction(section.id, null), putBlocks(section.id))}>Accept all ({proposedCount})</button>
+                  )}
+                  <button type="button" className="sb-btn sb-ai ws-edit-only" disabled={locked || !!weaveBlockedWhy}
+                    title={weaveBlockedWhy ?? (hasBridges || wovenHere.has(section.id)
+                      ? "Propose bridges again: replaces the ones not yet accepted, and fills any gap without one"
+                      : "Draft connecting sentences between the cards. Uses a small part of the monthly AI allowance.")}
+                    onClick={requestWeave}>{SPARK} {hasBridges || wovenHere.has(section.id) ? "Weave again" : "Begin Weaving"}</button>
+                </>
+              )}
+              {stage === "polish" && !readOnly && blocks.length > 0 && (
+                <button type="button" className={`sb-btn ${overBy > 0 ? "sb-ai" : "sb-secondary"} ws-edit-only`} disabled={locked} onClick={requestPolish}
+                  title={overBy > 0 ? "Check this answer and draft shorter wording. Drafting uses a small part of the monthly AI allowance." : "Check length, numbers and repetition. Free."}>
+                  {overBy > 0 ? <>{SPARK} </> : null}{polishRun ? "Polish again" : "Begin Polishing"}</button>
+              )}
+              {stage === "arrange" && !readOnly && (
+                <>
+                  <button type="button" className="sb-btn sb-secondary ws-edit-only" disabled={locked}
+                    title="Add text at the end. Or click between any two pieces of the answer to add it there."
+                    onClick={() => insertAt(blocks.length)}>＋ Your text</button>
+                  <button type="button" className="sb-btn sb-ai ws-edit-only" disabled={locked} onClick={() => setAutoAsk({ scope: "question" })}
                     title="Fill this question with Story Cards: from its approved Standard Answer if it has one and is empty, otherwise chosen and ordered for this question. Cards already here stay.">
-                    ✦ Auto-draft this question</button>
-                )}
-                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked}
-                  title="Add text at the end. Or click between any two pieces of the answer to add it there."
-                  onClick={() => insertAt(blocks.length)}>＋ Write your own text</button>}
-                {stage === "arrange" && <button type="button" className="btn secondary ws-edit-only" disabled={locked || blocks.length < 3}
-                  title={blocks.length < 3 ? "Tidy needs at least three pieces" : "Ask for a suggested order, with a reason. Nothing changes unless you accept it."}
-                  onClick={() => void run(() => tidyAction(section.id), r => {
-                    if ("error" in r) say(r.error);
-                    else if (r.order.every((id, i) => id === blocks[i]?.id)) say(`Tidy would keep this order. ${r.rationale}`);
-                    else { setTidy(r); reveal(); }
-                  })}>Tidy</button>}
-              </span>
-              <span className="ws-bar-group">
-                {!readOnly && (
-                  <button type="button" className="btn ghost ws-undo-btn" disabled={locked || !lastUndo} onClick={undoLast}
-                    title={lastUndo ? `Undo ${lastUndo.label} (Ctrl+Z, or ⌘Z on a Mac)` : "Nothing to undo in this answer yet"}>↶ Undo</button>
-                )}
-                <button type="button" className={`btn ghost${seams ? " ws-seams-on" : ""}`} disabled={!blocks.length}
-                  onClick={() => { setSeams(v => !v); if (!seams) reveal(); }}
-                  title="See the answer as one text, marked by where each part came from">{seams ? "Hide seams" : "Show seams"}</button>
-                <CopyButton text={text} blocked={sectionBlockers.length > 0 || sectionAdaptOpen || sectionSugg > 0 || sectionFigures > 0}
+                    {SPARK} Auto-draft this question</button>
+                </>
+              )}
+              <MenuButton label="More actions" text="More" icon={DOTS} up className="ws-more-menu">
+                <CopyItem text={text} blocked={sectionBlockers.length > 0 || sectionAdaptOpen || sectionSugg > 0 || sectionFigures > 0}
+                  onCopied={() => say("Answer copied, ready to paste into the funder's form.")}
                   onBlocked={() => (sectionBlockers.length ? setBlockers({ scope: "section", then: null })
                     : sectionAdaptOpen ? setAdaptBlock({ scope: "section" })
                     : sectionSugg ? setSuggBlock({ scope: "section" }) : setFigBlock({ scope: "section", then: null }))} />
-              </span>
-              <span className="spacer" />
-              {!readOnly && (
-                <InfoTip label="Keyboard shortcuts" side="up" align="right">
-                  <strong>N</strong> adds new text after the piece you are on, or at the end. The <strong>arrow keys</strong> move
-                  between the pieces of the answer, and <strong>Enter</strong> opens one. <strong>Ctrl+Z</strong> (⌘Z on a Mac) undoes
-                  the last change to this answer, as many times as you like; while you type, it undoes typing instead.
-                </InfoTip>
-              )}
-              <span className="ws-bar-group ws-edit-only">
+                {stage === "arrange" && !readOnly && (
+                  <MenuItem title="Tidy" hint={blocks.length < 3 ? "Needs at least three pieces" : "Suggest a better order, with a reason"}
+                    disabled={locked || blocks.length < 3}
+                    onClick={() => void run(() => tidyAction(section.id), r => {
+                      if ("error" in r) say(r.error);
+                      else if (r.order.every((id, i) => id === blocks[i]?.id)) say(`Tidy would keep this order. ${r.rationale}`);
+                      else { setTidy(r); reveal(); }
+                    })} />
+                )}
+                <MenuItem title={seams ? "Hide seams" : "Show seams"} hint="See where each part of the answer came from" disabled={!blocks.length}
+                  onClick={() => { setSeams(v => !v); if (!seams) reveal(); }} />
+                {!readOnly && (
+                  <>
+                    <div className="mb-sep" role="separator" />
+                    <MenuItem title={keysOpen ? "Hide keyboard shortcuts" : "Keyboard shortcuts"} keepOpen onClick={() => setKeysOpen(v => !v)} />
+                    {keysOpen && (
+                      <p className="mb-note">
+                        <strong>N</strong> adds new text after the piece you are on, or at the end. The <strong>arrow keys</strong> move
+                        between the pieces of the answer, and <strong>Enter</strong> opens one. <strong>Ctrl+Z</strong> (⌘Z on a Mac) undoes
+                        the last change to this answer; while you type, it undoes typing instead.
+                      </p>
+                    )}
+                  </>
+                )}
+              </MenuButton>
+              <span className="ws-bar-end ws-edit-only">
                 {statusBy[section.id] === "done"
-                  ? <button type="button" className="btn ghost" disabled={locked}
+                  ? <button type="button" className="sb-btn sb-secondary" disabled={locked}
                       onClick={() => void run(() => setSectionDoneAction(section.id, false), st => setStatusBy(m => ({ ...m, [section.id]: st })))}>Reopen this answer</button>
-                  : <button type="button" className="btn secondary ws-done-btn" disabled={locked || !blocks.length}
+                  : <button type="button" className={`sb-btn ${standard ? "sb-secondary" : "sb-primary"}`} disabled={locked || !blocks.length}
                       onClick={() => void run(() => setSectionDoneAction(section.id, true), st => setStatusBy(m => ({ ...m, [section.id]: st })))}>Mark this answer done</button>}
                 {standard && (
-                  <button type="button" className="btn inline ap-go" disabled={locked || !text || (std?.sectionId === section.id && !changedSinceApproval)}
+                  <button type="button" className="sb-btn sb-primary" disabled={locked || !text || (std?.sectionId === section.id && !changedSinceApproval)}
                     title="Make this the approved Standard Answer, linked to the cards it was built from. Applications start from approved answers."
                     onClick={() => atFinishLine("section", "approve", approveNow)}>
                     {std?.sectionId === section.id ? (changedSinceApproval ? "Approve the changes" : "Approved") : "Approve this answer"}
@@ -1336,6 +1380,18 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
               <p className="ov-muted">What auto-draft should know beyond the questions. It teaches nothing about facts: every figure and name
                 in the answer still comes from a Story Card. None of it is added to {tenantName}&rsquo;s Inven(s)tory.</p>
               <GrantContextBox mode="live" draftId={draft.id} items={context.items} ready={context.ready} locked={readOnly} />
+            </aside>
+          </div>
+        )}
+        {sourceOpen && (
+          <div className="ws-modal-back" role="presentation" onClick={() => setSourceOpen(false)}>
+            <aside className="ws-versions gc-drawer" role="dialog" aria-modal="true" aria-label="The funder's application" onClick={e => e.stopPropagation()}>
+              <div className="ws-versions-head">
+                <h3>The funder&rsquo;s application</h3>
+                <button type="button" className="bn-x" onClick={() => setSourceOpen(false)} aria-label="Close">×</button>
+              </div>
+              <p className="ov-muted">From {SOURCE_LABEL[draft.source_kind ?? "paste"] ?? "text"}{draft.source_filename ? `: ${draft.source_filename}` : ""}, {sourceText.length.toLocaleString()} characters.</p>
+              <pre className="ws-source-text">{sourceText}</pre>
             </aside>
           </div>
         )}
@@ -1559,7 +1615,7 @@ function About({ standard, tenantName, meta }: { standard: boolean; tenantName: 
       <InfoTip label={standard ? "About Standard Answers" : "About this page"}>
         {standard
           ? <>The questions funders ask again and again, answered once from {tenantName}&rsquo;s Story Cards. An approved answer can start any application&rsquo;s matching question. Lengths shown are typical, not limits.</>
-          : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Arrange for me; every sentence keeps its source. Weave then reads it as prose, with short bridges between the cards for you to accept or reject. Polish comes next.</>}
+          : <>This application&rsquo;s questions, answered from {tenantName}&rsquo;s Story Cards. Drag cards into the answer, or use Auto-draft; every sentence keeps its source. Weave then reads it as prose, with short bridges between the cards for you to accept or reject. Polish comes next.</>}
       </InfoTip>
     </span>
   );
@@ -1589,6 +1645,7 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
   const [limit, setLimit] = useState(PANEL_SIZE);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [userOnly, setUserOnly] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const logged = useRef(new Set<string>());
   // Show them, from the gap panel (adjusting state while rendering, as for props).
   const [seenRequest, setSeenRequest] = useState(kindRequest?.n ?? 0);
@@ -1635,23 +1692,53 @@ function CardPanel({ sectionId, ranked, usedWhere, current, statusNow, wantedKin
         <span className="ov-muted">{ranked.length} available, best first</span>
         <button type="button" className="bn-x ws-panel-close" onClick={onClose} aria-label="Close Story Cards">×</button>
       </div>
+      {/* Storyboard cleanup (17 October 2026): search and one Filters toggle; the
+          filters themselves fold away, and a Showing line names any that are on. */}
       <div className="ws-filters">
-        <select className="cl-select" value={kind} onChange={e => { setKind(e.target.value); setLimit(PANEL_SIZE); }} aria-label="Kind">
-          <option value="">All kinds</option>
-          {wantedKinds.length > 0 && <option value="__wanted">This question&rsquo;s kinds</option>}
-          {kinds.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-        </select>
-        {["I", "II", "III"].map(l => (
-          <button key={l} type="button" className={`chip${layer === l ? " active" : ""}`} title={LAYER_NAME[l]}
-            onClick={() => { setLayer(v => (v === l ? "" : l)); setLimit(PANEL_SIZE); }}>{l}</button>
-        ))}
-        <input className="cl-search ws-search" placeholder="Search cards and quotes" value={q} onChange={e => setQ(e.target.value)} />
-        <label className="ws-verified-only" title="Only cards a person has verified. Others can still be used: dropping one opens its review.">
-          <input type="checkbox" checked={verifiedOnly} onChange={e => { setVerifiedOnly(e.target.checked); setLimit(PANEL_SIZE); }} /> Verified only
-        </label>
-        <button type="button" className={`chip${userOnly ? " active" : ""}`} title="Only cards a person wrote, not ones read from documents"
-          onClick={() => { setUserOnly(v => !v); setLimit(PANEL_SIZE); }}>{USER_GENERATED}</button>
+        <input className="ws-search" type="search" placeholder="Search cards and quotes" aria-label="Search cards and quotes" value={q} onChange={e => setQ(e.target.value)} />
+        <button type="button" className={`sb-btn sb-secondary ws-filter-btn${filtersOpen ? " mb-open" : ""}`} aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen(o => !o)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+          Filters</button>
       </div>
+      {filtersOpen && (
+        <div className="ws-filter-box">
+          <label className="ws-filter-field">Kind
+            <select value={kind} onChange={e => { setKind(e.target.value); setLimit(PANEL_SIZE); }}>
+              <option value="">All kinds</option>
+              {wantedKinds.length > 0 && <option value="__wanted">This question&rsquo;s kinds</option>}
+              {kinds.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+          </label>
+          <fieldset className="ws-filter-field">
+            <legend>Layer</legend>
+            <div className="ws-layer-chips">
+              {["", "I", "II", "III"].map(l => (
+                <button key={l || "all"} type="button" aria-pressed={layer === l} className={`ws-layer-chip${layer === l ? " active" : ""}`}
+                  onClick={() => { setLayer(l); setLimit(PANEL_SIZE); }}>
+                  {l && <span className={`ws-ldot ${layerClass(l)}`} aria-hidden="true" />}{l ? LAYER_NAME[l] : "All"}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="ws-check" title="Only cards a person has verified. Others can still be used: adding one opens its review.">
+            <input type="checkbox" checked={verifiedOnly} onChange={e => { setVerifiedOnly(e.target.checked); setLimit(PANEL_SIZE); }} /> Verified only
+          </label>
+          <label className="ws-check" title="Only cards a person wrote, not ones read from documents">
+            <input type="checkbox" checked={userOnly} onChange={e => { setUserOnly(e.target.checked); setLimit(PANEL_SIZE); }} /> {USER_GENERATED} only
+          </label>
+        </div>
+      )}
+      {!filtersOpen && (kind || layer || verifiedOnly || userOnly) && (
+        <div className="ws-showing">
+          <span>Showing:</span>
+          {kind && <span className="ws-showing-chip">{kind === "__wanted" ? "This question’s kinds" : kinds.find(([k]) => k === kind)?.[1] ?? kind}</span>}
+          {layer && <span className="ws-showing-chip">{LAYER_NAME[layer]}</span>}
+          {verifiedOnly && <span className="ws-showing-chip">Verified only</span>}
+          {userOnly && <span className="ws-showing-chip">{USER_GENERATED}</span>}
+          <button type="button" className="ws-inline-link" onClick={() => { setKind(""); setLayer(""); setVerifiedOnly(false); setUserOnly(false); setLimit(PANEL_SIZE); }}>Clear</button>
+        </div>
+      )}
       {onNewText && <NewTextChip onClick={onNewText} canDrag={canDragNew} />}
       {shown.length === 0 && <p className="cl-note">{ranked.length ? "Nothing matches these filters." : "No cards left to place. Build the Card Library, or remove a card from the answer to bring it back."}</p>}
       <div className="ws-cards">
@@ -1676,10 +1763,10 @@ function NewTextChip({ onClick, canDrag }: { onClick: () => void; canDrag: boole
     <div ref={setNodeRef} className={`ws-newtext${isDragging ? " ws-ghost" : ""}`}>
       <span className={canDrag ? "ws-grab ws-newtext-grab" : "ws-newtext-grab"} {...listeners} {...attributes}
         title={canDrag ? "Drag into the answer where the text should go" : undefined} aria-label="New text: drag into the answer">
-        <span className="ws-handle" aria-hidden="true">⠿</span> ✚ New text
+        <span className="ws-handle" aria-hidden="true">⠿</span> <strong>＋ New text</strong>
       </span>
-      <span className="ov-muted">{canDrag ? "Drag it into place, or" : "Add it at the end:"}</span>
-      <button type="button" className="btn secondary ap-mini" onClick={onClick}>Add at the end</button>
+      <span className="ws-newtext-hint">{canDrag ? "drag into place" : ""}</span>
+      <button type="button" className="ws-inline-link" onClick={onClick}>Add at the end</button>
     </div>
   );
 }
@@ -1692,15 +1779,14 @@ function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: 
     id: `card:${c.id}`, data: { type: "card", cardId: c.id }, disabled: !ok,
   });
   return (
-    <div ref={setNodeRef} className={`ws-card ${layerClass(c.layer)}${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
+    <div ref={setNodeRef} className={`ws-card${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
       <div className={`cl-card-head${ok ? " ws-grab" : ""}`} {...listeners} {...attributes}
         aria-label={`Drag into the answer: ${c.statement.slice(0, 60)}`} title={ok ? "Drag into the answer" : undefined}>
         <span className="ws-handle" aria-hidden="true">⠿</span>
+        {c.layer && <span className={`ws-ldot ${layerClass(c.layer)}`} aria-hidden="true" />}
         <span className="cl-kind">{c.kindLabel}</span>
-        {c.layer && <span className="cl-layer">{LAYER_NAME[c.layer]}</span>}
+        {c.layer && <span className="cl-layer">· {LAYER_NAME[c.layer]}</span>}
         {c.createdFrom === "manual" && <span className="uc-tag" title={c.sourceLine ?? undefined}>{USER_GENERATED}</span>}
-        <span className="cl-spacer" />
-        {verified ? <span className="cl-badge cl-badge-ok">Verified</span> : <span className="cl-badge ws-badge-review" title="Not yet verified. Dropping it in, or pressing Review and add, opens its review first.">Needs review</span>}
       </div>
       <p className="cl-statement">{c.statement}</p>
       <div className="ws-reason">{reasonFor(r, c.kindLabel, c.newestSource)}</div>
@@ -1708,11 +1794,15 @@ function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: 
         <div className="ws-warn ws-soft">Sensitive: {c.sensitiveReason ?? "it may identify a person's protected information."} Record consent,
           de-identify it, or rule it not sensitive in the <a href="/admin/card-library">Card Library</a> before placing it.</div>
       )}
-      <div className="cl-card-acts">
-        <button type="button" className="btn inline cl-primary ws-edit-only" disabled={locked || !ok} onClick={() => onAdd(c.id)}
-          title={ok ? (verified ? undefined : "Opens the card's review; verifying it adds it") : "Sensitive: decide it in the Card Library first"}>{verified || !ok ? "Add" : "Review and add"}</button>
-        {used.length > 0 && <span className="ov-tag" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
-        <button type="button" className="cl-link" onClick={() => setOpen(o => !o)}>{open ? "Hide" : "Sources"} ({c.evidence.length})</button>
+      <div className="ws-card-foot">
+        {verified
+          ? <span className="ws-state ws-state-ok"><span className="ws-sdot" aria-hidden="true" />Verified</span>
+          : <span className="ws-state ws-state-review" title="Not yet verified. Dropping it in, or pressing Review, opens its review first."><span className="ws-sdot" aria-hidden="true" />Needs review</span>}
+        {used.length > 0 && <span className="ws-used" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
+        <span className="cl-spacer" />
+        <button type="button" className="ws-inline-link ws-quiet-link" onClick={() => setOpen(o => !o)}>{open ? "Hide sources" : `Sources (${c.evidence.length})`}</button>
+        <button type="button" className="sb-btn sb-secondary sb-sm ws-edit-only" disabled={locked || !ok} onClick={() => onAdd(c.id)}
+          title={ok ? (verified ? "Add it at the end of the answer" : "Opens the card's review; verifying it adds it") : "Sensitive: decide it in the Card Library first"}>{verified || !ok ? "Add" : "Review"}</button>
       </div>
       {open && <Evidence card={c} />}
     </div>
@@ -1814,8 +1904,8 @@ function ChoiceDialog({ text, onOwn, onCard }: { text: string; onOwn: () => void
 function EmptyAnswer({ std, onStart }: { std?: WsStandard; onStart: () => void }) {
   return (
     <div className="ws-empty-answer">
-      <p>Drag cards here, or press <strong>Add</strong> on a card. Cards go in the order you place them, and you can move them afterwards.
-        Or press <strong>Arrange for me</strong> below to place the best cards for this question.</p>
+      <p>Drag Story Cards here, or press <strong>Add</strong> (or <strong>Review</strong>) on one. Cards go in the order you place them, and you can move them afterwards.
+        Or press <strong>Auto-draft this question</strong> below to have the best cards placed for you.</p>
       {std && (
         <div className="ws-std">
           <strong>This client has an approved standard answer to this question.</strong>
@@ -1866,10 +1956,11 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`ws-block ws-${b.kind} ${isCard ? layerClass(card?.layer ?? null) : ""}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}${dropBefore ? " ws-drop-before" : ""}`}>
+      className={`ws-block ws-${b.kind}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}${dropBefore ? " ws-drop-before" : ""}`}>
       <div className="ws-block-head ws-grab" {...listeners} {...attributes} aria-label="Drag to reorder, or onto Story Cards to remove"
         title="Drag to reorder, or onto Story Cards to remove">
         <span className="ws-handle" aria-hidden="true">⠿</span>
+        {isCard && card?.layer && <span className={`ws-ldot ${layerClass(card.layer)}`} title={LAYER_NAME[card.layer]} />}
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
         {b.kind === "bridge" && b.proposed && <span className="ov-tag" title="Proposed in Weave and not accepted yet, so it is not part of the answer.">Proposed, not in the answer</span>}
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
@@ -1886,9 +1977,12 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
             <input type="checkbox" checked={b.breakBefore} disabled={temp || locked} onChange={e => void onBreak(b.id, e.target.checked)} /> ¶
           </label>
         )}
-        <button type="button" className="btn ghost ap-mini" disabled={temp || locked || index === 0} onClick={() => onMove(index, index - 1)} aria-label="Move up">↑</button>
-        <button type="button" className="btn ghost ap-mini" disabled={temp || locked || last} onClick={() => onMove(index, index + 1)} aria-label="Move down">↓</button>
-        <button type="button" className="btn ghost ap-mini ap-del" disabled={temp || locked} onClick={() => onRemove(b.id)}>Remove</button>
+        <button type="button" className="sb-btn sb-quiet sb-icon sb-sm" disabled={temp || locked || index === 0} onClick={() => onMove(index, index - 1)} aria-label="Move up" title="Move up">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg></button>
+        <button type="button" className="sb-btn sb-quiet sb-icon sb-sm" disabled={temp || locked || last} onClick={() => onMove(index, index + 1)} aria-label="Move down" title="Move down">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" /></svg></button>
+        <button type="button" className="sb-btn sb-quiet sb-icon sb-sm" disabled={temp || locked} onClick={() => onRemove(b.id)} aria-label="Remove from the answer" title="Remove from the answer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
         </span>
       </div>
 
@@ -1948,16 +2042,16 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
   );
 }
 
-function CopyButton({ text, blocked, onBlocked }: { text: string; blocked: boolean; onBlocked: () => void }) {
-  const [done, setDone] = useState(false);
+/** Copy answer, as an item in the action bar's More menu. The finish line still applies: a blocked answer opens what blocks it. */
+function CopyItem({ text, blocked, onBlocked, onCopied }: { text: string; blocked: boolean; onBlocked: () => void; onCopied: () => void }) {
   return (
-    <button type="button" className="btn secondary" disabled={!text}
-      title={blocked ? "This answer holds cards that need review before it is copied out" : undefined}
+    <MenuItem title="Copy answer" disabled={!text}
+      hint={blocked ? "Something in this answer needs dealing with first" : "To paste into the funder's form"}
       onClick={async () => {
-      if (blocked) { onBlocked(); return; }
-      try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 2000); }
-      catch { prompt("Copy the answer:", text); }
-    }}>{done ? "Copied" : "Copy answer"}</button>
+        if (blocked) { onBlocked(); return; }
+        try { await navigator.clipboard.writeText(text); onCopied(); }
+        catch { prompt("Copy the answer:", text); }
+      }} />
   );
 }
 

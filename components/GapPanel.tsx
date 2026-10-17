@@ -13,8 +13,10 @@ import { CARD_KIND_MAP } from "@/lib/story-card";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
 
-export default function GapPanel({ rows, locked, onShow, onAdd, onAsk, onUse, onWithdraw }: {
+export default function GapPanel({ rows, locked, lead, onShow, onAdd, onAsk, onUse, onWithdraw }: {
   rows: GapRow[]; locked: boolean;
+  /** Shown first on the summary line: the question's length limit (Storyboard cleanup, 17 October 2026). */
+  lead?: string;
   onShow: (kind: string) => void; onAdd: (kind: string) => void; onAsk: (kind: string) => void;
   onUse: (cardId: string) => void; onWithdraw: (askId: string) => void;
 }) {
@@ -27,12 +29,14 @@ export default function GapPanel({ rows, locked, onShow, onAdd, onAsk, onUse, on
   return (
     <div className="gp">
       <div className="gp-head">
-        <span className="ov-muted">Calls for:</span>{" "}
-        {rows.map(r => (
-          <span key={r.kind} className={`ov-tag ap-kind gp-k gp-${r.state}`}>{r.state === "in_answer" ? "✓ " : ""}{label(r.kind)}</span>
-        ))}
-        <span className="ov-muted gp-sum">{sum.line}</span>
-        <button type="button" className={`btn ap-mini gp-toggle ${!open && !sum.settled ? "secondary" : "ghost"}`}
+        {lead && <span className="gp-lead">{lead}</span>}
+        <span className="gp-calls">Calls for
+          {rows.map(r => (
+            <span key={r.kind} className={`gp-k gp-${r.state}`}>{r.state === "in_answer" ? "✓ " : ""}{label(r.kind)}</span>
+          ))}
+        </span>
+        <span className="gp-sum">{sum.line}</span>
+        <button type="button" className="gp-toggle-link"
           aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(o => !o)}>
           {sum.button(open)}
         </button>
@@ -119,25 +123,24 @@ export function AskDialog({ kind, prompt, tenantName, onSend, onCancel }: {
 }
 
 /** Where the whole application stands, with a way to each thing still to do. */
-export function ProgressStrip({ p, started, onReview, onBridges, onWording, onFigures, onAsks }: {
-  p: DraftProgress; started: number;
+export function ProgressStrip({ p, onReview, onBridges, onWording, onFigures, onAsks }: {
+  p: DraftProgress;
   onReview: () => void; onBridges: () => void; onWording: () => void; onFigures: () => void; onAsks: () => void;
 }) {
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  // Since the Storyboard cleanup (17 October 2026) the count of questions done
+  // sits in the toolbar beside the question pills, and this strip shows only
+  // what is waiting on someone: nothing at all when nothing is.
   const clear = !p.toReview && !p.bridgesWaiting && !p.wordingWaiting && !p.figuresToTrace && !p.asksOpen && !p.answersReady;
+  if (clear) return null;
   return (
-    <div className="ws-progress-strip" role="status" aria-label="Progress">
-      <span className="wps-item wps-done">
-        <span className="wps-bar" aria-hidden="true"><span style={{ width: `${p.questions ? Math.round((p.done / p.questions) * 100) : 0}%` }} /></span>
-        {p.done} of {p.questions} questions done{started > p.done ? ` · ${started - p.done} in progress` : ""}
-      </span>
+    <div className="ws-progress-strip" role="status" aria-label="Waiting on you">
       {p.toReview > 0 && <button type="button" className="wps-item wps-warn" onClick={onReview}>{plural(p.toReview, "card to review", "cards to review")}</button>}
       {p.bridgesWaiting > 0 && <button type="button" className="wps-item" onClick={onBridges}>{plural(p.bridgesWaiting, "bridge waiting", "bridges waiting")}</button>}
       {p.wordingWaiting > 0 && <button type="button" className="wps-item wps-warn" onClick={onWording}>{plural(p.wordingWaiting, "suggested wording to choose on", "suggested wordings to choose on")}</button>}
       {p.figuresToTrace > 0 && <button type="button" className="wps-item wps-warn" onClick={onFigures}>{plural(p.figuresToTrace, "figure to trace", "figures to trace")}</button>}
       {p.answersReady > 0 && <button type="button" className="wps-item wps-good" onClick={onAsks}>{plural(p.answersReady, "client answer to use", "client answers to use")}</button>}
       {p.asksOpen > 0 && <button type="button" className="wps-item" onClick={onAsks}>{plural(p.asksOpen, "question waiting on the client", "questions waiting on the client")}</button>}
-      {clear && p.done < p.questions && <span className="wps-item ov-muted">Nothing waiting on review</span>}
     </div>
   );
 }
