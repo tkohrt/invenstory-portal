@@ -77,7 +77,8 @@ export interface TextChunk {
   chunk_index: number; text: string; page_number: number | null; char_start: number; char_end: number;
 }
 
-const isSpace = (c: string) => c === " " || c === "\n" || c === "\t" || c === " ";
+/** Exactly what String.prototype.trim() strips, so passages match the ones cut before Phase 0. */
+const isSpace = (c: string) => /\s/.test(c);
 
 /**
  * The passages a document is searched by, cut from the stored text.
@@ -131,19 +132,31 @@ export function alignChunks(text: string, pages: PageSpan[], chunks: OldChunk[])
   const ordered = [...chunks].sort((a, b) => a.chunk_index - b.chunk_index);
   const pageIndex = new Map<number, number>();
   pages.forEach((p, i) => { if (p.page !== null) pageIndex.set(p.page, i); });
+  const whole: PageSpan = { page: null, start: 0, end: text.length };
   const moves: ChunkMove[] = [];
-  let floor = 0;
   for (const c of ordered) {
     const t = c.text ?? "";
     if (!t) return null;
-    const shift = c.page_number !== null ? (pageIndex.get(c.page_number) ?? 0) * PAGE_JOIN.length : 0;
-    const estimate = c.char_start + shift;
-    const WINDOW = 400;
-    let at = text.indexOf(t, Math.max(0, estimate - WINDOW));
-    if (at < 0 || at > estimate + WINDOW) at = text.indexOf(t, floor);
+    const idx = c.page_number !== null ? pageIndex.get(c.page_number) : (pages.length === 1 ? 0 : undefined);
+    const span = idx !== undefined ? pages[idx] : whole;
+    // The old position counted pages joined with nothing; each earlier page
+    // break now adds PAGE_JOIN. The old start was before the trimmed spacing,
+    // so the passage begins at that position plus however much spacing follows.
+    // Deterministic, so it is tried first: repeated text (a spreadsheet's
+    // identical rows) stays at its own place.
+    const estimate = c.char_start + (idx ?? 0) * PAGE_JOIN.length;
+    let at = -1;
+    for (let p = estimate; p >= 0 && p < text.length; p++) {
+      if (text.startsWith(t, p)) { at = p; break; }
+      if (!isSpace(text[p])) break;
+    }
+    // Otherwise searched for, inside the passage's own page only.
+    if (at < 0) {
+      const found = text.indexOf(t, span.start);
+      if (found >= 0 && found + t.length <= span.end) at = found;
+    }
     if (at < 0) return null;
     moves.push({ id: c.id, char_start: at, char_end: at + t.length });
-    floor = at;
   }
   return moves;
 }

@@ -15,7 +15,9 @@ export default function DocTextPanel({ status }: { status: DocTextStatus }) {
   // While any client's run is going, refresh every few seconds.
   useEffect(() => {
     if (!status.running) return;
-    const t = setInterval(() => router.refresh(), 5000);
+    // The poll also restarts a run whose server chain has stopped (Vercel stops
+    // a chain a few hops deep; reviveStalledChains), then shows the progress.
+    const t = setInterval(() => { void fetch("/api/jobs/active").catch(() => undefined).finally(() => router.refresh()); }, 5000);
     return () => clearInterval(t);
   }, [status.running, router]);
 

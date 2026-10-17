@@ -47,31 +47,34 @@ const DASHES = /[‐-―−]/;
  */
 export function fold(raw: string, opts: { keepSpace?: boolean; keepCase?: boolean } = {}): Folded {
   const keepSpace = opts.keepSpace ?? true;
+  // Markdown emphasis, exactly as stripMarkup removes it: every * and `, and
+  // "__" only at the edge of a word.
+  const drop = new Set<number>();
+  for (const m of raw.matchAll(/\*+|`+|(?<!\w)__|__(?!\w)/g)) {
+    for (let k = 0; k < m[0].length; k++) drop.add(m.index! + k);
+  }
   const out: string[] = [];
   const from: number[] = [];
   const to: number[] = [];
   let lastWasSpace = true; // drops leading spacing, as trim() does
-  let i = 0;
-  while (i < raw.length) {
-    const cp = raw.codePointAt(i)!;
-    const ch = String.fromCodePoint(cp);
-    const next = i + ch.length;
-    // Markdown emphasis: * and ` always, _ only as part of a run of two or more.
-    const isMarkup = ch === "*" || ch === "`" || (ch === "_" && (raw[i + 1] === "_" || raw[i - 1] === "_"));
-    if (isMarkup || ch === "­") { i = next; continue; }
-    if (/\s/.test(ch)) {
+  // Whole characters (a letter and its accents together), so NFKC composes as
+  // normalizeText does on the whole string.
+  for (const { segment: g, index: i } of graphemes(raw)) {
+    const next = i + g.length;
+    if (drop.has(i) || g === "\u00ad") continue;
+    if (/^\s+$/.test(g)) {
       if (keepSpace && !lastWasSpace) { out.push(" "); from.push(i); to.push(next); }
       lastWasSpace = true;
-      i = next;
       continue;
     }
-    let f = ch.normalize("NFKC");
+    let f = g.normalize("NFKC");
     if (!opts.keepCase) f = f.toLowerCase();
     for (const c of f) {
       let x = c;
       if (SINGLE_QUOTES.test(x)) x = "'";
       else if (DOUBLE_QUOTES.test(x)) x = '"';
       else if (DASHES.test(x)) x = "-";
+      else if (x === "\u00ad") continue;
       if (/\s/.test(x)) {
         if (keepSpace && !lastWasSpace) { out.push(" "); from.push(i); to.push(next); lastWasSpace = true; }
         continue;
@@ -79,11 +82,20 @@ export function fold(raw: string, opts: { keepSpace?: boolean; keepCase?: boolea
       out.push(x); from.push(i); to.push(next);
       lastWasSpace = false;
     }
-    i = next;
   }
   // trim a trailing space
   if (out.length && out[out.length - 1] === " ") { out.pop(); from.pop(); to.pop(); }
   return { s: out.join(""), from, to };
+}
+
+/** The text's characters as a person sees them, with their positions. */
+function graphemes(raw: string): { segment: string; index: number }[] {
+  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string; index: number }> } }).Segmenter;
+  if (Seg) return Array.from(new Seg(undefined, { granularity: "grapheme" }).segment(raw));
+  const out: { segment: string; index: number }[] = [];
+  let i = 0;
+  for (const c of raw) { out.push({ segment: c, index: i }); i += c.length; }
+  return out;
 }
 
 /** The folded query, without positions. */
@@ -118,6 +130,10 @@ export function prepare(text: string): Prepared {
 }
 
 const MIN_LOCATE_CHARS = 8;
+/** Each piece of a "…"-joined quote must be this long, as the quote check requires (MIN_PIECE_CHARS in lib/story-card.ts). */
+const MIN_PIECE_CHARS = 12;
+/** The spacing-blind pass only for quotes this long: a short one could join words that are apart ("in form" in "inform"). */
+const MIN_TIGHT_CHARS = 20;
 
 function locateIn(f: Folded, pieces: string[], near: number | undefined): { spans: Span[]; places: number } | null {
   if (!pieces.length || pieces.some(p => !p)) return null;
@@ -152,6 +168,7 @@ export function locateQuote(text: string | Prepared, quote: string, near?: numbe
   const rawPieces = quotePieces(quote);
   const spacedPieces = rawPieces.map(x => foldQuery(x));
   if (spacedPieces.join("").length < MIN_LOCATE_CHARS) return { status: "missing" };
+  if (spacedPieces.length > 1 && spacedPieces.some(x => x.length < MIN_PIECE_CHARS)) return { status: "missing" };
 
   const exact = locateIn(p.spaced, spacedPieces, near);
   if (exact) return { status: "found", spans: exact.spans, places: exact.places, pass: "exact" };
@@ -165,6 +182,7 @@ export function locateQuote(text: string | Prepared, quote: string, near?: numbe
   }
 
   const tightPieces = rawPieces.map(x => foldQuery(x, { keepSpace: false }));
+  if (tightPieces.join("").length < MIN_TIGHT_CHARS) return { status: "missing" };
   const tight = locateIn(p.tight, tightPieces, near)
     ?? locateIn(p.tight, tightPieces.map((x, i) => (i === tightPieces.length - 1 ? x.replace(/[.,;:!?]+$/, "") : x)), near);
   if (tight) return { status: "found", spans: tight.spans, places: tight.places, pass: "spacing" };
@@ -172,9 +190,14 @@ export function locateQuote(text: string | Prepared, quote: string, near?: numbe
 }
 
 /** Is a raw position at a word boundary? */
-const WORDY = /[\p{L}\p{N}]/u;
-function boundaryBefore(raw: string, i: number) { return i <= 0 || !WORDY.test(raw[i - 1]); }
-function boundaryAfter(raw: string, i: number) { return i >= raw.length || !WORDY.test(raw[i]); }
+const WORDY = /[\p{L}\p{N}\p{M}]/u;
+/** The whole character (code point) ending at i, and the one starting at i. */
+function charBefore(raw: string, i: number): string {
+  const low = raw.charCodeAt(i - 1);
+  return low >= 0xdc00 && low <= 0xdfff && i >= 2 ? raw.slice(i - 2, i) : raw.slice(i - 1, i);
+}
+function boundaryBefore(raw: string, i: number) { return i <= 0 || !WORDY.test(charBefore(raw, i)); }
+function boundaryAfter(raw: string, i: number) { return i >= raw.length || !WORDY.test(String.fromCodePoint(raw.codePointAt(i)!)); }
 
 /**
  * Every match of a search in the text, in order, as raw spans. Case-insensitive

@@ -9,7 +9,7 @@ import { db } from "./db";
 import { uploadReadsLastDay, withAiUsage } from "./ai-usage";
 import { checkAllowance } from "./allowance";
 import { uploadReadNow, type Actor } from "@/lib/usage-limits";
-import { saveExtractedText } from "./doc-text";
+import { textForIngest, storeExtractedText } from "./doc-text";
 
 const EMBED_MODEL = "gte-small";
 
@@ -127,10 +127,12 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
     const buffer = Buffer.from(await blob.arrayBuffer());
     const pages = await extractPages(buffer, doc.doc_kind);
     if (pages.reduce((n, p) => n + p.text.trim().length, 0) < 20) throw new Error("No usable text after decoding — the file may be empty, image-only, or an unsupported encoding.");
-    // Document Reader, Phase 0: the text is stored first (one per version) and
-    // the passages are cut from it, so their positions point into exactly the
-    // text every reader reads (lib/doc-text.ts, lib/server/doc-text.ts).
-    const { chunks } = await saveExtractedText(doc, pages);
+    // Document Reader, Phase 0: the passages are cut from the document's text,
+    // so their positions point into exactly the text every reader reads
+    // (lib/doc-text.ts, lib/server/doc-text.ts). A text a person edited is kept
+    // and cut from instead. The text is stored once the passages are written.
+    const ingestText = await textForIngest(doc, pages);
+    const chunks = ingestText.chunks;
     if (chunks.length === 0) throw new Error("extraction produced no text");
     // replace any prior chunks (reprocess-safe)
     await db.from("document_chunk").delete().eq("document_id", documentId);  // tenant-safe: ingestion worker: chunks of the document being processed
@@ -145,6 +147,7 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
       );
       if (error) throw error;
     }
+    if (!ingestText.edited) await storeExtractedText(doc, ingestText, { chunksAligned: true });
     const { missing, total } = await indexMissingEmbeddings(documentId, doc.tenant_id, Date.now() + 35_000);
     const embedFailure = missing > 0 ? `${missing} of ${total} passages not yet embedded` : null;
 

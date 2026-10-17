@@ -110,6 +110,21 @@ describe("re-pointing passages read before Phase 0", () => {
     expect(m.char_start).toBe(spans[1].start);
   });
 
+  test("repeated rows (a spreadsheet) are re-pointed to exactly where the new cutter would cut them", () => {
+    const pages = [{ page: 1, text: "Row A, 1, 2, 3\n".repeat(400) }, { page: 2, text: "Row A, 1, 2, 3\n".repeat(400) }];
+    const old = oldChunkPages(pages).map((c, i) => ({ id: `c${i}`, ...c }));
+    const { text, pages: spans } = buildDocText(pages);
+    const moves = alignChunks(text, spans, old)!;
+    const fresh = chunkDocText(text, spans);
+    expect(moves.map(m => [m.char_start, m.char_end])).toEqual(fresh.map(c => [c.char_start, c.char_end]));
+  });
+
+  test("unusual spacing is trimmed exactly as before", () => {
+    const pages = [{ page: 1, text: `\u2003\u3000${words(300, "w")}\u202f\u2028` }];
+    const { text, pages: spans } = buildDocText(pages);
+    expect(chunkDocText(text, spans).map(c => c.text)).toEqual(oldChunkPages(pages).map(c => c.text));
+  });
+
   test("a passage the new text does not contain means the document needs a re-process", () => {
     const { text, pages } = buildDocText([{ page: 1, text: "What the file says today." }]);
     expect(alignChunks(text, pages, [{ id: "a", chunk_index: 0, text: "What the file said when it was read.", page_number: 1, char_start: 0 }])).toBeNull();

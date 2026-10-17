@@ -125,6 +125,8 @@ export async function scheduleAutodraftPass(origin: string, tenantId: string, jo
 
 const AUTODRAFT_AT_LIMIT = `Auto-draft stopped after ${MAX_CHAIN_PASSES} stages without finishing. Everything placed so far is kept; auto-draft again to carry on.`;
 
+const DOC_TEXT_AT_LIMIT = `Storing document text stopped after ${MAX_CHAIN_PASSES} stages without finishing. Everything stored is kept; press the button again to carry on.`;
+
 export async function reviveStalledChains(origin: string, scope: { tenantId: string } | { allTenants: true }): Promise<number> {
   try {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
@@ -149,9 +151,10 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
         // An auto-draft run at its stage limit that has stopped will never be
         // continued, and while it shows as running it locks its draft: end it
         // (review fix, 12 October 2026).
-        if (j.kind === "autodraft" && chainStalled({ updatedAt: j.updated_at, claimedAt: j.claimed_at }, now)) {
+        if ((j.kind === "autodraft" || j.kind === "doc_text") && chainStalled({ updatedAt: j.updated_at, claimedAt: j.claimed_at }, now)) {
           const at = new Date().toISOString();
-          const ended = { status: "failed", finished_at: at, updated_at: at, claimed_at: null, error: AUTODRAFT_AT_LIMIT };
+          const ended = { status: "failed", finished_at: at, updated_at: at, claimed_at: null,
+            error: j.kind === "doc_text" ? DOC_TEXT_AT_LIMIT : AUTODRAFT_AT_LIMIT };
           await db.from("job").update(ended).eq("tenant_id", j.tenant_id).eq("id", j.id).eq("status", "running").eq("updated_at", j.updated_at);
         }
         continue;
@@ -177,11 +180,11 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
   }
 }
 
-/** Is an analysis running for this client (or, for an admin, any client)? For the notice's poll rate. */
+/** Is an analysis, or a stored-text run, going for this client (or, for an admin, any client)? For the notice's poll rate, so a stopped chain is revived within seconds. */
 export async function analysisRunning(scope: { tenantId: string } | { allTenants: true }): Promise<boolean> {
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
   let q = db.from("job")  // tenant-safe: scoped to one tenant below, or every tenant only for an admin session
-    .select("id", { count: "exact", head: true }).eq("kind", "analysis").eq("status", "running").gte("started_at", since);
+    .select("id", { count: "exact", head: true }).in("kind", ["analysis", "doc_text"]).eq("status", "running").gte("started_at", since);
   if ("tenantId" in scope) q = q.eq("tenant_id", scope.tenantId);
   const { count } = await q;
   return (count ?? 0) > 0;

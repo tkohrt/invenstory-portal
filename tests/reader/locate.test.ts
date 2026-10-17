@@ -130,3 +130,27 @@ describe("folding", () => {
     expect(fold("a b\nc", { keepSpace: false }).s).toBe("abc");
   });
 });
+
+describe("tightened after review", () => {
+  test("each piece of a quote joined with an ellipsis must be long enough to mean something", () => {
+    expect(locateQuote("The program served many families in the year.", "program … a … y").status).toBe("missing");
+  });
+  test("the spacing-blind pass is for long quotes only", () => {
+    expect(locateQuote("We inform the board each month.", "we in form the").status).toBe("missing");
+  });
+  test("a composed and a decomposed accent are the same letter", () => {
+    const text = "Our caf\u00e9 programme runs on Saturdays for families.";
+    expect(locateQuote(text, "Our cafe\u0301 programme runs on Saturdays").status).toBe("found");
+  });
+  test("underscores inside a word are kept, as the quote check keeps them", () => {
+    const text = "Set the flag snake__case to true before running the import job.";
+    expect(locateQuote(text, "flag snake__case to true before running").status).toBe("found");
+    expect(fold("snake__case").s).toBe("snake__case");
+    expect(fold("__bold__ word").s).toBe("bold word");
+  });
+  test("whole word treats letters outside the basic plane as letters", () => {
+    expect(findAll("\u{1D400}high", "high", { wholeWord: true }).length).toBe(0);
+    expect(findAll("x high", "high", { wholeWord: true }).length).toBe(1);
+  });
+});
+

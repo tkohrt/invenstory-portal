@@ -23,7 +23,7 @@ import "server-only";
 import { after } from "next/server";
 import { db } from "./db";
 import { extractPages } from "./ingest";
-import { saveExtractedText, restampReads } from "./doc-text";
+import { storeExtractedText, markAligned, restampReads } from "./doc-text";
 import { claimJob, createJob, failJob, finishJob, recordEvent, releaseJob, supersedeRunning, updateJob } from "./jobs";
 import { MAX_CHAIN_PASSES, signChain } from "./job-chain";
 import { alignChunks, buildDocText, legacyChunkText } from "@/lib/doc-text";
@@ -68,7 +68,10 @@ async function documentsToStore(tenantId: string, skip: Set<string>): Promise<Do
   const [{ data: docs, error }, { data: have }] = await Promise.all([
     db.from("document").select("id, tenant_id, title, storage_key, doc_kind, current_version")
       .eq("tenant_id", tenantId).eq("status", "ready").order("created_at"),
-    db.from("document_text").select("document_id").eq("tenant_id", tenantId),
+    // Only aligned texts count as done: a document left unaligned (its passages
+    // differ from the file, or a stage was cut off while re-pointing) is tried
+    // again on the next press, and skipped within a run once listed.
+    db.from("document_text").select("document_id").eq("tenant_id", tenantId).eq("chunks_aligned", true),
   ]);
   if (error) throw new Error(`could not list documents: ${error.message}`);
   const stored = new Set(((have ?? []) as { document_id: string }[]).map(r => r.document_id));
@@ -89,9 +92,14 @@ async function storeOne(d: DocRow, out: DocTextResult): Promise<string> {
   const legacy = legacyChunkText(chunks);
 
   const built = buildDocText(pages);
+  // A file that now reads as (almost) nothing is not stored over what was read.
+  if (built.text.trim().length < 20) throw new Error("the file now gives almost no text, so it was left as it was (Re-process it to see why)");
   const moves = chunks.length ? alignChunks(built.text, built.pages, chunks) : [];
-  const saved = await saveExtractedText(d, pages, { chunksAligned: !!moves });
 
+  // Stored as not aligned first: until the passages point into it, every reader
+  // keeps reading the old stitched text, so a stage cut off part-way through
+  // re-pointing leaves nothing inconsistent behind.
+  await storeExtractedText(d, built, { chunksAligned: false });
   if (moves) {
     for (let i = 0; i < moves.length; i += 10) {
       const batch = moves.slice(i, i + 10);
@@ -101,12 +109,16 @@ async function storeOne(d: DocRow, out: DocTextResult): Promise<string> {
       const bad = results.find(r => r.error);
       if (bad?.error) throw new Error(`could not re-point its passages: ${bad.error.message}`);
     }
+    await markAligned(d.tenant_id, d.id, d.current_version ?? 1);
+    // Only now do the readers switch to this text, so only now are their reads moved to it.
+    out.restamped += await restampReads(d.tenant_id, d.id, legacy, built.text);
     out.aligned++;
   } else {
+    // Left for a Re-process: the readers keep the old text and their reads stay as they are.
     out.needReprocess.push({ id: d.id, title: d.title });
   }
   out.stored++;
-  out.restamped += await restampReads(d.tenant_id, d.id, legacy, saved.text);
+  const saved = built;
 
   // The check: how many of this document's Story Card quotes the locator places.
   const { data: ev } = await db.from("story_card_evidence").select("quote")
@@ -141,16 +153,37 @@ export async function runDocTextPass(tenantId: string, jobId: string, opts: { ch
       await db.from("job").update({ chain_passes: passes }).eq("tenant_id", tenantId).eq("id", jobId);
     }
     const out = asResult(j?.result);
-    const skip = new Set(out.failed.map(f => f.id));
+    // A document a stage died on twice (its read outran the time limit) is
+    // listed as failed rather than tried for ever.
+    const tries = (j?.result as { tries?: Record<string, number> } | null)?.tries ?? {};
+    for (const [id, n] of Object.entries(tries)) {
+      if (n >= 2 && !out.failed.some(f => f.id === id)) {
+        out.failed.push({ id, title: "A document", error: "reading it ran past the time limit twice" });
+      }
+    }
+    const skip = new Set([...out.failed.map(f => f.id), ...out.needReprocess.map(f => f.id)]);
     const todo = await documentsToStore(tenantId, skip);
+    if (out.failed.some(f => f.title === "A document")) {
+      const { data: named } = await db.from("document").select("id, title").eq("tenant_id", tenantId)
+        .in("id", out.failed.filter(f => f.title === "A document").map(f => f.id));
+      for (const n of (named ?? []) as { id: string; title: string }[]) {
+        const f = out.failed.find(x => x.id === n.id);
+        if (f) f.title = n.title;
+      }
+    }
     const total = out.stored + out.failed.length + todo.length;
     const started = Date.now();
     let did = 0;
     for (const d of todo) {
       if (did > 0 && Date.now() - started > STAGE_BUDGET_MS) break;
       void updateJob(tenantId, jobId, { done: out.stored + out.failed.length, total, detail: `storing ${d.title}` });
+      // Noted before the work, so a stage killed mid-document is counted.
+      tries[d.id] = (tries[d.id] ?? 0) + 1;
+      await db.from("job").update({ result: { ...out, tries }, updated_at: new Date().toISOString() })
+        .eq("tenant_id", tenantId).eq("id", jobId).eq("status", "running");
       try {
         const line = await storeOne(d, out);
+        delete tries[d.id];
         void recordEvent(tenantId, jobId, { kind: "progress", text: line, done: out.stored + out.failed.length, total });
       } catch (e) {
         const error = e instanceof Error ? e.message.slice(0, 300) : "could not be read";
@@ -159,7 +192,7 @@ export async function runDocTextPass(tenantId: string, jobId: string, opts: { ch
       }
       did++;
       // Save the tally after every document, so a stage killed at the time limit loses nothing.
-      await db.from("job").update({ result: out, updated_at: new Date().toISOString() })
+      await db.from("job").update({ result: { ...out, tries }, updated_at: new Date().toISOString() })
         .eq("tenant_id", tenantId).eq("id", jobId).eq("status", "running");
     }
     const left = todo.length - did;
@@ -242,8 +275,10 @@ export async function docTextStatus(): Promise<DocTextStatus> {
   const since = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
   const [{ count: ready }, { count: stored }, { count: needReprocess }, { data: jobs }, { data: tenants }] = await Promise.all([
     db.from("document").select("id", { count: "exact", head: true }).eq("status", "ready"),  // tenant-safe: a count across every client for For Granted's admin panel
-    db.from("document_text").select("id", { count: "exact", head: true }),  // tenant-safe: a count across every client for For Granted's admin panel
-    db.from("document_text").select("id", { count: "exact", head: true }).eq("chunks_aligned", false),  // tenant-safe: a count across every client for For Granted's admin panel
+    db.from("document_text").select("id, document!inner(status)", { count: "exact", head: true })  // tenant-safe: a count across every client for For Granted's admin panel
+      .eq("chunks_aligned", true).eq("document.status", "ready"),
+    db.from("document_text").select("id, document!inner(status)", { count: "exact", head: true })  // tenant-safe: a count across every client for For Granted's admin panel
+      .eq("chunks_aligned", false).eq("document.status", "ready"),
     db.from("job").select("tenant_id, status, detail, result, finished_at, started_at")  // tenant-safe: every client's backfill runs, for For Granted's admin panel
       .eq("kind", "doc_text").gte("started_at", since).order("started_at", { ascending: false }).limit(60),
     db.from("tenant").select("id, name"),
