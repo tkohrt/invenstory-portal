@@ -102,6 +102,7 @@ Border colour for controls is `#d5d8de`, a step darker than `--line`, so a butto
   - `ws-notice` (green) gives information.
   - `ov-note` / `ws-soft-notice` (cream) is a gentle prompt.
   - `ap-error` (red) is for something that failed or blocks the person.
+  - `ws-flag-note` (gold, with a flag icon and a heavier left edge) is a **flag**: something about this client that needs attention but blocks nothing, such as "No approved Standard Answers yet".
   - A notice that is not an error can be dismissed (`ws-notice-x` with `bn-x`). A tip shown on every page should be dismissed once and remembered, as the Standard Answers note is.
 - **Explanations** (Settled):
   - Put an explanation behind an ⓘ (`components/InfoTip.tsx`) rather than as a paragraph on the page.
@@ -112,7 +113,7 @@ Border colour for controls is `#d5d8de`, a step darker than `--line`, so a butto
   - Both carry `aria-modal`, close on Escape and pause the page's keyboard shortcuts.
 - **Back** (Settled): one portal-wide Back button in the top bar (`components/BackButton.tsx`). Don't add page-level "← Back" buttons.
 - **Empty states** (Settled): say what to do next, with the button or link that does it ("Drag Story Cards here, or press Add on one").
-- **Layer marks** (Direction): in dense lists, show a card's layer as an 8px dot (`ws-ldot` with `l1`, `l2` or `l3`) plus its name. Coloured card borders are for large single-card views only.
+- **Layer marks** (Settled): a Story Card wears its layer as a 2px border in the layer's colour (`ws-card` or `ws-block` with `l1`, `l2` or `l3`), wherever it appears as a card: the Story Cards panel, the answer, the Card Library. Its verification shows as a pill (`cl-badge-ok` Verified, `ws-badge-review` Needs review). In Weave the same colour becomes a pale wash behind the prose. An 8px dot (`ws-ldot`) is for places that are not cards, such as filters.
 
 ## 6. Layout (Settled)
 
@@ -172,3 +173,4 @@ Border colour for controls is `#d5d8de`, a step darker than `--line`, so a butto
 | 16 Oct 2026 | Account for every item on a funder's form; nothing dropped silently | Shane (Form Items) |
 | 17 Oct 2026 | Storyboard cleanup: the `sb-` button system, one primary per area, purple outline for AI, gold retired as a button colour, the question as the headline, ⋯ and More menus, "Arrange for me" removed, "Auto-draft all questions" | Shane (mockup "Storyboard Arrange Cleanup") |
 | 17 Oct 2026 | This guide is a starting point for UI changes, not definitive truth | Shane |
+| 17 Oct 2026 | Story Cards keep their layer-coloured borders and Verified / Needs review pills (the cleanup had swapped them for dots; reversed). Missing-setup notices such as "No approved Standard Answers yet" are flags, coloured to stand out | Shane |

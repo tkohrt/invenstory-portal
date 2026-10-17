@@ -1762,14 +1762,18 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .ws-inline-link{background:none;border:none;padding:0;font:inherit;font-weight:600;color:#1f4d2e;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .ws-quiet-link{color:var(--muted);font-weight:400;font-size:12px;text-decoration:none}
 .ws-quiet-link:hover{color:var(--ink)}
-.ws-sa-note{background:var(--panel);border-color:var(--line)}
+/* A flag: something about this client that needs attention (Shane, 17 Oct 2026) */
+.ws-flag-note{background:#fff4d6;border:1px solid #e3c56f;border-left:4px solid #c9970c;color:#4a3a0e;align-items:flex-start}
+.ws-flag-note .ws-flag-icon{flex:none;color:#8a6514;margin-top:1px}
+.ws-flag-note .ws-inline-link{color:#5c4410}
+.ws-block-layer{font-size:12px}
 
 /* The answer */
 .ws-ans-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:2px}
 .ws-ans-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .ws-ans-head .ws-count{font-size:13.5px;border-radius:8px;padding:4px 11px;background:#f1f2f4}
 .ws-count-sub{font-weight:400;color:#5b6170}
-.ws-block{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.ws-block{border-radius:10px;padding:10px 12px}
 .ws-block-head{gap:7px}
 .ws-block .cl-link{color:var(--muted);font-size:12px}
 .ws-block .cl-link:hover{color:var(--ink)}
@@ -1797,7 +1801,7 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .ws-showing-chip{font-weight:600;color:var(--ink);background:#f1f2f4;border-radius:999px;padding:1px 9px}
 .ws-newtext{border:1px dashed #c9ced6;background:#fff;font-size:13px;gap:8px}
 .ws-newtext-hint{flex:1;color:var(--muted)}
-.ws-cards > .ws-card{border:1px solid var(--line);padding:11px 12px}
+.ws-cards > .ws-card{padding:11px 12px}
 .ws-cards > .ws-card .cl-card-head{gap:7px}
 .ws-cards > .ws-card .cl-layer{font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
 .ws-card-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}

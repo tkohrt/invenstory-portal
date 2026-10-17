@@ -1145,9 +1145,12 @@ export default function DraftWorkspace({ tenantName, draft, ws, sourceText, init
                 </div>
               )}
               {noStandards && saNote && (
-                <div className="ws-notice ws-notice-x ws-sa-note" role="note">
-                  <span>{tenantName} has no approved Standard Answers yet. Answering the questions funders ask most once lets every
-                    application, this one included, start from them.{" "}
+                <div className="ws-notice ws-notice-x ws-flag-note" role="note">
+                  <svg className="ws-flag-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" />
+                  </svg>
+                  <span><strong>No approved Standard Answers yet.</strong> {tenantName} has none, so every answer here starts from scratch.
+                    Answering the questions funders ask most once lets every application, this one included, start from them.{" "}
                     <button type="button" className="ws-inline-link" onClick={() => void openStandardAnswersAction()
                       .then(r => router.push(`/drafts/${r.draftId}`)).catch(e => setError(e instanceof Error ? e.message : "Could not open Standard Answers."))}>Open Standard Answers</button></span>
                   <button type="button" className="bn-x" onClick={dismissSaNote} aria-label="Dismiss for this draft">×</button>
@@ -1779,14 +1782,16 @@ function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: 
     id: `card:${c.id}`, data: { type: "card", cardId: c.id }, disabled: !ok,
   });
   return (
-    <div ref={setNodeRef} className={`ws-card${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
+    <div ref={setNodeRef} className={`ws-card ${layerClass(c.layer)}${c.strength === "thin" ? " cl-thin" : ""}${isDragging ? " ws-ghost" : ""}`}>
       <div className={`cl-card-head${ok ? " ws-grab" : ""}`} {...listeners} {...attributes}
         aria-label={`Drag into the answer: ${c.statement.slice(0, 60)}`} title={ok ? "Drag into the answer" : undefined}>
         <span className="ws-handle" aria-hidden="true">⠿</span>
-        {c.layer && <span className={`ws-ldot ${layerClass(c.layer)}`} aria-hidden="true" />}
         <span className="cl-kind">{c.kindLabel}</span>
         {c.layer && <span className="cl-layer">· {LAYER_NAME[c.layer]}</span>}
         {c.createdFrom === "manual" && <span className="uc-tag" title={c.sourceLine ?? undefined}>{USER_GENERATED}</span>}
+        <span className="cl-spacer" />
+        {verified ? <span className="cl-badge cl-badge-ok">Verified</span>
+          : <span className="cl-badge ws-badge-review" title="Not yet verified. Dropping it in, or pressing Review, opens its review first.">Needs review</span>}
       </div>
       <p className="cl-statement">{c.statement}</p>
       <div className="ws-reason">{reasonFor(r, c.kindLabel, c.newestSource)}</div>
@@ -1795,9 +1800,6 @@ function PanelCard({ r, verified, used, locked, onAdd }: { r: Ranked; verified: 
           de-identify it, or rule it not sensitive in the <a href="/admin/card-library">Card Library</a> before placing it.</div>
       )}
       <div className="ws-card-foot">
-        {verified
-          ? <span className="ws-state ws-state-ok"><span className="ws-sdot" aria-hidden="true" />Verified</span>
-          : <span className="ws-state ws-state-review" title="Not yet verified. Dropping it in, or pressing Review, opens its review first."><span className="ws-sdot" aria-hidden="true" />Needs review</span>}
         {used.length > 0 && <span className="ws-used" title="Already used in another answer of this application">In Q{used.join(", Q")}</span>}
         <span className="cl-spacer" />
         <button type="button" className="ws-inline-link ws-quiet-link" onClick={() => setOpen(o => !o)}>{open ? "Hide sources" : `Sources (${c.evidence.length})`}</button>
@@ -1956,12 +1958,12 @@ function BlockRow({ block: b, index, last, card, blocked, locked, editing, setEd
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`ws-block ws-${b.kind}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}${dropBefore ? " ws-drop-before" : ""}`}>
+      className={`ws-block ws-${b.kind} ${isCard ? layerClass(card?.layer ?? null) : ""}${isDragging ? " ws-ghost" : ""}${b.breakBefore && index > 0 ? " ws-para" : ""}${dropBefore ? " ws-drop-before" : ""}`}>
       <div className="ws-block-head ws-grab" {...listeners} {...attributes} aria-label="Drag to reorder, or onto Story Cards to remove"
         title="Drag to reorder, or onto Story Cards to remove">
         <span className="ws-handle" aria-hidden="true">⠿</span>
-        {isCard && card?.layer && <span className={`ws-ldot ${layerClass(card.layer)}`} title={LAYER_NAME[card.layer]} />}
         <span className="cl-kind">{isCard ? card?.kindLabel ?? "Story Card" : b.kind === "human" ? "Your words" : "Bridge"}</span>
+        {isCard && card?.layer && <span className="cl-layer ws-block-layer">· {LAYER_NAME[card.layer]}</span>}
         {b.kind === "bridge" && b.proposed && <span className="ov-tag" title="Proposed in Weave and not accepted yet, so it is not part of the answer.">Proposed, not in the answer</span>}
         {isCard && b.edited && <span className="ov-tag" title="Changed in this draft only. The library card is unchanged.">Edited here</span>}
         {isCard && b.suggested && <span className="ov-tag ws-tag-sugg" title="Auto-draft suggests new wording for this card. Accept, edit or reject it before this answer can leave.">New wording suggested</span>}
