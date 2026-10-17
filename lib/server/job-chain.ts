@@ -27,7 +27,7 @@ function secret(): string {
  * Which chain a signature is for. A Card Library signature cannot continue an
  * analysis, or the reverse: the scope is part of what is signed.
  */
-export type ChainScope = "card-chain" | "analysis-chain" | "autodraft-chain";
+export type ChainScope = "card-chain" | "analysis-chain" | "autodraft-chain" | "doc-text-chain";
 
 export function signChain(tenantId: string, jobId: string, scope: ChainScope = "card-chain"): string {
   return createHmac("sha256", secret()).update(`${scope}:v1:${tenantId}:${jobId}`).digest("hex");
@@ -130,7 +130,7 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     let q = db.from("job")  // tenant-safe: scoped to one tenant below, or every tenant only for an admin session (the caller decides)
       .select("id, tenant_id, kind, updated_at, claimed_at, chain_passes")
-      .in("kind", ["cards", "analysis", "autodraft"]).eq("status", "running").gte("started_at", since)
+      .in("kind", ["cards", "analysis", "autodraft", "doc_text"]).eq("status", "running").gte("started_at", since)
       .order("started_at", { ascending: false });
     if ("tenantId" in scope) q = q.eq("tenant_id", scope.tenantId);
     const { data, error } = await q.limit(20);
@@ -163,6 +163,8 @@ export async function reviveStalledChains(origin: string, scope: { tenantId: str
       if (!(won ?? []).length) continue;
       const ok = j.kind === "analysis"
         ? await scheduleAnalysisPass(origin, j.tenant_id, j.id)
+        : j.kind === "doc_text"
+          ? await (await import("./doc-text-backfill")).scheduleDocTextPass(origin, j.tenant_id, j.id)
         : j.kind === "autodraft"
           ? await scheduleAutodraftPass(origin, j.tenant_id, j.id)
           : await scheduleCardPass(origin, j.tenant_id, j.id);

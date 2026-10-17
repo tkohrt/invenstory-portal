@@ -4,6 +4,7 @@ import "server-only";
 // eliminating the per-item retrieval "routing lottery". Boilerplate (templates,
 // unsigned/sample/draft docs) is skipped so placeholder values never count as evidence.
 import { db } from "./db";
+import { readerTexts } from "./doc-text";
 import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor, RETRIEVAL_QUERY } from "@/lib/checklist";
 
@@ -89,9 +90,8 @@ export async function extractDocumentEvidence(tenantId: string, orgType: string 
   const emptyItems = (): DocItemFinding[] => items.map(i => ({ key: i.key, label: i.label, tier: i.tier, state: "missing" as DocState, evidence: [] }));
   if (!genOK || !docList.length) return { generationConfigured: genOK, docCount: docList.length, scanned: 0, skipped: 0, items: emptyItems(), documents: [] };
 
-  const { data: chunks } = await db.from("document_chunk").select("document_id, text").eq("tenant_id", tenantId);
-  const textByDoc = new Map<string, string>();
-  for (const c of chunks ?? []) textByDoc.set(c.document_id, (textByDoc.get(c.document_id) ?? "") + "\n" + (c.text ?? ""));
+  // The stored text (Document Reader, Phase 0), or the old stitched text.
+  const textByDoc = await readerTexts(tenantId);
   const itemsList = items.map(i => `${i.key}: ${i.label} — ${RETRIEVAL_QUERY[i.key] ?? ""}`).join("\n");
 
   const scans = await Promise.all(docList.map(d => scanDoc(d, itemsList, textByDoc.get(d.id) ?? "")));
@@ -141,8 +141,7 @@ export async function mergeDocumentIntoCoverage(documentId: string): Promise<voi
   const { data: prof } = await db.from("eligibility_profile").select("org_type").eq("tenant_id", doc.tenant_id).maybeSingle();
   const items = checklistFor((prof?.org_type as string | null) ?? null);
   const validKeys = new Set(items.map(i => i.key));
-  const { data: chunks } = await db.from("document_chunk").select("text").eq("document_id", documentId).eq("tenant_id", doc.tenant_id);
-  const text = (chunks ?? []).map(c => c.text ?? "").join("\n");
+  const text = (await readerTexts(doc.tenant_id, [documentId])).get(documentId) ?? "";
   if (!text.trim()) return;
   const itemsList = items.map(i => `${i.key}: ${i.label} — ${RETRIEVAL_QUERY[i.key] ?? ""}`).join("\n");
   const scan = await scanDoc({ id: doc.id, title: doc.title }, itemsList, text);

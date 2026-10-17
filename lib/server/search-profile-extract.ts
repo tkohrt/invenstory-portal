@@ -13,9 +13,10 @@ import "server-only";
 // skipping boilerplate, verbatim quotes, and the subject tag that decides
 // whether a line may describe the client at all.
 import { db } from "./db";
+import { readerTexts, healLegacyHashes } from "./doc-text";
 import { chatComplete, generationConfigured } from "./llm";
 import {
-  parseFacts, mergeFacts, assessProfile, documentFingerprint, chunkText,
+  parseFacts, mergeFacts, assessProfile, documentFingerprint,
   type ProfileFact, type SearchProfile,
 } from "@/lib/search-profile";
 import type { JobEventKind } from "@/lib/job";
@@ -271,17 +272,13 @@ export async function continueProfileBuild(
   // length independently is what broke the chain before: the two answers
   // differed by one character per chunk boundary, nothing ever matched, and no
   // document was ever considered read.
-  const { data: sizes } = await db.from("document_chunk")
-    .select("document_id, chunk_index, text").eq("tenant_id", tenantId)
-    .order("chunk_index");
-  const rowsByDoc = new Map<string, { text: string | null }[]>();
-  for (const c of ((sizes ?? []) as { document_id: string; text: string | null }[])) {
-    const list = rowsByDoc.get(c.document_id) ?? [];
-    list.push({ text: c.text });
-    rowsByDoc.set(c.document_id, list);
-  }
+  //
+  // Since Phase 0 of the Document Reader: the stored text, or for a document
+  // not yet backfilled the old stitched text, from the same function the read
+  // below uses (readerTexts), so the two can never disagree.
+  const textByDoc = await readerTexts(tenantId);
   const lenByDoc = new Map<string, number>();
-  for (const [id, rows] of rowsByDoc) lenByDoc.set(id, chunkText(rows).length);
+  for (const [id, t] of textByDoc) lenByDoc.set(id, t.length);
 
   const stale = (d: DocRow) => {
     if (!done.has(d.id)) return true;
@@ -291,9 +288,15 @@ export async function continueProfileBuild(
     return !h.startsWith(`${len}:`);                                 // length changed, so content did
   };
 
-  const todo = docList.filter(stale);
+  // A read of a document's OLD stitched text is the same read once its text is
+  // stored: re-stamped, never re-read (lib/server/doc-text.ts).
+  const stale0 = docList.filter(stale);
+  const healed = await healLegacyHashes(tenantId, "search_profile_doc",
+    stale0.map(d => ({ documentId: d.id, hash: done.get(d.id) ?? null, text: textByDoc.get(d.id) ?? "" })),
+    (h, t) => h.startsWith(`${t.length}:`));
+  const todo = stale0.filter(d => !healed.has(d.id));
   const total = docList.length;
-  const already = new Set(docList.filter(d => !stale(d)).map(d => d.id));
+  const already = new Set(docList.filter(d => !todo.includes(d)).map(d => d.id));
 
   if (already.size) {
     say("phase", `Carrying forward ${already.size} document(s) already read. `
@@ -347,10 +350,7 @@ export async function continueProfileBuild(
       continue;
     }
 
-    const { data: chunks } = await db.from("document_chunk")
-      .select("chunk_index, text").eq("tenant_id", tenantId).eq("document_id", d.id)
-      .order("chunk_index");
-    const text = chunkText((chunks ?? []) as { text: string | null }[]);
+    const text = textByDoc.get(d.id) ?? "";
     if (!text.trim()) {
       // No chunks yet, or an extraction that produced nothing. Recording it
       // avoids a model call on empty input every time the chain comes round.

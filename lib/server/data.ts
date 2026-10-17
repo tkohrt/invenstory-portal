@@ -4,6 +4,7 @@ import "server-only";
 // for security: for a client, RLS restricts to their tenant; for an admin,
 // is_admin() lifts the filter and the activeTenant arg simply *selects* which
 // client to view. The Phase 3 service-role scaffold is gone from this file.
+import { storedText } from "./doc-text";
 import { WORKSPACE_FEATURES, WORKSPACE_FEATURE_MAP } from "@/lib/workspace";
 import { userClient } from "./supabase";
 import { db } from "./db";
@@ -205,12 +206,16 @@ export async function getChatMessages(sessionId: string, tenantId: string, userI
   }));
 }
 
-// Full extracted text of a document, reconstructed from its chunks (using the
-// char offsets to drop the overlap). RLS-scoped via userClient.
+// Full text of a document. Since the Document Reader's Phase 0 this is the
+// stored text (document_text), the one every reader reads; a document the
+// backfill has not reached yet is rebuilt from its passages as before. The
+// document is resolved under RLS (userClient), so a client reaches only its own.
 export async function getDocumentFullText(documentId: string): Promise<{ title: string; text: string } | null> {
   const s = await userClient();
-  const { data: doc } = await s.from("document").select("title").eq("id", documentId).maybeSingle();
+  const { data: doc } = await s.from("document").select("title, tenant_id").eq("id", documentId).maybeSingle();
   if (!doc) return null;
+  const stored = await storedText(doc.tenant_id as string, documentId);
+  if (stored) return { title: doc.title as string, text: stored.text };
   const { data: chunks } = await s.from("document_chunk")
     .select("text, char_start, char_end").eq("document_id", documentId).order("char_start");
   let text = "";

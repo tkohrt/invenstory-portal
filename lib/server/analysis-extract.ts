@@ -21,7 +21,7 @@ import "server-only";
 import { db } from "./db";
 import { chatComplete, generationConfigured } from "./llm";
 import { speakerRosterFor } from "./speaker-roster";
-import { chunkText } from "@/lib/search-profile";
+import { readerTexts, healLegacyHashes } from "./doc-text";
 import {
   attributeSubject, describeRoster, speakerAt, speakerTurns, type SpeakerRoster,
 } from "@/lib/transcript-speakers";
@@ -339,7 +339,13 @@ async function readingPlan(tenantId: string) {
     return h !== readHash(t);
   };
 
-  const todo = docList.filter(stale);
+  // Document Reader, Phase 0: a read of the OLD stitched text of a document
+  // that now has a stored text is the same read, re-stamped, never a re-read.
+  const stale0 = docList.filter(stale);
+  const healed = await healLegacyHashes(tenantId, "analysis_doc",
+    stale0.map(d => ({ documentId: d.id, hash: done.get(d.id) ?? null, text: textByDoc.get(d.id) ?? "" })),
+    (h, t) => h === readHash(t));
+  const todo = stale0.filter(d => !healed.has(d.id));
   return { docList, todo, textByDoc };
 }
 
@@ -349,20 +355,13 @@ export async function pendingReading(tenantId: string): Promise<{ docs: number; 
   return { docs: todo.length, chars: todo.reduce((n, d) => n + (textByDoc.get(d.id)?.length ?? 0), 0) };
 }
 
-/** Each ready document's text, built exactly as the reader builds it. */
+/**
+ * Each ready document's text, built exactly as the reader builds it: the
+ * stored text (Document Reader, Phase 0), or before the backfill reaches a
+ * document, the passages joined as they always were (lib/server/doc-text.ts).
+ */
 async function documentTexts(tenantId: string): Promise<Map<string, string>> {
-  const { data: chunks, error } = await db.from("document_chunk")
-    .select("document_id, chunk_index, text").eq("tenant_id", tenantId).order("chunk_index");
-  if (error) throw new Error(`could not read document text: ${error.message}`);
-  const rowsByDoc = new Map<string, { text: string | null }[]>();
-  for (const c of ((chunks ?? []) as { document_id: string; text: string | null }[])) {
-    const list = rowsByDoc.get(c.document_id) ?? [];
-    list.push({ text: c.text });
-    rowsByDoc.set(c.document_id, list);
-  }
-  const out = new Map<string, string>();
-  for (const [id, rows] of rowsByDoc) out.set(id, chunkText(rows));
-  return out;
+  return readerTexts(tenantId);
 }
 
 /** Forget what was read, so the next run re-reads every document. Reviews are kept. */

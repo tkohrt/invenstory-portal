@@ -42,6 +42,8 @@ const TENANT_SCOPED = new Set([
   // Auto-Draft (0062).
   "voice_profile",
   "draft_context", "draft_form_item",
+  // Document Reader, Phase 0 (0069).
+  "document_text",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

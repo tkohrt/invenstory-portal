@@ -7,6 +7,8 @@ import { getAnalysisTrial } from "@/lib/server/analysis-read";
 import { getAnalysisComparison } from "@/lib/server/analysis-compare";
 import { latestJob } from "@/lib/server/jobs";
 import AnalysisTrialView from "@/components/AnalysisTrialView";
+import DocTextPanel from "@/components/DocTextPanel";
+import { docTextStatus } from "@/lib/server/doc-text-backfill";
 import { previewSwitch } from "@/lib/server/analysis-switch";
 import { switchStatus } from "@/lib/server/analysis-source";
 import { switchGate, PROVING_TENANT_ID } from "@/lib/analysis-switch";
@@ -33,6 +35,8 @@ export default async function AnalysisTrialPage() {
     })),
   ]);
   const proving = session.tenantId === PROVING_TENANT_ID;
+  // Document Reader, Phase 0: storing every client's document text. Never takes the page down.
+  const docText = await docTextStatus().catch(() => null);
   const gate = status && preview.ok ? switchGate({
     tenantId: session.tenantId, pendingDocs: preview.p.pendingDocs, analysedDocs: preview.p.analysedDocs, proofAt: status.proofAt,
     ...(proving ? {
@@ -40,6 +44,9 @@ export default async function AnalysisTrialPage() {
       compare: compare.ok ? compare.c.readiness.gate : undefined,
     } : {}),
   }) : null;
-  return <AnalysisTrialView orgName={tenant?.name ?? "this client"} data={data} job={job} compare={compare}
-    switchInfo={{ status, preview, gate, proving }} />;
+  return <>
+    {docText && <DocTextPanel status={docText} />}
+    <AnalysisTrialView orgName={tenant?.name ?? "this client"} data={data} job={job} compare={compare}
+    switchInfo={{ status, preview, gate, proving }} />
+  </>;
 }

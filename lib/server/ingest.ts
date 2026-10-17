@@ -1,5 +1,5 @@
 import "server-only";
-// Ingestion pipeline: extract -> chunk (page + char offsets) -> embed -> write.
+// Ingestion pipeline: extract -> store the text -> cut passages from it (exact offsets) -> embed -> write.
 // Runs inline after upload (docs at this scale take seconds). Scanned-PDF OCR
 // via Textract needs an S3 staging bucket + IAM change — journaled follow-up;
 // until then image-only PDFs fail loudly with a clear error, never silently.
@@ -9,6 +9,7 @@ import { db } from "./db";
 import { uploadReadsLastDay, withAiUsage } from "./ai-usage";
 import { checkAllowance } from "./allowance";
 import { uploadReadNow, type Actor } from "@/lib/usage-limits";
+import { saveExtractedText } from "./doc-text";
 
 const EMBED_MODEL = "gte-small";
 
@@ -87,32 +88,10 @@ async function extract(buffer: Buffer, docKind: string): Promise<PageText[]> {
   throw new Error(`Unsupported doc kind: ${docKind}`);
 }
 
-export function chunkPages(pages: PageText[], target = 1100, overlap = 150): {
-  chunk_index: number; text: string; page_number: number | null; char_start: number; char_end: number;
-}[] {
-  const chunks: { chunk_index: number; text: string; page_number: number | null; char_start: number; char_end: number }[] = [];
-  let idx = 0; let globalOffset = 0;
-  for (const pg of pages) {
-    const text = pg.text.replace(/\r/g, "");
-    let start = 0;
-    while (start < text.length) {
-      let end = Math.min(start + target, text.length);
-      if (end < text.length) {
-        const breakAt = text.lastIndexOf("\n", end);
-        if (breakAt > start + target / 2) end = breakAt;
-        else { const sp = text.lastIndexOf(" ", end); if (sp > start + target / 2) end = sp; }
-      }
-      const slice = text.slice(start, end).trim();
-      if (slice.length > 0) {
-        chunks.push({ chunk_index: idx++, text: slice, page_number: pg.page,
-          char_start: globalOffset + start, char_end: globalOffset + end });
-      }
-      if (end >= text.length) break;
-      start = Math.max(end - overlap, start + 1);
-    }
-    globalOffset += text.length;
-  }
-  return chunks;
+/** A file's text, page by page, cleaned as ingestion always has. Shared with the stored-text backfill. */
+export async function extractPages(buffer: Buffer, docKind: string): Promise<PageText[]> {
+  const rawPages = await extract(buffer, docKind);
+  return rawPages.map(p => ({ ...p, text: sanitizeText(p.text) }));
 }
 
 export async function embed(text: string): Promise<number[]> {
@@ -146,10 +125,12 @@ export async function processDocument(documentId: string, opts: { actor?: Actor;
     const { data: blob, error: dlErr } = await db.storage.from("documents").download(doc.storage_key);
     if (dlErr || !blob) throw new Error(`storage download failed: ${dlErr?.message}`);
     const buffer = Buffer.from(await blob.arrayBuffer());
-    const rawPages = await extract(buffer, doc.doc_kind);
-    const pages = rawPages.map(p => ({ ...p, text: sanitizeText(p.text) }));
+    const pages = await extractPages(buffer, doc.doc_kind);
     if (pages.reduce((n, p) => n + p.text.trim().length, 0) < 20) throw new Error("No usable text after decoding — the file may be empty, image-only, or an unsupported encoding.");
-    const chunks = chunkPages(pages);
+    // Document Reader, Phase 0: the text is stored first (one per version) and
+    // the passages are cut from it, so their positions point into exactly the
+    // text every reader reads (lib/doc-text.ts, lib/server/doc-text.ts).
+    const { chunks } = await saveExtractedText(doc, pages);
     if (chunks.length === 0) throw new Error("extraction produced no text");
     // replace any prior chunks (reprocess-safe)
     await db.from("document_chunk").delete().eq("document_id", documentId);  // tenant-safe: ingestion worker: chunks of the document being processed

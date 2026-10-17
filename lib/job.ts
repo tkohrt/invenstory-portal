@@ -8,7 +8,7 @@
 // Pure and free of `server-only` so the staleness rule and the copy can be
 // tested without a database.
 
-export type JobKind = "match" | "search_profile" | "readiness" | "rationales" | "cards" | "parse_application" | "analysis" | "autodraft";
+export type JobKind = "match" | "search_profile" | "readiness" | "rationales" | "cards" | "parse_application" | "analysis" | "autodraft" | "doc_text";
 export type JobStatus = "running" | "done" | "failed";
 
 /**
@@ -120,6 +120,7 @@ const WORKING: Record<JobKind, string> = {
   parse_application: "Reading the application",
   analysis: "Analysing the Inven(s)tory",
   autodraft: "Auto-drafting",
+  doc_text: "Storing document text",
 };
 
 const DONE: Record<JobKind, string> = {
@@ -131,6 +132,7 @@ const DONE: Record<JobKind, string> = {
   parse_application: "Questions ready to confirm",
   analysis: "Analysis finished",
   autodraft: "Auto-draft finished",
+  doc_text: "Document text stored",
 };
 
 /**
@@ -257,6 +259,9 @@ const CAUSE: Record<JobKind, string> = {
   autodraft:
     "Each question is one model call, and a stage waits for that call to finish "
     + "before it can report the question.",
+  doc_text:
+    "A long PDF is read page by page from its original file, and nothing is reported "
+    + "until the whole document is stored.",
 };
 
 export function quietLine(q: QuietInput): string | null {

@@ -22,7 +22,7 @@ import "server-only";
 import { db } from "./db";
 import { chatComplete, generationConfigured } from "./llm";
 import { speakerRosterFor } from "./speaker-roster";
-import { chunkText } from "@/lib/search-profile";
+import { readerTexts, healLegacyHashes } from "./doc-text";
 import {
   attributeSubject, describeRoster, speakerAt, speakerTurns, type SpeakerRoster,
 } from "@/lib/transcript-speakers";
@@ -221,16 +221,8 @@ export async function continueCardBuild(
   const done = new Map(((doneRows ?? []) as { document_id: string; content_hash: string }[])
     .map(r => [r.document_id, r.content_hash]));
 
-  const { data: sizes } = await db.from("document_chunk")
-    .select("document_id, chunk_index, text").eq("tenant_id", tenantId).order("chunk_index");
-  const rowsByDoc = new Map<string, { text: string | null }[]>();
-  for (const c of ((sizes ?? []) as { document_id: string; text: string | null }[])) {
-    const list = rowsByDoc.get(c.document_id) ?? [];
-    list.push({ text: c.text });
-    rowsByDoc.set(c.document_id, list);
-  }
-  const textByDoc = new Map<string, string>();
-  for (const [id, rows] of rowsByDoc) textByDoc.set(id, chunkText(rows));
+  // The stored text (Document Reader, Phase 0), or the old stitched text.
+  const textByDoc = await readerTexts(tenantId);
 
   // Stale when never read, or when the text read no longer matches. Compared on
   // the full hash rather than the length alone: a card's whole claim to trust is
@@ -242,7 +234,13 @@ export async function continueCardBuild(
     return h !== contentHash(textByDoc.get(d.id) ?? "");
   };
 
-  const todo = docList.filter(stale);
+  // A read of a document's OLD stitched text is the same read once its text is
+  // stored: re-stamped, never re-read (lib/server/doc-text.ts).
+  const stale0 = docList.filter(stale);
+  const healed = await healLegacyHashes(tenantId, "story_card_doc",
+    stale0.map(d => ({ documentId: d.id, hash: done.get(d.id) ?? null, text: textByDoc.get(d.id) ?? "" })),
+    (h, t) => h === contentHash(t));
+  const todo = stale0.filter(d => !healed.has(d.id));
   const total = docList.length;
   const already = total - todo.length;
   say("phase", already

@@ -1820,3 +1820,13 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
   .ws-title{font-size:21px}
   .ws-prompt{font-size:21px}
 }
+
+/* Admin, Analysis: Store document text (Document Reader, Phase 0). */
+.dt-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;margin:0 0 18px}
+.dt-head{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.dt-copy{flex:1 1 320px;min-width:0}
+.dt-copy h3{margin:0 0 2px;font-size:16px}
+.dt-copy p{margin:0;color:var(--muted);font-size:13px}
+.dt-results p{margin:10px 0 4px;font-size:13px}
+.dt-list{margin:4px 0 0;padding-left:18px;font-size:13px}
+.dt-list li{margin:2px 0}

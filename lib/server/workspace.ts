@@ -20,7 +20,8 @@ import type { FigureClearance } from "@/lib/polish";
 import { parseAdaptation, type SaAdaptation } from "@/lib/sa-adapt";
 import { asksForDraft } from "./asks";
 
-export interface WsEvidence { title: string; layer: string | null; quote: string; speaker: string | null }
+/** documentId opens the Document Reader at the quote (/documents/<id>?card=<card id>). */
+export interface WsEvidence { documentId: string; title: string; layer: string | null; quote: string; speaker: string | null }
 
 export interface WsCard extends RankCard {
   kindLabel: string;
@@ -146,10 +147,10 @@ export async function loadCards(tenantId: string, via?: SupabaseClient): Promise
   // `via`: the service client, for a server-carried run with no session (auto-draft). Still scoped by tenant below.
   const s = via ?? await userClient();
   const { data: cardRows, error: cErr } = await s.from("story_card")
-      .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, created_from, source_line, story_card_evidence(quote, speaker, document:document_id(title, layer, status, created_at))")
+      .select("id, kind, item_key, strength, status, layer, subject, statement, version, sensitive, sensitive_reason, sensitive_cleared, created_from, source_line, story_card_evidence(quote, speaker, document_id, document:document_id(title, layer, status, created_at))")
       .eq("tenant_id", tenantId).neq("status", "retired");
   if (cErr) throw new Error(`Could not read the Card Library: ${cErr.message}`);
-  type Ev = { quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string; created_at: string } | null };
+  type Ev = { quote: string; speaker: string | null; document_id: string; document: { title: string; layer: string | null; status: string; created_at: string } | null };
   return ((cardRows ?? []) as Raw[]).map(r => {
     const ev = ((r.story_card_evidence as Ev[]) ?? []).filter(e => e.document?.status === "ready");
     const newest = ev.reduce<Ev | null>((a, e) => (!a || (e.document!.created_at > a.document!.created_at) ? e : a), null);
@@ -165,7 +166,7 @@ export async function loadCards(tenantId: string, via?: SupabaseClient): Promise
       // not recorded anywhere yet.
       newestEvidenceAt: newest?.document?.created_at ?? null,
       newestSource: newest?.document?.title ?? null,
-      evidence: ev.map(e => ({ title: e.document!.title, layer: e.document!.layer, quote: e.quote, speaker: e.speaker })),
+      evidence: ev.map(e => ({ documentId: e.document_id, title: e.document!.title, layer: e.document!.layer, quote: e.quote, speaker: e.speaker })),
       createdFrom: (r.created_from as string | null) ?? "extraction",
       sourceLine: (r.source_line as string | null) ?? null,
     };
