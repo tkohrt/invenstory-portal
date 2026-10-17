@@ -3,19 +3,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import ArtifactPanel from "./ArtifactPanel";
 import { setArtifactVisibilityAction } from "@/lib/server/artifact-actions";
-import { DocDrawer } from "./DocBits";
 import type { ArtifactBundle, DocumentWithTags } from "@/lib/types";
 
 /** A citation opens the Document Reader in a new tab, so the page here keeps its place (Document Reader, Phase 1). */
 const openInReader = (id: string) => { window.open(`/documents/${id}`, "_blank", "noopener"); };
 
-export default function SIView({ tenantName, bundle, docs, isAdmin }: {
+export default function SIView({ tenantName, bundle, isAdmin }: {
   tenantName: string; bundle: ArtifactBundle; docs: DocumentWithTags[]; isAdmin: boolean;
 }) {
-  const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [busyVis, setBusyVis] = useState(false);
   const router = useRouter();
-  const openDoc = docs.find(d => d.id === openDocId) ?? null;
   const visible = bundle.set.client_visible;
   const toggleVisibility = async () => { setBusyVis(true); await setArtifactVisibilityAction(bundle.type.slug, !visible); setBusyVis(false); router.refresh(); };
   return (
@@ -32,7 +29,6 @@ export default function SIView({ tenantName, bundle, docs, isAdmin }: {
         )}
       </div>
       <ArtifactPanel bundle={bundle} isAdmin={isAdmin} onOpenDoc={openInReader} />
-      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
     </div>
   );
 }

@@ -8,9 +8,9 @@ import AllowanceRequest from "./AllowanceRequest";
 
 const TIER_LABEL = { essential: "🟠 Essential", important: "🟡 Important", enriching: "🔵 Enriching" } as const;
 
-function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
+function ItemDetail({ item, onClose, onUpload, onSaved }: {
   item: ReadinessItem; onClose: () => void;
-  onUpload?: (layer: "I" | "II" | "III") => void; onOpenDoc?: (id: string) => void; onSaved: () => void;
+  onUpload?: (layer: "I" | "II" | "III") => void; onSaved: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,7 +49,7 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
   );
 }
 
-export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenDoc, openKey }: {
+export default function ReadinessCard({ readiness, computedAt, onUpload, openKey }: {
   readiness: { pct: number; items: ReadinessItem[] }; computedAt: string | null;
   onUpload?: (layer: "I" | "II" | "III") => void; onOpenDoc?: (id: string) => void; openKey?: string | null;
 }) {
@@ -135,7 +135,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, onOpenD
       {expandedItem && (
         <div className="ck-modal-backdrop" onClick={() => setExpanded(null)}>
           <div className="ck-modal" onClick={e => e.stopPropagation()}>
-            <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} onOpenDoc={onOpenDoc}
+            <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload}
               onSaved={() => { setExpanded(null); router.refresh(); }} />
           </div>
         </div>

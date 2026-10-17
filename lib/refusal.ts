@@ -119,6 +119,22 @@ export function indexRefusals(refusals: Refusal[]): RefusalIndex {
  * Matched like every refusal (the same quote after normalising, or most of it),
  * on the same document.
  */
+/**
+ * Which card a refused passage belongs to. The merge uses it as PROOF: a
+ * re-read that words the claim differently, from the same passage, is still
+ * that card's claim, and since the passage is refused for it, nothing new is
+ * made from it (no twin waiting in Needs review).
+ */
+export function passageOwnerFor(refusals: Refusal[]): (documentId: string, quote: string) => string | null {
+  const own = refusals.filter(r => r.source === "passage").map(r => ({ r, p: prepare(r.quote) }));
+  if (!own.length) return () => null;
+  return (documentId, quote) => {
+    const p = prepare(quote);
+    const hit = own.find(({ r, p: rp }) => (r.documentId === null || r.documentId === documentId) && fromRefused(p, rp));
+    return hit ? hit.r.sourceRef : null;
+  };
+}
+
 export function passageRefusedFor(refusals: Refusal[]): (cardId: string, documentId: string, quote: string) => boolean {
   const own = refusals.filter(r => r.source === "passage").map(r => ({ r, p: prepare(r.quote) }));
   if (!own.length) return () => false;

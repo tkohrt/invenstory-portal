@@ -23,8 +23,10 @@ import { retireCardAction } from "@/lib/server/card-actions";
 const LAYER: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
 const X = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>;
 
-export default function ReaderCardPanel({ card, position, library, access, documentId, onClose }: {
+export default function ReaderCardPanel({ card, position, library, access, documentId, onClose, onDone }: {
   card: ReaderCard; position: string; library: LibraryCard | null; access: ReaderAccess; documentId: string; onClose: () => void;
+  /** A line for the page to show once an action is done (the panel may close as the card leaves). */
+  onDone: (message: string) => void;
 }) {
   const [asking, setAsking] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
@@ -68,7 +70,7 @@ export default function ReaderCardPanel({ card, position, library, access, docum
               {card.usedIn.map(u => (
                 <li key={u.sectionId}>
                   {access.admin
-                    ? <Link href={`/drafts/${u.draftId}?q=${u.sectionId}`}>Question {u.question} of {u.draftTitle}</Link>
+                    ? <Link href={`/drafts/${u.draftId}?q=${u.question}`}>Question {u.question} of {u.draftTitle}</Link>
                     : <>Question {u.question} of {u.draftTitle}</>}
                 </li>
               ))}
@@ -78,8 +80,14 @@ export default function ReaderCardPanel({ card, position, library, access, docum
       )}
 
       {asking && (
-        <WhatIsWrong card={card} documentId={documentId} admin={access.admin}
-          onClose={() => { setAsking(false); opener.current?.focus(); }} />
+        <WhatIsWrong card={card} documentId={documentId} admin={access.admin} onDone={onDone}
+          onClose={() => {
+            setAsking(false);
+            // Back to what opened it, or to the text if that has gone with the card.
+            const back = opener.current;
+            if (back && back.isConnected) back.focus();
+            else document.querySelector<HTMLElement>(".rd-text")?.focus();
+          }} />
       )}
     </div>
   );
@@ -164,8 +172,8 @@ function ClientCard({ card, access, onInaccurate }: { card: ReaderCard; access: 
  * Library does). When this passage is the card's only source, the first choice
  * says the card will be retired (decision of 17 October 2026).
  */
-function WhatIsWrong({ card, documentId, admin, onClose }: {
-  card: ReaderCard; documentId: string; admin: boolean; onClose: () => void;
+function WhatIsWrong({ card, documentId, admin, onClose, onDone }: {
+  card: ReaderCard; documentId: string; admin: boolean; onClose: () => void; onDone: (message: string) => void;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -174,22 +182,37 @@ function WhatIsWrong({ card, documentId, admin, onClose }: {
   const box = useRef<HTMLDivElement | null>(null);
   const only = card.otherSources.length === 0;
 
+  // Kept in a ref so a parent redraw neither moves focus nor re-adds the listener.
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
     box.current?.querySelector<HTMLElement>("input")?.focus();  // never a choice: Enter must not act by accident
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    document.addEventListener("keydown", esc, true);
-    return () => document.removeEventListener("keydown", esc, true);
-  }, [onClose]);
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); closeRef.current(); return; }
+      // Tab stays inside the dialog.
+      if (e.key !== "Tab" || !box.current) return;
+      const items = Array.from(box.current.querySelectorAll<HTMLElement>("button:not(:disabled), input"));
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", keys, true);
+    return () => document.removeEventListener("keydown", keys, true);
+  }, []);
 
   const passage = () => start(async () => {
     setErr(null);
     const r = await refusePassageAction(card.id, documentId, why);
     if (!r.ok) { setErr(r.error); return; }
+    onDone(r.retired
+      ? "Done. That was the card's only source, so the card is retired as no longer supported."
+      : "Done. This passage is no longer a source of the card, and the card is back to Needs review.");
     onClose(); router.refresh();
   });
   const whole = () => start(async () => {
     setErr(null);
-    try { await retireCardAction(card.id, "inaccurate", why); onClose(); router.refresh(); }
+    try { await retireCardAction(card.id, "inaccurate", why); onDone("Done. The card is retired as inaccurate everywhere."); onClose(); router.refresh(); }
     catch (e) { setErr(e instanceof Error ? e.message : "That did not work."); }
   });
 

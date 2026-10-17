@@ -108,22 +108,34 @@ export async function refusePassageAction(cardId: string, documentId: string, no
   const card = await liveCard(s.tenantId, cardId);
   if (!card) return { ok: false, error: "That card is no longer in the library." };
   const { data: ev } = await db.from("story_card_evidence").select("id, document_id, quote")
-    .eq("tenant_id", s.tenantId).eq("card_id", cardId);
-  const rows = (ev ?? []) as { id: string; document_id: string; quote: string }[];
-  const here = rows.find(r => r.document_id === documentId);
+    .eq("tenant_id", s.tenantId).eq("card_id", cardId).eq("document_id", documentId);
+  const here = ((ev ?? []) as { id: string; document_id: string; quote: string }[])[0];
   if (!here) return { ok: false, error: "This document is no longer one of the card's sources." };
   const why = (note ?? "").trim().slice(0, 600) || null;
 
-  const { error: rErr } = await db.from("card_refusal").insert({
-    tenant_id: s.tenantId, source: "passage", source_ref: cardId, document_id: documentId,
-    kind: card.kind.slice(0, 60), statement: card.statement.slice(0, 2000), quote: here.quote.slice(0, 2000),
-    note: why ? (s.role === "admin" ? why : `${why} (from the client)`) : null, created_by: s.user.id,
-  });
-  if (rErr) return { ok: false, error: "Could not remember that. Nothing was changed." };
+  // Remembered once: pressing again after a failure does not add a second refusal.
+  const { data: already } = await db.from("card_refusal").select("id")
+    .eq("tenant_id", s.tenantId).eq("source", "passage").eq("source_ref", cardId)
+    .eq("document_id", documentId).is("lifted_at", null).limit(1);
+  if (!(already ?? []).length) {
+    const { error: rErr } = await db.from("card_refusal").insert({
+      tenant_id: s.tenantId, source: "passage", source_ref: cardId, document_id: documentId,
+      kind: card.kind.slice(0, 60), statement: card.statement.slice(0, 2000), quote: here.quote.slice(0, 2000),
+      note: why ? (s.role === "admin" ? why : `${why} (from the client)`) : null, created_by: s.user.id,
+    });
+    if (rErr) return { ok: false, error: "Could not remember that. Nothing was changed." };
+  }
   const { error: dErr } = await db.from("story_card_evidence").delete().eq("tenant_id", s.tenantId).eq("id", here.id);
-  if (dErr) return { ok: false, error: "Could not remove the source. Try again." };
+  if (dErr) return { ok: false, error: "Could not remove the source. Try again; the passage is already remembered." };
 
-  const last = rows.length === 1;
+  // Counted AFTER the delete, and only sources in documents that are ready (as
+  // the reader counts them), so two refusals at once still retire a card left
+  // with nothing, and the dialog's warning matches what happens.
+  const { data: rest } = await db.from("story_card_evidence").select("id, document:document_id(status)")
+    .eq("tenant_id", s.tenantId).eq("card_id", cardId);
+  const left = ((rest ?? []) as unknown as { document: { status: string } | null }[])
+    .filter(r => r.document?.status === "ready").length;
+  const last = left === 0;
   const now = new Date().toISOString();
   const patch = last
     ? { status: "retired", retired_reason: "source_removed", possible_duplicate_of: null, updated_at: now,

@@ -2286,7 +2286,7 @@ function ReviewDialog({ cardId, mode, note, left, onAction, onSkip, onClose }: {
         {card === null && <div className="ap-error">{error ?? "That card is no longer in this client's library."}</div>}
         {card && (card.status === "verified" && mode === "review"
           ? <p className="ov-muted">This card is already verified.</p>
-          : <CardReview card={card} onAction={handle}
+          : <CardReview card={card} onAction={handle} sourcesInNewTab
               verifyLabel={mode === "place" ? "Verify and place" : "Verify"}
               editSaveLabel={mode === "place" ? "Save, verify and place" : "Save and verify"} />)}
         <div className="ws-modal-acts">

@@ -93,6 +93,8 @@ export function planMerge(input: {
    * Other cards may still use it. See passageRefusedFor in lib/refusal.ts.
    */
   passageRefused?: (cardId: string, documentId: string, quote: string) => boolean;
+  /** The card a refused passage belongs to, used as proof of ownership (see passageOwnerFor). */
+  passageOwner?: (documentId: string, quote: string) => string | null;
 }): MergePlan {
   // 1. Group every document's candidates by claim.
   const groups = new Map<string, { kind: string; statement: string; ev: Ev[] }>();
@@ -128,6 +130,13 @@ export function planMerge(input: {
       const card = id ? byId.get(id) : undefined;
       if (card && card.kind === g.kind) { owner.set(fp, card); break; }
     }
+    if (owner.has(fp) || !input.passageOwner) continue;
+    // A passage refused for a card proves the claim is that card's, however it is worded now.
+    for (const e of g.ev) {
+      const id = input.passageOwner(e.documentId, e.quote);
+      const card = id ? byId.get(id) : undefined;
+      if (card) { owner.set(fp, card); break; }
+    }
   }
 
   // Follow an admin's merges. Bounded, so a hand-written cycle cannot hang a build.
@@ -143,10 +152,12 @@ export function planMerge(input: {
 
   // 3. Evidence per target.
   const evByTarget = new Map<string, Ev[]>();
-  const add = (target: string, ev: Ev[]) => {
+  const add = (target: string, ev: Ev[], via?: string) => {
     const list = evByTarget.get(target) ?? [];
     for (const e of ev) {
+      // Refused for the card itself, or for a card merged into it (via).
       if (input.passageRefused && !target.startsWith(NEW) && input.passageRefused(target, e.documentId, e.quote)) continue;
+      if (input.passageRefused && via && via !== target && input.passageRefused(via, e.documentId, e.quote)) continue;
       if (!list.some(x => x.documentId === e.documentId)) list.push(e);
     }
     if (list.length) evByTarget.set(target, list);
@@ -154,7 +165,7 @@ export function planMerge(input: {
   const create: MergePlan["create"] = [];
   for (const [fp, g] of groups) {
     const o = owner.get(fp);
-    if (o) { add(resolve(o).id, g.ev); continue; }
+    if (o) { add(resolve(o).id, g.ev, o.id); continue; }
     add(NEW + fp, g.ev);
     create.push({
       fingerprint: fp, kind: g.kind, statement: g.statement,

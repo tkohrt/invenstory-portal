@@ -30,7 +30,7 @@ const RETIRED_WHY: Record<string, string> = {
 /** What the reviewer just did. "verified" covers an edit too: editing counts as verifying. */
 export type ReviewOutcome = "verified" | "unverified" | "retired" | "reinstated" | "sensitive_cleared" | "sensitive_reopened" | "merged";
 
-export default function CardReview({ card: c, byId, onAction, verifyLabel = "Verify", editSaveLabel, onInaccurate }: {
+export default function CardReview({ card: c, byId, onAction, verifyLabel = "Verify", editSaveLabel, onInaccurate, sourcesInNewTab = false }: {
   card: LibraryCard;
   /** The library's other cards, for duplicates and merges. Absent outside the library. */
   byId?: Map<string, LibraryCard>;
@@ -43,6 +43,8 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
    * 2026). When given, Inaccurate opens it instead of retiring the card here.
    */
   onInaccurate?: () => void;
+  /** Open sources in a new tab (the Storyboard, where the writer must keep their place and Undo). */
+  sourcesInNewTab?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -112,7 +114,9 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
               <div className="cl-quote">{`“${e.quote}”`}</div>
               <div className="cl-src">
                 {/* Opens the Document Reader at this quote (Document Reader, Phase 1). */}
-                <Link href={`/documents/${e.documentId}?card=${c.id}`} className="cl-src-link">{e.title}</Link>
+                {sourcesInNewTab
+                  ? <a href={`/documents/${e.documentId}?card=${c.id}`} target="_blank" rel="noopener" className="cl-src-link" title="Open the document at this passage (new tab)">{e.title}</a>
+                  : <Link href={`/documents/${e.documentId}?card=${c.id}`} className="cl-src-link">{e.title}</Link>}
                 {e.layer ? ` · ${LAYER_NAME[e.layer] ?? e.layer}` : ""}{e.speaker ? ` · ${e.speaker}` : ""}
               </div>
             </li>

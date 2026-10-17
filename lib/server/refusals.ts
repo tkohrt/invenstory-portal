@@ -11,7 +11,7 @@ import type { Refusal, RefusalSource } from "@/lib/refusal";
 type Row = {
   id: string; source: RefusalSource; source_ref: string; document_id: string | null;
   kind: string; statement: string; quote: string; created_at: string;
-  lifted_at: string | null;
+  lifted_at: string | null; note?: string | null;
 };
 const COLS = "id, source, source_ref, document_id, kind, statement, quote, created_at, lifted_at";
 
@@ -34,15 +34,15 @@ export async function activeRefusals(tenantId: string): Promise<Refusal[]> {
   } catch { return []; }
 }
 
-export interface RefusalListing extends Refusal { liftedAt: string | null }
+export interface RefusalListing extends Refusal { liftedAt: string | null; note: string | null }
 
 /** Every refusal for a client, lifted ones included, newest first, for the Analysis page. */
 export async function listRefusals(tenantId: string): Promise<RefusalListing[]> {
   try {
-    const { data, error } = await db.from("card_refusal").select(COLS)
+    const { data, error } = await db.from("card_refusal").select(`${COLS}, note`)
       .eq("tenant_id", tenantId).order("created_at", { ascending: false });
     if (error) return [];
-    return ((data ?? []) as Row[]).map(r => ({ ...toRefusal(r), liftedAt: r.lifted_at }));
+    return ((data ?? []) as Row[]).map(r => ({ ...toRefusal(r), liftedAt: r.lifted_at, note: r.note ?? null }));
   } catch { return []; }
 }
 
@@ -99,10 +99,14 @@ export async function rememberRetiredCard(tenantId: string, userId: string, card
   return rows.length;
 }
 
-/** A card brought back: forget what its retirement remembered. */
+/**
+ * A card brought back: forget what its retirement remembered, and any passage
+ * refused for it in the Document Reader, so reinstating holds at the next merge
+ * (otherwise a card retired for losing its only passage would be retired again).
+ */
 export async function forgetRetiredCard(tenantId: string, cardId: string): Promise<void> {
   const { error } = await db.from("card_refusal").delete()
-    .eq("tenant_id", tenantId).eq("source", "library").eq("source_ref", cardId);
+    .eq("tenant_id", tenantId).in("source", ["library", "passage"]).eq("source_ref", cardId);
   if (error) throw new Error(`could not forget the refusal: ${error.message}`);
 }
 

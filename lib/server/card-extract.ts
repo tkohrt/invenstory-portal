@@ -34,7 +34,7 @@ import type { JobEventKind } from "@/lib/job";
 import { assessSensitivity } from "@/lib/card-sensitivity";
 import { normalizeText } from "@/lib/story-card";
 import { planMerge, NEW, type MergeCandidate, type MergeCard, type MergeEvidence, type MergePlan } from "@/lib/card-merge";
-import { withoutRefused, indexRefusals, refusalFor, passageRefusedFor } from "@/lib/refusal";
+import { withoutRefused, indexRefusals, refusalFor, passageRefusedFor, passageOwnerFor } from "@/lib/refusal";
 import { activeRefusals } from "./refusals";
 import { onAnalysis } from "./analysis-source";
 
@@ -367,8 +367,14 @@ export async function planLibraryMerge(tenantId: string, source: CardSource): Pr
   // readiness, but the cards a read finds in it are the card already made from
   // it: they are left out here, so the library never gains a twin of it.
   const manual = new Set(cards.filter(c => c.created_from === "manual").map(c => c.id));
-  const noteDocs = new Set(((evRows ?? []) as { card_id: string; document_id: string }[])
-    .filter(e => manual.has(e.card_id)).map(e => e.document_id));
+  // Also every document tagged as a Writer's note: a note whose card lost its
+  // only source (a refused passage) is still that card's note, never a new card.
+  const { data: noteTags } = await db.from("document_tag").select("document_id")
+    .eq("tenant_id", tenantId).eq("tag", "writer-note");
+  const noteDocs = new Set([
+    ...((evRows ?? []) as { card_id: string; document_id: string }[]).filter(e => manual.has(e.card_id)).map(e => e.document_id),
+    ...((noteTags ?? []) as { document_id: string }[]).map(t => t.document_id),
+  ]);
   const refused = withoutRefused(docRows.filter(r => !noteDocs.has(r.documentId))
     .map(r => ({ documentId: r.documentId, cards: r.candidates })), refusals);
 
@@ -394,6 +400,7 @@ export async function planLibraryMerge(tenantId: string, source: CardSource): Pr
     inUse,
     evidenceStillGood: e => readyIds.has(e.document_id) && !refusalFor(e.quote, refusalIndex),
     passageRefused: passageRefusedFor(refusals),
+    passageOwner: passageOwnerFor(refusals),
   });
   return { plan, cards };
 }

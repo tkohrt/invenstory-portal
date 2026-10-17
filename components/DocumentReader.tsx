@@ -15,7 +15,7 @@
 // - For Granted only: "Show retired".
 // The page never scrolls as a whole: on a wide screen the split is fitted to
 // the window and the text and the panel scroll on their own (style guide 6).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from "react";
 import type { ReaderCard, ReaderData } from "@/lib/server/reader";
 import { findAll, prepare } from "@/lib/locate";
 import { segment, step } from "@/lib/reader-segments";
@@ -65,9 +65,11 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
   const shown = panel === "card" && (!current || !visible(current)) ? "help" : panel;
   const cardPos = current ? placed.findIndex(c => c.id === current.id) : -1;
 
-  // Search, over the same folding the quote check uses.
-  const prepared = useMemo(() => prepare(text), [text]);
-  const matches = useMemo(() => query.trim().length >= 2 ? findAll(prepared, query, { matchCase, wholeWord }) : [], [prepared, query, matchCase, wholeWord]);
+  // Search, over the same folding the quote check uses. The text is folded only
+  // once someone searches, not on every visit (a long document takes a moment).
+  const searching = query.trim().length >= 2;
+  const prepared = useMemo(() => (searching ? prepare(text) : null), [searching, text]);
+  const matches = useMemo(() => prepared ? findAll(prepared, query, { matchCase, wholeWord, max: MAX_MATCHES }) : [], [prepared, query, matchCase, wholeWord]);
   const matchKey = `${query}|${matchCase}|${wholeWord}`;
   const matchIdx = matchSel.key === matchKey ? matchSel.idx : (matches.length ? 0 : -1);
 
@@ -115,6 +117,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
 
   const stepCard = useCallback((dir: 1 | -1) => {
     if (!placed.length) return;
+    setShowCards(true);   // stepping shows where it has stepped to
     const from = cardPos >= 0 ? cardPos : -1;
     const next = step(from, placed.length, dir);
     if (next >= 0) goCard(placed[next].id);
@@ -124,10 +127,11 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
     if (!matches.length) return;
     setMatchSel({ key: matchKey, idx: step(matchIdx, matches.length, dir) });
   }, [matches.length, matchKey, matchIdx]);
+  // Also when the search itself changes: refining it moves to its new first match.
   useEffect(() => {
     if (matchIdx < 0) return;
     scrollToEl(textRef.current?.querySelector(`[data-match="${matchIdx}"]`) ?? null);
-  }, [matchIdx, scrollToEl]);
+  }, [matchIdx, matchKey, scrollToEl]);
 
   // Open where the link pointed.
   useEffect(() => {
@@ -157,7 +161,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
       if (typingIn(e.target) || dialogOpen()) return;
       if (e.key === "]" || e.key === "j" || e.key === "J") { e.preventDefault(); stepCard(1); }
       else if (e.key === "[" || e.key === "k" || e.key === "K") { e.preventDefault(); stepCard(-1); }
-      else if (e.key === "Escape" && panel !== "help") { setPanel("help"); setCardId(null); }
+      else if (e.key === "Escape" && panel !== "help") { setPanel("help"); setCardId(null); textRef.current?.focus(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -166,7 +170,8 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
   // The marker strip: where each highlight sits, measured from the text.
   const [markers, setMarkers] = useState<{ id: string; top: number; layer: string | null; cur: boolean }[]>([]);
   const [matchMarks, setMatchMarks] = useState<number[]>([]);
-  const [view, setView] = useState<{ top: number; height: number }>({ top: 0, height: 0 });
+  // The strip's "you are here" box is moved directly, so scrolling never re-renders the page.
+  const viewRef = useRef<HTMLSpanElement | null>(null);
   useLayoutEffect(() => {
     // Measured after layout, in the next frame.
     const frame = requestAnimationFrame(() => {
@@ -183,7 +188,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
     });
     setMarkers(out);
     const ms: number[] = [];
-    root.querySelectorAll<HTMLElement>("[data-match]").forEach(el => ms.push((el.offsetTop / total) * 100));
+    root.querySelectorAll<HTMLElement>("[data-match]:not(.rd-focus)").forEach(el => ms.push((el.offsetTop / total) * 100));
     setMatchMarks(ms);
     });
     return () => cancelAnimationFrame(frame);
@@ -192,13 +197,16 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
     const root = textRef.current;
     if (!root) return;
     const onScroll = () => {
+      const box = viewRef.current;
+      if (!box) return;
       const total = root.scrollHeight || 1;
-      setView({ top: (root.scrollTop / total) * 100, height: (root.clientHeight / total) * 100 });
+      box.style.top = `${(root.scrollTop / total) * 100}%`;
+      box.style.height = `${Math.max((root.clientHeight / total) * 100, 2)}%`;
     };
     onScroll();
     root.addEventListener("scroll", onScroll, { passive: true });
     return () => root.removeEventListener("scroll", onScroll);
-  }, [splitH]);
+  }, [splitH, markers.length, matchMarks.length]);
 
   const reprocess = async () => {
     setMsg("Reading the original file again…");
@@ -213,13 +221,18 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  // Clicking a passage opens its card; a passage two cards share opens the other one the second time.
+  const pick = useCallback((ids: string[], cur: string | null) => {
+    goCard(cur && ids.includes(cur) ? nextAt(ids, cur) : ids[0], { pulse: false });
+  }, [goCard]);
+
   const cardCount = data.placed.length + data.unplaced.length;
   const meta = [KIND_NAME[doc.docKind] ?? doc.docKind.toUpperCase(),
     doc.pageCount ? `${doc.pageCount} page${doc.pageCount === 1 ? "" : "s"}` : null,
     access.highlights ? `${cardCount} Story Card${cardCount === 1 ? "" : "s"} drawn from it` : null].filter(Boolean).join(", ");
 
   return (
-    <div className="rd">
+    <div className={`rd${shown !== "help" ? " rd-sheet-open" : ""}`}>
       <header className="rd-head">
         <div className="rd-titles">
           <div className="rd-titleline">
@@ -252,7 +265,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
                 else if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); }
               }} />
             <span className="rd-count" aria-live="polite">
-              {query.trim().length >= 2 ? (matches.length ? `${matchIdx + 1} / ${matches.length}` : "No matches") : ""}
+              {searching ? (matches.length ? `${matchIdx + 1} / ${matches.length >= MAX_MATCHES ? `${MAX_MATCHES.toLocaleString()}+` : matches.length}` : "No matches") : ""}
             </span>
           </label>
           <button type="button" className="sb-btn sb-secondary sb-icon sb-sm" aria-label="Previous match (Shift+Enter)" disabled={!matches.length} onClick={() => stepMatch(-1)}>
@@ -261,7 +274,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
           <button type="button" className="sb-btn sb-secondary sb-icon sb-sm" aria-label="Next match (Enter)" disabled={!matches.length} onClick={() => stepMatch(1)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
-          <button type="button" className="rd-opt" aria-pressed={matchCase} onClick={() => setMatchCase(v => !v)} title="Match case">Aa</button>
+          <button type="button" className="rd-opt" aria-pressed={matchCase} onClick={() => setMatchCase(v => !v)} title="Match case" aria-label="Match case">Aa</button>
           <button type="button" className="rd-opt" aria-pressed={wholeWord} onClick={() => setWholeWord(v => !v)} title="Whole word">Whole word</button>
         </div>
 
@@ -309,31 +322,12 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
         <div className="rd-textcol">
           <article className="rd-text" ref={textRef} aria-label="Document text" tabIndex={0}>
             {!text && <p className="rd-empty">No text was found in this document.</p>}
-            {segs.map(sg => {
-              const piece = text.slice(sg.start, sg.end);
-              const divider = sg.pageStart !== null
-                ? <div className="rd-page" aria-hidden="false"><span>Page {sg.pageStart}</span></div> : null;
-              const matchCls = sg.match < 0 ? "" : sg.match === focusIdx ? " rd-focus" : sg.match === matchIdx ? " rd-match rd-match-cur" : " rd-match";
-              const inner = sg.match >= 0
-                ? <mark className={matchCls.trim()} data-match={sg.match}>{piece}</mark> : piece;
-              if (!sg.cards.length) return <Fragment key={sg.start}>{divider}{inner}</Fragment>;
-              const first = byId.get(sg.cards[0])!;
-              const cur = cardId !== null && sg.cards.includes(cardId);
-              const cls = `rd-hl rd-l${first.layer?.length ?? 0}${first.status === "retired" ? " rd-retired" : ""}${sg.cards.length > 1 ? " rd-multi" : ""}${cur ? " rd-cur" : ""}${pulse && sg.cards.includes(pulse) ? " rd-pulse" : ""}`;
-              return (
-                <Fragment key={sg.start}>
-                  {divider}
-                  <a href={`?card=${cur ? cardId : first.id}`} className={cls} data-cards={sg.cards.join(" ")}
-                    onClick={e => { e.preventDefault(); goCard(cur && cardId ? nextAt(sg.cards, cardId) : first.id, { pulse: false }); }}>
-                    {inner}
-                  </a>
-                </Fragment>
-              );
-            })}
+            <TextBody text={text} segs={segs} byId={byId} cardId={cardId} pulse={pulse}
+              matchIdx={matchIdx} focusIdx={focusIdx} onPick={pick} />
           </article>
           {splitH !== null && (markers.length > 0 || matchMarks.length > 0) && (
             <div className="rd-strip" aria-hidden="true">
-              <span className="rd-strip-view" style={{ top: `${view.top}%`, height: `${Math.max(view.height, 2)}%` }} />
+              <span className="rd-strip-view" ref={viewRef} />
               {matchMarks.map((t, i) => <span key={`m${i}`} className="rd-mark rd-mark-match" style={{ top: `${t}%` }} />)}
               {markers.map(m => (
                 <button key={m.id} type="button" tabIndex={-1} className={`rd-mark rd-mark-l${m.layer?.length ?? 0}${m.cur ? " rd-mark-cur" : ""}`}
@@ -345,7 +339,7 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
 
         <aside className={`rd-panel${shown !== "help" ? " rd-panel-open" : ""}`} aria-label={shown === "tray" ? "Couldn't be placed" : shown === "card" ? "Story Card" : "Keys"}>
           {shown === "card" && current && (
-            <ReaderCardPanel card={current} position={cardPos >= 0 ? `Story Card ${cardPos + 1} of ${placed.length}` : current.spans.length ? "Story Card" : "Couldn't be placed"}
+            <ReaderCardPanel key={current.id} card={current} onDone={setMsg} position={cardPos >= 0 ? `Story Card ${cardPos + 1} of ${placed.length}` : current.spans.length ? "Story Card" : "Couldn't be placed"}
               library={data.library[current.id] ?? null} access={access} documentId={doc.id}
               onClose={() => { setPanel("help"); setCardId(null); }} />
           )}
@@ -390,6 +384,41 @@ export default function DocumentReader({ data }: { data: ReaderData }) {
 }
 
 const LAYER: Record<string, string> = { I: "Public story", II: "Internal", III: "Living voice" };
+/** Matches counted; past this the count says "2,000+". */
+const MAX_MATCHES = 2000;
+
+/**
+ * The text with its highlights. Memoised: scrolling and typing elsewhere on the
+ * page never redraw the thousands of pieces a long document is cut into.
+ */
+const TextBody = memo(function TextBody({ text, segs, byId, cardId, pulse, matchIdx, focusIdx, onPick }: {
+  text: string; segs: ReturnType<typeof segment>; byId: Map<string, ReaderCard>; cardId: string | null; pulse: string | null;
+  matchIdx: number; focusIdx: number; onPick: (ids: string[], cur: string | null) => void;
+}) {
+  return (
+    <>
+      {segs.map(sg => {
+        const piece = text.slice(sg.start, sg.end);
+        const divider = sg.pageStart !== null ? <div className="rd-page"><span>Page {sg.pageStart}</span></div> : null;
+        const matchCls = sg.match < 0 ? "" : sg.match === focusIdx ? "rd-focus" : sg.match === matchIdx ? "rd-match rd-match-cur" : "rd-match";
+        const inner = sg.match >= 0 ? <mark className={matchCls} data-match={sg.match}>{piece}</mark> : piece;
+        if (!sg.cards.length) return <Fragment key={sg.start}>{divider}{inner}</Fragment>;
+        const first = byId.get(sg.cards[0])!;
+        const cur = cardId !== null && sg.cards.includes(cardId);
+        const cls = `rd-hl rd-l${first.layer?.length ?? 0}${first.status === "retired" ? " rd-retired" : ""}${sg.cards.length > 1 ? " rd-multi" : ""}${cur ? " rd-cur" : ""}${pulse && sg.cards.includes(pulse) ? " rd-pulse" : ""}`;
+        return (
+          <Fragment key={sg.start}>
+            {divider}
+            <a href={`?card=${cur ? cardId : first.id}`} className={cls} data-cards={sg.cards.join(" ")}
+              onClick={e => { e.preventDefault(); onPick(sg.cards, cardId); }}>
+              {inner}
+            </a>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+});
 
 /** Clicking a passage two cards share opens the other one the second time. */
 function nextAt(ids: string[], current: string): string {

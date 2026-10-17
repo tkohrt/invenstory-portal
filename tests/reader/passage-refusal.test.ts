@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { planMerge, type MergeCard, type MergeCandidate } from "@/lib/card-merge";
 import { cardFingerprint } from "@/lib/story-card";
-import { passageRefusedFor, withoutRefused, dropRefusedCards, refusalFor, indexRefusals, type Refusal } from "@/lib/refusal";
+import { passageRefusedFor, passageOwnerFor, withoutRefused, dropRefusedCards, refusalFor, indexRefusals, type Refusal } from "@/lib/refusal";
 
 const STMT = "In 2025 the Collective served 1,240 students across 9 partner sites.";
 const QUOTE = "In 2025 we served 1,240 students across 9 partner sites";
@@ -100,3 +100,45 @@ describe("the filters that refuse a quote for every card ignore a passage refusa
     expect(f("c1", "d9", QUOTE)).toBe(false);
   });
 });
+
+describe("no twin from a refused passage (review fix)", () => {
+  const S2 = "The Collective reached 1,240 young learners at nine partner locations during 2025.";
+  test("a reworded claim from the refused passage stays with its card, and attaches to nothing", () => {
+    const refusals = [passage()];
+    const p = planMerge({
+      docs: [{ documentId: "d1", candidates: [cand({ statement: S2 })] }, { documentId: "d2", candidates: [cand()] }],
+      cards: [card()],
+      evidence: [{ id: "e2", card_id: "c1", document_id: "d2", quote: QUOTE }],
+      passageRefused: passageRefusedFor(refusals), passageOwner: passageOwnerFor(refusals),
+    });
+    expect(p.create).toHaveLength(0);
+    expect(p.evidence.map(e => `${e.target}|${e.documentId}`)).toEqual(["c1|d2"]);
+  });
+
+  test("the same when the refused passage was the card's only source: it stays retired, no twin", () => {
+    const refusals = [passage()];
+    const p = planMerge({
+      docs: [{ documentId: "d1", candidates: [cand({ statement: S2 })] }],
+      cards: [card({ status: "retired", retired_reason: "source_removed" })],
+      evidence: [],
+      passageRefused: passageRefusedFor(refusals), passageOwner: passageOwnerFor(refusals),
+    });
+    expect(p.create).toHaveLength(0);
+    expect(p.evidence).toHaveLength(0);
+  });
+
+  test("a passage refused for a card stays refused after that card is merged into another", () => {
+    const refusals = [passage()];
+    const merged = card({ status: "retired", retired_reason: "merged", merged_into: "c3" });
+    const target = card({ id: "c3", statement: "Another statement entirely about students.", fingerprint: cardFingerprint("outcome_metric", "Another statement entirely about students.") });
+    const p = planMerge({
+      docs: [{ documentId: "d1", candidates: [cand()] }],
+      cards: [merged, target],
+      evidence: [],
+      passageRefused: passageRefusedFor(refusals), passageOwner: passageOwnerFor(refusals),
+    });
+    expect(p.evidence.filter(e => e.documentId === "d1")).toHaveLength(0);
+    expect(p.create).toHaveLength(0);
+  });
+});
+

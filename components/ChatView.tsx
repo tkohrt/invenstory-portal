@@ -3,7 +3,6 @@
 // in the tenant's own Story Cards and documents, with citations. If generation
 // fails, the answer falls back to the top passages and says so.
 import { useRef, useState, type MouseEvent } from "react";
-import { DocDrawer } from "./DocBits";
 import Drawer from "./Drawer";
 import type { DocumentWithTags, ChatSessionSummary } from "@/lib/types";
 import { loadSessionAction, deleteSessionAction } from "@/lib/server/chat-actions";
@@ -75,20 +74,18 @@ function AnswerBody({ content, citations, onOpen, mode }: { content: string; cit
 /** A citation opens the Document Reader in a new tab, so the page here keeps its place (Document Reader, Phase 1). */
 const openInReader = (id: string) => { window.open(`/documents/${id}`, "_blank", "noopener"); };
 
-export default function ChatView({ tenantName, docs, isAdmin, sessions: initialSessions }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean; sessions: ChatSessionSummary[] }) {
+export default function ChatView({ tenantName, isAdmin, sessions: initialSessions }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean; sessions: ChatSessionSummary[] }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [sessions, setSessions] = useState<ChatSessionSummary[]>(initialSessions);
   const [loadingConvo, setLoadingConvo] = useState(false);
-  const [openDocId, setOpenDocId] = useState<string | null>(null);
   const [showBedrock, setShowBedrock] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   // The client limits (lib/usage-limits.ts): a note near a limit, and the way to ask for more at one.
   const [usage, setUsage] = useState<{ text: string; kind: "chat_month" | "ai_month" | null } | null>(null);
   const [requested, setRequested] = useState(false);
-  const openDoc = docs.find(d => d.id === openDocId) ?? null;
   const scroll = () => setTimeout(() => streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" }), 40);
 
   const ask = async (q: string) => {
@@ -188,7 +185,6 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
           onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }} />
         <button className="btn inline" onClick={send} disabled={busy}>Send</button>
       </div>
-      {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
       {showBedrock && (
         <Drawer onClose={() => setShowBedrock(false)}>
           <h3>How your data is protected</h3>

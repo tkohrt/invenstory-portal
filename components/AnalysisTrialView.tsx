@@ -522,7 +522,9 @@ function RefusalRow({ r, titleById }: { r: AnalysisTrialData["remembered"][numbe
       <div className="cl-quote">{`“${r.quote}”`}</div>
       <div className="cl-src">{r.documentId ? titleById.get(r.documentId) ?? "a document no longer ready" : "document not recorded"}
         {` · refused ${new Date(r.createdAt).toLocaleDateString()}`}</div>
-      {!r.liftedAt && (r.blocking.length === 0
+      {r.note && <p className="cl-note">Why: {r.note}</p>}
+      {r.source === "passage" && !r.liftedAt && <p className="cl-note">Kept out of this card only; other cards may still use the passage.</p>}
+      {!r.liftedAt && r.source !== "passage" && (r.blocking.length === 0
         ? <p className="cl-note">Holding back nothing in the current read.</p>
         : <>
             <p className="cl-note">Holding back {r.blocking.length} card{r.blocking.length === 1 ? "" : "s"} in the current read:</p>
