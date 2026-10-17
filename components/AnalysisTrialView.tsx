@@ -515,7 +515,7 @@ function RefusalRow({ r, titleById }: { r: AnalysisTrialData["remembered"][numbe
     <li className={`an-rev${r.liftedAt ? " an-rev-supported" : " an-rev-unsupported"}`}>
       <div className="cl-card-head">
         <span className="cl-kind">{CARD_KIND_MAP[r.kind]?.label ?? r.kind}</span>
-        <span className="cl-badge">{r.source === "review" ? "Not supported in review" : "Retired as Inaccurate"}
+        <span className="cl-badge">{r.source === "review" ? "Not supported in review" : r.source === "passage" ? "Passage does not support its card" : "Retired as Inaccurate"}
           {r.liftedAt ? `, lifted ${new Date(r.liftedAt).toLocaleDateString()}` : ""}</span>
       </div>
       <p className="cl-statement">{r.statement}</p>

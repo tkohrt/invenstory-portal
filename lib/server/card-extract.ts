@@ -34,7 +34,7 @@ import type { JobEventKind } from "@/lib/job";
 import { assessSensitivity } from "@/lib/card-sensitivity";
 import { normalizeText } from "@/lib/story-card";
 import { planMerge, NEW, type MergeCandidate, type MergeCard, type MergeEvidence, type MergePlan } from "@/lib/card-merge";
-import { withoutRefused, indexRefusals, refusalFor } from "@/lib/refusal";
+import { withoutRefused, indexRefusals, refusalFor, passageRefusedFor } from "@/lib/refusal";
 import { activeRefusals } from "./refusals";
 import { onAnalysis } from "./analysis-source";
 
@@ -393,6 +393,7 @@ export async function planLibraryMerge(tenantId: string, source: CardSource): Pr
     evidence: (evRows ?? []) as MergeEvidence[],
     inUse,
     evidenceStillGood: e => readyIds.has(e.document_id) && !refusalFor(e.quote, refusalIndex),
+    passageRefused: passageRefusedFor(refusals),
   });
   return { plan, cards };
 }

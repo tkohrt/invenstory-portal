@@ -116,7 +116,7 @@ export async function getCardLibrary(tenantId: string): Promise<CardLibraryData>
 
 type EvRow = { document_id: string; quote: string; speaker: string | null; document: { title: string; layer: string | null; status: string } | null };
 /** One story_card row, with its evidence, as the library shows it. */
-function toLibraryCard(r: Record<string, unknown>): LibraryCard {
+export function toLibraryCard(r: Record<string, unknown>): LibraryCard {
   return {
     id: r.id as string,
     kind: r.kind as string,

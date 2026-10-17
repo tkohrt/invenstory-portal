@@ -10,6 +10,7 @@
 // the card the moment it is verified. Editing counts as verifying.
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { LibraryCard } from "@/lib/server/card-library";
 import { USER_GENERATED } from "@/lib/user-card";
 import {
@@ -29,7 +30,7 @@ const RETIRED_WHY: Record<string, string> = {
 /** What the reviewer just did. "verified" covers an edit too: editing counts as verifying. */
 export type ReviewOutcome = "verified" | "unverified" | "retired" | "reinstated" | "sensitive_cleared" | "sensitive_reopened" | "merged";
 
-export default function CardReview({ card: c, byId, onAction, verifyLabel = "Verify", editSaveLabel }: {
+export default function CardReview({ card: c, byId, onAction, verifyLabel = "Verify", editSaveLabel, onInaccurate }: {
   card: LibraryCard;
   /** The library's other cards, for duplicates and merges. Absent outside the library. */
   byId?: Map<string, LibraryCard>;
@@ -37,6 +38,11 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
   /** "Verify and place" in the Storyboard. */
   verifyLabel?: string;
   editSaveLabel?: string;
+  /**
+   * The Document Reader's two-choice "What is wrong?" (decision 2, 17 October
+   * 2026). When given, Inaccurate opens it instead of retiring the card here.
+   */
+  onInaccurate?: () => void;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -105,7 +111,9 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
             <li key={e.documentId}>
               <div className="cl-quote">{`“${e.quote}”`}</div>
               <div className="cl-src">
-                {e.title}{e.layer ? ` · ${LAYER_NAME[e.layer] ?? e.layer}` : ""}{e.speaker ? ` · ${e.speaker}` : ""}
+                {/* Opens the Document Reader at this quote (Document Reader, Phase 1). */}
+                <Link href={`/documents/${e.documentId}?card=${c.id}`} className="cl-src-link">{e.title}</Link>
+                {e.layer ? ` · ${LAYER_NAME[e.layer] ?? e.layer}` : ""}{e.speaker ? ` · ${e.speaker}` : ""}
               </div>
             </li>
           ))}
@@ -180,7 +188,7 @@ export default function CardReview({ card: c, byId, onAction, verifyLabel = "Ver
           {c.status !== "retired" && (
             <>
               <button type="button" className="btn ghost" disabled={pending} onClick={() => setEditing(true)}>Edit</button>
-              <button type="button" className="btn ghost" disabled={pending} onClick={() => setRetiring("inaccurate")}>Inaccurate</button>
+              <button type="button" className="btn ghost" disabled={pending} onClick={() => (onInaccurate ? onInaccurate() : setRetiring("inaccurate"))}>{onInaccurate ? "Inaccurate…" : "Inaccurate"}</button>
               <button type="button" className="btn ghost" disabled={pending} onClick={() => setRetiring("superseded")}>Out of date</button>
             </>
           )}

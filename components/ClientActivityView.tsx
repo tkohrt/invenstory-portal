@@ -13,9 +13,11 @@ import { LIMITS } from "@/lib/usage-limits";
 import { grantChatAction, grantAllowanceAction, setAllowanceAction, dismissUsageRequestAction } from "@/lib/server/usage-actions";
 import { ALLOWANCE, usdFromCents } from "@/lib/allowance";
 import VoiceProfilePanel from "./VoiceProfilePanel";
+import ReaderSwitchesPanel from "./ReaderSwitchesPanel";
+import type { ReaderFeatureKey } from "@/lib/reader-features";
 import type { VoiceProfileView } from "@/lib/server/voice-profile";
 
-type Tab = "overview" | "usage" | "documents" | "grants" | "people" | "voice";
+type Tab = "overview" | "usage" | "documents" | "grants" | "people" | "voice" | "reader";
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 const money = (cents: number | null) => (cents == null ? "" : `$${Math.round(cents / 100).toLocaleString()}`);
 const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "");
@@ -51,7 +53,11 @@ function Stat({ label, value, sub, warn }: { label: string; value: string; sub?:
   );
 }
 
-export default function ClientActivityView({ data, voice = null }: { data: ClientActivity; voice?: VoiceProfileView | null }) {
+export default function ClientActivityView({ data, voice = null, reader = null }: {
+  data: ClientActivity; voice?: VoiceProfileView | null;
+  /** Document Reader switches (Phase 1). */
+  reader?: { switches: Record<ReaderFeatureKey, boolean>; workspace: Record<string, boolean> } | null;
+}) {
   const [tab, setTab] = useState<Tab>("overview");
   const d = data;
   const apps = d.drafts.filter(x => x.purpose !== "standard_answers");
@@ -76,7 +82,8 @@ export default function ClientActivityView({ data, voice = null }: { data: Clien
 
       <div className="cl-filters" role="tablist">
         {([["overview", "Overview"], ["usage", "Usage and limits"], ["documents", `Documents (${docsAdded})`], ["grants", `Grants (${d.drafts.length})`], ["people", `People (${d.people.length})`],
-          ...(voice ? [["voice", "Voice profile"] as [Tab, string]] : [])] as [Tab, string][])
+          ...(voice ? [["voice", "Voice profile"] as [Tab, string]] : []),
+          ...(reader ? [["reader", "Document reader"] as [Tab, string]] : [])] as [Tab, string][])
           .map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`chip${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{label}</button>)}
       </div>
 
@@ -131,6 +138,7 @@ export default function ClientActivityView({ data, voice = null }: { data: Clien
       {tab === "documents" && <DocumentsTab d={d} />}
       {tab === "grants" && <GrantsTab d={d} />}
       {tab === "voice" && voice && <VoiceProfilePanel v={voice} />}
+      {tab === "reader" && reader && <ReaderSwitchesPanel tenantId={d.tenant.id} tenantName={d.tenant.name} switches={reader.switches} workspace={reader.workspace} />}
       {tab === "people" && (
         <>
         {!d.visitsRecorded && <p className="cl-note an-warn">Visits are not being recorded yet: run migration 0052.</p>}

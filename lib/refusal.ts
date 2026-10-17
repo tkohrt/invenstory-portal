@@ -23,7 +23,14 @@
 // lets the quote through again.
 import { normalizeText, stripMarkup } from "./story-card";
 
-export type RefusalSource = "review" | "library";
+/**
+ * "review" and "library" refuse a quote for every card (decisions 19 and 31).
+ * "passage" (Document Reader, 0070) refuses one quote for ONE card only:
+ * "This passage does not support the card". It never stops the quote feeding
+ * any other card, so the global filters below ignore it; the Card Library
+ * merge applies it to its card through passageRefusedFor.
+ */
+export type RefusalSource = "review" | "library" | "passage";
 
 export interface Refusal {
   id: string;
@@ -102,7 +109,24 @@ export function quotesMatch(refusedQuote: string, cardQuote: string): boolean {
 export interface RefusalIndex { refusals: Refusal[]; prepared: Prepared[] }
 
 export function indexRefusals(refusals: Refusal[]): RefusalIndex {
-  return { refusals, prepared: refusals.map(r => prepare(r.quote)) };
+  const global = refusals.filter(r => r.source !== "passage");
+  return { refusals: global, prepared: global.map(r => prepare(r.quote)) };
+}
+
+/**
+ * A card's own refused passages (source "passage"): does this card's evidence
+ * from this document, with this quote, come from a passage refused for it?
+ * Matched like every refusal (the same quote after normalising, or most of it),
+ * on the same document.
+ */
+export function passageRefusedFor(refusals: Refusal[]): (cardId: string, documentId: string, quote: string) => boolean {
+  const own = refusals.filter(r => r.source === "passage").map(r => ({ r, p: prepare(r.quote) }));
+  if (!own.length) return () => false;
+  return (cardId, documentId, quote) => {
+    const p = prepare(quote);
+    return own.some(({ r, p: rp }) => r.sourceRef === cardId
+      && (r.documentId === null || r.documentId === documentId) && fromRefused(p, rp));
+  };
 }
 
 /** The refusal that blocks a card with this quote, if any. */
@@ -127,8 +151,8 @@ export interface Blocked<C> { documentId: string; card: C; refusal: Refusal }
 export function withoutRefused<D extends { documentId: string; cards: { quote: string }[] }>(
   docs: D[], refusals: Refusal[],
 ): { docs: D[]; blocked: Blocked<D["cards"][number]>[] } {
-  if (!refusals.length) return { docs, blocked: [] };
   const index = indexRefusals(refusals);
+  if (!index.refusals.length) return { docs, blocked: [] };
   const blocked: Blocked<D["cards"][number]>[] = [];
   const out = docs.map(d => {
     const kept: D["cards"] = [];
@@ -144,7 +168,7 @@ export function withoutRefused<D extends { documentId: string; cards: { quote: s
 
 /** The same filter for documents keyed `id` (the derivations' AnalysedDoc), returning only the kept documents. */
 export function dropRefusedCards<D extends { id: string; cards: { quote: string }[] }>(docs: D[], refusals: Refusal[]): D[] {
-  if (!refusals.length) return docs;
   const index = indexRefusals(refusals);
+  if (!index.refusals.length) return docs;
   return docs.map(d => ({ ...d, cards: (d.cards ?? []).filter(c => !refusalFor(c.quote, index)) }));
 }

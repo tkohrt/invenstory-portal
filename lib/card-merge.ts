@@ -87,6 +87,12 @@ export function planMerge(input: {
   inUse?: Set<string>;
   /** Whether a kept card's existing evidence may stay (still in the Inven(s)tory, quote not refused). */
   evidenceStillGood?: (e: MergeEvidence) => boolean;
+  /**
+   * A passage a person said does not support THIS card (Document Reader,
+   * "This passage does not support the card"): never attached to it again.
+   * Other cards may still use it. See passageRefusedFor in lib/refusal.ts.
+   */
+  passageRefused?: (cardId: string, documentId: string, quote: string) => boolean;
 }): MergePlan {
   // 1. Group every document's candidates by claim.
   const groups = new Map<string, { kind: string; statement: string; ev: Ev[] }>();
@@ -139,8 +145,11 @@ export function planMerge(input: {
   const evByTarget = new Map<string, Ev[]>();
   const add = (target: string, ev: Ev[]) => {
     const list = evByTarget.get(target) ?? [];
-    for (const e of ev) if (!list.some(x => x.documentId === e.documentId)) list.push(e);
-    evByTarget.set(target, list);
+    for (const e of ev) {
+      if (input.passageRefused && !target.startsWith(NEW) && input.passageRefused(target, e.documentId, e.quote)) continue;
+      if (!list.some(x => x.documentId === e.documentId)) list.push(e);
+    }
+    if (list.length) evByTarget.set(target, list);
   };
   const create: MergePlan["create"] = [];
   for (const [fp, g] of groups) {
@@ -161,6 +170,7 @@ export function planMerge(input: {
   for (const e of input.evidence) {
     if (!input.inUse?.has(e.card_id) || evByTarget.has(e.card_id)) continue;
     if (input.evidenceStillGood && !input.evidenceStillGood(e)) continue;
+    if (input.passageRefused?.(e.card_id, e.document_id, e.quote)) continue;
     kept.set(e.card_id, [...(kept.get(e.card_id) ?? []), e]);
   }
   const patched = new Map<string, CardPatch>();

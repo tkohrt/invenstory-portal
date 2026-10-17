@@ -10,6 +10,7 @@
 // Everything a client does here is visible to For Granted in the Card Library:
 // a confirmation reads "Verified by client", a correction is a new version, and
 // out of date is kept with the note so it can be brought back.
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { confirmMyCardAction, editMyCardAction, outOfDateMyCardAction } from "@/lib/server/client-card-actions";
@@ -105,7 +106,7 @@ export default function StoryCardsView({ orgName, cards, isAdmin }: { orgName: s
                   onClick={() => startConfirm(async () => { await confirmUserCardAction(c.id); router.refresh(); })}>Confirm, this is right</button>
               </div>
             )}
-            {c.evidence[0] && <div className="cl-src">From {c.evidence[0].title}{c.evidence.length > 1 ? ` and ${c.evidence.length - 1} more` : ""}</div>}
+            {c.evidence[0] && <div className="cl-src">From <Link href={`/documents/${c.evidence[0].documentId}?card=${c.id}`} className="cl-src-link">{c.evidence[0].title}</Link>{c.evidence.length > 1 ? ` and ${c.evidence.length - 1} more` : ""}</div>}
           </div>
         ))}
       </div>
@@ -132,7 +133,7 @@ function ReviewCard({ card: c, onDone }: { card: ClientCard; onDone: () => void 
         ? <textarea rows={4} value={text} onChange={e => setText(e.target.value)} autoFocus />
         : <p className="sc-statement">{c.statement}</p>}
       <ul className="cl-evidence">
-        {c.evidence.map((e, i) => <li key={i}><div className="cl-quote">{`“${e.quote}”`}</div><div className="cl-src">{e.title}</div></li>)}
+        {c.evidence.map((e, i) => <li key={i}><div className="cl-quote">{`“${e.quote}”`}</div><div className="cl-src"><Link href={`/documents/${e.documentId}?card=${c.id}`} className="cl-src-link">{e.title}</Link></div></li>)}
       </ul>
       {c.sensitive && !c.sensitiveCleared && (
         <p className="ws-warn ws-soft">This card may identify someone&rsquo;s private information. For Granted will confirm consent,

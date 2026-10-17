@@ -72,6 +72,9 @@ function AnswerBody({ content, citations, onOpen, mode }: { content: string; cit
   );
 }
 
+/** A citation opens the Document Reader in a new tab, so the page here keeps its place (Document Reader, Phase 1). */
+const openInReader = (id: string) => { window.open(`/documents/${id}`, "_blank", "noopener"); };
+
 export default function ChatView({ tenantName, docs, isAdmin, sessions: initialSessions }: { tenantName: string; docs: DocumentWithTags[]; isAdmin: boolean; sessions: ChatSessionSummary[] }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -159,7 +162,7 @@ export default function ChatView({ tenantName, docs, isAdmin, sessions: initialS
             <div className="who">{m.role === "user" ? "You" : "AI"}</div>
             <div className="bubble">
               {m.role === "assistant"
-                ? <AnswerBody content={m.content} citations={m.citations ?? []} onOpen={setOpenDocId} mode={m.mode} />
+                ? <AnswerBody content={m.content} citations={m.citations ?? []} onOpen={openInReader} mode={m.mode} />
                 : <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>}
               {m.role === "assistant" && m.mode === "extractive" && (
                 <div className="ai-disclaimer" style={{ marginTop: 8 }}>The AI could not write an answer this time, so these are the closest source passages, each linked to its document.</div>

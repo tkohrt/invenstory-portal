@@ -6,6 +6,9 @@ import { setArtifactVisibilityAction } from "@/lib/server/artifact-actions";
 import { DocDrawer } from "./DocBits";
 import type { ArtifactBundle, DocumentWithTags } from "@/lib/types";
 
+/** A citation opens the Document Reader in a new tab, so the page here keeps its place (Document Reader, Phase 1). */
+const openInReader = (id: string) => { window.open(`/documents/${id}`, "_blank", "noopener"); };
+
 export default function SIView({ tenantName, bundle, docs, isAdmin }: {
   tenantName: string; bundle: ArtifactBundle; docs: DocumentWithTags[]; isAdmin: boolean;
 }) {
@@ -28,7 +31,7 @@ export default function SIView({ tenantName, bundle, docs, isAdmin }: {
           </button>
         )}
       </div>
-      <ArtifactPanel bundle={bundle} isAdmin={isAdmin} onOpenDoc={setOpenDocId} />
+      <ArtifactPanel bundle={bundle} isAdmin={isAdmin} onOpenDoc={openInReader} />
       {openDoc && <DocDrawer d={openDoc} onClose={() => setOpenDocId(null)} isAdmin={isAdmin} />}
     </div>
   );

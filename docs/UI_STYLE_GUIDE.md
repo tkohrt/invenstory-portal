@@ -115,6 +115,11 @@ Border colour for controls is `#d5d8de`, a step darker than `--line`, so a butto
 - **Empty states** (Settled): say what to do next, with the button or link that does it ("Drag Story Cards here, or press Add on one").
 - **Layer marks** (Settled): a Story Card wears its layer as a 2px border in the layer's colour (`ws-card` or `ws-block` with `l1`, `l2` or `l3`), wherever it appears as a card: the Story Cards panel, the answer, the Card Library. Its verification shows as a pill (`cl-badge-ok` Verified, `ws-badge-review` Needs review). In Weave the same colour becomes a pale wash behind the prose. An 8px dot (`ws-ldot`) is for places that are not cards, such as filters.
 
+- **Highlights in text** (Direction, from the Document Reader, 17 Oct 2026): a passage a Story Card came from is a pale wash in its layer's colour with a 2px underline (the Weave look); the current one a deeper wash with a 2px outline; two cards on one passage a double underline; a retired card's passage grey with a dashed underline. Search matches are yellow (`#ffeaa6`), the current one deeper with an outline. Highlights are real links, so they take focus. A marker strip beside a long text shows where each one sits (`.rd-strip`).
+- **Toggle chips** (Direction): a pill button with `aria-pressed`, filled `--ink` when on (`.rd-chip`, `.rd-opt`). A chip that reports something waiting has a dashed gold border ("2 couldn't be placed").
+- **Switches** (Direction): `role="switch"` buttons, forest green when on (`.rs-switch`), for settings that save at once.
+- **Bottom sheet on phones** (Direction): a side panel that shows one selected thing becomes a sheet over the lower part of the screen under 860px, and whatever it describes is scrolled near the top, not the middle, so the sheet never covers it.
+
 ## 6. Layout (Settled)
 
 - **The shell.**
@@ -174,3 +179,4 @@ Border colour for controls is `#d5d8de`, a step darker than `--line`, so a butto
 | 17 Oct 2026 | Storyboard cleanup: the `sb-` button system, one primary per area, purple outline for AI, gold retired as a button colour, the question as the headline, ⋯ and More menus, "Arrange for me" removed, "Auto-draft all questions" | Shane (mockup "Storyboard Arrange Cleanup") |
 | 17 Oct 2026 | This guide is a starting point for UI changes, not definitive truth | Shane |
 | 17 Oct 2026 | Story Cards keep their layer-coloured borders and Verified / Needs review pills (the cleanup had swapped them for dots; reversed). Missing-setup notices such as "No approved Standard Answers yet" are flags, coloured to stand out | Shane |
+| 17 Oct 2026 | Document Reader: highlights in the layer washes, yellow search matches, toggle chips, switches, phone bottom sheet; the Card Library's review card is drawn in the `sb-` system inside the reader only | Shane (mockup "Document Reader Mockup") |

@@ -272,7 +272,11 @@ function PieceDialog({ block: b, card, gateCard, locked, handlers, onClose, at, 
               {card.evidence.map((e, i) => (
                 <li key={i}>
                   <div className="cl-quote">{`“${e.quote}”`}</div>
-                  <div className="cl-src">{e.title}{e.layer ? ` · ${LAYER_NAME[e.layer] ?? e.layer}` : ""}{e.speaker ? ` · ${e.speaker}` : ""}</div>
+                  <div className="cl-src">
+                    {/* Opens the Document Reader at this quote, in a new tab so the writer keeps their place. */}
+                    <a href={`/documents/${e.documentId}?card=${card.id}`} target="_blank" rel="noopener" className="cl-src-link"
+                      title="Open the document at this passage (new tab)">{e.title}</a>
+                    {e.layer ? ` · ${LAYER_NAME[e.layer] ?? e.layer}` : ""}{e.speaker ? ` · ${e.speaker}` : ""}</div>
                 </li>
               ))}
             </ul>

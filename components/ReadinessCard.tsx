@@ -30,7 +30,8 @@ function ItemDetail({ item, onClose, onUpload, onOpenDoc, onSaved }: {
           <div className="section-label">Found in your documents</div>
           {item.sources.map(sdoc => (
             <div key={sdoc.id} className="ck-source-item">
-              <button type="button" className="ck-source" onClick={() => onOpenDoc?.(sdoc.id)}>📄 {sdoc.title}</button>
+              {/* Opens the Document Reader at the passage this item used (Document Reader, Phase 1). */}
+              <a href={`/documents/${sdoc.id}?item=${item.key}`} className="ck-source">📄 {sdoc.title}</a>
               {sdoc.quote && <div className="ck-source-quote">“{sdoc.quote}”</div>}
             </div>
           ))}
