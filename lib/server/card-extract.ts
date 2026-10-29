@@ -37,6 +37,7 @@ import { planMerge, NEW, type MergeCandidate, type MergeCard, type MergeEvidence
 import { withoutRefused, indexRefusals, refusalFor, passageRefusedFor, passageOwnerFor } from "@/lib/refusal";
 import { activeRefusals } from "./refusals";
 import { onAnalysis } from "./analysis-source";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 type Layer = "I" | "II" | "III" | null;
 
@@ -106,7 +107,7 @@ async function scanWindow(
     : "";
   const ask = () => chatComplete({
     system: SYS(orgName, kinds) + who,
-    user: `DOCUMENT TITLE: ${title}\n\n<<<UNTRUSTED_DOCUMENT_TEXT>>>\n${text}\n<<<END_UNTRUSTED_DOCUMENT_TEXT>>>`,
+    user: `DOCUMENT TITLE: ${defuse(title)}\n\n${untrusted("DOCUMENT_TEXT", text)}`,
     maxTokens: 3000, temperature: 0,
   });
   let res = await ask();

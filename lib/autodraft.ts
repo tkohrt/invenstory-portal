@@ -23,6 +23,7 @@
 
 import type { Ranked } from "./story-card-rank";
 import type { GateIssue } from "./card-gate";
+import { untrusted } from "@/lib/untrusted";
 
 // ---------------------------------------------------------------------------
 // What a run touches.
@@ -244,8 +245,8 @@ export function arrangeUser(input: {
   }
   parts.push(`<cards>\n${input.cards.map(c => `${c.n}. [${c.kindLabel}${c.layer ? `, Layer ${c.layer}` : ""}, ${c.words} words] ${clip(tidy(c.text), 700)}`).join("\n")}\n</cards>`);
   if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${clip(input.voiceProfile.trim(), 4000)}\n</voice_profile>`);
-  if (input.funderContext.trim()) parts.push(`<funder_context>\n${clip(input.funderContext.trim(), 6000)}\n</funder_context>`);
-  if (input.clientContext.trim()) parts.push(`<client_context>\n${clip(input.clientContext.trim(), 3000)}\n</client_context>`);
-  if (input.application.trim()) parts.push(`<application>\n${clip(input.application.trim(), 3000)}\n</application>`);
+  if (input.funderContext.trim()) parts.push(`<funder_context>\n${untrusted("FUNDER_CONTEXT", clip(input.funderContext.trim(), 6000))}\n</funder_context>`);
+  if (input.clientContext.trim()) parts.push(`<client_context>\n${untrusted("CLIENT_CONTEXT", clip(input.clientContext.trim(), 3000))}\n</client_context>`);
+  if (input.application.trim()) parts.push(`<application>\n${untrusted("APPLICATION_TEXT", clip(input.application.trim(), 3000))}\n</application>`);
   return parts.join("\n\n");
 }

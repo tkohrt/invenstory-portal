@@ -13,6 +13,7 @@ import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor } from "@/lib/checklist";
 import { ORG_TYPES, BUDGET_BANDS, type EligibilityProfile } from "@/lib/eligibility-fields";
 import type { ScreenedGrant } from "@/lib/grant-screen";
+import { defuse, untrusted, screenAnswerLinks } from "@/lib/untrusted";
 
 export interface Dossier {
   profileLines: string[];
@@ -143,13 +144,13 @@ export async function addRationales(
 ${dossier.profileLines.join("\n")}
 
 INVEN(S)TORY EVIDENCE (cite these titles exactly, and only these)
-${evidenceBlock}
+${untrusted("PASSAGES", evidenceBlock)}
 
 DOCUMENT TITLES YOU MAY CITE
-${dossier.docTitles.length ? dossier.docTitles.map(t => `"${t}"`).join("\n") : "(none)"}
+${dossier.docTitles.length ? dossier.docTitles.map(t => `"${defuse(t)}"`).join("\n") : "(none)"}
 
 OPPORTUNITIES
-${opportunities}`;
+${untrusted("FUNDER_RECORDS", opportunities)}`;
 
   const res = await chatComplete({ system: SYSTEM, user, maxTokens: 2400, temperature: 0.2 });
   if (!res?.text) {
@@ -179,7 +180,8 @@ ${opportunities}`;
       g.rationale = ruleBased(g, p, orgName);
       g.rationale_source = "rule";
     } else {
-      g.rationale = row.why.trim();
+      // Clients read rationales: a web address the model was not shown goes.
+      g.rationale = screenAnswerLinks(row.why.trim(), [user]).text;
       g.rationale_source = "llm";
     }
   }

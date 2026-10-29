@@ -21,6 +21,7 @@ import {
 } from "@/lib/search-profile";
 import type { JobEventKind } from "@/lib/job";
 import { speakerRosterFor } from "./speaker-roster";
+import { defuse, untrusted } from "@/lib/untrusted";
 import {
   attributeSubject, describeRoster, speakerTurns,
   type SpeakerRoster,
@@ -95,7 +96,7 @@ async function scanWindow(
 
   const ask = () => chatComplete({
     system: SYS + who,
-    user: `DOCUMENT TITLE: ${title}\n\nDOCUMENT TEXT:\n${text}`,
+    user: `DOCUMENT TITLE: ${defuse(title)}\n\nDOCUMENT TEXT:\n${untrusted("DOCUMENT_TEXT", text)}`,
     maxTokens: 1800, temperature: 0,
   });
 

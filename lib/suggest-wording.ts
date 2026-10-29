@@ -16,6 +16,7 @@
 // rather than a different claim.
 import { wordingRefusal } from "./polish";
 import { words } from "./autodraft";
+import { untrusted } from "@/lib/untrusted";
 
 /** At most this many cards are offered for rewording in one question. */
 export const MAX_SUGGESTIONS = 8;
@@ -105,7 +106,7 @@ export function suggestUser(input: {
     `<answer_as_it_reads>\n${clip(tidy(input.answer), 5000)}\n</answer_as_it_reads>`,
   ];
   if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${clip(input.voiceProfile.trim(), 4000)}\n</voice_profile>`);
-  if (input.funderContext.trim()) parts.push(`<funder_context>\n${clip(input.funderContext.trim(), 6000)}\n</funder_context>`);
-  if (input.clientContext.trim()) parts.push(`<client_context>\n${clip(input.clientContext.trim(), 3000)}\n</client_context>`);
+  if (input.funderContext.trim()) parts.push(`<funder_context>\n${untrusted("FUNDER_CONTEXT", clip(input.funderContext.trim(), 6000))}\n</funder_context>`);
+  if (input.clientContext.trim()) parts.push(`<client_context>\n${untrusted("CLIENT_CONTEXT", clip(input.clientContext.trim(), 3000))}\n</client_context>`);
   return parts.join("\n\n");
 }

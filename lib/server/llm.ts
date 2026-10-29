@@ -10,6 +10,7 @@ import "server-only";
 import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { bedrockRuntime, bedrockConfigured, CHAT_MODEL_ID } from "./bedrock";
 import { recordAiUsage } from "./ai-usage";
+import { withRule } from "@/lib/untrusted";
 
 /** What a provider answered, with the tokens it reports (for the usage meter). */
 interface Completion { text: string | null; inputTokens: number; outputTokens: number }
@@ -77,8 +78,11 @@ async function bedrockComplete(system: string, user: string, maxTokens: number, 
 export interface ChatOpts { system: string; user: string; maxTokens: number; temperature: number }
 
 // Returns { text, provider } or null (caller falls back to extractive text).
-export async function chatComplete(opts: ChatOpts): Promise<{ text: string; provider: string } | null> {
+export async function chatComplete(input: ChatOpts): Promise<{ text: string; provider: string } | null> {
   const provider = generationProvider();
+  // Every call carries the untrusted-material rule (lib/untrusted.ts), whatever
+  // the caller wrote, so no prompt can forget it.
+  const opts = { ...input, system: withRule(input.system) };
   try {
     // Every answered call is metered, whatever the caller does with the text:
     // the tokens are spent either way (lib/server/ai-usage.ts).

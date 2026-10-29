@@ -30,6 +30,7 @@ import {
   DOC_TYPES, FACT_KEYS, parseAnalysis, decideDocument, type ParsedRead,
 } from "@/lib/analysis";
 import type { JobEventKind } from "@/lib/job";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 type Layer = "I" | "II" | "III" | null;
 
@@ -155,7 +156,7 @@ async function scanWindow(
   const where = part.of > 1 ? ` (part ${part.index + 1} of ${part.of}; the type is best judged from part 1)` : "";
   const ask = () => chatComplete({
     system: SYS(orgName, kinds) + who,
-    user: `DOCUMENT TITLE: ${title}${where}\n\n<<<UNTRUSTED_DOCUMENT_TEXT>>>\n${text}\n<<<END_UNTRUSTED_DOCUMENT_TEXT>>>`,
+    user: `DOCUMENT TITLE: ${defuse(title)}${where}\n\n${untrusted("DOCUMENT_TEXT", text)}`,
     maxTokens: 4000, temperature: 0,
   });
   let res = await ask();

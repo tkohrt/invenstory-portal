@@ -15,6 +15,7 @@ import { embedText } from "./embed";
 import { userClient } from "./supabase";
 import { overlap } from "@/lib/story-card-rank";
 import { CARD_KIND_MAP } from "@/lib/story-card";
+import { defuse, untrusted, screenAnswerLinks } from "@/lib/untrusted";
 
 
 export interface Passage {
@@ -106,7 +107,7 @@ const SYSTEM = [
 
 function buildContext(passages: Passage[]): string {
   return passages.map((p, i) =>
-    `[${i + 1}] From "${p.title}"${p.page_number ? ` (p.${p.page_number})` : ""}:\n<<<UNTRUSTED_DOCUMENT_TEXT>>>\n${p.text}\n<<<END_UNTRUSTED_DOCUMENT_TEXT>>>`
+    `[${i + 1}] From "${defuse(p.title)}"${p.page_number ? ` (p.${p.page_number})` : ""}:\n${untrusted("DOCUMENT_TEXT", p.text)}`
   ).join("\n\n");
 }
 
@@ -144,7 +145,11 @@ export async function generate(question: string, passages: Passage[]): Promise<A
     maxTokens: 700, temperature: 0.2,
   });
   if (out?.text) {
-    const { content, usedDocIds } = injectMarkers(out.text, passages);
+    // A web address the client's own passages never mention is one the model
+    // was steered to write; take it out before anyone reads it.
+    const screened = screenAnswerLinks(out.text, [question, ...passages.map(p => p.text)]);
+    if (screened.removed) console.warn(`[chat] removed ${screened.removed} web address(es) not found in the passages`);
+    const { content, usedDocIds } = injectMarkers(screened.text, passages);
     return { content, citations: usedDocIds.length ? usedDocIds : citations, generated: true, mode: out.provider };
   }
   // Extractive fallback: one block per passage, each followed by its source

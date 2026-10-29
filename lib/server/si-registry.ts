@@ -4,6 +4,7 @@ import "server-only";
 // grounded fallback) + a card renderer in ArtifactPanel + a DB artifact_type
 // row. No engine changes. That is the "new type in a day" claim, in code.
 import { z } from "zod";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 export interface CorpusDoc {
   id: string; title: string; layer: string; snippet: string;
@@ -29,7 +30,7 @@ const cardArray = (payloadKeys: [string, ...string[]]) =>
   })).min(1).max(8);
 
 function corpusDigest(docs: CorpusDoc[]): string {
-  return docs.map(d => `# ${d.title} (Layer ${d.layer}${d.tags.length ? `, tags: ${d.tags.join(", ")}` : ""})\n<<<UNTRUSTED_DOCUMENT_TEXT>>>\n${[d.snippet, ...d.chunks].filter(Boolean).join("\n").slice(0, 1200)}\n<<<END_UNTRUSTED_DOCUMENT_TEXT>>>`).join("\n\n");
+  return docs.map(d => `# ${defuse(d.title)} (Layer ${d.layer}${d.tags.length ? `, tags: ${d.tags.join(", ")}` : ""})\n${untrusted("DOCUMENT_TEXT", [d.snippet, ...d.chunks].filter(Boolean).join("\n").slice(0, 1200))}`).join("\n\n");
 }
 
 function byTag(docs: CorpusDoc[]): Map<string, CorpusDoc[]> {

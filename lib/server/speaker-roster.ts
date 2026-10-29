@@ -10,6 +10,7 @@ import "server-only";
 // for it again.
 import { db } from "./db";
 import { chatComplete } from "./llm";
+import { defuse, untrusted } from "@/lib/untrusted";
 import {
   looksLikeTranscript, speakerLabels,
   type SpeakerRoster, type Speaker,
@@ -92,9 +93,9 @@ export async function speakerRosterFor(
 
   const res = await chatComplete({
     system: SYS,
-    user: `ORGANIZATION: ${orgName}\nDOCUMENT: ${title}\n`
-      + `SPEAKER LABELS: ${labels.join(", ")}\n\nOPENING OF THE TRANSCRIPT:\n`
-      + text.slice(0, OPENING_CHARS),
+    user: `ORGANIZATION: ${orgName}\nDOCUMENT: ${defuse(title)}\n`
+      + `SPEAKER LABELS: ${defuse(labels.join(", "))}\n\nOPENING OF THE TRANSCRIPT:\n`
+      + untrusted("DOCUMENT_TEXT", text.slice(0, OPENING_CHARS)),
     maxTokens: 900, temperature: 0,
   });
   if (!res) return null;

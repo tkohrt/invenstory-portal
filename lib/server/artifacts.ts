@@ -7,6 +7,7 @@ import "server-only";
 import { chatComplete } from "./llm";
 import { db } from "./db";
 import { SI_TYPES, validateCards, type CorpusDoc } from "./si-registry";
+import { screenLinksDeep } from "@/lib/untrusted";
 
 
 async function loadCorpus(tenantId: string): Promise<CorpusDoc[]> {
@@ -36,7 +37,9 @@ async function synthesize(slug: string, docs: CorpusDoc[]): Promise<{ cards: Ret
         const { title, citation_titles, ...payload } = c;
         return { title, payload, citation_titles };
       });
-      return { cards: validateCards(slug, shaped), model: out.provider };
+      // Clients read these cards: a web address the model was not shown goes.
+      const corpus = docs.flatMap(d => [d.title, d.snippet, ...d.chunks]);
+      return { cards: validateCards(slug, screenLinksDeep(shaped, corpus).value), model: out.provider };
     } catch { /* fall through to grounded fallback */ }
   }
   return { cards: validateCards(slug, type.fallback(docs)), model: "scaffold" };

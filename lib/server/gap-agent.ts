@@ -5,6 +5,7 @@ import { embedTexts } from "./embed";
 import { chatComplete, generationConfigured } from "./llm";
 import type { Gap } from "@/lib/eligibility-fields";
 import { checklistFor, TIER_WEIGHT, BLURBS, RETRIEVAL_QUERY, type ChecklistItem, type ReadinessItem } from "@/lib/checklist";
+import { untrusted } from "@/lib/untrusted";
 
 export type CoverState = "covered" | "thin" | "missing";
 export interface ItemCoverage { state: CoverState; sources: { id: string; title: string; quote?: string }[] }
@@ -42,7 +43,7 @@ const GROUNDED =
 async function classifyGrounded(items: ChecklistItem[], evidenceText: string): Promise<{ result: Record<string, Grade>; raw: string }> {
   const out: Record<string, Grade> = {}; items.forEach(i => out[i.key] = { state: "missing", quote: "", source: "" });
   const list = items.map(i => `${i.key}: ${i.label} — ${RETRIEVAL_QUERY[i.key] ?? ""}`).join("\n");
-  const res = await chatComplete({ system: GROUNDED + "\n\nCHECKLIST (key: label — what a qualifying document contains):\n" + list, user: evidenceText, maxTokens: 2200, temperature: 0 });
+  const res = await chatComplete({ system: GROUNDED + "\n\nCHECKLIST (key: label — what a qualifying document contains):\n" + list, user: untrusted("PASSAGES", evidenceText), maxTokens: 2200, temperature: 0 });
   if (!res) return { result: out, raw: "" };
   try {
     const m = res.text.match(/\{[\s\S]*\}/);

@@ -138,6 +138,7 @@ describe("auto-draft (Auto-Draft patch 6)", () => {
     expect(u).toContain("1. [Program model, Layer II, 3 words] We teach coding.");
     expect(u).not.toContain("<voice_profile>");
     expect(u).not.toContain("<client_context>");
-    expect(u).toMatch(/<funder_context>\nx{6000}…\n<\/funder_context>/);
+    // Funder context is fenced as untrusted material inside its tag (Patch 2).
+    expect(u).toMatch(/<funder_context>\n<<<UNTRUSTED_FUNDER_CONTEXT id=([0-9a-f]{12})>>>\nx{6000}…\n<<<END_UNTRUSTED_FUNDER_CONTEXT id=\1>>>\n<\/funder_context>/);
   });
 });

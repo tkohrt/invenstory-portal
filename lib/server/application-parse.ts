@@ -24,6 +24,7 @@ import {
 } from "@/lib/application-parse";
 import { kindsFor } from "@/lib/story-card";
 import type { JobEventKind } from "@/lib/job";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 export interface ParseState {
   jobId?: string;
@@ -82,7 +83,7 @@ export const READ_SYS = (orgName: string) =>
 async function readWindow(title: string, text: string, i: number, n: number, orgName: string): Promise<WindowAnswer | null> {
   const ask = () => chatComplete({
     system: READ_SYS(orgName),
-    user: `APPLICATION: ${title}\nPART ${i + 1} OF ${n}\n\n<<<UNTRUSTED_APPLICATION_TEXT>>>\n${text}\n<<<END_UNTRUSTED_APPLICATION_TEXT>>>`,
+    user: `APPLICATION: ${defuse(title)}\nPART ${i + 1} OF ${n}\n\n${untrusted("APPLICATION_TEXT", text)}`,
     // Form Items step 1: every item on the form, not only the written ones, so
     // the reply is longer; a reply cut off mid-JSON would lose the whole part.
     maxTokens: 10000, temperature: 0,
@@ -128,9 +129,8 @@ export async function matchToBank(
   items: MatchInput[], bank: BankQuestion[], orgType: string | null,
 ): Promise<{ matches: SectionMatch[]; answered: boolean }> {
   const allowed = bankFor(bank, orgType);
-  const user = "<<<UNTRUSTED_APPLICATION_QUESTIONS>>>\n"
-    + items.map((q, i) => `[${i}] ${q.prompt}${q.guidance ? `\n    Guidance: ${q.guidance.slice(0, 600)}` : ""}`).join("\n")
-    + "\n<<<END_UNTRUSTED_APPLICATION_QUESTIONS>>>";
+  const user = untrusted("APPLICATION_QUESTIONS",
+    items.map((q, i) => `[${i}] ${q.prompt}${q.guidance ? `\n    Guidance: ${q.guidance.slice(0, 600)}` : ""}`).join("\n"));
   const ask = () => chatComplete({ system: MATCH_SYS(allowed, orgType), user, maxTokens: 3000, temperature: 0 });
   let res = await ask();
   if (!res) { await new Promise(f => setTimeout(f, 1200)); res = await ask(); }

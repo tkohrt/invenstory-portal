@@ -7,6 +7,7 @@ import { db } from "./db";
 import { readerTexts } from "./doc-text";
 import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor, RETRIEVAL_QUERY } from "@/lib/checklist";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 export type DocState = "covered" | "thin" | "missing";
 export type Subject = "organization" | "competitor" | "third_party";
@@ -56,7 +57,7 @@ const EXTRACT_SYS = (list: string) =>
   "CHECKLIST (key: label — what a qualifying document contains):\n" + list;
 
 async function scanWindow(title: string, itemsList: string, text: string): Promise<{ key: string; state: DocState; quote: string; subject: Subject }[]> {
-  const res = await chatComplete({ system: EXTRACT_SYS(itemsList), user: `DOCUMENT TITLE: ${title}\n\nDOCUMENT TEXT:\n${text}`, maxTokens: 1800, temperature: 0 });
+  const res = await chatComplete({ system: EXTRACT_SYS(itemsList), user: `DOCUMENT TITLE: ${defuse(title)}\n\nDOCUMENT TEXT:\n${untrusted("DOCUMENT_TEXT", text)}`, maxTokens: 1800, temperature: 0 });
   const out: { key: string; state: DocState; quote: string; subject: Subject }[] = [];
   if (!res) return out;
   try { const m = res.text.match(/\[[\s\S]*\]/); if (m) { const arr = JSON.parse(m[0]);
