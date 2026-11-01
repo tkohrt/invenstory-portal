@@ -336,16 +336,23 @@ function solrPhrase(s: string): string {
 }
 
 /**
- * The activity query: in these countries, currently running, about these
- * things. Field names are IATI's published Datastore names.
+ * The activity query: in these countries, running OR in the pipeline (status 1,
+ * "identification": money a funder has planned but not yet spent, which is the
+ * nearest IATI comes to an upcoming call), about these things. Field names are
+ * IATI's published Datastore names.
  */
 export function iatiQuery(countries: string[], phrases: string[]): string {
   const where = `recipient_country_code:(${countries.map(c => c.toUpperCase()).join(" OR ")})`;
   const about = phrases.length
     ? ` AND (${phrases.map(ph => `title_narrative:${solrPhrase(ph)} OR description_narrative:${solrPhrase(ph)}`).join(" OR ")})`
     : "";
-  return `${where} AND activity_status_code:2${about}`;
+  return `${where} AND activity_status_code:(1 OR 2)${about}`;
 }
+
+/** The fields asked for; the decoder reads nothing else. */
+export const IATI_FIELDS = "iati_identifier,title_narrative,activity_date_iso_date,activity_status_code,recipient_country_code,participating_org_narrative,participating_org_role,participating_org_ref,reporting_org_narrative,reporting_org_ref";
+
+export interface IatiPeer { name: string; ref: string }
 
 export interface IatiFunder {
   /** "iati:<org ref>" or "iati:<slug of name>". Never an EIN, never collides with one. */
@@ -354,6 +361,15 @@ export interface IatiFunder {
   activities: { title: string; year: string | null }[];
   activity_count: number;
   countries: string[];
+  /**
+   * Organizations this funder pays to do the work (IATI role 4, implementing):
+   * the client's peers. Patch 8: they turn "funds work here" into "already
+   * funds organizations like yours", and their UK registration numbers are
+   * how 360Giving is searched (patch 9).
+   */
+  peers: IatiPeer[];
+  /** Activities still in the pipeline (status 1): money planned, not yet spent. */
+  planned: { title: string; year: string | null }[];
 }
 
 const arr = (v: unknown): string[] => Array.isArray(v) ? v.map(x => (typeof x === "string" ? x : "")) : typeof v === "string" ? [v] : [];
@@ -363,7 +379,8 @@ const arr = (v: unknown): string[] => Array.isArray(v) ? v.map(x => (typeof x ==
  *
  * A participating organization with role 1 is a funder in IATI's code list;
  * the reporting organization is often an implementer reporting its own work,
- * so it is only used when the activity names no funder at all.
+ * so it is only used when the activity names no funder at all. Role 4
+ * (implementing) organizations are kept as the funder's peers.
  */
 export function decodeIatiFunders(json: unknown, max = 15): IatiFunder[] {
   const docs = (json as { response?: { docs?: unknown } })?.response?.docs;
@@ -374,11 +391,17 @@ export function decodeIatiFunders(json: unknown, max = 15): IatiFunder[] {
     const title = arr(d.title_narrative)[0]?.trim() || "Untitled activity";
     const year = (arr(d.activity_date_iso_date)[0] ?? "").slice(0, 4) || null;
     const countries = arr(d.recipient_country_code).map(c => c.toUpperCase()).filter(c => /^[A-Z]{2}$/.test(c));
+    const pipeline = String(arr(d.activity_status_code)[0] ?? d.activity_status_code ?? "") === "1";
     const names = arr(d.participating_org_narrative);
     const roles = arr(d.participating_org_role);
     const refs = arr(d.participating_org_ref);
-    let funders: { name: string; ref: string }[] = [];
-    names.forEach((n, i) => { if (roles[i] === "1" && n.trim()) funders.push({ name: n.trim(), ref: (refs[i] ?? "").trim() }); });
+    let funders: IatiPeer[] = [];
+    const implementers: IatiPeer[] = [];
+    names.forEach((n, i) => {
+      if (!n.trim()) return;
+      if (roles[i] === "1") funders.push({ name: n.trim(), ref: (refs[i] ?? "").trim() });
+      if (roles[i] === "4") implementers.push({ name: n.trim(), ref: (refs[i] ?? "").trim() });
+    });
     if (!funders.length) {
       const rn = arr(d.reporting_org_narrative)[0]?.trim();
       if (rn) funders = [{ name: rn, ref: (str(d.reporting_org_ref) ?? "").trim() }];
@@ -386,14 +409,37 @@ export function decodeIatiFunders(json: unknown, max = 15): IatiFunder[] {
     for (const f of funders) {
       const key = f.ref ? f.ref.toLowerCase() : f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const id = `iati:${key}`.slice(0, 200);
-      const row = by.get(id) ?? { funder_id: id, name: f.name.slice(0, 300), activities: [], activity_count: 0, countries: [] };
+      const row = by.get(id) ?? { funder_id: id, name: f.name.slice(0, 300), activities: [], activity_count: 0, countries: [], peers: [], planned: [] };
       row.activity_count += 1;
-      if (row.activities.length < 12 && !row.activities.some(a => a.title === title)) row.activities.push({ title: title.slice(0, 200), year });
+      if (pipeline) {
+        if (row.planned.length < 6 && !row.planned.some(a => a.title === title)) row.planned.push({ title: title.slice(0, 200), year });
+      } else if (row.activities.length < 12 && !row.activities.some(a => a.title === title)) {
+        row.activities.push({ title: title.slice(0, 200), year });
+      }
       for (const c of countries) if (!row.countries.includes(c)) row.countries.push(c);
+      for (const pe of implementers) {
+        // A funder implementing its own work is not its own peer.
+        if (pe.name.toLowerCase() === f.name.toLowerCase()) continue;
+        if (row.peers.length < 12 && !row.peers.some(x => x.name.toLowerCase() === pe.name.toLowerCase())) row.peers.push(pe);
+      }
       by.set(id, row);
     }
   }
   return [...by.values()].sort((a, b) => b.activity_count - a.activity_count || a.name.localeCompare(b.name)).slice(0, max);
+}
+
+/**
+ * UK-registered peers, as the organization ids 360Giving uses ("GB-CHC-202918",
+ * "GB-SC-SC012345", "GB-COH-01234567"), which IATI writes the same way.
+ */
+export function ukPeerIds(funders: IatiFunder[], max = 8): string[] {
+  const out: string[] = [];
+  for (const f of funders) for (const p of f.peers) {
+    const id = p.ref.toUpperCase().replace(/\s+/g, "");
+    if (/^GB-(CHC|SC|NIC|COH)-[A-Z0-9]+$/.test(id) && !out.includes(id)) out.push(id);
+    if (out.length >= max) return out;
+  }
+  return out;
 }
 
 /**
@@ -407,15 +453,23 @@ export function decodeIatiFunders(json: unknown, max = 15): IatiFunder[] {
 export function iatiFunderRows(funders: IatiFunder[]): FunderRow[] {
   return funders.map(f => {
     const where = f.countries.map(c => COUNTRY_NAME[c] ?? c).slice(0, 4).join(", ");
+    const running = f.activity_count - f.planned.length;
+    const plannedLine = f.planned.length
+      ? ` It is also planning ${f.planned.length} more (${f.planned.slice(0, 2).map(p => `"${p.title}"${p.year ? `, ${p.year}` : ""}`).join("; ")}), which is the time to make contact.`
+      : "";
     return {
       funder_id: f.funder_id, ein: null, name: f.name, website: null,
       location: null, focus: null, mission: null, typical_grant_range: null,
-      match_reason: `Funds ${f.activity_count} running activit${f.activity_count === 1 ? "y" : "ies"}${where ? ` in ${where}` : ""} on related themes, according to international aid data (IATI).`,
+      match_reason: `Funds ${running} running activit${running === 1 ? "y" : "ies"}${where ? ` in ${where}` : ""} on related themes, according to international aid data (IATI).${plannedLine}`,
       confidence: null,
       caveat: "A record of funding, not an open call. Find their country programme, call for proposals or local office before approaching.",
-      evidence: f.activities.map(a => ({ name: a.title, ...(a.year ? { latest_year: a.year } : {}) })),
-      evidence_count: f.activity_count,
-      from_graph: false, from_overlay: false,
+      // Peers first: "already funds organizations like yours" is the stronger
+      // reason to write. Without peers, the activities themselves.
+      evidence: f.peers.length
+        ? f.peers.map(p => ({ name: p.name }))
+        : f.activities.map(a => ({ name: a.title, ...(a.year ? { latest_year: a.year } : {}) })),
+      evidence_count: f.peers.length || f.activity_count,
+      from_graph: f.peers.length > 0, from_overlay: false,
       access_mode: "unknown", access_note: null, access_verified: false,
       has_grant_history: true, verified_at: null,
       source: "iati",

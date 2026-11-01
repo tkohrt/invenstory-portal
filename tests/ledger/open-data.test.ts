@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   planOpenSources, searchPhrases, worldBankTerm, decodeWorldBank, decodeSedia, toGrantCard,
-  keepForProfile, iatiQuery, decodeIatiFunders, iatiFunderRows, plainText, searchCountries,
+  keepForProfile, iatiQuery, decodeIatiFunders, iatiFunderRows, ukPeerIds, plainText, searchCountries,
   type OpenOpportunity,
 } from "@/lib/open-data";
 import { EMPTY_PROFILE, type EligibilityProfile } from "@/lib/eligibility-fields";
@@ -136,9 +136,9 @@ describe("into the screen", () => {
 });
 
 describe("IATI", () => {
-  test("the query names the countries, running activities and the phrases", () => {
+  test("the query names the countries, running and planned activities, and the phrases", () => {
     expect(iatiQuery(["ke", "UG"], ['capacity "building"'])).toBe(
-      'recipient_country_code:(KE OR UG) AND activity_status_code:2 AND (title_narrative:"capacity  building" OR description_narrative:"capacity  building")');
+      'recipient_country_code:(KE OR UG) AND activity_status_code:(1 OR 2) AND (title_narrative:"capacity  building" OR description_narrative:"capacity  building")');
   });
   test("funders are the role-1 participants, counted across activities", () => {
     const json = { response: { docs: [
@@ -159,6 +159,24 @@ describe("IATI", () => {
   });
   test("an unexpected answer is no funders", () => {
     expect(decodeIatiFunders({})).toEqual([]);
+  });
+  test("implementers become the funder's peers, and planned activities are kept apart (patch 8)", () => {
+    const json = { response: { docs: [
+      { title_narrative: ["Youth enterprise Kenya"], activity_status_code: ["2"], recipient_country_code: ["KE"],
+        participating_org_narrative: ["FCDO", "Practical Action", "FCDO"], participating_org_role: ["1", "4", "4"], participating_org_ref: ["GB-GOV-1", "GB-CHC-247257", "GB-GOV-1"] },
+      { title_narrative: ["Incubator support facility"], activity_status_code: "1", activity_date_iso_date: ["2027-03-01"], recipient_country_code: ["KE"],
+        participating_org_narrative: ["FCDO", "Kenya Climate Innovation Center"], participating_org_role: ["1", "4"], participating_org_ref: ["GB-GOV-1", ""] },
+    ] } };
+    const [f] = decodeIatiFunders(json);
+    expect(f.peers.map(p => p.name)).toEqual(["Practical Action", "Kenya Climate Innovation Center"]);
+    expect(f.planned).toEqual([{ title: "Incubator support facility", year: "2027" }]);
+    expect(f.activities.map(a => a.title)).toEqual(["Youth enterprise Kenya"]);
+    expect(ukPeerIds([f])).toEqual(["GB-CHC-247257"]);
+    const [row] = iatiFunderRows([f]);
+    expect(row.from_graph).toBe(true);
+    expect(row.evidence.map(e => e.name)).toEqual(["Practical Action", "Kenya Climate Innovation Center"]);
+    expect(row.match_reason).toContain("1 running activity in Kenya");
+    expect(row.match_reason).toContain('planning 1 more ("Incubator support facility", 2027)');
   });
 });
 

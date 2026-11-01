@@ -6,7 +6,7 @@ import "server-only";
 // costs its own rows, never the run. A match run has 60 seconds in all, so
 // these go out in parallel with Ground Truth's calls, not after them.
 import {
-  decodeWorldBank, decodeSedia, decodeIatiFunders, iatiQuery, worldBankTerm,
+  decodeWorldBank, decodeSedia, decodeIatiFunders, iatiQuery, worldBankTerm, IATI_FIELDS,
   type OpenOpportunity, type OpenPlan, type IatiFunder,
 } from "@/lib/open-data";
 import { COUNTRY_NAME } from "@/lib/countries";
@@ -78,7 +78,7 @@ async function iati(countries: string[], phrases: string[]): Promise<{ funders: 
   if (!key) return { funders: [], call: { source: "iati", text, ok: false, results: 0, note: "skipped: IATI_API_KEY is not set" } };
   const params = new URLSearchParams({
     q: iatiQuery(countries, phrases), rows: "200", wt: "json",
-    fl: "iati_identifier,title_narrative,activity_date_iso_date,recipient_country_code,participating_org_narrative,participating_org_role,participating_org_ref,reporting_org_narrative,reporting_org_ref",
+    fl: IATI_FIELDS,
   });
   try {
     const res = await fetch(`${IATI_URL}?${params}`, {
