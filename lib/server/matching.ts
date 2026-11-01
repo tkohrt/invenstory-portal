@@ -26,6 +26,10 @@ import {
 import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 // Signal 1 is pure and lives outside server-only so it can be unit tested.
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
+// Public international sources (patch 4, 1 Nov 2026): planned from the profile,
+// searched in parallel with Ground Truth, screened by the same rules.
+import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows } from "@/lib/open-data";
+import { searchOpenSources, type OpenResults } from "./open-data";
 import type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 export { screenGrant, needText } from "@/lib/grant-screen";
 export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
@@ -38,7 +42,7 @@ export interface MatchRun {
   note?: string;
   ranAt: string;
   /** Exactly what was sent to each index, whether it answered, and how much. */
-  queries: { track: "grants" | "funders"; text: string; ok: boolean; results: number }[];
+  queries: { track: string; text: string; ok: boolean; results: number }[];
   /** False means this fell back to the eligibility form. */
   usedProfile: boolean;
   profileNote: string | null;
@@ -137,8 +141,14 @@ export async function runMatch(
   if (planErr) console.error("could not record the planned queries", planErr);
   const runId = (runRow as { id: string } | null)?.id ?? null;
 
-  step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data`);
-  const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier] = await Promise.all([
+  // Outside the US, public sources too. A US-only profile plans none of them.
+  const openPlan = planOpenSources(p);
+  const openWanted = !!(openPlan.worldbank || openPlan.eu || openPlan.iati);
+  const phrases = searchPhrases(p);
+  const noOpen: OpenResults = { opportunities: [], funders: [], calls: [] };
+
+  step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
+  const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
     Promise.all(funderQs.map(need => attempt(`funder query "${need.slice(0, 60)}"`, () =>
       findFunders({ need, location: p.state_code ?? undefined, grant_size: size })))),
@@ -149,12 +159,17 @@ export async function runMatch(
     getApprovedOverlay("grant"),
     getApprovedOverlay("funder"),
     buildDossier(tenantId, orgName, p),
+    // Never throws: each source fails on its own and says so in the run record.
+    openWanted ? searchOpenSources(openPlan, phrases).catch(() => noOpen) : Promise.resolve(noOpen),
   ]);
 
   // Every grant query failing is an outage, not an empty shortlist. Throwing
   // here is what protects the cache: the zero-result path below deletes, and a
   // sleeping service must never be the reason a client's matches disappear.
-  if (grantEnvs.length && grantEnvs.every(e => !e.ok) && funderEnvs.every(e => !e.ok)) {
+  // Public sources that answered keep a run alive: an international client's
+  // shortlist is worth saving even while Ground Truth naps.
+  const openAnswered = openRes.calls.some(c => c.ok);
+  if (grantEnvs.length && grantEnvs.every(e => !e.ok) && funderEnvs.every(e => !e.ok) && !openAnswered) {
     throw new LedgerUnavailable(
       "Ground Truth did not answer any query. Nothing has been changed. It may have been asleep: try again in a minute.");
   }
@@ -174,6 +189,11 @@ export async function runMatch(
   // the write.
   step(2, 5, `screening ${grantsEnv.results.length} opportunities against the eligibility profile`);
   const normalized = (grantsEnv.results as unknown as RawGrantResult[]).map(normalizeGrant);
+  // Public opportunities join here, before ids, the overlay and the screen, so
+  // a Ground Truth correction can attach to one exactly as to a Ledger record.
+  // Their ids are namespaced ("wb:", "eu:") and can never collide with a link.
+  const openCards = openRes.opportunities.filter(o => keepForProfile(o, p)).map(toGrantCard);
+  normalized.push(...openCards);
 
   // Merge FG corrections over the frozen base before anything is judged.
   //
@@ -263,7 +283,12 @@ export async function runMatch(
   step(3, 5, "saving the results");
   const ranAt = new Date().toISOString();
   // Pure, so it costs nothing to compute before the writes it feeds.
-  const funderRows = funderRowsFrom(mergedFunders, mergedEvidence);
+  const ledgerFunderRows = funderRowsFrom(mergedFunders, mergedEvidence);
+  // Funders from international aid data, after Ground Truth's own, never twice.
+  const funderRows = [
+    ...ledgerFunderRows,
+    ...iatiFunderRows(openRes.funders).filter(f => !ledgerFunderRows.some(r => r.funder_id === f.funder_id)),
+  ];
 
   if (screened.length) {
     const { error } = await db.from("eligible_grant").upsert(
@@ -282,6 +307,10 @@ export async function runMatch(
         rationale: null,
         rationale_source: "pending",
         verified_at: s.verified_at ?? null,
+        // Patch 4 (0073): which source, what kind of money, and its currency.
+        source: s.source ?? "ledger",
+        money_kind: s.money_kind ?? "grants",
+        currency: s.currency ?? null,
       })),
       { onConflict: "tenant_id,grant_id" });
     // Never report a successful run over a rejected write. The first version of
@@ -333,6 +362,7 @@ export async function runMatch(
         access_verified: f.access_verified,
         has_grant_history: f.has_grant_history,
         verified_at: f.verified_at,
+        source: f.source ?? "ledger",
         matched_at: ranAt,
       })),
       { onConflict: "tenant_id,funder_id" },
@@ -361,6 +391,8 @@ export async function runMatch(
   const queries = [
     ...grantQs.map((text, i) => ({ track: "grants" as const, text, ok: grantEnvs[i]?.ok ?? false, results: grantEnvs[i]?.results.length ?? 0 })),
     ...funderQs.map((text, i) => ({ track: "funders" as const, text, ok: funderEnvs[i]?.ok ?? false, results: funderEnvs[i]?.results.length ?? 0 })),
+    // What each public source was asked, kept beside Ground Truth's queries.
+    ...openRes.calls.map(c => ({ track: `open:${c.source}`, text: c.note ? `${c.text} (${c.note})` : c.text, ok: c.ok, results: c.results })),
   ];
   const outcome = {
     queries,
@@ -416,6 +448,8 @@ export async function getCachedMatches(tenantId: string) {
     title: string | null; funder: string | null; url: string | null;
     rationale: string | null; rationale_source: string | null;
     source_site: string | null; verified_at: string | null;
+    /** Patch 4 (0073). Null on rows stored before it. */
+    source?: string | null; money_kind?: string | null; currency?: string | null;
   }[];
 }
 

@@ -54,6 +54,8 @@ export interface GrantCard {
   min_award?: number; max_award?: number; award_ceiling?: number;
   website?: string; match_reason?: string;
   confidence?: "strong" | "moderate" | "worth_a_look"; caveat?: string;
+  /** Patch 4 (1 Nov 2026): what kind of money, its currency, and which source. */
+  money_kind?: string; currency?: string | null; source?: string;
 }
 
 export interface LedgerEnvelope<T> {

@@ -19,7 +19,8 @@ import {
 } from "@/lib/triage";
 import { setTriageAction, clearTriageAction } from "@/lib/server/triage-actions";
 import SearchProfilePanel, { type PanelProfile } from "./SearchProfilePanel";
-import type { EligibilityProfile } from "@/lib/eligibility-fields";
+import { FUNDING_KIND_LABEL, isFundingKind, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { SOURCE_LABEL } from "@/lib/open-data";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -27,6 +28,8 @@ interface Cached {
   first_matched_at: string | null;
   title: string | null; funder: string | null; url: string | null;
   rationale: string | null; source_site: string | null; verified_at: string | null;
+  /** Patch 4 (0073): which source, what kind of money, its currency. */
+  source?: string | null; money_kind?: string | null; currency?: string | null;
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -102,9 +105,20 @@ function firstSeen(row: { matched_at?: string | null; first_matched_at?: string 
       };
 }
 
-function money(n: number | null) {
+function money(n: number | null, currency?: string | null) {
   if (n == null) return "—";
-  return n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
+  // EU calls are in euros (patch 4); everything before was US dollars.
+  const c = (currency ?? "USD").toUpperCase();
+  const sym = c === "USD" ? "$" : c === "EUR" ? "€" : c === "GBP" ? "£" : `${c} `;
+  return n >= 1_000_000 ? `${sym}${(n / 1_000_000).toFixed(1)}M` : `${sym}${Math.round(n / 1000)}K`;
+}
+
+/** Where a row came from, when it is not Ground Truth, and what kind of money it is. */
+function originLine(source?: string | null, kind?: string | null): string | null {
+  const bits: string[] = [];
+  if (source && source !== "ledger" && SOURCE_LABEL[source]) bits.push(`from ${SOURCE_LABEL[source]}`);
+  if (kind && kind !== "grants" && isFundingKind(kind)) bits.push(FUNDING_KIND_LABEL[kind]);
+  return bits.length ? bits.join(" · ") : null;
 }
 
 function deadline(d: string | null) {
@@ -452,7 +466,9 @@ export default function FunderMatchesView({
                   </td>
                   <td className="fm-funder">
                     {m.funder || <span className="ov-muted" title="The dataset does not carry a funder name for this record. Resolved once the opportunity page is fetched.">Unknown</span>}
-                    {m.source_site && <div className="fm-listed">listed on {m.source_site.replace(/^https?:\/\//i, "").toLowerCase()}</div>}
+                    {originLine(m.source, m.money_kind)
+                      ? <div className="fm-listed">{originLine(m.source, m.money_kind)}</div>
+                      : m.source_site && <div className="fm-listed">listed on {m.source_site.replace(/^https?:\/\//i, "").toLowerCase()}</div>}
                   </td>
                   <td>
                     <span className={`ov-tag fm-${m.verdict} fm-verdict`} title={VERDICT_HELP[m.verdict]}>
@@ -460,7 +476,7 @@ export default function FunderMatchesView({
                     </span>
                   </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
-                  <td className="fm-nowrap">{money(m.award_ceiling)}</td>
+                  <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
                   <td className="fm-nowrap">
                     <span className={firstSeen(m).label === "New" ? "fm-new" : "ov-muted"}
                           title={firstSeen(m).help}>{firstSeen(m).label}</span>
@@ -526,6 +542,7 @@ export default function FunderMatchesView({
                       ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>
                       : f.name}
                     {f.location && <div className="fm-listed">{f.location}</div>}
+                    {originLine(f.source) && <div className="fm-listed">{originLine(f.source)}</div>}
                     {hiddenByScreen(f) && (
                       <div className="fm-nohistory"
                            title="No outgoing grants on file for this organization. Often an operating charity that delivers services itself rather than funding others, which semantic search cannot tell apart from a funder. Worth a look only if you have another reason.">

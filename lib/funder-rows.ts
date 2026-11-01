@@ -49,6 +49,8 @@ export interface FunderRow {
    */
   has_grant_history: boolean | null;
   verified_at: string | null;
+  /** ledger | iati (patch 4, 1 Nov 2026). Absent on rows stored before 0073. */
+  source?: string | null;
 }
 
 /** A card as it leaves mergeOverlay: the Ledger's fields plus our stamp. */

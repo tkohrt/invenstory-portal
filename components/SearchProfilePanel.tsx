@@ -10,6 +10,7 @@
 // Admin only. It shows document titles and quotes, which is For Granted's
 // working view of a client's Inven(s)tory rather than a client-facing one.
 import { useCallback, useEffect, useState } from "react";
+import { SOURCE_SHORT } from "@/lib/open-data";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
@@ -500,7 +501,8 @@ export default function SearchProfilePanel({
           <ol>
             {lastQueries.map((q, i) => (
               <li key={i}>
-                <span className="sp-track">{q.track}</span> {q.text}
+                {/* open:worldbank and the like are the public international sources (patch 4). */}
+                <span className="sp-track">{q.track.startsWith("open:") ? (SOURCE_SHORT[q.track.slice(5)] ?? q.track.slice(5)) : q.track}</span> {q.text}
                 {q.ok === false
                   ? <span className="sp-failed" title="This query did not answer. Its results are missing from the run.">did not answer</span>
                   : typeof q.results === "number"

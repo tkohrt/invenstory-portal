@@ -96,6 +96,12 @@ export interface ScreenedGrant {
   rationale_source?: "llm" | "rule" | "pending";
   from_overlay?: boolean;
   verified_at?: string | null;  // when For Granted last confirmed this at the source
+  /** grants | contracts | programs | investment (patch 4). Ground Truth rows are grants. */
+  money_kind?: string;
+  /** ISO currency of award_ceiling when it is not US dollars (EU calls are in euros). */
+  currency?: string | null;
+  /** ledger | worldbank | eu_ft (lib/open-data.ts SOURCE_LABEL). */
+  source?: string;
 }
 
 /**
@@ -340,6 +346,7 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
     close_date: g.close_date ?? null, award_ceiling: ceiling,
     funder: g.agency, source_site: g.source_site,
     website: g.website, eligibility: elig || undefined, caveat: g.caveat,
+    money_kind: g.money_kind ?? "grants", currency: g.currency ?? null, source: g.source ?? "ledger",
   };
 }
 
