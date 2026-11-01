@@ -2073,3 +2073,18 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
   .fr-row{border-color:#ccc}
   .fr-title a{text-decoration:none}
 }
+
+/* A client's own view of its matches, and the self-search switch (patch 7, 1 Nov 2026). */
+.fm-selfsearch{display:flex;align-items:center;gap:10px;font-size:13px;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line,#e0e0e0);border-radius:10px;background:#fff}
+.fm-selfsearch .spacer{flex:1}
+.fm-asclient{border-color:#cfe4cf;background:#f2f8f2}
+.cv-buttons{display:flex;gap:6px;flex-wrap:wrap}
+.cv-set{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cv-tag{white-space:nowrap}
+.cv-interested{background:#e8f3e8;color:#2f5d38;border-color:#cfe4cf}
+.cv-not_for_us{background:#f3f3f3;color:#555;border-color:#e2e2e2}
+.cv-admin{font-size:12px;margin-top:4px;color:#2f5d38}
+.cv-admin.cv-not_for_us{color:#666;background:none}
+.cv-pick{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.cv-why{font-size:12px;font-weight:600}
+.cv-reason{font:inherit;font-size:12px;border:1px solid var(--line,#e0e0e0);background:#fff;border-radius:8px;padding:3px 8px;cursor:pointer;text-align:left}

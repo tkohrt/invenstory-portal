@@ -5,11 +5,13 @@
 //
 // A run asks one question per call; this component asks for the next until
 // none are left, as the explanations do, so each call fits the time limit.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
 import type { Job } from "@/lib/job";
 import { FUNDING_KIND_LABEL, isFundingKind } from "@/lib/eligibility-fields";
+import ClientVerdict from "./ClientVerdict";
+import type { ClientView } from "@/lib/client-view";
 
 export interface WebLead {
   id: string; kind: "opportunity" | "funder"; money_kind: string; title: string; funder: string | null;
@@ -31,7 +33,7 @@ function when(d: string | null, rolling: boolean): string {
   return rolling ? "Rolling" : "Not stated";
 }
 
-export default function WebFinds({ leads, isAdmin, orgName, available, canRun, initialJob, actions }: {
+export default function WebFinds({ leads: allLeads, isAdmin, orgName, available, canRun, initialJob, clientViews = {}, clientMode = false, preview = false }: {
   leads: WebLead[];
   isAdmin: boolean;
   orgName: string;
@@ -40,9 +42,17 @@ export default function WebFinds({ leads, isAdmin, orgName, available, canRun, i
   /** This person may start a search here (For Granted; a client only when allowed, patch 7). */
   canRun: boolean;
   initialJob: Job | null;
-  /** Extra controls per row (the client's own verdict, patch 7). */
-  actions?: (l: WebLead) => React.ReactNode;
+  /** The client's own Worth a look / Not for us, keyed "lead:<id>" (patch 7). */
+  clientViews?: Record<string, ClientView>;
+  /** Show the client's own controls (a client, or For Granted viewing as one). */
+  clientMode?: boolean;
+  /** For Granted previewing the client's page: show the client's view, change nothing. */
+  preview?: boolean;
 }) {
+  const [showSetAside, setShowSetAside] = useState(false);
+  const viewOf = (id: string) => clientViews[`lead:${id}`] ?? null;
+  const setAside = allLeads.filter(l => clientMode && viewOf(l.id)?.state === "not_for_us");
+  const leads = showSetAside ? allLeads : allLeads.filter(l => !setAside.includes(l));
   const router = useRouter();
   const { job, events, start, starting, running, error, gaveUp } = useJob(initialJob);
   const handled = useRef<string | null>(null);
@@ -70,7 +80,7 @@ export default function WebFinds({ leads, isAdmin, orgName, available, canRun, i
           {kind === "opportunity" && <th>Amount</th>}
           <th>Where</th><th>Why it may fit</th>
           {isAdmin && <th>Ground Truth</th>}
-          {actions && <th>Your view</th>}
+          {(isAdmin || clientMode) && <th>{clientMode ? "Your view" : "Client"}</th>}
         </tr>
       </thead>
       <tbody>
@@ -99,7 +109,11 @@ export default function WebFinds({ leads, isAdmin, orgName, available, canRun, i
                   : <span className="ov-muted">Not filed</span>}
               </td>
             )}
-            {actions && <td className="fm-decide">{actions(l)}</td>}
+            {(isAdmin || clientMode) && (
+              <td className="fm-decide">
+                <ClientVerdict kind="lead" targetId={l.id} view={viewOf(l.id)} mode={clientMode && !preview ? "client" : "admin"} />
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -131,6 +145,11 @@ export default function WebFinds({ leads, isAdmin, orgName, available, canRun, i
       )}
       {opps.length > 0 && table(opps, "opportunity")}
       {funders.length > 0 && (<><h4 className="wf-h4">Funders</h4>{table(funders, "funder")}</>)}
+      {setAside.length > 0 && (
+        <button type="button" className="fm-toggle" onClick={() => setShowSetAside(v => !v)}>
+          {showSetAside ? "Hide the ones you marked Not for us" : `Show ${setAside.length} you marked Not for us`}
+        </button>
+      )}
     </section>
   );
 }

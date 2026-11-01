@@ -17,6 +17,8 @@ import { runMatch } from "@/lib/server/matching";
 import { createJob, updateJob, finishJob, failJob, recordEvent } from "@/lib/server/jobs";
 import { db } from "@/lib/server/db";
 import { BRAIN_REFUSAL, isBrain } from "@/lib/brain";
+import { mayStartSearch } from "@/lib/server/client-view";
+import { withAiUsage } from "@/lib/server/ai-usage";
 
 // The plan's ceiling, not a wish. This Vercel team is on Hobby, which caps a
 // function at 60 seconds, so a larger number here is silently ignored rather
@@ -33,9 +35,10 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "admin required" }, { status: 403 });
-  }
+  if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  // For Granted, or a client For Granted has let search for itself (patch 7).
+  const may = await mayStartSearch(session, "match");
+  if (!may.ok) return NextResponse.json({ error: may.error }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const multiQuery = body?.multiQuery !== false;
 
@@ -50,7 +53,8 @@ export async function POST(req: Request) {
     try {
       // Consecutive identical steps are one line in the log, not two.
       let lastSaid: string | null = null;
-      const r = await runMatch(tenantId, orgName, {
+      // Metered as whoever started it: a client's own search is the client's spend.
+      const r = await withAiUsage({ tenantId, userId: session.user.id, actor: may.actor, feature: "match_rationale" }, () => runMatch(tenantId, orgName, {
         multiQuery, ranBy: session.user.id,
         // The detail strings were already written to be read by a person, so
         // the log reuses them rather than inventing a second vocabulary. The
@@ -66,7 +70,7 @@ export async function POST(req: Request) {
             void recordEvent(tenantId, jobId, { kind: "progress", text: p.detail });
           }
         },
-      });
+      }));
       await finishJob(tenantId, jobId, {
         kept: r.grants.length, dropped: r.dropped, funders: r.funders.length,
         usedProfile: r.usedProfile, queries: r.queries.length,

@@ -11,14 +11,13 @@ import { startDiscovery, getDiscoveryRun, runDiscoveryPass, webSearchAvailable }
 import { withAiUsage } from "@/lib/server/ai-usage";
 import { db } from "@/lib/server/db";
 import { BRAIN_REFUSAL, isBrain } from "@/lib/brain";
+import { mayStartSearch, mayContinueSearch } from "@/lib/server/client-view";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "admin required" }, { status: 403 });
-  }
+  if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   if (!webSearchAvailable()) {
     return NextResponse.json({ error: "Web search is not available here: it needs Claude on Vertex (LLM_PROVIDER=vertex)." }, { status: 400 });
   }
@@ -29,6 +28,11 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as { runId?: string };
 
   let runId = typeof body.runId === "string" && /^[0-9a-f-]{36}$/i.test(body.runId) ? body.runId : null;
+  // For Granted, or a client For Granted has let search for itself (patch 7):
+  // a new run counts against the client's day, the next question of a run does not.
+  const may = runId ? await mayContinueSearch(session) : await mayStartSearch(session, "discover");
+  if (!may.ok) return NextResponse.json({ error: may.error }, { status: 403 });
+  const actor = may.actor;
   try {
     if (runId) {
       const run = await getDiscoveryRun(tenantId, runId);
@@ -36,6 +40,8 @@ export async function POST(req: Request) {
       if (run.finished_at) return NextResponse.json({ jobId: null, runId, remaining: 0 });
     } else {
       runId = (await startDiscovery(tenantId, session.user.id)).id;
+      // Written now, not at the end, so the day's count holds while a run is under way.
+      await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: tenantId, action: "web_discovery_run", detail: `run ${runId}` });
     }
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not start the web search." }, { status: 400 });
@@ -45,7 +51,7 @@ export async function POST(req: Request) {
   const id = runId;
   after(async () => {
     try {
-      const r = await withAiUsage({ tenantId, userId: session.user.id, actor: "admin", feature: "web_discovery" },
+      const r = await withAiUsage({ tenantId, userId: session.user.id, actor, feature: "web_discovery" },
         () => runDiscoveryPass(tenantId, id, orgName, session.user.id, detail => {
           void updateJob(tenantId, jobId, { done: 0, total: 1, detail });
           void recordEvent(tenantId, jobId, { kind: "progress", text: detail });

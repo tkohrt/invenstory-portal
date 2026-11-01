@@ -21,6 +21,9 @@ import { setTriageAction, clearTriageAction } from "@/lib/server/triage-actions"
 import SearchProfilePanel, { type PanelProfile } from "./SearchProfilePanel";
 import { FUNDING_KIND_LABEL, isFundingKind, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { SOURCE_LABEL } from "@/lib/open-data";
+import ClientVerdict from "./ClientVerdict";
+import { setSelfSearchAction } from "@/lib/server/client-view-actions";
+import type { ClientView } from "@/lib/client-view";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -170,7 +173,16 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
+  canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
 }: {
+  /** May start a search from this page: For Granted, or a client allowed to (patch 7). */
+  canRun?: boolean;
+  /** For Granted looking at the page as the client sees it (?view=client). */
+  viewingAsClient?: boolean;
+  /** The "run searches themselves" switch, for For Granted; null for a client. */
+  selfSearch?: boolean | null;
+  /** The client's own Worth a look / Not for us, keyed "kind:id". */
+  clientViews?: Record<string, ClientView>;
   /** Found on the web (patch 5), rendered by the page and placed after the funders. */
   webSection?: React.ReactNode;
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
@@ -236,14 +248,24 @@ export default function FunderMatchesView({
     ? [...screened.shown, ...screened.hidden.map(h => h.row)]
     : screened.shown;
   const ruledOutFunders = afterScreen.filter(f => isRuledOut("funder", f.funder_id));
-  const visibleFunders = showRuledOut
+  const visibleFunders0 = showRuledOut
     ? afterScreen
     : afterScreen.filter(f => !isRuledOut("funder", f.funder_id));
 
   const ruledOutGrants = matches.filter(m => isRuledOut("grant", m.grant_id));
-  const visibleMatches = showRuledOut
+  const visibleMatches0 = showRuledOut
     ? matches
     : matches.filter(m => !isRuledOut("grant", m.grant_id));
+
+  // The client's own "Not for us" rows step aside on their page, one click
+  // from view (patch 7). For Granted always sees them, with the client's words.
+  const viewOf = (kind: "grant" | "funder", id: string) => clientViews[`${kind}:${id}`] ?? null;
+  const [showSetAside, setShowSetAside] = useState(false);
+  const setAside = (kind: "grant" | "funder", id: string) => !isAdmin && viewOf(kind, id)?.state === "not_for_us";
+  const visibleMatches = showSetAside ? visibleMatches0 : visibleMatches0.filter(m => !setAside("grant", m.grant_id));
+  const visibleFunders = showSetAside ? visibleFunders0 : visibleFunders0.filter(f => !setAside("funder", f.funder_id));
+  const setAsideCount = matches.filter(m => setAside("grant", m.grant_id)).length
+    + funders.filter(f => setAside("funder", f.funder_id)).length;
   // Why rows were set aside, so the toggle names a reason rather than a number.
   const hiddenReasons = [...new Set(screened.hidden.map(h => h.reason))];
 
@@ -253,9 +275,9 @@ export default function FunderMatchesView({
   // function limit. Out here it costs nothing: by the time somebody has read
   // the page and pressed Run, it is usually already awake.
   useEffect(() => {
-    if (!isAdmin || !configured) return;
+    if (!canRun || !configured) return;
     void fetch("/api/ledger/warm", { method: "POST" }).catch(() => { /* a failed warm-up is not a failure */ });
-  }, [isAdmin, configured]);
+  }, [canRun, configured]);
 
   const run = () => { setDismissed(false); setErr(null); void startJob("/api/jobs/match", "match"); };
 
@@ -312,14 +334,38 @@ export default function FunderMatchesView({
         {(matches.length > 0 || funders.length > 0) && (
           <a className="sb-btn sb-secondary sb-sm fm-report-link" href="/funder-matches/report">Open the fit report</a>
         )}
-        {isAdmin && (
+        {canRun && (
           <>
-            <button className="btn" onClick={run} disabled={starting || running || !configured}>
-              {running ? "Searching…" : starting ? "Starting…" : matches.length ? "Re-run matching" : "Run matching"}
+            <button className="btn" onClick={run} disabled={starting || running || !configured}
+              title={isAdmin ? undefined : "Searches Ground Truth and, if you work outside the US, public international sources. Uses part of the monthly AI allowance."}>
+              {running ? "Searching…" : starting ? "Starting…" : matches.length ? (isAdmin ? "Re-run matching" : "Search again") : (isAdmin ? "Run matching" : "Search for funding")}
             </button>
           </>
         )}
       </div>
+
+      {/* Patch 7: For Granted sees the page as the client does, and decides
+          whether the client may run searches itself. */}
+      {viewingAsClient && (
+        <div className="ov-note fm-asclient">
+          You are seeing this page as {orgName} sees it: no contacts, no Search Profile, none of For Granted&apos;s
+          decisions, and nothing For Granted ruled out. <a href="/funder-matches">Back to For Granted&apos;s view</a>
+        </div>
+      )}
+      {isAdmin && selfSearch !== null && (
+        <div className="fm-selfsearch">
+          <button type="button" role="switch" aria-checked={!!selfSearch} aria-label={`Let ${orgName} run searches themselves`} className="rs-switch"
+            onClick={() => { void setSelfSearchAction(!selfSearch).then(r => { if (!r.ok) setErr(r.error); router.refresh(); }); }} />
+          <span>
+            Let {orgName} run searches themselves
+            <span className="ov-muted"> · {selfSearch
+              ? "on: they can search for funding and search the web from this page, up to three searches and two web searches a day, within their AI allowance."
+              : "off: For Granted runs every search."}</span>
+          </span>
+          <span className="spacer" />
+          <a className="sb-btn sb-quiet sb-sm" href="/funder-matches?view=client">View as {orgName}</a>
+        </div>
+      )}
 
       {!configured && (
         <div className="ov-note">
@@ -423,7 +469,7 @@ export default function FunderMatchesView({
       <JobProgress job={shownJob} events={events} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
       <JobProgress job={rJob} events={rEvents} lostContact={rGaveUp} />
 
-      {isAdmin && owed > 0 && !rRunning && (
+      {canRun && owed > 0 && !rRunning && (
         <div className="ov-note fm-owed">
           {owed} match{owed === 1 ? "" : "es"} {owed === 1 ? "is" : "are"} showing a
           rule-based summary because the last run ran out of time before explaining
@@ -459,7 +505,7 @@ export default function FunderMatchesView({
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
                 <th>Deadline</th><th>Ceiling</th><th>First seen</th>
-                <th>Verified</th><th>Why this client</th>{isAdmin && <th>Decision</th>}
+                <th>Verified</th><th>Why this client</th>{isAdmin ? <th>Decision</th> : <th>Your view</th>}
               </tr>
             </thead>
             <tbody>
@@ -501,8 +547,14 @@ export default function FunderMatchesView({
                   {isAdmin && (
                     <td className="fm-decide">
                       <Triage kind="grant" id={m.grant_id} label={m.title || m.grant_id} />
+                      <ClientVerdict kind="grant" targetId={m.grant_id} view={viewOf("grant", m.grant_id)} mode="admin" />
                       <a className="fm-draft" href={`/draft/new?grant=${encodeURIComponent(m.grant_id)}`}
                          title="Start a draft from this opportunity's application. For Granted only.">Draft this</a>
+                    </td>
+                  )}
+                  {!isAdmin && (
+                    <td className="fm-decide">
+                      <ClientVerdict kind="grant" targetId={m.grant_id} view={viewOf("grant", m.grant_id)} mode={viewingAsClient ? "admin" : "client"} />
                     </td>
                   )}
                 </tr>
@@ -537,7 +589,7 @@ export default function FunderMatchesView({
                 <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
                 <th>Evidence</th>{isAdmin && <th>Who reads it</th>}
                 <th>First seen</th><th>Verified</th><th>Why this client</th>
-                {isAdmin && <th>Decision</th>}
+                {isAdmin ? <th>Decision</th> : <th>Your view</th>}
               </tr>
             </thead>
             <tbody>
@@ -637,8 +689,14 @@ export default function FunderMatchesView({
                   {isAdmin && (
                     <td className="fm-decide">
                       <Triage kind="funder" id={f.funder_id} label={f.name} />
+                      <ClientVerdict kind="funder" targetId={f.funder_id} view={viewOf("funder", f.funder_id)} mode="admin" />
                       <a className="fm-draft" href={`/draft/new?funder=${encodeURIComponent(f.funder_id)}`}
                          title="Start a draft from this funder's application or guidelines. For Granted only.">Draft this</a>
+                    </td>
+                  )}
+                  {!isAdmin && (
+                    <td className="fm-decide">
+                      <ClientVerdict kind="funder" targetId={f.funder_id} view={viewOf("funder", f.funder_id)} mode={viewingAsClient ? "admin" : "client"} />
                     </td>
                   )}
                 </tr>
@@ -663,6 +721,12 @@ export default function FunderMatchesView({
             </button>
           )}
         </>
+      )}
+
+      {!isAdmin && setAsideCount > 0 && (
+        <button type="button" className="fm-toggle" onClick={() => setShowSetAside(v => !v)}>
+          {showSetAside ? "Hide the ones you marked Not for us" : `Show ${setAsideCount} you marked Not for us`}
+        </button>
       )}
 
       {webSection}

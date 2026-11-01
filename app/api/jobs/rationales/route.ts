@@ -14,14 +14,17 @@ import { getSession } from "@/lib/server/session";
 import { getTenant } from "@/lib/server/data";
 import { fillPendingRationales, pendingRationaleCount } from "@/lib/server/matching";
 import { createJob, updateJob, finishJob, failJob, recordEvent } from "@/lib/server/jobs";
+import { mayContinueSearch } from "@/lib/server/client-view";
+import { withAiUsage } from "@/lib/server/ai-usage";
 
 export const maxDuration = 60;
 
 export async function POST() {
   const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "admin required" }, { status: 403 });
-  }
+  if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  // A client who may search for itself may also finish its own explanations (patch 7).
+  const may = await mayContinueSearch(session);
+  if (!may.ok) return NextResponse.json({ error: may.error }, { status: 403 });
   const tenantId = session.tenantId;
   const pending = await pendingRationaleCount(tenantId);
   if (!pending) return NextResponse.json({ jobId: null, pending: 0 });
@@ -35,7 +38,7 @@ export async function POST() {
     try {
       // Consecutive identical steps are one line in the log, not two.
       let lastSaid: string | null = null;
-      const r = await fillPendingRationales(tenantId, orgName, {
+      const r = await withAiUsage({ tenantId, userId: session.user.id, actor: may.actor, feature: "match_rationale" }, () => fillPendingRationales(tenantId, orgName, {
         // The detail strings were already written to be read by a person, so
         // the log reuses them rather than inventing a second vocabulary. The
         // guard is for repeats: a step that reports the same words twice is one
@@ -50,7 +53,7 @@ export async function POST() {
             void recordEvent(tenantId, jobId, { kind: "progress", text: p.detail });
           }
         },
-      });
+      }));
       await finishJob(tenantId, jobId, { filled: r.filled, remaining: r.remaining },
         r.remaining
           ? `${r.filled} explained, ${r.remaining} still to go.`

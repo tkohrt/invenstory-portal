@@ -14,6 +14,8 @@ import { closedInBrain } from "@/lib/server/brain";
 import { buildFitReport } from "@/lib/fit-report";
 import { suppresses } from "@/lib/triage";
 import FitReportView from "@/components/FitReportView";
+import { getClientViews } from "@/lib/server/client-view";
+import { viewSentence } from "@/lib/client-view";
 
 export default async function FitReportPage() {
   const session = await getSession();
@@ -32,12 +34,17 @@ export default async function FitReportPage() {
     getJudgments(session.tenantId).catch(() => new Map()),
     getLeads(session.tenantId, !isAdmin).catch(() => []),
   ]);
+  // The client's own views (patch 7): their "Not for us" rows leave their
+  // report; For Granted sees every row with what the client said.
+  const views = await getClientViews(session.tenantId);
 
   const ruledOut = new Set<string>();
   for (const [key, j] of judgments) if (suppresses(j.state)) ruledOut.add(key);
+  if (!isAdmin) for (const [key, v] of views) if (v.state === "not_for_us") ruledOut.add(key);
+  const clientViews = new Map([...views].map(([k, v]) => [k, viewSentence(v)]));
 
   const report = buildFitReport({
-    matches, funders, leads, eligibility, ruledOut,
+    matches, funders, leads, eligibility, ruledOut, clientViews,
     includeRuledOut: isAdmin,
   });
 

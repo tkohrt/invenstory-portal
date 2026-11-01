@@ -11,12 +11,15 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { warmLedger, ledgerConfigured } from "@/lib/server/ledger";
+import { selfSearchOn } from "@/lib/server/client-view";
 
 export const maxDuration = 60;
 
 export async function POST() {
   const session = await getSession();
-  if (!session || session.role !== "admin") {
+  if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  // A client who may run its own searches wakes the service too (patch 7).
+  if (session.role !== "admin" && !(await selfSearchOn(session.tenantId))) {
     return NextResponse.json({ error: "admin required" }, { status: 403 });
   }
   if (!ledgerConfigured()) return NextResponse.json({ awake: false, configured: false });

@@ -16,7 +16,7 @@ const eligTone = (c: Call3) => c === "yes" ? "good" : c === "check" ? "mid" : "b
 const fitTone = (c: FitCall) => c === "strong" ? "good" : c === "partial" ? "mid" : "low";
 const sizeTone = (c: RangeCall) => c === "fits" ? "good" : c === "unknown" ? "low" : "mid";
 
-function Row({ r }: { r: FitRow }) {
+function Row({ r, isAdmin }: { r: FitRow; isAdmin: boolean }) {
   return (
     <article className="fr-row">
       <header>
@@ -37,7 +37,7 @@ function Row({ r }: { r: FitRow }) {
         <div><dt>Size of the money</dt><dd><Pill tone={sizeTone(r.range.call)}>{SIZE[r.range.call]}</Pill> {r.range.why}</dd></div>
         <div><dt>Next step</dt><dd>{r.next}</dd></div>
       </dl>
-      {r.clientView && <div className="fr-client">Your view: {r.clientView}</div>}
+      {r.clientView && <div className="fr-client">{isAdmin ? "The client's view" : "Your view"}: {r.clientView}</div>}
     </article>
   );
 }
@@ -98,7 +98,7 @@ export default function FitReportView({ report, orgName, isAdmin, generatedAt, l
         <section key={g.key} className={`fr-group fr-g-${g.key}`}>
           <h3>{g.label} <span className="fr-count">{g.rows.length}</span></h3>
           <p className="fr-help">{g.help}</p>
-          {g.rows.map(r => <Row key={`${r.kind}:${r.id}`} r={r} />)}
+          {g.rows.map(r => <Row key={`${r.kind}:${r.id}`} r={r} isAdmin={isAdmin} />)}
         </section>
       ))}
       <footer className="fr-foot">
