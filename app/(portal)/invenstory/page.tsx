@@ -6,6 +6,7 @@ import { getGaps } from "@/lib/server/eligibility";
 import { asksForClient } from "@/lib/server/asks";
 import ClientAsks from "@/components/ClientAsks";
 import { tenantIsBrain } from "@/lib/server/brain";
+import { startSteps as buildStartSteps, showStart } from "@/lib/living-voice";
 
 export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string; brain?: string }> }) {
   const sp = await searchParams;
@@ -21,6 +22,18 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
     brain ? Promise.resolve([]) : asksForClient(session.tenantId),
   ]);
   if (!tenant) redirect("/");
+  // Getting started (1 Nov 2026): worked out from what is already here, so it
+  // costs no reads beyond the page's own. Hidden once done, or by the person.
+  const steps = gapData && !brain ? buildStartSteps({
+    criticalGaps: gapData.gaps.filter(g => g.tier === "critical").length,
+    layerCounts: {
+      I: docs.filter(d => d.layer === "I").length,
+      II: docs.filter(d => d.layer === "II").length,
+      III: docs.filter(d => d.layer === "III").length,
+    },
+    readinessRun: !!gapData.computedAt,
+  }) : null;
+  const hidden = (session.user.ui_prefs as { hide_getting_started?: boolean } | null)?.hide_getting_started === true;
   return (
     <InvenstoryView
       tenantId={tenant.id}
@@ -34,6 +47,7 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
       isAdmin={session.role === "admin"}
       openItem={sp.item ?? null}
       brain={brain ? { closedPage: sp.brain === "closed" } : null}
+      startSteps={steps && showStart(steps, hidden) ? steps : null}
       asks={asks.length ? <ClientAsks asks={asks} isAdmin={session.role === "admin"} tenantName={tenant.name} /> : null}
     />
   );

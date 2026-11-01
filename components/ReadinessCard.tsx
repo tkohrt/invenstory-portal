@@ -5,12 +5,15 @@ import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import type { ReadinessItem } from "@/lib/checklist";
 import AllowanceRequest from "./AllowanceRequest";
+import LivingVoicePrompts from "./LivingVoicePrompts";
+import type { TenantOrgType } from "@/lib/living-voice";
 
 const TIER_LABEL = { essential: "🟠 Essential", important: "🟡 Important", enriching: "🔵 Enriching" } as const;
 
-function ItemDetail({ item, onClose, onUpload, onSaved }: {
+function ItemDetail({ item, onClose, onUpload, onSaved, orgType }: {
   item: ReadinessItem; onClose: () => void;
   onUpload?: (layer: "I" | "II" | "III") => void; onSaved: () => void;
+  orgType: TenantOrgType;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,6 +41,9 @@ function ItemDetail({ item, onClose, onUpload, onSaved }: {
         </div>
       )}
 
+      {/* The founder or leader interview gets the Living Voice questions (1 Nov 2026). */}
+      {item.key === "founder_voice" && <LivingVoicePrompts orgType={orgType} onSaved={onSaved} />}
+
       <div className="section-label" style={{ marginTop: 12 }}>Add more context manually:</div>
       <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`Manually add more context regarding: ${item.label}. It saves to your Inven(s)tory, tagged and searchable.`} />
       <div className="ck-detail-actions">
@@ -49,9 +55,10 @@ function ItemDetail({ item, onClose, onUpload, onSaved }: {
   );
 }
 
-export default function ReadinessCard({ readiness, computedAt, onUpload, openKey }: {
+export default function ReadinessCard({ readiness, computedAt, onUpload, openKey, orgType = null }: {
   readiness: { pct: number; items: ReadinessItem[] }; computedAt: string | null;
   onUpload?: (layer: "I" | "II" | "III") => void; onOpenDoc?: (id: string) => void; openKey?: string | null;
+  orgType?: TenantOrgType;
 }) {
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
@@ -75,7 +82,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, openKey
   const mark = (s: string) => s === "covered" ? "✓" : s === "thin" ? "◐" : "○";
 
   return (
-    <section className="acct-card readiness-card">
+    <section className="acct-card readiness-card" id="readiness">
       <div className="rc-head">
         <button type="button" className="rc-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="rc-body"
           aria-label={collapsed ? "Expand the checklist" : "Collapse the checklist"} title={collapsed ? "Expand" : "Collapse"}>
@@ -135,7 +142,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, openKey
       {expandedItem && (
         <div className="ck-modal-backdrop" onClick={() => setExpanded(null)}>
           <div className="ck-modal" onClick={e => e.stopPropagation()}>
-            <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload}
+            <ItemDetail item={expandedItem} onClose={() => setExpanded(null)} onUpload={onUpload} orgType={orgType}
               onSaved={() => { setExpanded(null); router.refresh(); }} />
           </div>
         </div>

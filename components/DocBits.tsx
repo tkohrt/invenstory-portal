@@ -9,6 +9,8 @@ import { OUTCOMES, asksOutcomeAtUpload, isWinning, parseOutcome } from "@/lib/do
 import { setDocOutcomeAction } from "@/lib/server/doc-outcome-actions";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
 import Busy from "./Busy";
+import LivingVoicePrompts from "./LivingVoicePrompts";
+import type { TenantOrgType } from "@/lib/living-voice";
 import { browserClient } from "@/lib/supabase-browser";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
@@ -258,8 +260,12 @@ function OutcomePicker({ d }: { d: DocumentWithTags }) {
   );
 }
 
-export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
+export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgType = null, voiceOpen = false }: {
   tenantName: string; onClose: () => void; onDone: () => void; initialLayer?: "I" | "II" | "III";
+  /** For the Living Voice questions (1 Nov 2026). */
+  orgType?: TenantOrgType;
+  /** Open with the questions already showing, from Getting started. */
+  voiceOpen?: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -326,6 +332,8 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer }: {
         <option value="II">Layer II — Internal Strategy</option>
         <option value="III">Layer III — Living Voice</option>
       </select>
+      {/* What to say, right where a Layer III file is added (1 Nov 2026). */}
+      {layer === "III" && <LivingVoicePrompts orgType={orgType} compact={!voiceOpen} onSaved={() => { onDone(); onClose(); }} />}
       <label>What kind of document is it?</label>
       <select value={typeTag} onChange={e => setTypeTag(e.target.value)}>
         <option value="">Not sure (we&rsquo;ll suggest one)</option>

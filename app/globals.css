@@ -439,6 +439,35 @@ button.vis-dot.busy{opacity:.5}
 .acct-dash .stat-grid.tight{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 @media(max-width:900px){.acct-layout{flex-direction:column}.acct-col,.acct-col-wide{max-width:none;width:100%}}
 
+/* Getting started and the Living Voice questions (1 Nov 2026). */
+.gs-card{background:#fff;border:1px solid var(--line,#e0e0e0);border-radius:12px;padding:14px 18px;margin:0 0 16px}
+.gs-head{display:flex;align-items:center;gap:10px}
+.gs-head h3{margin:0;font-size:16px}
+.gs-count{font-size:12px;color:#555}
+.gs-steps{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.gs-steps li{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #f0f0f0}
+.gs-steps li:first-child{border-top:none}
+.gs-mark{flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid #c9c9c9;display:grid;place-items:center;font-size:12px;color:#fff}
+.gs-steps li.done .gs-mark{background:#1f4d2e;border-color:#1f4d2e}
+.gs-text{flex:1;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.gs-text span{color:#555;font-size:12.5px}
+.gs-steps li.done .gs-text b{color:#555}
+.gs-done{color:#1f4d2e;font-size:12px;font-weight:600}
+.lv-box{border:1px solid #d7e6d3;background:#f6faf5;border-radius:10px;padding:12px 14px;margin:12px 0}
+.lv-compact{display:flex;gap:4px;align-items:center;font-size:13px;padding:8px 12px}
+.lv-head{display:flex;align-items:center;gap:8px}
+.lv-head h4{margin:0;font-size:14px}
+.gs-head .spacer,.lv-head .spacer{flex:1}
+.lv-tips{margin:8px 0 10px;padding-left:18px;font-size:12.5px;color:#333}
+.lv-tips li{margin:2px 0}
+.lv-section{margin:8px 0}
+.lv-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#2f5d38;margin-bottom:4px}
+.lv-section ul{margin:0;padding-left:18px;font-size:13px}
+.lv-section li{margin:3px 0}
+.lv-q{display:flex;flex-direction:column;gap:4px;font-size:13px;margin:6px 0 10px}
+.lv-q textarea{width:100%;font:inherit;font-size:13px;border:1px solid var(--line,#e0e0e0);border-radius:8px;padding:8px}
+.lv-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
 /* Funding Eligibility — editor form */
 .fe-progress{display:flex;align-items:center;gap:12px;margin:0 0 16px}
 .fe-bar{flex:1;max-width:320px;height:8px;background:#eee;border-radius:5px;overflow:hidden}
