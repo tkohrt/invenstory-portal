@@ -28,7 +28,8 @@ import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
 // Public international sources (patch 4, 1 Nov 2026): planned from the profile,
 // searched in parallel with Ground Truth, screened by the same rules.
-import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows } from "@/lib/open-data";
+import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
+import { countryName } from "@/lib/countries";
 import { searchOpenSources, type OpenResults } from "./open-data";
 // Approved web finds join only the clients they fit (patch 5).
 import { additionFits } from "@/lib/web-discovery";
@@ -147,7 +148,7 @@ export async function runMatch(
   const openPlan = planOpenSources(p);
   const openWanted = !!(openPlan.worldbank || openPlan.eu || openPlan.iati);
   const phrases = searchPhrases(p);
-  const noOpen: OpenResults = { opportunities: [], funders: [], calls: [] };
+  const noOpen: OpenResults = { opportunities: [], funders: [], ukFunders: [], calls: [] };
 
   step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
   const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
@@ -287,10 +288,13 @@ export async function runMatch(
   // Pure, so it costs nothing to compute before the writes it feeds.
   const ledgerFunderRows = funderRowsFrom(mergedFunders, mergedEvidence);
   // Funders from international aid data, after Ground Truth's own, never twice.
+  // Then UK funders of those same peers, from 360Giving (patch 9).
+  const openWhere = searchCountries(p, MAX_IATI_COUNTRIES).slice(0, 3).map(c => countryName(c) ?? c).join(", ");
   const funderRows = [
     ...ledgerFunderRows,
     ...iatiFunderRows(openRes.funders).filter(f => !ledgerFunderRows.some(r => r.funder_id === f.funder_id)),
-  ];
+    ...threeSixtyFunderRows(openRes.ukFunders ?? [], openWhere),
+  ].filter((f, i, all) => all.findIndex(x => x.funder_id === f.funder_id) === i);
 
   if (screened.length) {
     const { error } = await db.from("eligible_grant").upsert(

@@ -41,12 +41,14 @@ export const SOURCE_LABEL: Record<string, string> = {
   worldbank: "World Bank procurement notices",
   eu_ft: "EU Funding & Tenders Portal",
   iati: "International aid data (IATI)",
+  threesixty: "UK grants data (360Giving)",
   web: "the web search",
 };
 
 /** Short form for a table cell. */
 export const SOURCE_SHORT: Record<string, string> = {
   ledger: "Ground Truth", worldbank: "World Bank", eu_ft: "EU portal", iati: "IATI", web: "Web",
+  threesixty: "360Giving",
 };
 
 export interface OpenOpportunity {
@@ -473,6 +475,121 @@ export function iatiFunderRows(funders: IatiFunder[]): FunderRow[] {
       access_mode: "unknown", access_note: null, access_verified: false,
       has_grant_history: true, verified_at: null,
       source: "iati",
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 360Giving: UK funders of the client's peers (patch 9)
+// ---------------------------------------------------------------------------
+//
+// 360Giving's public API (api.threesixtygiving.org/api/v1) looks organizations
+// up by id; it has no search. So it is asked a narrow, strong question: who
+// has given grants to the UK-registered organizations IATI shows doing this
+// work in the client's countries (ukPeerIds)? Those funders already back
+// organizations like the client. Searching all 360Giving grants by place or
+// theme needs 360Giving Datastore access, which is granted on request.
+
+export interface ThreeSixtyGrant {
+  funderId: string; funderName: string; recipientId: string; recipientName: string;
+  amount: number | null; currency: string | null; year: string | null; title: string | null;
+}
+
+/** grants_received for one organization, flattened. Anything malformed is skipped. */
+export function decode360Received(json: unknown): ThreeSixtyGrant[] {
+  const list = (json as { results?: unknown })?.results;
+  if (!Array.isArray(list)) return [];
+  const out: ThreeSixtyGrant[] = [];
+  for (const raw of list) {
+    const d = (raw as { data?: Record<string, unknown> })?.data;
+    if (!d) continue;
+    const funders = Array.isArray(d.fundingOrganization) ? d.fundingOrganization as { id?: string; name?: string }[] : [];
+    const recips = Array.isArray(d.recipientOrganization) ? d.recipientOrganization as { id?: string; name?: string }[] : [];
+    const f = funders[0];
+    if (!f?.id || !f.name) continue;
+    const amount = typeof d.amountAwarded === "number" ? Math.round(d.amountAwarded) : Number(d.amountAwarded);
+    out.push({
+      funderId: f.id, funderName: f.name.trim(),
+      recipientId: recips[0]?.id ?? "", recipientName: recips[0]?.name?.trim() ?? "",
+      amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+      currency: typeof d.currency === "string" ? d.currency : null,
+      year: typeof d.awardDate === "string" ? d.awardDate.slice(0, 4) : null,
+      title: typeof d.title === "string" ? d.title.slice(0, 200) : null,
+    });
+  }
+  return out;
+}
+
+export interface ThreeSixtyFunder {
+  funder_id: string; name: string;
+  /** Peers this funder has granted to, newest grant first. */
+  grants: { recipient: string; amount: number | null; currency: string | null; year: string | null }[];
+  peerCount: number;
+}
+
+/**
+ * Funders of the peers, ranked by how many different peers they fund, then by
+ * how recently. Grants older than `sinceYear` are left out: a funder that last
+ * gave in 2009 is history, not a prospect.
+ */
+export function threeSixtyFunders(grants: ThreeSixtyGrant[], peerIds: string[], sinceYear = 2018, max = 12): ThreeSixtyFunder[] {
+  const peers = new Set(peerIds.map(x => x.toUpperCase()));
+  const by = new Map<string, ThreeSixtyFunder & { recipients: Set<string>; latest: string }>();
+  for (const g of grants) {
+    if (peers.has(g.funderId.toUpperCase())) continue;          // a peer funding another peer is not a funder lead
+    if (!g.year || Number(g.year) < sinceYear) continue;
+    const id = `360g:${g.funderId}`.slice(0, 200);
+    const row = by.get(id) ?? { funder_id: id, name: g.funderName.slice(0, 300), grants: [], peerCount: 0, recipients: new Set<string>(), latest: "0" };
+    row.grants.push({ recipient: g.recipientName, amount: g.amount, currency: g.currency, year: g.year });
+    // One charity can appear under its charity and its company number, so count by name.
+    row.recipients.add(g.recipientName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || g.recipientId);
+    if (g.year > row.latest) row.latest = g.year;
+    by.set(id, row);
+  }
+  return [...by.values()]
+    .map(r => ({ ...r, peerCount: r.recipients.size, grants: r.grants.sort((a, b) => (b.year ?? "").localeCompare(a.year ?? "")) }))
+    .sort((a, b) => b.peerCount - a.peerCount || b.latest.localeCompare(a.latest) || a.name.localeCompare(b.name))
+    .slice(0, max)
+    .map(({ recipients: _r, latest: _l, ...rest }) => rest);
+}
+
+function moneyShort(n: number, currency: string | null): string {
+  const c = (currency ?? "GBP").toUpperCase();
+  const sym = c === "GBP" ? "£" : c === "USD" ? "$" : c === "EUR" ? "€" : `${c} `;
+  return n >= 1_000_000 ? `${sym}${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${sym}${Math.round(n / 1000)}K` : `${sym}${n}`;
+}
+
+/** "£16K to £150K", from the amounts on record, or null. */
+export function rangeText(amounts: { amount: number | null; currency: string | null }[]): string | null {
+  const xs = amounts.filter(a => a.amount != null) as { amount: number; currency: string | null }[];
+  if (!xs.length) return null;
+  const cur = xs[0].currency;
+  const same = xs.filter(x => x.currency === cur).map(x => x.amount);
+  const lo = Math.min(...same), hi = Math.max(...same);
+  return lo === hi ? moneyShort(hi, cur) : `${moneyShort(lo, cur)} to ${moneyShort(hi, cur)}`;
+}
+
+export function threeSixtyFunderRows(funders: ThreeSixtyFunder[], where: string): FunderRow[] {
+  return funders.map(f => {
+    const seen = new Set<string>();
+    const names = f.grants.map(g => g.recipient).filter(n => {
+      const k = n.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!k || seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    return {
+      funder_id: f.funder_id, ein: null, name: f.name, website: null,
+      location: "United Kingdom", focus: null, mission: null,
+      typical_grant_range: rangeText(f.grants),
+      match_reason: `Has given grants to ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` and ${names.length - 3} more` : ""}: organizations doing related work${where ? ` in ${where}` : ""}, according to UK open grants data (360Giving).`,
+      confidence: null,
+      caveat: null,
+      evidence: f.grants.slice(0, 12).map(g => ({ name: g.recipient, ...(g.year ? { latest_year: g.year } : {}) })),
+      evidence_count: f.grants.length,
+      from_graph: true, from_overlay: false,
+      access_mode: "unknown", access_note: null, access_verified: false,
+      has_grant_history: true, verified_at: null,
+      source: "threesixty",
     };
   });
 }
