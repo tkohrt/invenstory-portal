@@ -15,6 +15,12 @@ export async function getEligibilityProfile(tenantId: string): Promise<Eligibili
     populations: data.populations ?? [], cause_areas: data.cause_areas ?? [],
     federal_registration: data.federal_registration ?? "none", match_capacity_pct: data.match_capacity_pct,
     completeness: data.completeness ?? 0,
+    // International eligibility (0071). Absent before the migration runs, so
+    // every read falls back to the US-only profile it was.
+    country_code: data.country_code ?? null,
+    countries_served: Array.isArray(data.countries_served) ? data.countries_served : [],
+    regions_served: Array.isArray(data.regions_served) ? data.regions_served : [],
+    international: data.international === true,
   };
 }
 

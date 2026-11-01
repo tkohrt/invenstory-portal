@@ -447,7 +447,11 @@ button.vis-dot.busy{opacity:.5}
 .fe-field label{display:block;font-size:12.5px;color:var(--muted,#666);margin-bottom:4px}
 .fe-field select,.fe-field input{width:100%;max-width:420px}
 .fe-row{display:flex;gap:14px;flex-wrap:wrap}.fe-row .fe-field{flex:1;min-width:180px}
-.fe-choice{display:flex;gap:8px}
+.fe-choice{display:flex;gap:8px;flex-wrap:wrap}
+/* International eligibility (1 Nov 2026): the "include funding from outside the US" line. */
+.fe-check{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink,#1a1a1a);margin-top:4px;cursor:pointer}
+.fe-check input{margin-top:3px;width:auto}
+.fe-check input:disabled{cursor:default}
 .fe-states{display:flex;flex-wrap:wrap;gap:4px;max-width:560px}
 .fe-state{font-size:11px;border:1px solid var(--line,#e0e0e0);background:#fff;border-radius:6px;padding:3px 6px;cursor:pointer;color:#666}
 .fe-state.on{background:#e8f3e8;border-color:#cfe4cf;color:#2f5d38;font-weight:600}

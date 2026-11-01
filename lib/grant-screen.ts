@@ -4,7 +4,8 @@
 // Pure and free of `server-only` on purpose. This is the step that decides what
 // an organization never sees, so it has to be unit-testable without a network
 // or a database. The orchestration lives in lib/server/matching.ts.
-import { ORG_TYPES, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { ORG_TYPES, homeLabel, reachLabels, isUsBased, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { countryNames, regionNames, textNames, COUNTRY_NAME } from "@/lib/countries";
 import type { GrantCard, RawGrantResult } from "@/lib/ledger-types";
 
 /** "$500,000" -> 500000. Anything unparseable -> null, never NaN. */
@@ -112,7 +113,8 @@ export function needText(
   p: EligibilityProfile, orgName: string, purpose: "grants" | "funders" = "funders",
 ): string {
   const cause = p.cause_areas.length ? p.cause_areas.join(" and ") : "its mission";
-  const geo = p.state_code ? ` based in ${p.state_code}` : "";
+  const home = homeLabel(p);
+  const geo = home ? ` based in ${home}` : "";
 
   if (purpose === "funders") {
     const orgType = ORG_TYPES.find(t => t.v === p.org_type)?.l ?? "organization";
@@ -120,7 +122,7 @@ export function needText(
       `${orgName}, a ${orgType.toLowerCase()}${geo}`,
       `working on ${cause}`,
       p.populations.length ? `serving ${p.populations.join(", ")}` : null,
-      p.service_area.length ? `across ${p.service_area.join(", ")}` : null,
+      reachLabels(p).length ? `across ${reachLabels(p).join(", ")}` : null,
     ].filter(Boolean).join(" ");
   }
 
@@ -312,6 +314,11 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   if (p.state_code && new RegExp(`\\b${p.state_code}\\b`).test(haystack)) {
     positives.push(`names ${p.state_code}`);
   }
+  // A country or region the organization works in, named in the opportunity's
+  // own text (international eligibility, 1 Nov 2026). The United States is left
+  // out: nearly every US record names it, so it would say nothing.
+  const placed = placeNamed(haystack, p);
+  if (placed) positives.push(`names ${placed}`);
   const cause = p.cause_areas.find(c => c.length > 3 && haystack.toLowerCase().includes(c.toLowerCase()));
   if (cause) positives.push(`cause overlap on ${cause}`);
   if (g.confidence === "strong") positives.push("strong alignment score from the Ledger");
@@ -337,6 +344,23 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
 }
 
 
+
+/** The first country or region of this profile that the text names, or null. */
+export function placeNamed(text: string, p: EligibilityProfile): string | null {
+  const countries = [...new Set([
+    ...(isUsBased(p) ? [] : [p.country_code as string]),
+    ...(p.countries_served ?? []),
+  ])].filter(c => c && c !== "US");
+  for (const c of countries) {
+    if (textNames(text, countryNames(c))) return COUNTRY_NAME[c] ?? c;
+  }
+  for (const r of p.regions_served ?? []) {
+    if (r === "north_america" || r === "global") continue;
+    const hit = textNames(text, regionNames(r));
+    if (hit) return hit.charAt(0).toUpperCase() + hit.slice(1);
+  }
+  return null;
+}
 
 /**
  * Drop rows that are the same opportunity twice.

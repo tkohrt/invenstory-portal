@@ -11,7 +11,7 @@ import "server-only";
 import { getContentCoverage } from "./gap-agent";
 import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor } from "@/lib/checklist";
-import { ORG_TYPES, BUDGET_BANDS, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { ORG_TYPES, BUDGET_BANDS, homeLabel, reachLabels, type EligibilityProfile } from "@/lib/eligibility-fields";
 import type { ScreenedGrant } from "@/lib/grant-screen";
 import { defuse, untrusted, screenAnswerLinks } from "@/lib/untrusted";
 
@@ -39,8 +39,8 @@ export async function buildDossier(tenantId: string, orgName: string, p: Eligibi
     `Organization: ${orgName}`,
     `Type: ${ORG_TYPES.find(t => t.v === p.org_type)?.l ?? "unspecified"}`,
     p.tax_status ? `Tax status: ${p.tax_status}` : null,
-    p.state_code ? `Based in: ${p.state_code}` : null,
-    p.service_area.length ? `Serves: ${p.service_area.join(", ")}` : null,
+    homeLabel(p) ? `Based in: ${homeLabel(p)}` : null,
+    reachLabels(p).length ? `Serves: ${reachLabels(p).join(", ")}` : null,
     p.budget_band ? `Budget band: ${BUDGET_BANDS.find(b => b.v === p.budget_band)?.l ?? p.budget_band}` : null,
     p.cause_areas.length ? `Cause areas: ${p.cause_areas.join(", ")}` : null,
     p.populations.length ? `Populations served: ${p.populations.join(", ")}` : null,
@@ -70,7 +70,8 @@ function ruleBased(g: ScreenedGrant, p: EligibilityProfile, orgName: string): st
   const type = ORG_TYPES.find(t => t.v === p.org_type)?.l?.toLowerCase();
   if (type) bits.push(`${orgName} is a ${type}`);
   if (p.cause_areas.length) bits.push(`working on ${p.cause_areas.join(", ")}`);
-  if (p.state_code) bits.push(`based in ${p.state_code}`);
+  const home = homeLabel(p);
+  if (home) bits.push(`based in ${home}`);
   const base = bits.length ? bits.join(", ") + "." : "";
   return `${base} ${g.reason}. Eligibility text needs a human read at the source.`.trim();
 }

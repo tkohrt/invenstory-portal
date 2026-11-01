@@ -21,7 +21,7 @@
 // Pure and free of `server-only` so the query rules are unit testable without
 // a database or a model.
 
-import type { EligibilityProfile } from "@/lib/eligibility-fields";
+import { homeLabel, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { ORG_TYPES } from "@/lib/eligibility-fields";
 
 /** Who a quoted line is actually about. Same vocabulary as doc-extract. */
@@ -238,7 +238,8 @@ export function grantQueries(
 ): string[] {
   const f = usableFacts(p, GRANT_FACETS);
   const kind = ORG_TYPES.find(t => t.v === e.org_type)?.l ?? "organization";
-  const geo = e.state_code ? ` based in ${e.state_code}` : "";
+  const home = homeLabel(e);
+  const geo = home ? ` based in ${home}` : "";
 
   const identity = joinFacet(f, "identity") || `${kind.toLowerCase()}${geo}`;
   const work = joinFacet(f, "work");
@@ -273,7 +274,7 @@ export function funderQueries(
 ): string[] {
   const f = usableFacts(p, FUNDER_FACETS);
   const kind = ORG_TYPES.find(t => t.v === e.org_type)?.l ?? "organization";
-  const geo = joinFacet(f, "geography") || e.state_code || "";
+  const geo = joinFacet(f, "geography") || homeLabel(e) || "";
 
   const identity = joinFacet(f, "identity") || kind.toLowerCase();
   const work = joinFacet(f, "work");

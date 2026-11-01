@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
-import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
+import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, homeCountry, wantsInternational, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
+import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import AllowanceRequest from "./AllowanceRequest";
 
@@ -25,6 +26,40 @@ function TagField({ label, values, onChange, placeholder }: { label: string; val
   );
 }
 
+/**
+ * Countries as removable chips, added by typing a name (international
+ * eligibility, 1 Nov 2026). A datalist rather than 250 buttons: the list is
+ * long and people know the name they want.
+ */
+function CountryField({ label, values, onChange, exclude }: { label: string; values: string[]; onChange: (v: string[]) => void; exclude?: string }) {
+  const [draft, setDraft] = useState("");
+  const [miss, setMiss] = useState(false);
+  const add = () => {
+    const t = draft.trim().toLowerCase();
+    if (!t) return;
+    const hit = COUNTRY_OPTIONS.find(o => o.l.toLowerCase() === t || o.v.toLowerCase() === t);
+    if (!hit) { setMiss(true); return; }
+    setMiss(false);
+    if (hit.v !== exclude && !values.includes(hit.v)) onChange([...values, hit.v]);
+    setDraft("");
+  };
+  return (
+    <div className="fe-field">
+      <label>{label}</label>
+      <div className="tag-input-row">
+        <input list="fe-country-list" value={draft} onChange={e => { setDraft(e.target.value); setMiss(false); }}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }} placeholder="Start typing a country, e.g. Kenya" />
+        <button type="button" className="btn inline" onClick={add}>Add</button>
+      </div>
+      <datalist id="fe-country-list">{COUNTRY_OPTIONS.map(o => <option key={o.v} value={o.l} />)}</datalist>
+      {miss && <div className="acct-note" style={{ marginTop: 4 }}>Pick a country from the list, so it can be matched against funders&rsquo; own wording.</div>}
+      {values.length > 0 && <div className="fe-tags">{values.map(v => (
+        <span key={v} className="fe-tag">{COUNTRY_NAME[v] ?? v}<button type="button" aria-label={`Remove ${COUNTRY_NAME[v] ?? v}`} onClick={() => onChange(values.filter(x => x !== v))}>×</button></span>
+      ))}</div>}
+    </div>
+  );
+}
+
 export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt }: {
   profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null;
 }) {
@@ -39,7 +74,9 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
   const save = async () => {
     setBusy(true); setMsg(null);
     const r = await saveEligibilityProfileAction(p);
-    setBusy(false); setMsg(`Saved — ${r.completeness}% complete.`);
+    setBusy(false);
+    if (!r.ok) { setMsg(r.error); return; }
+    setMsg(`Saved. ${r.completeness}% complete.`);
     router.refresh();
   };
   const [analyzing, setAnalyzing] = useState(false);
@@ -123,19 +160,58 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
 
       <section className="acct-card">
         <h3>Location &amp; reach</h3>
-        <div className="fe-row">
-          <div className="fe-field"><label>Primary state</label>
-            <select value={p.state_code ?? ""} onChange={e => set({ state_code: e.target.value || null })}>
-              <option value="">Select…</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="fe-field"><label>County (optional)</label><input value={p.county ?? ""} onChange={e => set({ county: e.target.value })} /></div>
+        <div className="fe-field"><label>Country where you are registered</label>
+          <select value={homeCountry(p)} onChange={e => {
+            const c = e.target.value;
+            // Leaving the US clears the state (it means nothing elsewhere) and
+            // turns on the wider search, since US-only money mostly cannot be used.
+            set(c === "US"
+              ? { country_code: "US" }
+              : { country_code: c, state_code: null, international: true, countries_served: p.countries_served.filter(x => x !== c) });
+          }}>
+            {COUNTRY_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
         </div>
-        <div className="fe-field"><label>States you serve</label>
-          <div className="fe-states">{US_STATES.map(s => (
-            <button key={s} type="button" className={`fe-state ${p.service_area.includes(s) ? "on" : ""}`} onClick={() => toggleState(s)}>{s}</button>))}
-          </div>
+        {homeCountry(p) === "US" ? (
+          <>
+            <div className="fe-row">
+              <div className="fe-field"><label>Primary state</label>
+                <select value={p.state_code ?? ""} onChange={e => set({ state_code: e.target.value || null })}>
+                  <option value="">Select…</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="fe-field"><label>County (optional)</label><input value={p.county ?? ""} onChange={e => set({ county: e.target.value })} /></div>
+            </div>
+            <div className="fe-field"><label>States you serve</label>
+              <div className="fe-states">{US_STATES.map(s => (
+                <button key={s} type="button" className={`fe-state ${p.service_area.includes(s) ? "on" : ""}`} onClick={() => toggleState(s)}>{s}</button>))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="fe-field"><label>Region, province or county (optional)</label><input value={p.county ?? ""} onChange={e => set({ county: e.target.value })} placeholder="e.g. Nairobi County" /></div>
+        )}
+        <CountryField
+          label={homeCountry(p) === "US" ? "Other countries you work in (optional)" : "Other countries you work in"}
+          values={p.countries_served} exclude={homeCountry(p)}
+          onChange={v => set({ countries_served: v, international: p.international || v.some(c => c !== "US") })} />
+        <div className="fe-field"><label>Regions you work across (optional)</label>
+          <div className="fe-choice">{REGIONS.map(r => {
+            const on = p.regions_served.includes(r.key);
+            return (
+              <button key={r.key} type="button" aria-pressed={on} className={`chip ${on ? "active" : ""}`}
+                onClick={() => set({ regions_served: on ? p.regions_served.filter(x => x !== r.key) : [...p.regions_served, r.key] })}>{r.label}</button>
+            );
+          })}</div>
         </div>
+        <label className="fe-check">
+          <input type="checkbox" checked={wantsInternational(p)} disabled={wantsInternational({ ...p, international: false })}
+            onChange={e => set({ international: e.target.checked })} />
+          <span>Include funding from outside the United States
+            {wantsInternational({ ...p, international: false })
+              ? " (on, because you are registered or work outside the US)"
+              : " (international foundations, development banks, the UN and the EU)"}</span>
+        </label>
       </section>
 
       <section className="acct-card">
