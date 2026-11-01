@@ -169,8 +169,10 @@ function signal(f: FunderRow): { label: string; cls: string; help: string } {
 
 export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
-  profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments,
+  profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
 }: {
+  /** Found on the web (patch 5), rendered by the page and placed after the funders. */
+  webSection?: React.ReactNode;
   matches: Cached[]; funders: FunderRow[]; orgName: string; configured: boolean;
   /** Matches still owed a real explanation, because a run was cut short. */
   pendingRationales: number;
@@ -658,6 +660,8 @@ export default function FunderMatchesView({
           )}
         </>
       )}
+
+      {webSection}
 
       {isAdmin && (ruledOutFunders.length > 0 || ruledOutGrants.length > 0) && (
         <div className="ov-note tri-hidden">

@@ -41,15 +41,18 @@ export async function actorForJob(tenantId: string, jobId: string): Promise<{ ac
   } catch { return { actor: "system", userId: null }; }
 }
 
-/** Called by chatComplete after every answered call. */
-export async function recordAiUsage(model: string, inputTokens: number, outputTokens: number): Promise<void> {
+/**
+ * Called by chatComplete after every answered call. `extraMicros` is spend the
+ * tokens do not show, such as web searches billed per search (patch 5).
+ */
+export async function recordAiUsage(model: string, inputTokens: number, outputTokens: number, extraMicros = 0): Promise<void> {
   const ctx = als.getStore();
   try {
     const { error } = await db.from("ai_usage").insert({  // tenant-safe: insert carries the call's own tenant_id (or none)
       tenant_id: ctx?.tenantId ?? null, user_id: ctx?.userId ?? null,
       actor: ctx?.actor ?? "system", feature: ctx?.feature ?? "unattributed",
       model, input_tokens: inputTokens, output_tokens: outputTokens,
-      cost_micros: costMicros(model, inputTokens, outputTokens),
+      cost_micros: costMicros(model, inputTokens, outputTokens) + Math.max(0, Math.round(extraMicros)),
     });
     if (error) console.error("[ai-usage] not recorded:", error.message);
   } catch (e) {

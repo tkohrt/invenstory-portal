@@ -30,6 +30,8 @@ import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened
 // searched in parallel with Ground Truth, screened by the same rules.
 import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows } from "@/lib/open-data";
 import { searchOpenSources, type OpenResults } from "./open-data";
+// Approved web finds join only the clients they fit (patch 5).
+import { additionFits } from "@/lib/web-discovery";
 import type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
 export { screenGrant, needText } from "@/lib/grant-screen";
 export type { Verdict, ScreenedGrant } from "@/lib/grant-screen";
@@ -156,8 +158,8 @@ export async function runMatch(
       org_description: funderQs[0] ?? needText(p, orgName, "funders"),
       location: p.state_code ?? undefined,
     })),
-    getApprovedOverlay("grant"),
-    getApprovedOverlay("funder"),
+    getApprovedOverlay("grant").then(rows => rows.filter(r => additionFits(r, tenantId, p))),
+    getApprovedOverlay("funder").then(rows => rows.filter(r => additionFits(r, tenantId, p))),
     buildDossier(tenantId, orgName, p),
     // Never throws: each source fails on its own and says so in the run record.
     openWanted ? searchOpenSources(openPlan, phrases).catch(() => noOpen) : Promise.resolve(noOpen),

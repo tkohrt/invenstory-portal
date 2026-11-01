@@ -44,6 +44,8 @@ const TENANT_SCOPED = new Set([
   "draft_context", "draft_form_item",
   // Document Reader, Phase 0 (0069).
   "document_text",
+  // Web discovery, patch 5 of the 1 Nov 2026 build (0074).
+  "discovery_run", "discovered_lead",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

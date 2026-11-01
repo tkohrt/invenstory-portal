@@ -15,6 +15,9 @@ const PROVENANCE_LABEL: Record<OverlayProvenance, string> = {
   client_surfaced: "Found working a client",
   scout_bot: "Discovery bot",
   manual: "Entered by hand",
+  // Patch 5 (1 Nov 2026): found by a client's web search, checked only against
+  // the pages the search returned. Read the page before approving.
+  web_discovery: "Found by the web search",
 };
 
 function fmt(v: unknown): string {
@@ -173,7 +176,7 @@ export default function AdminLedgerOverlayView({
   // a tab.
   const groups: { key: string; label: string; rows: OverlayQueueRow[] }[] = [];
   for (const kind of ["grant", "funder"] as OverlayKind[]) {
-    for (const prov of ["client_surfaced", "scout_bot", "manual"] as OverlayProvenance[]) {
+    for (const prov of ["client_surfaced", "web_discovery", "scout_bot", "manual"] as OverlayProvenance[]) {
       const rows = visible.filter(r => r.kind === kind && r.provenance === prov);
       if (rows.length) groups.push({ key: `${kind}:${prov}`, label: `${kind === "grant" ? "Grants" : "Funders"} · ${PROVENANCE_LABEL[prov]}`, rows });
     }

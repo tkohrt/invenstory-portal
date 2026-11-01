@@ -41,3 +41,9 @@ export function costMicros(modelId: string, inputTokens: number, outputTokens: n
 }
 
 export const dollars = (micros: number) => micros / 1_000_000;
+
+/**
+ * Claude's web search tool is billed per search on top of tokens: $10 per
+ * 1,000 searches, so one cent each (patch 5, 1 Nov 2026).
+ */
+export const WEB_SEARCH_MICROS = 10_000;

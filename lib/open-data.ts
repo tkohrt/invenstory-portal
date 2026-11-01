@@ -41,7 +41,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   worldbank: "World Bank procurement notices",
   eu_ft: "EU Funding & Tenders Portal",
   iati: "International aid data (IATI)",
-  web: "Found on the web",
+  web: "the web search",
 };
 
 /** Short form for a table cell. */

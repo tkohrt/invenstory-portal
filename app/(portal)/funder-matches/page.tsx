@@ -13,6 +13,8 @@ import { latestJob } from "@/lib/server/jobs";
 import { getJudgments } from "@/lib/server/triage";
 import FunderMatchesView from "@/components/FunderMatchesView";
 import { closedInBrain } from "@/lib/server/brain";
+import WebFinds from "@/components/WebFinds";
+import { getLeads, webSearchAvailable } from "@/lib/server/discovery";
 
 export default async function FunderMatchesPage() {
   const session = await getSession();
@@ -55,8 +57,20 @@ export default async function FunderMatchesPage() {
       ])
     : [{}, null, [], null, null, 0, { done: 0, total: 0 }, new Map()];
 
+  // Found on the web (patch 5). A client reads only rows whose exact page was
+  // found; For Granted sees every row with its review status.
+  const [leads, discoverJob] = await Promise.all([
+    getLeads(session.tenantId, !isAdmin).catch(() => []),
+    isAdmin ? latestJob(session.tenantId, "discover").catch(() => null) : Promise.resolve(null),
+  ]);
+  const webSection = (leads.length > 0 || isAdmin) ? (
+    <WebFinds leads={leads} isAdmin={isAdmin} orgName={tenant?.name ?? "this organization"}
+      available={webSearchAvailable()} canRun={isAdmin} initialJob={discoverJob} />
+  ) : null;
+
   return (
     <FunderMatchesView
+      webSection={webSection}
       matches={matches}
       funders={funders}
       orgName={tenant?.name ?? "this organization"}
