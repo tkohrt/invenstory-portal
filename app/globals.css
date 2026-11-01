@@ -2121,3 +2121,63 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .src-lock input{width:auto;margin:0}
 .src-foot{position:sticky;bottom:-16px;background:var(--panel);border-top:1px solid var(--line);margin:4px -18px -16px;padding:12px 18px;display:flex;align-items:center;gap:10px}
 .fe-kind-src{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Funder Matches, the Storyboard rules (patch 12, 1 Nov 2026). Scoped to .fm-page so nothing leaks. */
+.fm-page .fm-head{align-items:flex-start;margin-bottom:14px}
+.fm-page .fm-head-text{min-width:260px;flex:1 1 380px}
+.fm-page .fm-head-text p{max-width:72ch}
+.fm-page .fm-head-text p .info-tip{vertical-align:middle}
+.fm-page .fm-head .spacer{flex:0 0 0}
+.fm-page .fm-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.fm-page a.sb-btn{text-decoration:none}
+.fm-block{display:block;margin-top:2px}
+.fm-page .fm-strip{display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 6px;font-size:14px}
+.fm-page .fm-strip a{color:var(--ink);font-weight:600;text-decoration:none}
+.fm-page .fm-strip a:hover{text-decoration:underline}
+.fm-page .fm-strip .spacer{flex:1}
+.fm-page .fm-strip-meta{font-size:13px;color:var(--muted)}
+.fm-page .fm-sec{margin-top:26px;scroll-margin-top:12px}
+.fm-page .fm-sec-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.fm-page .fm-sec-head h3{margin:0;font-family:var(--font-heading);font-size:20px;font-weight:700}
+.fm-page .fm-sec-head .spacer{flex:1}
+.fm-page .fm-count{font-size:12px;font-weight:700;color:#5b6170;background:#f1f2f4;border-radius:999px;padding:2px 9px}
+.fm-page .fm-sub{margin:0 0 10px;font-size:13px;color:var(--muted);max-width:80ch}
+.fm-page .fm-scroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.fm-page .fm-scroll .aq-table{font-size:13.5px}
+.fm-page .fm-scroll .aq-table th{font-size:12px;padding:10px 10px;background:#fafbfc;border-bottom:1px solid var(--line);color:#5b6170}
+.fm-page .fm-scroll .aq-table td{padding:12px 10px;border-bottom:1px solid var(--line)}
+.fm-page .fm-scroll .aq-table tr:last-child td{border-bottom:0}
+.fm-page .fm-name{color:var(--ink);min-width:170px;max-width:240px}
+.fm-page .fm-name a{color:var(--ink);text-decoration:none}
+.fm-page .fm-name a:hover{text-decoration:underline;color:#1f4d2e}
+.fm-page .fm-listed{font-size:12px;word-break:normal;overflow-wrap:break-word}
+.fm-page .fm-screen,.fm-page .fm-caveat,.fm-page .fm-nohistory,.fm-page .tri-why,.fm-page .tri-reasons-head,.fm-page .fm-new{font-size:12px}
+.fm-page .fm-funder{min-width:120px;max-width:170px}
+.fm-page .fm-decide{min-width:150px}
+.fm-page .fm-decide > * + *{margin-top:6px}
+.fm-page .fm-decide .mb-wrap{display:inline-flex}
+.fm-page .fm-decide .mb-wrap > .sb-btn{background:#fff;border-color:#d5d8de}
+.fm-page .fm-decide .mb-wrap > .sb-btn::after{content:"\25BE";font-size:11px;margin-left:2px;color:var(--muted)}
+.fm-page .fm-why{min-width:200px}
+.fm-page td.fm-why:has(> span[title]){min-width:170px}
+.fm-page .fm-draft{display:inline-flex;margin-top:6px}
+.fm-page .tri-set .sb-btn{opacity:1}
+.fm-page .tri-reason{font-size:13px}
+.fm-page .fm-toggle{margin-top:10px}
+.fm-page .tri-hidden{margin:18px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fm-page .wf-section{margin-top:26px}
+.fm-page .wf-h4{margin:16px 0 8px;font-size:15px}
+.src-drawer .fm-selfsearch{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fafbfc;font-size:14px;margin:0}
+.fm-page .sp{margin:0 0 14px}
+@media (max-width:640px){.fm-page .fm-actions{width:100%;margin-left:0}.fm-page .fm-actions .sb-primary{flex:1}}
+/* The decision column stays in view while a wide table scrolls inside its panel. */
+.fm-page .fm-scroll .aq-table tr > :last-child{position:sticky;right:0;background:var(--panel);box-shadow:-1px 0 0 var(--line)}
+.fm-page .fm-scroll .aq-table thead tr > :last-child{background:#fafbfc}
+.fm-page .fm-seen{min-width:104px;max-width:130px;font-size:12px}
+.fm-page .fm-seen > div{margin-top:5px;display:inline-block}
+.src-foot .spacer{flex:1}
+@media (max-width:640px){.fm-page .fm-scroll .aq-table tr > :last-child{position:static;box-shadow:none}}
+/* Review fixes (patch 12): an open menu sits above the pinned column; text on this page is 12px or larger. */
+.mb-floating{z-index:80}
+.fm-page .fm-scroll .aq-table td:has(.mb-menu){z-index:5}
+.fm-page .ov-tag,.fm-page .fc-cell,.fm-page .tri-global,.fm-page .sp-src,.fm-page .sp-track,.fm-page .sp-count,.fm-page .sp-failed{font-size:12px}

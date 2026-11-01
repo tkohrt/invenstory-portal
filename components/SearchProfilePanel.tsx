@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SOURCE_SHORT } from "@/lib/open-data";
 import { useRouter } from "next/navigation";
 import JobProgress, { useJob } from "./JobProgress";
+import { SPARK } from "./Spark";
 import type { Job } from "@/lib/job";
 import {
   FACET_LABEL, FACETS, factId, type ProfileFact, type Facet,
@@ -363,24 +364,24 @@ export default function SearchProfilePanel({
         </span>
         <span className="ov-spacer" />
         {profile && (
-          <button type="button" className="fc-link" onClick={() => setOpen(v => !v)}>
-            {open ? "Hide" : "Expand"}
+          <button type="button" className="sb-btn sb-quiet sb-sm" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+            {open ? "Hide" : "Show the profile"}
           </button>
         )}
         {/* Free and instant, so it is a link rather than a button competing
             with the one that costs three minutes. */}
         {profile && stored.done > 0 && (
-          <button type="button" className="fc-link" onClick={() => void reassemble()}
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => void reassemble()}
                   disabled={busy}
                   title="Re-merges the facts already read into the profile. Reads nothing again, so it costs nothing and takes a moment.">
-            re-merge
+            Re-merge
           </button>
         )}
         {/* Start over is deliberately the QUIET button whenever there is
             partial work, and deliberately separate from the loud one. The loud
             button must never be the one that deletes minutes of model spend. */}
         {partial && !profile && (
-          <button type="button" className="btn ghost" onClick={rebuild} disabled={busy}
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={rebuild} disabled={busy}
                   title="Forgets the documents already read and starts from the first one.">
             Start over
           </button>
@@ -389,11 +390,13 @@ export default function SearchProfilePanel({
             pulses is asking to be pressed, and pressing it throws away every
             document already read. */}
         <button type="button"
-                className={profile ? "btn ghost" : `btn sp-build${busy ? "" : " sp-build-pulse"}`}
+                // Patch 12: it reads documents with a model, so it wears the AI mark
+                // (purple outline, spark) and is never the page's filled primary.
+                className="sb-btn sb-ai sb-sm"
                 onClick={profile ? rebuild : partial ? carryOn : rebuild}
                 disabled={busy}
                 title={cta.hint}>
-          {working ? "Reading…" : cta.label}
+          {SPARK}{working ? "Reading…" : cta.label}
         </button>
       </div>
 

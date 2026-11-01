@@ -12,6 +12,8 @@ import type { Job } from "@/lib/job";
 import { FUNDING_KIND_LABEL, isFundingKind } from "@/lib/eligibility-fields";
 import ClientVerdict from "./ClientVerdict";
 import type { ClientView } from "@/lib/client-view";
+import { SPARK } from "./Spark";
+import InfoTip from "./InfoTip";
 
 export interface WebLead {
   id: string; kind: "opportunity" | "funder"; money_kind: string; title: string; funder: string | null;
@@ -33,12 +35,14 @@ function when(d: string | null, rolling: boolean): string {
   return rolling ? "Rolling" : "Not stated";
 }
 
-export default function WebFinds({ leads: allLeads, isAdmin, orgName, available, canRun, initialJob, clientViews = {}, clientMode = false, preview = false }: {
+export default function WebFinds({ leads: allLeads, isAdmin, orgName, available, offReason = null, canRun, initialJob, clientViews = {}, clientMode = false, preview = false }: {
   leads: WebLead[];
   isAdmin: boolean;
   orgName: string;
   /** Web search works in this deployment (Claude on Vertex). */
   available: boolean;
+  /** Why the web search cannot run, when it cannot (patch 11): off in Sources, or not set up here. */
+  offReason?: string | null;
   /** This person may start a search here (For Granted; a client only when allowed, patch 7). */
   canRun: boolean;
   initialJob: Job | null;
@@ -71,7 +75,7 @@ export default function WebFinds({ leads: allLeads, isAdmin, orgName, available,
   const funders = leads.filter(l => l.kind === "funder");
 
   const table = (rows: WebLead[], kind: "opportunity" | "funder") => (
-    <table className="aq-table fm-table">
+    <div className="fm-scroll"><table className="aq-table fm-table">
       <thead>
         <tr>
           <th>{kind === "opportunity" ? "Opportunity" : "Funder"}</th>
@@ -96,10 +100,10 @@ export default function WebFinds({ leads: allLeads, isAdmin, orgName, available,
             </td>
             {kind === "opportunity" && <td className="fm-funder">{l.funder ?? <span className="ov-muted">Not stated</span>}</td>}
             {kind === "opportunity" && <td className="fm-nowrap">{when(l.deadline, l.rolling)}</td>}
-            {kind === "opportunity" && <td className="fm-nowrap">{l.amount_text ?? "—"}</td>}
+            {kind === "opportunity" && <td className="fm-nowrap">{l.amount_text ?? <span className="ov-muted">Not stated</span>}</td>}
             <td>{l.geography ?? <span className="ov-muted">Not stated</span>}</td>
             <td className="fm-why">
-              {l.why ?? <span className="ov-muted">—</span>}
+              {l.why ?? <span className="ov-muted">No reason given</span>}
               {l.quote && <div className="fm-screen" title="Copied from the page when it was found.">Page says: &ldquo;{l.quote}&rdquo;</div>}
             </td>
             {isAdmin && (
@@ -117,36 +121,38 @@ export default function WebFinds({ leads: allLeads, isAdmin, orgName, available,
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 
   return (
-    <section className="wf-section" aria-label="Found on the web">
-      <div className="wf-head">
-        <h3 className="fm-h3" style={{ margin: 0 }}>Found on the web</h3>
+    <section id="fm-web" className="wf-section fm-sec" aria-labelledby="fm-web-h">
+      <div className="fm-sec-head">
+        <h3 id="fm-web-h">Found on the web</h3>
+        <span className="fm-count">{leads.length}</span>
+        <InfoTip label="How web finds are kept">
+          {isAdmin
+            ? <>Each answer is kept only if its page was among the search results. Every find goes to the Ground Truth review queue as a proposal: none reaches another client until someone approves it.</>
+            : <>Kept only when the page itself was found. Not yet checked by For Granted: read the page before you act on it, and ask your For Granted team if anything is unclear.</>}
+        </InfoTip>
         <span className="spacer" />
         {canRun && (
-          <button type="button" className="sb-btn sb-ai sb-sm" onClick={search}
+          <button type="button" className="sb-btn sb-ai" onClick={search}
             disabled={!available || starting || running}
-            title={!available ? "Web search needs Claude on Vertex in this environment." : "Runs up to four searches. Each uses part of the monthly AI allowance."}>
-            {running ? "Searching the web…" : starting ? "Starting…" : leads.length ? "Search the web again" : "Search the web"}
+            title={!available ? (offReason ?? "The web search is not available here.") : "Runs up to four searches. Each uses part of the monthly AI allowance."}>
+            {SPARK}{running ? "Searching the web…" : starting ? "Starting…" : leads.length ? "Search the web again" : "Search the web"}
           </button>
         )}
       </div>
-      <p className="fm-sub">
-        {isAdmin
-          ? <>What is open now, found by searching the web from {orgName}&apos;s profile. Each answer is kept only if its page was among the search results, and every find goes to the Ground Truth review queue as a proposal: none reaches another client until someone approves it.</>
-          : <>Opportunities and funders found by searching the web for {orgName}, kept only when the page itself was found. Found on the date shown and not yet checked by For Granted: read the page before you act on it, and ask your For Granted team if anything is unclear.</>}
-      </p>
+      <p className="fm-sub">What is open now, found by searching the web for {orgName}{isAdmin ? "" : ", on the date shown"}.</p>
       <JobProgress job={job} events={events} lostContact={gaveUp} />
-      {error && <div className="ov-err">{error}</div>}
+      {error && <div className="ap-error" role="alert">{error}</div>}
       {!leads.length && !running && (
         <div className="ov-note">{canRun ? "Nothing yet. Search the web to look for what is open now." : "Nothing found on the web yet."}</div>
       )}
       {opps.length > 0 && table(opps, "opportunity")}
       {funders.length > 0 && (<><h4 className="wf-h4">Funders</h4>{table(funders, "funder")}</>)}
       {setAside.length > 0 && (
-        <button type="button" className="fm-toggle" onClick={() => setShowSetAside(v => !v)}>
+        <button type="button" className="sb-btn sb-quiet sb-sm fm-toggle" onClick={() => setShowSetAside(v => !v)}>
           {showSetAside ? "Hide the ones you marked Not for us" : `Show ${setAside.length} you marked Not for us`}
         </button>
       )}

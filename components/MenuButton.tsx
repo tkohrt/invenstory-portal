@@ -9,7 +9,7 @@
 // scroll the Storyboard is sized to avoid (CLAUDE.md, The Garden).
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-export default function MenuButton({ label, icon, text, up = false, className = "", children }: {
+export default function MenuButton({ label, icon, text, up = false, className = "", small = false, floating = false, children }: {
   /** The accessible name of the button. */
   label: string;
   icon?: ReactNode;
@@ -17,6 +17,14 @@ export default function MenuButton({ label, icon, text, up = false, className = 
   text?: string;
   up?: boolean;
   className?: string;
+  /** 30px trigger, for a menu inside a table row or card (sb-sm). */
+  small?: boolean;
+  /**
+   * Position the menu against the window rather than its button, for a menu
+   * inside a panel that scrolls or clips (a wide table). It opens upward when
+   * there is no room below, and closes when the page scrolls.
+   */
+  floating?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -24,8 +32,21 @@ export default function MenuButton({ label, icon, text, up = false, className = 
   const trigger = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const id = useId();
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   /** Close, and give focus back to the button, so a keyboard user is not left on the page body. */
   const close = () => { setOpen(false); trigger.current?.focus(); };
+  useEffect(() => {
+    if (!open || !floating || !trigger.current) { setPos(null); return; }
+    const r = trigger.current.getBoundingClientRect();
+    const right = Math.max(8, window.innerWidth - r.right);
+    setPos(window.innerHeight - r.bottom < 320 && r.top > 320
+      ? { bottom: window.innerHeight - r.top + 6, right }
+      : { top: r.bottom + 6, right });
+    const shut = () => setOpen(false);
+    window.addEventListener("scroll", shut, true);
+    window.addEventListener("resize", shut);
+    return () => { window.removeEventListener("scroll", shut, true); window.removeEventListener("resize", shut); };
+  }, [open, floating]);
   useEffect(() => {
     if (!open) return;
     // Opening moves focus to the first item a person can choose.
@@ -38,13 +59,15 @@ export default function MenuButton({ label, icon, text, up = false, className = 
   }, [open]);
   return (
     <span className={`mb-wrap ${className}`} ref={root}>
-      <button type="button" ref={trigger} className={`sb-btn ${text ? "sb-quiet" : "sb-secondary sb-icon"}${open ? " mb-open" : ""}`}
-        aria-label={text ? undefined : label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+      <button type="button" ref={trigger} className={`sb-btn ${text ? "sb-quiet" : "sb-secondary sb-icon"}${small ? " sb-sm" : ""}${open ? " mb-open" : ""}`}
+        // A visible word keeps a fuller name when the label begins with it ("Decide on Mastercard Foundation").
+        aria-label={text ? (label !== text && label.startsWith(text) ? label : undefined) : label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
         onClick={() => setOpen(o => !o)}>
         {icon}{text}
       </button>
       {open && (
-        <div id={id} ref={menu} role="menu" aria-label={label} className={`mb-menu${up ? " mb-up" : ""}`}
+        <div id={id} ref={menu} role="menu" aria-label={label} className={`mb-menu${up ? " mb-up" : ""}${floating ? " mb-floating" : ""}`}
+          style={floating && pos ? { position: "fixed", top: pos.top ?? "auto", bottom: pos.bottom ?? "auto", right: pos.right } : undefined}
           onClick={e => {
             const item = (e.target as HTMLElement).closest("[role=menuitem]");
             if (item && !item.hasAttribute("data-keep-open")) close();

@@ -25,6 +25,9 @@ import ClientVerdict from "./ClientVerdict";
 import { setSelfSearchAction } from "@/lib/server/client-view-actions";
 import type { ClientView } from "@/lib/client-view";
 import SourcesPanel from "./SourcesPanel";
+import MenuButton, { MenuItem, DOTS } from "./MenuButton";
+import InfoTip from "./InfoTip";
+import { SPARK } from "./Spark";
 import type { SourceState, SourceRun, SourceId } from "@/lib/sources";
 
 interface Cached {
@@ -96,7 +99,7 @@ function firstSeen(row: { matched_at?: string | null; first_matched_at?: string 
   { label: string; help: string } {
   const first = row.first_matched_at ? new Date(row.first_matched_at) : null;
   if (!first || isNaN(first.getTime())) {
-    return { label: "—", help: "This predates the record of when matches first appeared." };
+    return { label: "Earlier", help: "This predates the record of when matches first appeared." };
   }
   const run = row.matched_at ? new Date(row.matched_at) : null;
   // A minute of slack: the row's timestamp is set by the database on insert
@@ -111,7 +114,7 @@ function firstSeen(row: { matched_at?: string | null; first_matched_at?: string 
 }
 
 function money(n: number | null, currency?: string | null) {
-  if (n == null) return "—";
+  if (n == null) return "Not stated";
   // EU calls are in euros (patch 4); everything before was US dollars.
   const c = (currency ?? "USD").toUpperCase();
   const sym = c === "USD" ? "$" : c === "EUR" ? "€" : c === "GBP" ? "£" : `${c} `;
@@ -160,11 +163,11 @@ function evidenceText(f: FunderRow): string {
 function signal(f: FunderRow): { label: string; cls: string; help: string } {
   if (f.from_graph) return {
     label: "Already funds peers", cls: "fm-eligible",
-    help: "On the giving history on record, this funder has made grants to organizations like this one. The strongest signal on this page — and still a June 2026 record, so confirm it before acting.",
+    help: "On the giving history on record, this funder has made grants to organizations like this one. The strongest signal on this page, and still a June 2026 record, so confirm it before acting.",
   };
   if (f.from_overlay) return {
     label: "For Granted record", cls: "",
-    help: "A funder For Granted added or verified directly. It has not been assessed against this organization specifically — it is here because the team thought it worth knowing about.",
+    help: "A funder For Granted added or verified directly. It has not been assessed against this organization specifically; it is here because the team thought it worth knowing about.",
   };
   return {
     label: "Focus aligns", cls: "",
@@ -325,59 +328,80 @@ export default function FunderMatchesView({
    * feeds; the order on screen then matches the order of the work. A client
    * never sees the profile, so for them this stays where it was, at the top.
    */
+  // Patch 11 and 12: who may search sits with the sources, in the Sources
+  // panel, rather than as its own bar on the page.
+  const [selfErr, setSelfErr] = useState<string | null>(null);
+  const selfSearchSlot = isAdmin && selfSearch !== null ? (
+    <div className="fm-selfsearch">
+      <button type="button" role="switch" aria-checked={!!selfSearch} aria-label={`Let ${orgName} run searches themselves`} className="rs-switch"
+        onClick={() => { setSelfErr(null); void setSelfSearchAction(!selfSearch).then(r => { if (!r.ok) setSelfErr(r.error); router.refresh(); }); }} />
+      <span>
+        <strong>Let {orgName} run searches themselves</strong>
+        <span className="src-meta fm-block">{selfSearch
+          ? "On: they can search for funding, search the web and change any source not locked, up to three searches and two web searches a day, within their AI allowance."
+          : "Off: For Granted runs every search and chooses the sources."}</span>
+        {selfErr && <span className="ap-error fm-block" role="alert">{selfErr}</span>}
+      </span>
+    </div>
+  ) : null;
+
+  const runLabel = running ? "Searching…" : starting ? "Starting…"
+    : matches.length ? (isAdmin ? "Re-run matching" : "Search again") : (isAdmin ? "Run matching" : "Search for funding");
+  const hasResults = matches.length > 0 || funders.length > 0;
+
+  /**
+   * The heading and the page's actions (patch 12, the Storyboard rules): the
+   * title first; Sources and the fit report as secondary buttons; rare tools in
+   * the ⋯ menu; one primary, the search.
+   */
   const heading = (
     <>
-      <div className="page-head">
-        <div>
+      <div className="page-head fm-head">
+        <div className="fm-head-text">
           <h2>Funder Matches</h2>
           <p>
-            Opportunities screened for {orgName}: eligibility rules first, then alignment,
-            then funding evidence.{" "}
-            {isAdmin
-              ? <>Anything not yet checked against Ground Truth is a <strong>lead, not a fact</strong>: verify eligibility and deadlines on the funder&apos;s own site before it reaches a client or an application.</>
-              : <>Check deadlines and eligibility on the funder&apos;s own site before you apply; your For Granted team can help.</>}
+            Opportunities and funders screened for {orgName}: eligibility first, then fit, then funding history.{" "}
+            <InfoTip label="How to read these matches">
+              {isAdmin
+                ? <>Anything not yet checked against Ground Truth is a <strong>lead, not a fact</strong>. Verify eligibility and deadlines on the funder&apos;s own site before it reaches a client or an application.</>
+                : <>Every match is a lead. Check deadlines and eligibility on the funder&apos;s own site before you apply; your For Granted team can help.</>}
+            </InfoTip>
           </p>
         </div>
         <span className="spacer" />
-        {sources.length > 0 && (
-          <SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
-            role={isAdmin ? "admin" : "client"} preview={viewingAsClient} selfSearch={selfSearchOn}
-            canRun={canRun && configured} running={running || starting} onRun={run} />
-        )}
-        {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
-        {(matches.length > 0 || funders.length > 0) && (
-          <a className="sb-btn sb-secondary sb-sm fm-report-link" href="/funder-matches/report">Open the fit report</a>
-        )}
-        {canRun && (
-          <>
-            <button className="btn" onClick={run} disabled={starting || running || !configured}
-              title={isAdmin ? undefined : "Searches Ground Truth and, if you work outside the US, public international sources. Uses part of the monthly AI allowance."}>
-              {running ? "Searching…" : starting ? "Starting…" : matches.length ? (isAdmin ? "Re-run matching" : "Search again") : (isAdmin ? "Run matching" : "Search for funding")}
+        <div className="fm-actions">
+          {sources.length > 0 && (
+            <SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
+              role={isAdmin ? "admin" : "client"} preview={viewingAsClient} selfSearch={selfSearchOn}
+              canRun={canRun && configured} running={running || starting} onRun={run} adminSlot={selfSearchSlot} />
+          )}
+          {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
+          {hasResults && <a className="sb-btn sb-secondary" href="/funder-matches/report">Open the fit report</a>}
+          {isAdmin && (
+            <MenuButton label="More Funder Matches actions" icon={DOTS}>
+              <MenuItem title={`View as ${orgName}`} hint="This page exactly as the client sees it, with nothing changeable."
+                onClick={() => router.push("/funder-matches?view=client")} />
+              <MenuItem title="Clear cached matches" hint="Empties these tables. The next search builds them again."
+                disabled={!hasResults || pending} onClick={clear} />
+            </MenuButton>
+          )}
+          {canRun && (
+            <button type="button" className="sb-btn sb-primary" onClick={run} disabled={starting || running || !configured}
+              title={!configured ? "Ground Truth is not connected yet." : isAdmin ? undefined : "Searches Ground Truth and the sources listed under Sources. Uses part of the monthly AI allowance."}>
+              {runLabel}
             </button>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Patch 7: For Granted sees the page as the client does, and decides
-          whether the client may run searches itself. */}
+      {/* If the sources could not be read, the switch must still be reachable. */}
+      {sources.length === 0 && selfSearchSlot}
+
+      {/* Patch 7: For Granted sees the page as the client does. */}
       {viewingAsClient && (
         <div className="ov-note fm-asclient">
           You are seeing this page as {orgName} sees it: no contacts, no Search Profile, none of For Granted&apos;s
           decisions, and nothing For Granted ruled out. <a href="/funder-matches">Back to For Granted&apos;s view</a>
-        </div>
-      )}
-      {isAdmin && selfSearch !== null && (
-        <div className="fm-selfsearch">
-          <button type="button" role="switch" aria-checked={!!selfSearch} aria-label={`Let ${orgName} run searches themselves`} className="rs-switch"
-            onClick={() => { void setSelfSearchAction(!selfSearch).then(r => { if (!r.ok) setErr(r.error); router.refresh(); }); }} />
-          <span>
-            Let {orgName} run searches themselves
-            <span className="ov-muted"> · {selfSearch
-              ? "on: they can search for funding and search the web from this page, up to three searches and two web searches a day, within their AI allowance."
-              : "off: For Granted runs every search."}</span>
-          </span>
-          <span className="spacer" />
-          <a className="sb-btn sb-quiet sb-sm" href="/funder-matches?view=client">View as {orgName}</a>
         </div>
       )}
 
@@ -427,8 +451,8 @@ export default function FunderMatchesView({
     if (picking) {
       const codes = kind === "funder" ? FUNDER_REASONS : GRANT_REASONS;
       return (
-        <div className="tri-reasons">
-          <div className="tri-reasons-head">Why?</div>
+        <div className="tri-reasons" role="group" aria-label={`Why ${STATE_LABEL[picking].toLowerCase()}?`}>
+          <div className="tri-reasons-head">Why {STATE_LABEL[picking].toLowerCase()}?</div>
           {codes.map(c => (
             <button key={c.code} type="button" className="tri-reason" disabled={busy}
                     title={c.global
@@ -438,7 +462,7 @@ export default function FunderMatchesView({
               {c.label}{c.global && <span className="tri-global" title="True for every client. Goes to the Ground Truth queue as a proposal.">shared</span>}
             </button>
           ))}
-          <button type="button" className="fc-link" onClick={() => setPicking(null)}>cancel</button>
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => setPicking(null)}>Cancel</button>
         </div>
       );
     }
@@ -451,34 +475,34 @@ export default function FunderMatchesView({
             {STATE_LABEL[j.state]}
           </span>
           {r && <span className="tri-why" title={r.help}>{r.label}</span>}
-          <button type="button" className="fc-link" disabled={busy} onClick={undo}>undo</button>
+          <button type="button" className="sb-btn sb-quiet sb-sm" disabled={busy} onClick={undo}
+            aria-label={`Undo ${STATE_LABEL[j.state]} for ${label}`}>Undo</button>
         </div>
       );
     }
 
     return (
-      <div className="tri-pick">
+      <MenuButton label={`Decide on ${label}`} text="Decide" small floating>
         {statesFor(kind).map(st => (
-          <button key={st} type="button" className={`fc-link tri-opt tri-opt-${st}`} disabled={busy}
-                  title={STATE_HELP[st]}
-                  onClick={() => suppresses(st) ? setPicking(st) : apply(st)}>
-            {STATE_LABEL[st]}
-          </button>
+          <MenuItem key={st} title={STATE_LABEL[st]} hint={STATE_HELP[st]} disabled={busy}
+            onClick={() => suppresses(st) ? setPicking(st) : apply(st)} />
         ))}
-      </div>
+      </MenuButton>
     );
   };
 
+  const compiled = matches[0]?.matched_at ?? funders[0]?.matched_at ?? null;
+
   return (
-    <div>
-      {isAdmin ? (
-        <>
-          <SearchProfilePanel
-            profile={profile} lastQueries={lastQueries} orgName={orgName}
-            job={profileJob} stored={profileStored} />
-          {heading}
-        </>
-      ) : heading}
+    <div className="fm-page">
+      {heading}
+      {/* The Search Profile is the input to a match, For Granted's only. Under
+          the title (patch 12), not above it: the page's subject comes first. */}
+      {isAdmin && (
+        <SearchProfilePanel
+          profile={profile} lastQueries={lastQueries} orgName={orgName}
+          job={profileJob} stored={profileStored} />
+      )}
 
       <JobProgress job={shownJob} events={events} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
       <JobProgress job={rJob} events={rEvents} lostContact={rGaveUp} />
@@ -489,37 +513,59 @@ export default function FunderMatchesView({
           rule-based summary because the last run ran out of time before explaining
           {owed === 1 ? " it" : " them"}.
           {" "}
-          <button type="button" className="fc-link"
+          <button type="button" className="sb-btn sb-ai sb-sm" title="Writes the missing explanations. Uses a small part of the monthly AI allowance."
                   onClick={() => void startRationales("/api/jobs/rationales", "rationales")}>
-            Finish the explanations
+            {SPARK}Finish the explanations
           </button>
         </div>
       )}
-      {jobError && <div className="ov-err">{jobError}</div>}
-      {err && <div className="ov-err">{err}</div>}
+      {jobError && <div className="ap-error" role="alert">{jobError}</div>}
+      {err && <div className="ap-error" role="alert">{err}</div>}
+
+      {/* What is on the page, and where: account for everything (guide 1.3). */}
+      {hasResults && (
+        <nav className="fm-strip" aria-label="On this page">
+          <a href="#fm-calls">{visibleMatches.length} open call{visibleMatches.length === 1 ? "" : "s"}</a>
+          {(visibleFunders.length > 0 || screened.hidden.length > 0)
+            ? <a href="#fm-funders">{visibleFunders.length} funder{visibleFunders.length === 1 ? "" : "s"}</a>
+            : <span className="fm-strip-meta">No funders shown</span>}
+          {webSection && <a href="#fm-web">Found on the web</a>}
+          <span className="spacer" />
+          {compiled && <span className="fm-strip-meta">Compiled {new Date(compiled).toLocaleDateString()}</span>}
+          {isAdmin && selfSearch !== null && (
+            <span className="fm-strip-meta">{orgName} {selfSearch ? "can" : "cannot"} run searches</span>
+          )}
+        </nav>
+      )}
 
       {matches.length === 0 && visibleFunders.length === 0 && !screened.hidden.length ? (
         <div className="empty">
-          No matches cached yet.{isAdmin && configured ? " Run matching to build the list." : ""}
+          No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}
         </div>
       ) : matches.length === 0 ? (
-        <div className="empty">
-          No open solicitations survived screening this run. The funders below are still worth
-          approaching — most foundation money never appears as a public call.
+        <div className="empty" id="fm-calls">
+          No open calls survived screening this run. The funders below are still worth
+          approaching: most foundation money never appears as a public call.
         </div>
       ) : (
-        <>
-          <div className="ov-runbar">
-            {visibleMatches.length} opportunities · compiled{" "}
-            {new Date(matches[0].matched_at).toLocaleDateString()} · every match is a lead to
-            confirm with the funder before applying
+        <section id="fm-calls" className="fm-sec" aria-labelledby="fm-calls-h">
+          <div className="fm-sec-head">
+            <h3 id="fm-calls-h">Open calls</h3>
+            <span className="fm-count">{visibleMatches.length}</span>
+            <InfoTip label="What the verdicts mean">
+              <strong>Eligible</strong>: {VERDICT_HELP.eligible}<br /><br />
+              <strong>Likely</strong>: {VERDICT_HELP.likely}<br /><br />
+              <strong>Needs a check</strong>: {VERDICT_HELP.check}
+            </InfoTip>
           </div>
+          <p className="fm-sub">Calls with a deadline or rolling intake that {orgName} could apply to. Each is a lead to confirm with the funder before applying.</p>
+          <div className="fm-scroll">
           <table className="aq-table fm-table">
             <thead>
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
-                <th>Deadline</th><th>Ceiling</th><th>First seen</th>
-                <th>Verified</th><th>Why this client</th>{isAdmin ? <th>Decision</th> : <th>Your view</th>}
+                <th>Deadline</th><th>Ceiling</th><th>Seen and checked</th>
+                <th>Why this client</th>{isAdmin ? <th>Decision</th> : <th>Your view</th>}
               </tr>
             </thead>
             <tbody>
@@ -543,17 +589,16 @@ export default function FunderMatchesView({
                   </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
                   <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
-                  <td className="fm-nowrap">
+                  <td className="fm-seen">
+                    {/* Patch 12: first seen and verified share a column, so the reason fits beside them. */}
                     <span className={firstSeen(m).label === "New" ? "fm-new" : "ov-muted"}
-                          title={firstSeen(m).help}>{firstSeen(m).label}</span>
-                  </td>
-                  <td className="fm-nowrap">
-                    <span className={m.verified_at ? "fm-verified" : "ov-muted"} title={verified(m).help}>
+                          title={firstSeen(m).help}>{firstSeen(m).label === "New" || firstSeen(m).label === "Earlier" ? firstSeen(m).label : `Since ${firstSeen(m).label}`}</span>
+                    <div className={m.verified_at ? "fm-verified" : "ov-muted"} title={verified(m).help}>
                       {verified(m).label}
-                    </span>
+                    </div>
                   </td>
                   <td className="fm-why">
-                    {m.rationale || <span className="ov-muted">{m.reason ?? "—"}</span>}
+                    {m.rationale || <span className="ov-muted">{m.reason ?? "No explanation yet"}</span>}
                     {m.rationale && m.reason && (
                       <div className="fm-screen">Screen: {m.reason}</div>
                     )}
@@ -562,7 +607,7 @@ export default function FunderMatchesView({
                     <td className="fm-decide">
                       <Triage kind="grant" id={m.grant_id} label={m.title || m.grant_id} />
                       <ClientVerdict kind="grant" targetId={m.grant_id} view={viewOf("grant", m.grant_id)} mode="admin" />
-                      <a className="fm-draft" href={`/draft/new?grant=${encodeURIComponent(m.grant_id)}`}
+                      <a className="sb-btn sb-secondary sb-sm fm-draft" href={`/draft/new?grant=${encodeURIComponent(m.grant_id)}`}
                          title="Start a draft from this opportunity's application. For Granted only.">Draft this</a>
                     </td>
                   )}
@@ -575,34 +620,36 @@ export default function FunderMatchesView({
               ))}
             </tbody>
           </table>
-        </>
+          </div>
+        </section>
       )}
 
       {/* Gated on hidden too. Otherwise a run where every funder is screened
           out hides the toggle inside the block the toggle would have to open,
           and the rows become unreachable rather than one click away. */}
       {(visibleFunders.length > 0 || screened.hidden.length > 0) && (
-        <>
-          <h3 className="fm-h3">Funders worth approaching</h3>
-          <p className="fm-sub">
-            Not open calls. These are organizations whose giving lines up with {orgName}&apos;s
-            work, and the ones marked <strong>already funds peers</strong> have a record of
-            granting to organizations like this one — the strongest reason on this page to
-            spend an afternoon on an approach. Like everything here it reads a{" "}
-            <strong>June 2026 snapshot</strong>: a funder&apos;s priorities and the people who
-            run their programmes both move. A funder with no open solicitation is normally
-            reached by a letter of inquiry, so treat this as a shortlist to research, not a
-            list to apply to. Read the <strong>Access</strong> column first: an invitation-only
-            funder will not read a cold proposal however well it fits, and &ldquo;likely&rdquo;
-            there means we inferred it rather than checked.
-          </p>
+        <section id="fm-funders" className="fm-sec" aria-labelledby="fm-funders-h">
+          <div className="fm-sec-head">
+            <h3 id="fm-funders-h">Funders worth approaching</h3>
+            <span className="fm-count">{visibleFunders.length}</span>
+            <InfoTip label="How to read the funders">
+              These are not open calls. They are organizations whose giving lines up with {orgName}&apos;s work.
+              The ones marked <strong>Already funds peers</strong> have a record of granting to organizations like
+              this one, the strongest reason on this page to spend an afternoon on an approach. Records read a
+              June 2026 snapshot, and a funder&apos;s priorities and staff both move. Read the <strong>Access</strong>{" "}
+              column first: an invitation-only funder will not read a cold proposal however well it fits, and
+              &ldquo;Likely&rdquo; there means we inferred it rather than checked.
+            </InfoTip>
+          </div>
+          <p className="fm-sub">Funders to research and approach, usually with a letter of inquiry. Read the Access column first.</p>
           {visibleFunders.length > 0 && (
+          <div className="fm-scroll">
           <table className="aq-table fm-table">
             <thead>
               <tr>
                 <th>Funder</th><th>Access</th><th>Signal</th><th>Typical grant</th>
                 <th>Evidence</th>{isAdmin && <th>Who reads it</th>}
-                <th>First seen</th><th>Verified</th><th>Why this client</th>
+                <th>Seen and checked</th><th>Why this client</th>
                 {isAdmin ? <th>Decision</th> : <th>Your view</th>}
               </tr>
             </thead>
@@ -648,7 +695,7 @@ export default function FunderMatchesView({
                     </span>
                   </td>
                   <td className="fm-nowrap">
-                    {f.typical_grant_range || <span className="ov-muted">—</span>}
+                    {f.typical_grant_range || <span className="ov-muted">Not stated</span>}
                   </td>
                   <td className="fm-why">
                     {f.evidence.length
@@ -659,7 +706,7 @@ export default function FunderMatchesView({
                     <td className="fc-cell">
                       {(() => {
                         const c = primaryContact(contacts[f.ein ?? ""] ?? []);
-                        if (!c) return <span className="ov-muted">—</span>;
+                        if (!c) return <span className="ov-muted">No contact yet</span>;
                         const fr = freshness(c.last_verified_at);
                         return (
                           <>
@@ -679,14 +726,13 @@ export default function FunderMatchesView({
                       })()}
                     </td>
                   )}
-                  <td className="fm-nowrap">
+                  <td className="fm-seen">
+                    {/* Patch 12: first seen and verified share a column, so the reason fits beside them. */}
                     <span className={firstSeen(f).label === "New" ? "fm-new" : "ov-muted"}
-                          title={firstSeen(f).help}>{firstSeen(f).label}</span>
-                  </td>
-                  <td className="fm-nowrap">
-                    <span className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
+                          title={firstSeen(f).help}>{firstSeen(f).label === "New" || firstSeen(f).label === "Earlier" ? firstSeen(f).label : `Since ${firstSeen(f).label}`}</span>
+                    <div className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
                       {verified(f).label}
-                    </span>
+                    </div>
                   </td>
                   <td className="fm-why">
                     {f.match_reason
@@ -698,13 +744,13 @@ export default function FunderMatchesView({
                         ? <span className="ov-muted">Not assessed against {orgName}</span>
                         : f.focus
                           ? <span className="ov-muted" title="The funder's own stated focus, not a match explanation.">{f.focus}</span>
-                          : <span className="ov-muted">—</span>}
+                          : <span className="ov-muted">No reason given</span>}
                   </td>
                   {isAdmin && (
                     <td className="fm-decide">
                       <Triage kind="funder" id={f.funder_id} label={f.name} />
                       <ClientVerdict kind="funder" targetId={f.funder_id} view={viewOf("funder", f.funder_id)} mode="admin" />
-                      <a className="fm-draft" href={`/draft/new?funder=${encodeURIComponent(f.funder_id)}`}
+                      <a className="sb-btn sb-secondary sb-sm fm-draft" href={`/draft/new?funder=${encodeURIComponent(f.funder_id)}`}
                          title="Start a draft from this funder's application or guidelines. For Granted only.">Draft this</a>
                     </td>
                   )}
@@ -717,6 +763,7 @@ export default function FunderMatchesView({
               ))}
             </tbody>
           </table>
+          </div>
           )}
 
           {visibleFunders.length === 0 && (
@@ -727,18 +774,18 @@ export default function FunderMatchesView({
           )}
 
           {screened.hidden.length > 0 && (
-            <button type="button" className="fm-toggle"
+            <button type="button" className="sb-btn sb-quiet sb-sm fm-toggle"
                     onClick={() => setShowNoHistory(v => !v)}>
               {showNoHistory
                 ? `Hide the ${screened.hidden.length} set aside`
                 : `Show ${screened.hidden.length} set aside (${hiddenReasons.join("; ")})`}
             </button>
           )}
-        </>
+        </section>
       )}
 
       {!isAdmin && setAsideCount > 0 && (
-        <button type="button" className="fm-toggle" onClick={() => setShowSetAside(v => !v)}>
+        <button type="button" className="sb-btn sb-quiet sb-sm fm-toggle" onClick={() => setShowSetAside(v => !v)}>
           {showSetAside ? "Hide the ones you marked Not for us" : `Show ${setAsideCount} you marked Not for us`}
         </button>
       )}
@@ -754,17 +801,12 @@ export default function FunderMatchesView({
           {ruledOutFunders.length > 0 && `${ruledOutFunders.length} funder${ruledOutFunders.length === 1 ? "" : "s"}`}
           {" "}ruled out by For Granted and hidden from these tables.
           {" "}
-          <button type="button" className="fc-link" onClick={() => setShowRuledOut(v => !v)}>
-            {showRuledOut ? "hide them again" : "show them"}
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => setShowRuledOut(v => !v)}>
+            {showRuledOut ? "Hide them again" : "Show them"}
           </button>
         </div>
       )}
 
-      {isAdmin && (matches.length > 0 || funders.length > 0) && (
-        <div className="ov-actions">
-          <button className="btn ghost" onClick={clear} disabled={pending}>Clear cached matches</button>
-        </div>
-      )}
     </div>
   );
 }

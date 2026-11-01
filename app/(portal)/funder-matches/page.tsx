@@ -42,7 +42,11 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
     getSourceStates(session.tenantId, asAdmin ? "admin" : "client").catch(() => []),
     getLastRunBySource(session.tenantId).catch(() => ({ ranAt: null, bySource: {} })),
   ]);
-  const webOn = sources.find(s => s.id === "web")?.on ?? true;
+  const webState = sources.find(s => s.id === "web");
+  const webOn = webState?.on ?? true;
+  const webOffReason = !webSearchAvailable()
+    ? (asAdmin ? "Web search needs Claude on Vertex in this environment." : "The web search is not available right now.")
+    : webState && !webState.on ? `The web search is off. ${webState.unavailable ?? webState.why} See Sources.` : null;
   const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn] = await Promise.all([
     getTenant(session.tenantId),
     getCachedMatches(session.tenantId),
@@ -99,7 +103,7 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
   const views = Object.fromEntries([...clientViews].map(([k, v]) => [k, v]));
   const webSection = (leads.length > 0 || canRun) ? (
     <WebFinds leads={leads} isAdmin={asAdmin} orgName={tenant?.name ?? "this organization"}
-      available={webSearchAvailable() && webOn} canRun={canRun} initialJob={discoverJob}
+      available={webSearchAvailable() && webOn} offReason={webOffReason} canRun={canRun} initialJob={discoverJob}
       clientViews={views} clientMode={!asAdmin} preview={viewingAsClient} />
   ) : null;
 
