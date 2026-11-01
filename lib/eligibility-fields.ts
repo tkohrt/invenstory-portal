@@ -30,6 +30,33 @@ export const FEDERAL_REG = [
   { v: "none", l: "Not registered" },
   { v: "sam_uei_active", l: "SAM.gov + UEI active" },
 ];
+/**
+ * What kind of money the organization is looking for (patch 2 of the 1 Nov
+ * 2026 build). Not an eligibility fact but a choice, kept on the same page
+ * because it decides which searches run: grants come from Ground Truth;
+ * contracts from procurement notices; programmes and investment mostly from
+ * the web search. Order is the order the form shows them.
+ */
+export const FUNDING_KINDS = [
+  { v: "grants", l: "Grants", hint: "Foundation, government and corporate grants" },
+  { v: "contracts", l: "Contracts and RFPs", hint: "Paid work: tenders, requests for proposals, expressions of interest" },
+  { v: "programs", l: "Accelerators, prizes and competitions", hint: "Including fellowships and challenge funds" },
+  { v: "investment", l: "Impact investment and loans", hint: "Recoverable grants, programme-related investment, impact funds" },
+] as const;
+export type FundingKind = (typeof FUNDING_KINDS)[number]["v"];
+export const FUNDING_KIND_LABEL: Record<FundingKind, string> =
+  Object.fromEntries(FUNDING_KINDS.map(k => [k.v, k.l])) as Record<FundingKind, string>;
+
+export function isFundingKind(v: unknown): v is FundingKind {
+  return typeof v === "string" && FUNDING_KINDS.some(k => k.v === v);
+}
+
+/** What to search for. Never empty: a profile that has not said looks for grants. */
+export function kindsSought(p: { funding_kinds?: string[] | null }): FundingKind[] {
+  const k = (p.funding_kinds ?? []).filter(isFundingKind);
+  return k.length ? [...new Set(k)] : ["grants"];
+}
+
 export const MATCH_CAPACITY = [
   { v: 0, l: "No match available" },
   { v: 10, l: "Up to 10%" },
@@ -58,6 +85,8 @@ export interface EligibilityProfile {
   regions_served: string[];
   /** Asked to see funding from outside the United States. */
   international: boolean;
+  /** What kind of money it is looking for (FUNDING_KINDS). Read through kindsSought. */
+  funding_kinds: string[];
 }
 
 export const EMPTY_PROFILE: EligibilityProfile = {
@@ -65,6 +94,7 @@ export const EMPTY_PROFILE: EligibilityProfile = {
   state_code: null, county: null, service_area: [], budget_band: null,
   populations: [], cause_areas: [], federal_registration: "none", match_capacity_pct: null, completeness: 0,
   country_code: null, countries_served: [], regions_served: [], international: false,
+  funding_kinds: ["grants"],
 };
 
 // ---- Place (international eligibility, 1 Nov 2026) ----
@@ -148,6 +178,7 @@ export function cleanProfileInput(input: Partial<EligibilityProfile>): Eligibili
     countries_served: cleanList(input.countries_served, 80).filter(isCountryCode),
     regions_served: cleanList(input.regions_served, 20).filter(isRegionKey),
     international: input.international === true,
+    funding_kinds: kindsSought({ funding_kinds: cleanList(input.funding_kinds, 8) }),
   };
   p.completeness = computeCompleteness(p);
   return p;

@@ -11,7 +11,7 @@ import "server-only";
 import { getContentCoverage } from "./gap-agent";
 import { chatComplete, generationConfigured } from "./llm";
 import { checklistFor } from "@/lib/checklist";
-import { ORG_TYPES, BUDGET_BANDS, homeLabel, reachLabels, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { ORG_TYPES, BUDGET_BANDS, homeLabel, reachLabels, kindsSought, FUNDING_KIND_LABEL, type EligibilityProfile } from "@/lib/eligibility-fields";
 import type { ScreenedGrant } from "@/lib/grant-screen";
 import { defuse, untrusted, screenAnswerLinks } from "@/lib/untrusted";
 
@@ -44,6 +44,7 @@ export async function buildDossier(tenantId: string, orgName: string, p: Eligibi
     p.budget_band ? `Budget band: ${BUDGET_BANDS.find(b => b.v === p.budget_band)?.l ?? p.budget_band}` : null,
     p.cause_areas.length ? `Cause areas: ${p.cause_areas.join(", ")}` : null,
     p.populations.length ? `Populations served: ${p.populations.join(", ")}` : null,
+    `Looking for: ${kindsSought(p).map(k => FUNDING_KIND_LABEL[k].toLowerCase()).join(", ")}`,
     `Federal registration: ${p.federal_registration === "sam_uei_active" ? "SAM.gov/UEI active" : "not registered"}`,
     p.match_capacity_pct != null ? `Cost-match capacity: up to ${p.match_capacity_pct}%` : null,
   ].filter(Boolean) as string[];

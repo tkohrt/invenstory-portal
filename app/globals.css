@@ -452,6 +452,14 @@ button.vis-dot.busy{opacity:.5}
 .fe-check{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink,#1a1a1a);margin-top:4px;cursor:pointer}
 .fe-check input{margin-top:3px;width:auto}
 .fe-check input:disabled{cursor:default}
+/* What you're looking for (1 Nov 2026): toggle cards, a dot-free pressed state plus a check. */
+.fe-kinds{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.fe-kind{display:flex;flex-direction:column;gap:2px;text-align:left;border:1px solid var(--line,#e0e0e0);background:#fff;border-radius:10px;padding:10px 12px;cursor:pointer;color:var(--ink,#1a1a1a)}
+.fe-kind b{font-size:13px}
+.fe-kind span{font-size:12px;color:#555}
+.fe-kind.on{border-color:#1f4d2e;background:#eef5ee}
+.fe-kind.on b::before{content:"\2713  ";color:#1f4d2e}
+.fe-kind:disabled{cursor:default}
 .fe-states{display:flex;flex-wrap:wrap;gap:4px;max-width:560px}
 .fe-state{font-size:11px;border:1px solid var(--line,#e0e0e0);background:#fff;border-radius:6px;padding:3px 6px;cursor:pointer;color:#666}
 .fe-state.on{background:#e8f3e8;border-color:#cfe4cf;color:#2f5d38;font-weight:600}

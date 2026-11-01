@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
-import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, computeCompleteness, homeCountry, wantsInternational, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
+import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, FUNDING_KINDS, computeCompleteness, homeCountry, wantsInternational, kindsSought, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import AllowanceRequest from "./AllowanceRequest";
@@ -129,6 +129,23 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
               </div>))}
           </div>}
         <p className="acct-note" style={{ marginTop: 8 }}>🔴 blocks matching · 🟡 important · ⚪ nice to have. Structural gaps update as you edit; document gaps update when you re-analyze.</p>
+      </section>
+
+      <section className="acct-card">
+        <h3>What you&rsquo;re looking for</h3>
+        <p className="acct-note" style={{ marginTop: 0 }}>Choose every kind that fits. This decides where we search, not what you are eligible for.</p>
+        <div className="fe-kinds">{FUNDING_KINDS.map(k => {
+          const on = kindsSought(p).includes(k.v);
+          const only = on && kindsSought(p).length === 1;
+          return (
+            <button key={k.v} type="button" aria-pressed={on} disabled={only}
+              title={only ? "Keep at least one kind: choose another first, then turn this off." : undefined}
+              className={`fe-kind ${on ? "on" : ""}`}
+              onClick={() => set({ funding_kinds: on ? kindsSought(p).filter(x => x !== k.v) : [...kindsSought(p), k.v] })}>
+              <b>{k.l}</b><span>{k.hint}</span>
+            </button>
+          );
+        })}</div>
       </section>
 
       <section className="acct-card">

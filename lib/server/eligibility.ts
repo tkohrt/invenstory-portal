@@ -21,6 +21,8 @@ export async function getEligibilityProfile(tenantId: string): Promise<Eligibili
     countries_served: Array.isArray(data.countries_served) ? data.countries_served : [],
     regions_served: Array.isArray(data.regions_served) ? data.regions_served : [],
     international: data.international === true,
+    // What it is looking for (0072). Grants when unset, as every profile was.
+    funding_kinds: Array.isArray(data.funding_kinds) && data.funding_kinds.length ? data.funding_kinds : ["grants"],
   };
 }
 
