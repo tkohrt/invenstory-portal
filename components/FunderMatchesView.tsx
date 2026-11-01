@@ -307,9 +307,13 @@ export default function FunderMatchesView({
               : <>Check deadlines and eligibility on the funder&apos;s own site before you apply; your For Granted team can help.</>}
           </p>
         </div>
+        <span className="spacer" />
+        {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
+        {(matches.length > 0 || funders.length > 0) && (
+          <a className="sb-btn sb-secondary sb-sm fm-report-link" href="/funder-matches/report">Open the fit report</a>
+        )}
         {isAdmin && (
           <>
-            <span className="spacer" />
             <button className="btn" onClick={run} disabled={starting || running || !configured}>
               {running ? "Searching…" : starting ? "Starting…" : matches.length ? "Re-run matching" : "Run matching"}
             </button>
