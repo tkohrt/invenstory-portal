@@ -28,7 +28,7 @@ import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
 // Public international sources (patch 4, 1 Nov 2026): planned from the profile,
 // searched in parallel with Ground Truth, screened by the same rules.
-import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
+import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, canadaFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
 import { countryName } from "@/lib/countries";
 import { searchOpenSources, type OpenResults } from "./open-data";
 // Approved web finds join only the clients they fit (patch 5).
@@ -146,9 +146,9 @@ export async function runMatch(
 
   // Outside the US, public sources too. A US-only profile plans none of them.
   const openPlan = planOpenSources(p);
-  const openWanted = !!(openPlan.worldbank || openPlan.eu || openPlan.iati);
+  const openWanted = !!(openPlan.worldbank || openPlan.eu || openPlan.iati || openPlan.canada);
   const phrases = searchPhrases(p);
-  const noOpen: OpenResults = { opportunities: [], funders: [], ukFunders: [], calls: [] };
+  const noOpen: OpenResults = { opportunities: [], funders: [], ukFunders: [], canadaProgrammes: [], calls: [] };
 
   step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
   const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
@@ -294,6 +294,8 @@ export async function runMatch(
     ...ledgerFunderRows,
     ...iatiFunderRows(openRes.funders).filter(f => !ledgerFunderRows.some(r => r.funder_id === f.funder_id)),
     ...threeSixtyFunderRows(openRes.ukFunders ?? [], openWhere),
+    // And Government of Canada programmes funding organizations there (patch 10).
+    ...canadaFunderRows(openRes.canadaProgrammes ?? [], c => countryName(c) ?? c),
   ].filter((f, i, all) => all.findIndex(x => x.funder_id === f.funder_id) === i);
 
   if (screened.length) {

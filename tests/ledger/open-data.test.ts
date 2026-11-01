@@ -25,7 +25,7 @@ const ohio: EligibilityProfile = { ...EMPTY_PROFILE, org_type: "nonprofit_501c3"
 
 describe("planOpenSources", () => {
   test("a US-only profile searches none of them, so nothing changes for it", () => {
-    expect(planOpenSources(ohio)).toEqual({ worldbank: null, eu: null, iati: null });
+    expect(planOpenSources(ohio)).toEqual({ worldbank: null, eu: null, iati: null, canada: null });
   });
   test("contracts bring World Bank notices for each country named, and EU tenders", () => {
     const plan = planOpenSources(kenyan);
@@ -39,7 +39,7 @@ describe("planOpenSources", () => {
     expect(plan.eu?.types).toEqual(["1", "2", "8"]);
   });
   test("investment alone has no public source here (the web search covers it)", () => {
-    expect(planOpenSources({ ...kenyan, funding_kinds: ["investment"] })).toEqual({ worldbank: null, eu: null, iati: null });
+    expect(planOpenSources({ ...kenyan, funding_kinds: ["investment"] })).toEqual({ worldbank: null, eu: null, iati: null, canada: null });
   });
   test("a region with no countries searches the region's members, capped", () => {
     expect(searchCountries({ ...ohio, international: true, regions_served: ["east_africa"] }, 3)).toEqual(["BI", "KM", "DJ"]);

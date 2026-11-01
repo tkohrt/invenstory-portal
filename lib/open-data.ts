@@ -42,13 +42,14 @@ export const SOURCE_LABEL: Record<string, string> = {
   eu_ft: "EU Funding & Tenders Portal",
   iati: "International aid data (IATI)",
   threesixty: "UK grants data (360Giving)",
+  canada: "Government of Canada grants data",
   web: "the web search",
 };
 
 /** Short form for a table cell. */
 export const SOURCE_SHORT: Record<string, string> = {
   ledger: "Ground Truth", worldbank: "World Bank", eu_ft: "EU portal", iati: "IATI", web: "Web",
-  threesixty: "360Giving",
+  threesixty: "360Giving", canada: "Canada G&C",
 };
 
 export interface OpenOpportunity {
@@ -78,10 +79,13 @@ export interface OpenPlan {
   /** SEDIA type codes: 0 tender, 1 grant topic, 2 EuropeAid call, 8 cascade funding. */
   eu: { types: string[] } | null;
   iati: { countries: string[] } | null;
+  /** Government of Canada grants and contributions to recipients in these countries (patch 10). */
+  canada: { countries: string[] } | null;
 }
 
 export const MAX_WB_COUNTRIES = 4;
 export const MAX_IATI_COUNTRIES = 8;
+export const MAX_CANADA_COUNTRIES = 3;
 
 /** Countries to search: everything named in the profile outside the US, then region members. */
 export function searchCountries(p: EligibilityProfile, max: number): string[] {
@@ -102,7 +106,7 @@ export function searchCountries(p: EligibilityProfile, max: number): string[] {
  * none of them, so nothing changes for it. Pure, so the rules are tested.
  */
 export function planOpenSources(p: EligibilityProfile): OpenPlan {
-  if (!wantsInternational(p)) return { worldbank: null, eu: null, iati: null };
+  if (!wantsInternational(p)) return { worldbank: null, eu: null, iati: null, canada: null };
   const kinds = kindsSought(p);
   const types = new Set<string>();
   if (kinds.includes("grants")) { types.add("1"); types.add("2"); types.add("8"); }
@@ -114,6 +118,8 @@ export function planOpenSources(p: EligibilityProfile): OpenPlan {
     eu: types.size ? { types: [...types].sort() } : null,
     iati: (wants("grants") || wants("programs")) && searchCountries(p, MAX_IATI_COUNTRIES).length
       ? { countries: searchCountries(p, MAX_IATI_COUNTRIES) } : null,
+    canada: (wants("grants") || wants("programs")) && searchCountries(p, MAX_CANADA_COUNTRIES).length
+      ? { countries: searchCountries(p, MAX_CANADA_COUNTRIES) } : null,
   };
 }
 
@@ -590,6 +596,126 @@ export function threeSixtyFunderRows(funders: ThreeSixtyFunder[], where: string)
       access_mode: "unknown", access_note: null, access_verified: false,
       has_grant_history: true, verified_at: null,
       source: "threesixty",
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Government of Canada grants and contributions (patch 10)
+// ---------------------------------------------------------------------------
+//
+// The proactive-disclosure dataset on open.canada.ca lists every federal grant
+// and contribution over $25,000 (and many smaller), with the recipient's
+// country. Asked per country, it shows which federal PROGRAMMES fund
+// organizations there, such as Global Affairs Canada's Canada Fund for Local
+// Initiatives. A programme is the lead: it is what a client applies to. Its
+// own free-text search is off for a table this size, so relevance is judged
+// here, against the client's phrases.
+
+export const CANADA_GC_RESOURCE = "1d15a62f-5656-49ad-8c88-f40ce689d831";
+export const CANADA_FIELDS = [
+  "owner_org_title", "prog_name_en", "recipient_legal_name", "recipient_type", "agreement_value",
+  "agreement_start_date", "agreement_title_en", "description_en", "recipient_country", "agreement_type",
+];
+
+export interface CanadaAgreement {
+  department: string; programme: string; recipient: string; recipientType: string | null;
+  value: number | null; start: string | null; text: string; country: string;
+}
+
+/** Recipient types: N not-for-profit or charity, F for-profit, S academic. Null is common and allowed. */
+const CANADA_OPEN_TYPES = new Set(["N", "F", "S"]);
+/** Treaty dues, UN bodies and core funding: real money, but nobody can apply for it. */
+const NOT_A_PROGRAMME = /convention|protocol|secretariat|assessed contribution|program info n\/a/i;
+const NOT_AN_APPLICANT = /\bunited nations\b|\bUN[A-Z]{2,}\b|\bUNEP\b|\bUNICEF\b|\bWorld Health Organization\b|\bWorld Bank\b|\bgovernment of\b|\bministry of\b|\bsecretariat\b/i;
+
+export function decodeCanada(json: unknown): CanadaAgreement[] {
+  const list = (json as { result?: { records?: unknown } })?.result?.records;
+  if (!Array.isArray(list)) return [];
+  const out: CanadaAgreement[] = [];
+  for (const raw of list) {
+    const r = raw as Record<string, unknown>;
+    const dept = typeof r.owner_org_title === "string" ? r.owner_org_title.split(" | ")[0].trim() : "";
+    const prog = typeof r.prog_name_en === "string" ? r.prog_name_en.trim() : "";
+    const recipient = typeof r.recipient_legal_name === "string" ? r.recipient_legal_name.split(" | ")[0].replace(/\s+/g, " ").trim() : "";
+    if (!dept || !prog || !recipient) continue;
+    const value = Number(r.agreement_value);
+    out.push({
+      department: dept.slice(0, 200), programme: prog.slice(0, 300), recipient: recipient.slice(0, 300),
+      recipientType: typeof r.recipient_type === "string" ? r.recipient_type : null,
+      value: Number.isFinite(value) && value > 0 ? Math.round(value) : null,
+      start: typeof r.agreement_start_date === "string" ? r.agreement_start_date.slice(0, 10) : null,
+      text: [r.agreement_title_en, r.description_en].filter(x => typeof x === "string").join(" ").slice(0, 600),
+      country: typeof r.recipient_country === "string" ? r.recipient_country : "",
+    });
+  }
+  return out;
+}
+
+export interface CanadaProgramme {
+  funder_id: string; department: string; programme: string;
+  countries: string[];
+  awards: { recipient: string; value: number | null; year: string | null }[];
+  /** How many of the client's search words the programme's agreements use. */
+  relevance: number;
+  latest: string;
+}
+
+function words(phrases: string[]): string[] {
+  const stop = new Set(["and", "the", "for", "with", "from", "into", "that", "this", "their", "work", "services", "programs", "program"]);
+  return [...new Set(phrases.join(" ").toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3 && !stop.has(w)))];
+}
+
+/**
+ * Programmes that fund organizations a client could be: open recipient types,
+ * not UN bodies or governments, not treaty dues, with an agreement since
+ * `sinceYear`. Ranked by relevance to the client's phrases, then by how many
+ * such organizations they fund, then by recency.
+ */
+export function canadaProgrammes(rows: CanadaAgreement[], phrases: string[], sinceYear = 2022, max = 8): CanadaProgramme[] {
+  const ws = words(phrases);
+  const by = new Map<string, CanadaProgramme & { hits: Set<string> }>();
+  for (const a of rows) {
+    if (NOT_A_PROGRAMME.test(a.programme) || NOT_A_PROGRAMME.test(a.text)) continue;
+    if (a.recipientType && !CANADA_OPEN_TYPES.has(a.recipientType)) continue;
+    if (NOT_AN_APPLICANT.test(a.recipient)) continue;
+    if (!a.start || Number(a.start.slice(0, 4)) < sinceYear) continue;
+    const id = `canada:${slug(a.department)}:${slug(a.programme)}`.slice(0, 200);
+    const row = by.get(id) ?? { funder_id: id, department: a.department, programme: a.programme, countries: [], awards: [], relevance: 0, latest: "0", hits: new Set<string>() };
+    const hay = `${a.programme} ${a.text}`.toLowerCase();
+    for (const w of ws) if (hay.includes(w)) row.hits.add(w);
+    row.awards.push({ recipient: a.recipient, value: a.value, year: a.start.slice(0, 4) });
+    if (a.country && !row.countries.includes(a.country)) row.countries.push(a.country);
+    if (a.start > row.latest) row.latest = a.start;
+    by.set(id, row);
+  }
+  return [...by.values()]
+    .map(({ hits, ...r }) => ({ ...r, relevance: hits.size, awards: r.awards.sort((x, y) => (y.year ?? "").localeCompare(x.year ?? "")) }))
+    .sort((a, b) => b.relevance - a.relevance || b.awards.length - a.awards.length || b.latest.localeCompare(a.latest))
+    .slice(0, max);
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+}
+
+export function canadaFunderRows(progs: CanadaProgramme[], countryLabel: (c: string) => string): FunderRow[] {
+  return progs.map(p => {
+    const where = p.countries.map(countryLabel).join(", ");
+    const n = p.awards.length;
+    return {
+      funder_id: p.funder_id, ein: null,
+      name: `${p.programme} (${p.department})`.slice(0, 300),
+      website: null, location: "Canada", focus: null, mission: null,
+      typical_grant_range: rangeText(p.awards.map(a => ({ amount: a.value, currency: "CAD" }))),
+      match_reason: `A Government of Canada programme that has made ${n} recent award${n === 1 ? "" : "s"} to organizations in ${where || "the client's countries"}${p.relevance ? ", for work that uses the client's own terms" : ""}, according to Canada's grants and contributions disclosures.`,
+      confidence: null, caveat: null,
+      evidence: p.awards.slice(0, 12).map(a => ({ name: a.recipient, ...(a.year ? { latest_year: a.year } : {}) })),
+      evidence_count: n,
+      from_graph: true, from_overlay: false,
+      access_mode: "unknown", access_note: null, access_verified: false,
+      has_grant_history: true, verified_at: null,
+      source: "canada",
     };
   });
 }

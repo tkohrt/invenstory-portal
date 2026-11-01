@@ -8,6 +8,7 @@ import "server-only";
 import {
   decodeWorldBank, decodeSedia, decodeIatiFunders, iatiQuery, worldBankTerm, IATI_FIELDS,
   decode360Received, threeSixtyFunders, ukPeerIds,
+  decodeCanada, canadaProgrammes, CANADA_GC_RESOURCE, CANADA_FIELDS, type CanadaProgramme,
   type OpenOpportunity, type OpenPlan, type IatiFunder, type ThreeSixtyFunder,
 } from "@/lib/open-data";
 import { COUNTRY_NAME } from "@/lib/countries";
@@ -25,6 +26,8 @@ export interface OpenResults {
   funders: IatiFunder[];
   /** UK funders of the IATI peers (patch 9). */
   ukFunders: ThreeSixtyFunder[];
+  /** Government of Canada programmes funding organizations in the client's countries (patch 10). */
+  canadaProgrammes: CanadaProgramme[];
   calls: OpenCall[];
 }
 
@@ -120,6 +123,30 @@ async function threeSixty(peerIds: string[]): Promise<{ funders: ThreeSixtyFunde
   return { funders, call: { source: "threesixty", text, ok, results: funders.length, ...(ok ? {} : { note: "did not answer in time" }) } };
 }
 
+const CANADA_URL = "https://open.canada.ca/data/api/action/datastore_search";
+
+/** One call per country (filters only: the table is too big for its text search). */
+async function canada(countries: string[], phrases: string[]): Promise<{ progs: CanadaProgramme[]; call: OpenCall }> {
+  const text = `federal grants and contributions to ${countries.join(", ")}`;
+  const all = await Promise.all(countries.map(async c => {
+    const qs = new URLSearchParams({
+      resource_id: CANADA_GC_RESOURCE,
+      filters: JSON.stringify({ recipient_country: c }),
+      sort: "agreement_start_date desc",
+      limit: "300",
+      fields: CANADA_FIELDS.join(","),
+    });
+    try {
+      const res = await fetch(`${CANADA_URL}?${qs}`, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
+      if (!res.ok) return { ok: false, rows: [] };
+      return { ok: true, rows: decodeCanada(await res.json()) };
+    } catch { return { ok: false, rows: [] }; }
+  }));
+  const progs = canadaProgrammes(all.flatMap(a => a.rows), phrases);
+  const ok = all.some(a => a.ok);
+  return { progs, call: { source: "canada", text, ok, results: progs.length, ...(ok ? {} : { note: "did not answer in time" }) } };
+}
+
 /** Run every source the plan asks for, in parallel. Never throws. */
 export async function searchOpenSources(plan: OpenPlan, phrases: string[]): Promise<OpenResults> {
   const jobs: Promise<{ rows?: OpenOpportunity[]; funders?: IatiFunder[]; call: OpenCall }>[] = [];
@@ -139,6 +166,9 @@ export async function searchOpenSources(plan: OpenPlan, phrases: string[]): Prom
     return r;
   }));
 
+  let canadaProgs: CanadaProgramme[] = [];
+  if (plan.canada) jobs.push(canada(plan.canada.countries, phrases).then(r => { canadaProgs = r.progs; return { call: r.call }; }));
+
   const done = await Promise.all(jobs);
   const seen = new Set<string>();
   const opportunities: OpenOpportunity[] = [];
@@ -151,6 +181,7 @@ export async function searchOpenSources(plan: OpenPlan, phrases: string[]): Prom
     opportunities,
     funders: done.flatMap(d => d.funders ?? []),
     ukFunders,
+    canadaProgrammes: canadaProgs,
     calls: [...done.map(d => d.call), ...extraCalls],
   };
 }
