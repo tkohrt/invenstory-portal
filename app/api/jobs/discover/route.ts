@@ -12,6 +12,7 @@ import { withAiUsage } from "@/lib/server/ai-usage";
 import { db } from "@/lib/server/db";
 import { BRAIN_REFUSAL, isBrain } from "@/lib/brain";
 import { mayStartSearch, mayContinueSearch } from "@/lib/server/client-view";
+import { webSourceOn } from "@/lib/server/sources";
 
 export const maxDuration = 60;
 
@@ -33,6 +34,10 @@ export async function POST(req: Request) {
   const may = runId ? await mayContinueSearch(session) : await mayStartSearch(session, "discover");
   if (!may.ok) return NextResponse.json({ error: may.error }, { status: 403 });
   const actor = may.actor;
+  // Sources (patch 11): the web search can be switched off for a client.
+  if (!runId && !(await webSourceOn(tenantId))) {
+    return NextResponse.json({ error: "The web search is turned off for this account. Sources on Funder Matches says why." }, { status: 403 });
+  }
   try {
     if (runId) {
       const run = await getDiscoveryRun(tenantId, runId);

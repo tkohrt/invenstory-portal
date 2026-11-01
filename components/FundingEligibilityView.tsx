@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
+import { sourcesForKind } from "@/lib/sources";
 import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, FUNDING_KINDS, computeCompleteness, homeCountry, wantsInternational, kindsSought, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
@@ -143,6 +144,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
               className={`fe-kind ${on ? "on" : ""}`}
               onClick={() => set({ funding_kinds: on ? kindsSought(p).filter(x => x !== k.v) : [...kindsSought(p), k.v] })}>
               <b>{k.l}</b><span>{k.hint}</span>
+              {/* Patch 11: which public sources this choice switches on, outside the US. */}
+              {sourcesForKind(k.v).length > 0 && (
+                <span className="fe-kind-src">Outside the US, also searches {sourcesForKind(k.v).join(", ")}.</span>
+              )}
             </button>
           );
         })}</div>

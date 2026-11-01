@@ -24,6 +24,8 @@ import { SOURCE_LABEL } from "@/lib/open-data";
 import ClientVerdict from "./ClientVerdict";
 import { setSelfSearchAction } from "@/lib/server/client-view-actions";
 import type { ClientView } from "@/lib/client-view";
+import SourcesPanel from "./SourcesPanel";
+import type { SourceState, SourceRun, SourceId } from "@/lib/sources";
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -174,7 +176,14 @@ export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
+  sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false,
 }: {
+  /** Every source and whether it is searched (patch 11). */
+  sources?: SourceState[];
+  /** What each source did on the last run, with no query text. */
+  sourcesRun?: { ranAt: string | null; bySource: Partial<Record<SourceId, SourceRun>> };
+  /** Whether this client may run searches (and so change sources) itself. */
+  selfSearchOn?: boolean;
   /** May start a search from this page: For Granted, or a client allowed to (patch 7). */
   canRun?: boolean;
   /** For Granted looking at the page as the client sees it (?view=client). */
@@ -330,6 +339,11 @@ export default function FunderMatchesView({
           </p>
         </div>
         <span className="spacer" />
+        {sources.length > 0 && (
+          <SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
+            role={isAdmin ? "admin" : "client"} preview={viewingAsClient} selfSearch={selfSearchOn}
+            canRun={canRun && configured} running={running || starting} onRun={run} />
+        )}
         {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
         {(matches.length > 0 || funders.length > 0) && (
           <a className="sb-btn sb-secondary sb-sm fm-report-link" href="/funder-matches/report">Open the fit report</a>

@@ -159,7 +159,7 @@ export async function searchOpenSources(plan: OpenPlan, phrases: string[]): Prom
   let ukFunders: ThreeSixtyFunder[] = [];
   const extraCalls: OpenCall[] = [];
   if (plan.iati) jobs.push(iati(plan.iati.countries, phrases).then(async r => {
-    if (!r.funders.length) return r;
+    if (!plan.threesixty || !r.funders.length) return r;
     const t = await threeSixty(ukPeerIds(r.funders));
     ukFunders = t.funders;
     extraCalls.push(t.call);

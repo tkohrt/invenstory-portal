@@ -28,8 +28,10 @@ import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
 // Public international sources (patch 4, 1 Nov 2026): planned from the profile,
 // searched in parallel with Ground Truth, screened by the same rules.
-import { planOpenSources, searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, canadaFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
+import { searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, canadaFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
 import { countryName } from "@/lib/countries";
+import { resolveSources, planFromSources } from "@/lib/sources";
+import { getSourceSettings, sourceAvailability } from "./sources";
 import { searchOpenSources, type OpenResults } from "./open-data";
 // Approved web finds join only the clients they fit (patch 5).
 import { additionFits } from "@/lib/web-discovery";
@@ -145,7 +147,10 @@ export async function runMatch(
   const runId = (runRow as { id: string } | null)?.id ?? null;
 
   // Outside the US, public sources too. A US-only profile plans none of them.
-  const openPlan = planOpenSources(p);
+  // Which sources this client searches (patch 11): Automatic follows the
+  // profile, and a person's On or Off wins.
+  const sourceStates = resolveSources(p, await getSourceSettings(tenantId), sourceAvailability("admin"), "admin");
+  const openPlan = planFromSources(p, sourceStates);
   const openWanted = !!(openPlan.worldbank || openPlan.eu || openPlan.iati || openPlan.canada);
   const phrases = searchPhrases(p);
   const noOpen: OpenResults = { opportunities: [], funders: [], ukFunders: [], canadaProgrammes: [], calls: [] };

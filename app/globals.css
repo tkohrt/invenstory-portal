@@ -2088,3 +2088,36 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .cv-pick{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
 .cv-why{font-size:12px;font-weight:600}
 .cv-reason{font:inherit;font-size:12px;border:1px solid var(--line,#e0e0e0);background:#fff;border-radius:8px;padding:3px 8px;cursor:pointer;text-align:left}
+
+/* Sources (patch 11, 1 Nov 2026): what Funder Matches searches, and the panel to change it. */
+.src-trigger .src-trigger-dot{width:8px;height:8px;border-radius:50%;background:#1f4d2e;display:inline-block}
+.src-drawer{width:min(600px,96vw);gap:12px}
+.src-intro{margin:0;font-size:14px;line-height:1.5}
+.src-body{display:flex;flex-direction:column;gap:16px}
+.src-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.src-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.src-row{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;background:#fff}
+.src-row-off{background:#fafbfc}
+.src-row-off .src-name{color:#4b5260}
+.src-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.src-name{font-weight:700;font-size:14px}
+.src-status{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;min-width:84px}
+.src-status i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.src-on{color:#1f4d2e}.src-on i{background:#1f4d2e}
+.src-off{color:#5b6170}.src-off i{background:#fff;border:1.5px solid #9aa1ad;width:7px;height:7px}
+.src-unavail{color:#7a6320}.src-unavail i{background:#d4a017}
+.src-tag{font-size:12px}
+.src-what{font-size:13px;color:#374151}
+.src-why{font-size:13px}
+.src-meta{font-size:12px;color:var(--muted)}
+.src-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px}
+.src-seg{display:inline-flex;border:1px solid #d5d8de;border-radius:9px;overflow:hidden;background:#fff}
+.src-seg-btn{height:30px;padding:0 12px;border:0;border-right:1px solid #d5d8de;background:#fff;font:inherit;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;margin:0;width:auto}
+.src-seg-btn:last-child{border-right:0}
+.src-seg-btn.on{background:#e6f2ea;color:#1f4d2e}
+.src-seg-btn:disabled{cursor:not-allowed;opacity:.6}
+.src-seg-btn:focus-visible{outline:2px solid #1f4d2e;outline-offset:-2px}
+.src-lock{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#374151;cursor:pointer}
+.src-lock input{width:auto;margin:0}
+.src-foot{position:sticky;bottom:-16px;background:var(--panel);border-top:1px solid var(--line);margin:4px -18px -16px;padding:12px 18px;display:flex;align-items:center;gap:10px}
+.fe-kind-src{display:block;font-size:12px;color:var(--muted);margin-top:4px}

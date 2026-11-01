@@ -79,6 +79,8 @@ export interface OpenPlan {
   /** SEDIA type codes: 0 tender, 1 grant topic, 2 EuropeAid call, 8 cascade funding. */
   eu: { types: string[] } | null;
   iati: { countries: string[] } | null;
+  /** UK funders of IATI's UK-registered peers (patch 9); runs only with iati. */
+  threesixty: boolean;
   /** Government of Canada grants and contributions to recipients in these countries (patch 10). */
   canada: { countries: string[] } | null;
 }
@@ -106,18 +108,20 @@ export function searchCountries(p: EligibilityProfile, max: number): string[] {
  * none of them, so nothing changes for it. Pure, so the rules are tested.
  */
 export function planOpenSources(p: EligibilityProfile): OpenPlan {
-  if (!wantsInternational(p)) return { worldbank: null, eu: null, iati: null, canada: null };
+  if (!wantsInternational(p)) return { worldbank: null, eu: null, iati: null, threesixty: false, canada: null };
   const kinds = kindsSought(p);
   const types = new Set<string>();
   if (kinds.includes("grants")) { types.add("1"); types.add("2"); types.add("8"); }
   if (kinds.includes("programs")) types.add("8");
   if (kinds.includes("contracts")) types.add("0");
   const wants = (k: FundingKind) => kinds.includes(k);
+  const iati = (wants("grants") || wants("programs")) && searchCountries(p, MAX_IATI_COUNTRIES).length
+    ? { countries: searchCountries(p, MAX_IATI_COUNTRIES) } : null;
   return {
     worldbank: wants("contracts") ? { countries: searchCountries(p, MAX_WB_COUNTRIES) } : null,
     eu: types.size ? { types: [...types].sort() } : null,
-    iati: (wants("grants") || wants("programs")) && searchCountries(p, MAX_IATI_COUNTRIES).length
-      ? { countries: searchCountries(p, MAX_IATI_COUNTRIES) } : null,
+    iati,
+    threesixty: !!iati,
     canada: (wants("grants") || wants("programs")) && searchCountries(p, MAX_CANADA_COUNTRIES).length
       ? { countries: searchCountries(p, MAX_CANADA_COUNTRIES) } : null,
   };

@@ -12,7 +12,7 @@ const TENANT_SCOPED = new Set([
   "artifact_set","audit_log","chat_message","chat_session","chunk_embedding","document",
   "document_chunk","document_tag","document_version","eligibility_gap",
   "eligibility_profile","eligible_grant","feature_visibility","grant_draft","job",
-  "job_event",
+  "job_event","match_source_setting",
   "match_run","match_triage","matched_funder","plant_state","profile_edit","search_profile","search_profile_doc",
   // Card Library (0039).
   "story_card","story_card_version","story_card_evidence","story_card_doc","story_card_variant",

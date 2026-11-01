@@ -18,6 +18,7 @@ import { getLeads, webSearchAvailable } from "@/lib/server/discovery";
 import { getClientViews, selfSearchOn } from "@/lib/server/client-view";
 import { suppresses } from "@/lib/triage";
 import type { Judgment } from "@/lib/server/triage";
+import { getSourceStates, getLastRunBySource } from "@/lib/server/sources";
 
 export default async function FunderMatchesPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const sp = await searchParams;
@@ -35,6 +36,13 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
   const asAdmin = isAdmin && !viewingAsClient;
 
   const configured = ledgerConfigured();
+  // Sources (patch 11): every session sees which databases are searched and
+  // why; the query text stays For Granted's.
+  const [sources, sourcesRun] = await Promise.all([
+    getSourceStates(session.tenantId, asAdmin ? "admin" : "client").catch(() => []),
+    getLastRunBySource(session.tenantId).catch(() => ({ ranAt: null, bySource: {} })),
+  ]);
+  const webOn = sources.find(s => s.id === "web")?.on ?? true;
   const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn] = await Promise.all([
     getTenant(session.tenantId),
     getCachedMatches(session.tenantId),
@@ -91,7 +99,7 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
   const views = Object.fromEntries([...clientViews].map(([k, v]) => [k, v]));
   const webSection = (leads.length > 0 || canRun) ? (
     <WebFinds leads={leads} isAdmin={asAdmin} orgName={tenant?.name ?? "this organization"}
-      available={webSearchAvailable()} canRun={canRun} initialJob={discoverJob}
+      available={webSearchAvailable() && webOn} canRun={canRun} initialJob={discoverJob}
       clientViews={views} clientMode={!asAdmin} preview={viewingAsClient} />
   ) : null;
 
@@ -123,6 +131,9 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
       viewingAsClient={viewingAsClient}
       selfSearch={asAdmin ? selfOn : null}
       clientViews={views}
+      sources={sources}
+      sourcesRun={sourcesRun}
+      selfSearchOn={selfOn}
     />
   );
 }
