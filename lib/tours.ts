@@ -63,7 +63,7 @@ export function tourPrefKey(key: TourKey): string {
   return `tour_${key}`;
 }
 
-/** Shown on its own only to a client, only once, and never while setup is under way. */
+/** Shown on its own only to a client, and only once. `settingUp` holds it back (not used yet: teammates waiting on setup do get tours). */
 export function autoStartTour(a: { key: TourKey; role: "admin" | "client"; prefs: Record<string, unknown> | null; settingUp?: boolean }): boolean {
   if (a.role !== "client" || a.settingUp) return false;
   return a.prefs?.[tourPrefKey(a.key)] !== true;
@@ -88,3 +88,6 @@ export function placeCard(box: { top: number; left: number; width: number; heigh
 
 /** Start a tour from anywhere (the "?" menu, Portal Guide). */
 export const TOUR_EVENT = "portal:tour";
+
+/** Switch the chat page to a tab ("invenstory" or "guide") while already on it. */
+export const CHAT_TAB_EVENT = "portal:chat-tab";

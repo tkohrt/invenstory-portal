@@ -19,7 +19,7 @@ import {
 import { requestMoreUsageAction } from "@/lib/server/usage-actions";
 import { LIMITS } from "@/lib/usage-limits";
 import { GUIDE_LIMITS, HANDOVER_TO_GUIDE, looksLikePortalQuestion, type GuideButton } from "@/lib/portal-guide";
-import { TOUR_EVENT } from "@/lib/tours";
+import { TOUR_EVENT, CHAT_TAB_EVENT } from "@/lib/tours";
 import type { SuggestionSet, Suggestion } from "@/lib/chat-suggestions";
 
 interface Cite { id: string; title: string }
@@ -120,7 +120,8 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
   const [histPref, setHistPref] = useState<boolean | null>(null);
   const setHistOpen = (v: boolean) => setHistPref(v);
   const [toast, setToast] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
+  // One request at a time per tab, each with its own Stop.
+  const abort = useRef<Record<Lane, AbortController | null>>({ invenstory: null, guide: null });
   const streamRef = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   // The client limits (lib/usage-limits.ts): shown only near a limit, with the way to ask for more at one.
@@ -130,7 +131,13 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
   const add = (l: Lane, m: Msg) => setMsgs(x => ({ ...x, [l]: [...x[l], m] }));
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 4000); };
 
-  useEffect(() => () => abort.current?.abort(), []);
+  useEffect(() => () => { abort.current.invenstory?.abort(); abort.current.guide?.abort(); }, []);
+  // The "?" menu's Ask the Portal Guide, while already on this page.
+  useEffect(() => {
+    const on = (e: Event) => { const t = (e as CustomEvent<string>).detail; if (t === "guide" || t === "invenstory") setLane(t); };
+    window.addEventListener(CHAT_TAB_EVENT, on);
+    return () => window.removeEventListener(CHAT_TAB_EVENT, on);
+  }, []);
 
   const remember = (l: Lane, id: string, q: string) => {
     if (sid[l]) return;
@@ -146,7 +153,7 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
       scroll(); return;
     }
     setBusy("invenstory");
-    const ctl = new AbortController(); abort.current = ctl;
+    const ctl = new AbortController(); abort.current.invenstory = ctl;
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q, sessionId: sid.invenstory }), signal: ctl.signal });
@@ -164,13 +171,13 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
         ? { role: "assistant", content: "Stopped. Ask again whenever you like.", citations: [], stopped: true }
         : { role: "assistant", content: "Network error. Please try again.", citations: [] });
     }
-    abort.current = null; setBusy(null); scroll();
+    abort.current.invenstory = null; setBusy(null); scroll();
   };
 
   const askGuide = async (q: string, carried = false) => {
     add("guide", { role: "user", content: q, citations: [], carried }); scroll();
     setBusy("guide");
-    const ctl = new AbortController(); abort.current = ctl;
+    const ctl = new AbortController(); abort.current.guide = ctl;
     try {
       const res = await fetch("/api/guide", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q, sessionId: sid.guide }), signal: ctl.signal });
@@ -185,15 +192,16 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
         ? { role: "assistant", content: "Stopped. Ask again whenever you like.", citations: [], stopped: true }
         : { role: "assistant", content: "Network error. Please try again.", citations: [] });
     }
-    abort.current = null; setBusy(null); scroll();
+    abort.current.guide = null; setBusy(null); scroll();
   };
 
   const ask = (q: string, l: Lane = lane) => { if (busy) return; if (l === "guide") void askGuide(q); else void askInvenstory(q); };
   const send = () => { const v = input.trim(); if (!v || busy) return; setInput(""); ask(v); };
-  const stop = () => abort.current?.abort();
+  const stop = () => abort.current[lane]?.abort();
 
   /** Ask it again in the other tab. */
   const carry = (to: Lane, q: string) => {
+    if (busy) return;
     setLane(to);
     if (to === "guide") void askGuide(q, true); else void askInvenstory(q);
   };
@@ -207,7 +215,7 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
     else router.push(b.href);
   };
 
-  const newChat = () => { abort.current?.abort(); setSid(x => ({ ...x, [lane]: undefined })); setMsgs(x => ({ ...x, [lane]: [] })); box.current?.focus(); };
+  const newChat = () => { abort.current[lane]?.abort(); setSid(x => ({ ...x, [lane]: undefined })); setMsgs(x => ({ ...x, [lane]: [] })); box.current?.focus(); };
   const openConvo = async (id: string) => {
     if (busy || loadingConvo) return;
     setLoadingConvo(true); setSid(x => ({ ...x, [lane]: id }));

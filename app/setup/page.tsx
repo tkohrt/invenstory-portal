@@ -2,14 +2,16 @@
 // Outside the (portal) group on purpose: no sidebar, so the steps have the page.
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
-import { getTenant } from "@/lib/server/data";
+import { getTenant, getWorkspaceVisibility } from "@/lib/server/data";
 import { getEligibilityProfile } from "@/lib/server/eligibility";
 import { claimSetup, setupDocs } from "@/lib/server/setup";
 import { tenantIsBrain } from "@/lib/server/brain";
-import { setupGate } from "@/lib/setup";
+import { setupGate, goalsOn } from "@/lib/setup";
 import SetupFlow from "@/components/SetupFlow";
 
 export const dynamic = "force-dynamic";
+// Step 1 and the link boxes read a web page and index it inside the action.
+export const maxDuration = 60;
 
 export default async function SetupPage() {
   const session = await getSession();
@@ -17,8 +19,9 @@ export default async function SetupPage() {
   if (session.role !== "client" || await tenantIsBrain(session.tenantId)) redirect("/invenstory");
   const state = await claimSetup(session.tenantId, session.user.id);
   if (setupGate(state, session.user).kind !== "run" || !state) redirect("/invenstory");
-  const [tenant, profile, docs] = await Promise.all([
+  const [tenant, profile, docs, vis] = await Promise.all([
     getTenant(session.tenantId), getEligibilityProfile(session.tenantId), setupDocs(session.tenantId),
+    getWorkspaceVisibility(session.tenantId).catch(() => ({} as Record<string, boolean>)),
   ]);
   return (
     <SetupFlow
@@ -30,6 +33,8 @@ export default async function SetupPage() {
       state={state}
       profile={profile}
       docs={docs}
+      goals={goalsOn(vis)}
+      tools={{ chat: vis.chat !== false, funder_matches: vis.funder_matches !== false, drafts: vis.drafts !== false }}
     />
   );
 }

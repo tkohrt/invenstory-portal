@@ -81,11 +81,16 @@ export async function guideTurns(tenantId: string, userId: string, sessionId: st
 
 export interface ChatFeedbackItem { id: string; action: "chat_card_suggestion" | "chat_not_right"; at: string; by: string | null; q: string; a: string; sources: string[]; lane: string | null }
 
-/** For Granted's view: answers a client suggested as Story Cards, or said were not right. Admin callers only. */
+/**
+ * For Granted's view: answers a client suggested as Story Cards, or said were
+ * not right. Admin callers only. The text is what the client's browser sent,
+ * so it is shown as their suggestion, never as a quote from a document.
+ */
 export async function chatFeedback(tenantId: string): Promise<ChatFeedbackItem[]> {
-  const { data } = await db.from("audit_log").select("id, action, detail, created_at, actor_user_id")
-    .eq("tenant_id", tenantId).in("action", ["chat_card_suggestion", "chat_not_right"]).order("created_at", { ascending: false }).limit(30);
-  const rows = (data ?? []) as { id: string; action: ChatFeedbackItem["action"]; detail: string | null; created_at: string; actor_user_id: string | null }[];
+  const read = (action: string) => db.from("audit_log").select("id, action, detail, created_at, actor_user_id")
+    .eq("tenant_id", tenantId).eq("action", action).order("created_at", { ascending: false }).limit(20);
+  const [a, b] = await Promise.all([read("chat_card_suggestion"), read("chat_not_right")]);
+  const rows = [...(a.data ?? []), ...(b.data ?? [])] as { id: string; action: ChatFeedbackItem["action"]; detail: string | null; created_at: string; actor_user_id: string | null }[];
   const ids = [...new Set(rows.map(r => r.actor_user_id).filter(Boolean))] as string[];
   const { data: users } = ids.length ? await db.from("app_user").select("id, full_name").in("id", ids) : { data: [] };  // tenant-safe: names of the people who wrote rows already scoped to this tenant
   const name = new Map(((users ?? []) as { id: string; full_name: string }[]).map(u => [u.id, u.full_name]));

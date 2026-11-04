@@ -86,6 +86,10 @@ describe("suggestions", () => {
     expect(g.why).toContain("cannot search yet");
     expect(g.items[2].tour).toBe("funder_matches");
   });
+  test("never offers a tool that is switched off", () => {
+    const g = guideSuggestions(status({ tools: { chat: true, funder_matches: false, drafts: false, card_review: true, eligibility: true } }));
+    expect(g.items.some(i => i.tour === "funder_matches" || /search/i.test(i.text))).toBe(false);
+  });
   test("then what setup left for later", () => {
     expect(guideSuggestions(status({ setupSkipped: ["team"] })).why).toContain("setup steps");
   });

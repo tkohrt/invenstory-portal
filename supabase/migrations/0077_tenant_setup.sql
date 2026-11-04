@@ -9,6 +9,10 @@
 --   steps     {"you":"done","layer2":"skipped",...}   (lib/setup.ts SETUP_STEPS)
 --   answers   role, known_funders, deadlines, invites, goal  (cleaned in lib/setup.ts)
 --   legacy    true for clients that existed before this build (marked complete)
+--
+-- Run this ONCE. The backfill marks every tenant without a row as complete, so
+-- running it again later would also mark clients made since then (who have no
+-- row until their first sign-in) as set up, and they would skip setup.
 
 create table if not exists public.tenant_setup (
   tenant_id      uuid primary key references public.tenant(id) on delete cascade,

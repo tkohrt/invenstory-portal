@@ -33,6 +33,10 @@ interface Props {
   state: SetupState;
   profile: EligibilityProfile;
   docs: SetupDoc[];
+  /** Goals whose tool is on for this client. */
+  goals: Goal[];
+  /** Tools switched on for this client. */
+  tools: { chat: boolean; funder_matches: boolean; drafts: boolean };
 }
 
 const LAYERS = { I: "l1", II: "l2", III: "l3" } as const;
@@ -113,7 +117,7 @@ export default function SetupFlow(p: Props) {
           onSave={(v, how) => run(() => saveFundingSoFarAction(v, how))} />}
         {step === "team" && <TeamStep state={p.state} busy={busy} onBack={back}
           onSave={(v, how) => run(() => saveTeamAction(v, how))} />}
-        {step === "next" && <NextStep state={p.state} docs={p.docs} onBack={back} />}
+        {step === "next" && <NextStep state={p.state} docs={p.docs} goals={p.goals} tools={p.tools} onBack={back} />}
         {err && <p className="cl-error" role="alert">{err}</p>}
       </main>
     </div>
@@ -163,16 +167,16 @@ function YouStep({ tenantName, website, fullName, state, busy, onSave }: Props &
         <h1>Welcome. Let&rsquo;s set up {tenantName}.</h1>
         <p className="su-lede">A few short steps give the portal what it needs to find funders and draft with you. Most can be skipped and finished later.</p>
         <h3>Your organization</h3>
-        <label>Organization name</label>
-        <input value={tenantName} readOnly aria-readonly title="Ask your For Granted team to change the name." />
-        <label>Website</label>
-        <input value={site} onChange={e => setSite(e.target.value)} placeholder="example.org" inputMode="url" />
+        <label htmlFor="su-org">Organization name</label>
+        <input id="su-org" value={tenantName} readOnly aria-readonly title="Ask your For Granted team to change the name." />
+        <label htmlFor="su-site">Website</label>
+        <input id="su-site" value={site} onChange={e => setSite(e.target.value)} placeholder="example.org" inputMode="url" />
         <div className="hint">We read your public pages and add them to your Inven(s)tory as a Layer I document, so it is not empty even if you skip the uploads.</div>
         <h3>You</h3>
-        <label>Your name</label>
-        <input value={name} onChange={e => setName(e.target.value)} />
-        <label>Your role</label>
-        <select value={role} onChange={e => setRole(e.target.value)}>
+        <label htmlFor="su-name">Your name</label>
+        <input id="su-name" value={name} onChange={e => setName(e.target.value)} />
+        <label htmlFor="su-role">Your role</label>
+        <select id="su-role" value={role} onChange={e => setRole(e.target.value)}>
           <option value="">Choose…</option>
           {ROLES.map(r => <option key={r.v} value={r.v}>{r.l}</option>)}
         </select>
@@ -204,7 +208,8 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
   profile: EligibilityProfile; busy: boolean; onBack: () => void;
   onSave: (v: Partial<EligibilityProfile>, how: "done" | "skipped") => void;
 }) {
-  const [p, setP] = useState<EligibilityProfile>(profile);
+  // What the form shows is what is saved: registered in the US and looking for grants unless changed.
+  const [p, setP] = useState<EligibilityProfile>(() => ({ ...profile, country_code: profile.country_code ?? "US", funding_kinds: profile.funding_kinds?.length ? profile.funding_kinds : ["grants"] }));
   const [more, setMore] = useState(true);
   const set = <K extends keyof EligibilityProfile>(k: K, v: EligibilityProfile[K]) => setP(x => ({ ...x, [k]: v }));
   const kinds = new Set(p.funding_kinds?.length ? p.funding_kinds : ["grants"]);
@@ -218,19 +223,19 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
         <div className="su-group">
           <h3>Needed to search</h3>
           <p className="su-small">Funder Matches cannot search until you give an organization type and at least one cause area. You can still finish them later.</p>
-          <label>Organization type</label>
-          <select value={p.org_type ?? ""} onChange={e => set("org_type", e.target.value || null)}>
+          <label htmlFor="su-otype">Organization type</label>
+          <select id="su-otype" value={p.org_type ?? ""} onChange={e => set("org_type", e.target.value || null)}>
             <option value="">Choose…</option>
             {ORG_TYPES.map(o => <option key={o.v} value={o.v}>{o.l.replace(/ — /g, ", ").replace(/ \/ /g, " or ")}</option>)}
           </select>
-          <label>Where you are registered</label>
-          <select value={p.country_code ?? "US"} onChange={e => set("country_code", e.target.value)}>
+          <label htmlFor="su-country">Where you are registered</label>
+          <select id="su-country" value={p.country_code ?? "US"} onChange={e => set("country_code", e.target.value)}>
             {COUNTRY_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
           <TagField label="Cause areas" values={p.cause_areas} onChange={v => set("cause_areas", v)} placeholder="e.g. Youth development" />
-          <label>What you are looking for</label>
+          <div className="su-label" id="su-kinds-l">What you are looking for</div>
           <div className="su-small">This decides where we search, not what you are eligible for.</div>
-          <div className="su-kinds">
+          <div className="su-kinds" role="group" aria-labelledby="su-kinds-l">
             {FUNDING_KINDS.map(k => (
               <label key={k.v} className={`su-kind ${kinds.has(k.v) ? "on" : ""}`}>
                 <input type="checkbox" checked={kinds.has(k.v)} onChange={() => toggleKind(k.v)} />
@@ -247,18 +252,18 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
           </div>
           <p className="su-small">Optional. Each one sharpens the screening.</p>
           {more && <>
-            <label>Annual budget</label>
-            <select value={p.budget_band ?? ""} onChange={e => set("budget_band", e.target.value || null)}>
+            <label htmlFor="su-budget">Annual budget</label>
+            <select id="su-budget" value={p.budget_band ?? ""} onChange={e => set("budget_band", e.target.value || null)}>
               <option value="">Choose…</option>
               {BUDGET_BANDS.map(o => <option key={o.v} value={o.v}>{o.l.replace(/–/g, " to ")}</option>)}
             </select>
             <CountryField label="Other countries you work in" values={p.countries_served ?? []} onChange={v => set("countries_served", v)} exclude={p.country_code ?? "US"} />
-            <label>Federal registration (SAM.gov)</label>
-            <select value={p.federal_registration} onChange={e => set("federal_registration", e.target.value)}>
+            <label htmlFor="su-sam">Federal registration (SAM.gov)</label>
+            <select id="su-sam" value={p.federal_registration} onChange={e => set("federal_registration", e.target.value)}>
               {FEDERAL_REG.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
             </select>
-            <label>Can you match funds?</label>
-            <select value={p.match_capacity_pct ?? ""} onChange={e => set("match_capacity_pct", e.target.value === "" ? null : Number(e.target.value))}>
+            <label htmlFor="su-match">Can you match funds?</label>
+            <select id="su-match" value={p.match_capacity_pct ?? ""} onChange={e => set("match_capacity_pct", e.target.value === "" ? null : Number(e.target.value))}>
               <option value="">Not sure</option>
               {MATCH_CAPACITY.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
             </select>
@@ -472,9 +477,9 @@ function Layer3Step({ state, orgType, docs, busy, onBack, onSettle }: {
           </div>
         )}
         {msg && <p className="su-note" role="status">{msg}</p>}
+        {!canGo && <p className="su-small su-gate">Tick &ldquo;I have read this&rdquo; to carry on.</p>}
         <Foot onBack={onBack}>
-          {!canGo && <span className="su-small">Read the explanation to carry on</span>}
-          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} onClick={() => onSettle("skipped")}>Skip for now. I will add my voice later.</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} title="You can add your voice later from Getting started." onClick={() => onSettle("skipped")}>Skip for now</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy || !canGo || mine.length === 0}
             title={mine.length ? undefined : "Add your voice first, or skip for now."}
             onClick={() => onSettle("done")}>Continue</button>
@@ -555,7 +560,7 @@ function TeamStep({ state, busy, onBack, onSave }: {
           {emails.map((e, i) => (
             <div key={i} className="su-row su-row-2">
               <input aria-label="Email" type="email" placeholder="name@example.org" value={e} onChange={ev => setEmails(es => es.map((x, j) => j === i ? ev.target.value : x))} />
-              <button type="button" className="sb-btn sb-quiet sb-sm" aria-label="Remove" onClick={() => setEmails(es => es.length > 1 ? es.filter((_, j) => j !== i) : [""])}>×</button>
+              <button type="button" className="sb-btn sb-quiet sb-sm" aria-label={`Remove ${e || "this person"}`} onClick={() => setEmails(es => es.length > 1 ? es.filter((_, j) => j !== i) : [""])}>×</button>
             </div>
           ))}
         </div>
@@ -572,7 +577,7 @@ function TeamStep({ state, busy, onBack, onSave }: {
         <ul className="su-list">
           <li>They skip these setup steps.</li>
           <li>Each gets a short tour the first time they open a tool.</li>
-          <li>They see the same Inven(s)tory and drafts you do.</li>
+          <li>They see the same Inven(s)tory you do.</li>
         </ul>
       </aside>
     </div>
@@ -590,15 +595,16 @@ const STEP_TODO: Partial<Record<SetupStepKey, string>> = {
   team: "Add your team",
 };
 
-function NextStep({ state, docs, onBack }: { state: SetupState; docs: SetupDoc[]; onBack: () => void }) {
+function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; docs: SetupDoc[]; goals: Goal[]; tools: Props["tools"]; onBack: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [goal, setGoal] = useState<Goal>((state.answers.goal as Goal) ?? "funders");
+  const shown = GOALS.filter(x => goals.includes(x.v));
+  const [goal, setGoal] = useState<Goal>(() => { const g = state.answers.goal as Goal | null | undefined; return g && goals.includes(g) ? g : (shown[0]?.v ?? "organize"); });
   const total = docs.length;
   const read = docs.filter(d => d.status === "ready").length;
   const todo = useMemo(() => Object.entries(state.steps).filter(([, v]) => v === "skipped").map(([k]) => STEP_TODO[k as SetupStepKey]).filter(Boolean) as string[], [state.steps]);
-  const g = GOALS.find(x => x.v === goal)!;
+  const g = GOALS.find(x => x.v === goal) ?? GOALS[2];
 
   const finish = async () => {
     setBusy(true); setErr(null);
@@ -618,12 +624,12 @@ function NextStep({ state, docs, onBack }: { state: SetupState; docs: SetupDoc[]
             <b>Reading your documents</b>
             <span>{read} of {total} read</span>
             <div className="su-bar"><i style={{ width: `${Math.round((read / total) * 100)}%` }} /></div>
-            <span className="su-small">Then the readiness check runs on its own. You can leave this page; reading keeps going.</span>
+            <span className="su-small">You can leave this page; reading keeps going.</span>
           </div>
         )}
         <h3>What do you want help with first?</h3>
         <div className="su-ways">
-          {GOALS.map(x => (
+          {shown.map(x => (
             <button key={x.v} type="button" className={`su-way ${goal === x.v ? "on" : ""}`} aria-pressed={goal === x.v} onClick={() => setGoal(x.v)}>
               <b>{x.title}</b><span>{x.desc}</span><em>{x.where}</em>
             </button>
@@ -637,12 +643,12 @@ function NextStep({ state, docs, onBack }: { state: SetupState; docs: SetupDoc[]
         {err && <p className="cl-error" role="alert">{err}</p>}
       </section>
       <aside className="su-aside">
-        <h4>Your four tools</h4>
+        <h4>Your tools</h4>
         <ul className="su-tools">
           <li><b>The Inven(s)tory</b><span>Everything that makes you fundable, in three layers and Story Cards.</span></li>
-          <li><b>Chat with your Inven(s)tory</b><span>Ask anything about your organization, or how the portal works.</span></li>
-          <li><b>Funder Matches</b><span>Funders and open calls screened against your eligibility, with a fit report.</span></li>
-          <li><b>Storyboarding Tool</b><span>Build an application from Story Cards, then draft and polish it.</span></li>
+          {tools.chat && <li><b>Chat</b><span>Ask anything about your organization, or how the portal works.</span></li>}
+          {tools.funder_matches && <li><b>Funder Matches</b><span>Funders and open calls screened against your eligibility, with a fit report.</span></li>}
+          {tools.drafts && <li><b>Drafts</b><span>The applications your For Granted team is preparing with you.</span></li>}
         </ul>
         {todo.length > 0 && <>
           <h4>Still to do</h4>

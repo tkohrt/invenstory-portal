@@ -11,12 +11,14 @@ import { getSession, type PortalSession } from "./session";
 import { db } from "./db";
 import { getSetupState, addWebDocument, hasWebsiteDoc } from "./setup";
 import { getEligibilityProfile } from "./eligibility";
+import { getWorkspaceVisibility } from "./data";
+import { notifyClientRequest } from "./notify";
 import { saveEligibilityProfileAction } from "./eligibility-actions";
 import {
-  canSettle, cleanRole, cleanKnownFunders, cleanDeadlines, cleanInvites, cleanWebsite, goalPath, GOALS, isStepKey,
+  SETUP_STEPS, canSettle, cleanRole, cleanKnownFunders, cleanDeadlines, cleanInvites, cleanWebsite, goalPath, GOALS, isStepKey,
   type SetupAnswers, type SetupState, type SetupStepKey, type StepState, type Goal,
 } from "@/lib/setup";
-import type { EligibilityProfile } from "@/lib/eligibility-fields";
+import { cleanProfileInput, type EligibilityProfile } from "@/lib/eligibility-fields";
 
 type Result = { ok: true; message?: string; next?: string } | { ok: false; error: string };
 
@@ -27,12 +29,20 @@ async function owner(): Promise<{ s: PortalSession; state: SetupState } | { erro
   const state = await getSetupState(s.tenantId);
   if (!state) return { error: "Setup is not available right now. Please try again shortly." };
   if (state.ownerUserId !== s.user.id) return { error: "Another person on your team is doing the setup." };
+  if (state.status === "complete") return { error: "Setup is already finished. Make changes from the portal itself." };
   return { s, state };
 }
 
 async function write(tenantId: string, patch: Record<string, unknown>) {
   const { error } = await db.from("tenant_setup").update({ ...patch, updated_at: new Date().toISOString() }).eq("tenant_id", tenantId);
   return error;
+}
+
+const isHow = (v: unknown): v is StepState => v === "done" || v === "skipped";
+
+async function tenantName(tenantId: string): Promise<string> {
+  const { data } = await db.from("tenant").select("name").eq("id", tenantId).maybeSingle();  // tenant-safe: the session's own tenant row, by id
+  return (data as { name?: string } | null)?.name ?? "a client";
 }
 
 function withStep(state: SetupState, step: SetupStepKey, how: StepState) {
@@ -52,12 +62,12 @@ export async function saveYouAction(input: { website?: string; fullName?: string
     const { data: t } = await db.from("tenant").select("website").eq("id", s.tenantId).maybeSingle();  // tenant-safe: the session's own tenant row, by id
     const changed = (t as { website?: string | null } | null)?.website !== site;
     if (changed) await db.from("tenant").update({ website: site }).eq("id", s.tenantId);  // tenant-safe: the session's own tenant row, by id
-    if (changed || !(await hasWebsiteDoc(s.tenantId))) {
+    if (changed || (state.answers.website_tried !== site && !(await hasWebsiteDoc(s.tenantId)))) {
       const r = await addWebDocument({ tenantId: s.tenantId, userId: s.user.id, role: "client", url: site, layer: "I", tag: "website" });
       message = r.ok ? "We read your website and added it to Layer I." : `Your website could not be read: ${r.error}`;
     }
   }
-  const answers: SetupAnswers = { ...state.answers, role: cleanRole(input.role) };
+  const answers: SetupAnswers = { ...state.answers, role: cleanRole(input.role), website_tried: site ?? state.answers.website_tried ?? null };
   const err = await write(s.tenantId, { answers, steps: withStep(state, "you", "done") });
   if (err) return { ok: false, error: "That did not save. Please try again." };
   revalidatePath("/setup");
@@ -71,9 +81,17 @@ export async function saveYouAction(input: { website?: string; fullName?: string
 export async function saveSetupEligibilityAction(input: Partial<EligibilityProfile>, how: StepState): Promise<Result> {
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const { s, state } = o;
-  const current = await getEligibilityProfile(s.tenantId);
-  const r = await saveEligibilityProfileAction({ ...current, ...input });
-  if (!r.ok) return { ok: false, error: r.error ?? "Your answers could not be saved." };
+  if (!isHow(how)) return { ok: false, error: "Unknown choice." };
+  // Skipping saves nothing: a save clears cached matches (eligibility-actions),
+  // and For Granted may already have run a search for this client.
+  if (how === "done") {
+    const current = await getEligibilityProfile(s.tenantId);
+    const merged = cleanProfileInput({ ...current, ...input });
+    if (JSON.stringify(merged) !== JSON.stringify(cleanProfileInput(current))) {
+      const r = await saveEligibilityProfileAction(merged);
+      if (!r.ok) return { ok: false, error: r.error ?? "Your answers could not be saved." };
+    }
+  }
   const err = await write(s.tenantId, { steps: withStep(state, "eligibility", how) });
   if (err) return { ok: false, error: "That did not save. Please try again." };
   revalidatePath("/setup");
@@ -85,6 +103,10 @@ export async function addSetupLinkAction(url: string, layer: "I" | "II"): Promis
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const clean = cleanWebsite(url);
   if (!clean) return { ok: false, error: "That does not look like a web address." };
+  const { count } = await db.from("audit_log").select("id", { count: "exact", head: true })
+    .eq("tenant_id", o.s.tenantId).eq("action", "setup_link").gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
+  if ((count ?? 0) >= 20) return { ok: false, error: "That is a lot of links for one day. Upload the pages as files, or add more tomorrow." };
+  await db.from("audit_log").insert({ actor_user_id: o.s.user.id, tenant_id: o.s.tenantId, action: "setup_link", detail: clean.slice(0, 300) });
   const r = await addWebDocument({ tenantId: o.s.tenantId, userId: o.s.user.id, role: "client", url: clean, layer: layer === "II" ? "II" : "I" });
   if (!r.ok) return { ok: false, error: r.error };
   revalidatePath("/setup");
@@ -106,6 +128,7 @@ export async function requestInterviewAction(): Promise<Result> {
   const err = await write(s.tenantId, { answers: { ...state.answers, interview_requested_at: new Date().toISOString() } });
   if (err) return { ok: false, error: "That did not save. Please try again." };
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "setup_interview_request", detail: "founder interview" });
+  await notifyClientRequest({ org: await tenantName(s.tenantId), requester: s.user.full_name || s.user.email, what: "asked for a founder interview (Layer III) during setup.", tenantId: s.tenantId });
   return { ok: true, message: "Asked. Your For Granted team will email you to find a time." };
 }
 
@@ -113,6 +136,7 @@ export async function requestInterviewAction(): Promise<Result> {
 export async function saveFundingSoFarAction(input: { known_funders?: unknown; deadlines?: unknown }, how: StepState): Promise<Result> {
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const { s, state } = o;
+  if (!isHow(how)) return { ok: false, error: "Unknown choice." };
   const answers: SetupAnswers = how === "done"
     ? { ...state.answers, known_funders: cleanKnownFunders(input.known_funders), deadlines: cleanDeadlines(input.deadlines) }
     : state.answers;
@@ -129,15 +153,16 @@ export async function saveFundingSoFarAction(input: { known_funders?: unknown; d
 export async function saveTeamAction(input: { invites?: unknown }, how: StepState): Promise<Result> {
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const { s, state } = o;
+  if (!isHow(how)) return { ok: false, error: "Unknown choice." };
   let answers = state.answers;
   let message: string | undefined;
   if (how === "done") {
-    const fresh = cleanInvites(input.invites).filter(i => i.email !== s.user.email.toLowerCase());
-    const kept = (state.answers.invites ?? []).filter(i => i.created);
-    const merged = [...kept, ...fresh.filter(f => !kept.some(k => k.email === f.email))];
-    answers = { ...state.answers, invites: merged };
+    const kept = state.answers.invites ?? [];
+    const fresh = cleanInvites(input.invites).filter(i => i.email !== s.user.email.toLowerCase() && !kept.some(k => k.email === i.email));
+    answers = { ...state.answers, invites: [...kept, ...fresh].slice(0, 20) };
     if (fresh.length) {
       await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "setup_invite_request", detail: fresh.map(f => `${f.email} (${f.access})`).join(", ").slice(0, 900) });
+      await notifyClientRequest({ org: await tenantName(s.tenantId), requester: s.user.full_name || s.user.email, what: `asked for portal logins for ${fresh.map(f => f.email).join(", ")}.`, tenantId: s.tenantId });
       message = `Sent to your For Granted team, who will set up ${fresh.length === 1 ? "a login" : `${fresh.length} logins`} and email ${fresh.length === 1 ? "it" : "them"} out.`;
     }
   }
@@ -164,6 +189,9 @@ export async function settleStepAction(step: string, how: StepState): Promise<Re
 export async function finishSetupAction(goal: string): Promise<Result> {
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const { s, state } = o;
+  const open = SETUP_STEPS.filter(x => x.key !== "next" && !state.steps[x.key]);
+  if (open.length) return { ok: false, error: `Finish or skip ${open.map(x => x.label).join(", ")} first.` };
+  if (!state.layer3ReadAt) return { ok: false, error: "Please read the Layer III explanation first." };
   const g = GOALS.some(x => x.v === goal) ? goal as Goal : null;
   const now = new Date().toISOString();
   const err = await write(s.tenantId, {
@@ -173,7 +201,8 @@ export async function finishSetupAction(goal: string): Promise<Result> {
   if (err) return { ok: false, error: "That did not save. Please try again." };
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "setup_complete", detail: g ?? "no goal" });
   revalidatePath("/", "layout");
-  return { ok: true, next: goalPath(g) };
+  const vis = await getWorkspaceVisibility(s.tenantId).catch(() => ({} as Record<string, boolean>));
+  return { ok: true, next: goalPath(g, vis) };
 }
 
 // ---- For Granted ----

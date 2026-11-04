@@ -6,6 +6,7 @@ import { cache } from "react";
 import { db } from "./db";
 import { processDocument } from "./ingest";
 import { readUrl, Plain } from "./read-url";
+import { markStaleOnUpload } from "./artifacts";
 import type { SetupState, SetupAnswers, SetupStepKey, StepState } from "@/lib/setup";
 import { isStepKey } from "@/lib/setup";
 
@@ -35,9 +36,14 @@ function fromRow(tenantId: string, r: Row | null): SetupState {
  * Null when the table cannot be read (0077 not yet run): the portal then
  * behaves as it did before this build, and nobody is sent into setup.
  */
+let warned = false;
 export const getSetupState = cache(async (tenantId: string): Promise<SetupState | null> => {
   const { data, error } = await db.from("tenant_setup").select("*").eq("tenant_id", tenantId).maybeSingle();
-  if (error) { console.error("[setup] read failed", error.message); return null; }
+  if (error) {
+    // Before 0077 runs this fails on every page; say so once per server, not per page.
+    if (!warned) { warned = true; console.error("[setup] read failed (has 0077 been run?)", error.message); }
+    return null;
+  }
   return fromRow(tenantId, data as Row | null);
 });
 
@@ -49,7 +55,7 @@ export const getSetupState = cache(async (tenantId: string): Promise<SetupState 
 export async function claimSetup(tenantId: string, userId: string): Promise<SetupState | null> {
   await db.from("tenant_setup").upsert({ tenant_id: tenantId }, { onConflict: "tenant_id", ignoreDuplicates: true });
   await db.from("tenant_setup").update({ owner_user_id: userId, updated_at: new Date().toISOString() })
-    .eq("tenant_id", tenantId).is("owner_user_id", null);
+    .eq("tenant_id", tenantId).eq("status", "in_progress").is("owner_user_id", null);
   const { data, error } = await db.from("tenant_setup").select("*").eq("tenant_id", tenantId).maybeSingle();
   if (error) return null;
   return fromRow(tenantId, data as Row | null);
@@ -99,6 +105,8 @@ export async function addWebDocument(a: {
     { document_id: docId, tenant_id: a.tenantId, tag: a.tag ?? "web-page" },
   ]);
   try { await processDocument(docId, { actor: a.role }); } catch { /* status recorded on the document */ }
+  // As for any upload (lib/server/upload.ts): new material marks Story Intelligence stale.
+  await markStaleOnUpload(a.tenantId).catch(() => { /* best-effort */ });
   return { ok: true, id: docId, title };
 }
 

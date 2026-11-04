@@ -3,6 +3,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import { getChatMessages } from "./data";
 import { guideTurns } from "./portal-guide";
+import { notifyClientRequest } from "./notify";
 import type { ChatHistoryMsg } from "@/lib/types";
 
 export async function loadSessionAction(sessionId: string): Promise<ChatHistoryMsg[]> {
@@ -21,6 +22,14 @@ export async function deleteSessionAction(sessionId: string): Promise<void> {
 
 // ---- Answer controls and the Portal Guide (patch 16, 3 November 2026) ----
 
+/** At most 30 a day per person, so these cannot flood For Granted's view. */
+async function tooMany(tenantId: string, userId: string, action: string): Promise<boolean> {
+  const { count } = await db.from("audit_log").select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId).eq("actor_user_id", userId).eq("action", action)
+    .gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
+  return (count ?? 0) >= 30;
+}
+
 const clip = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 
 /**
@@ -33,9 +42,14 @@ export async function suggestCardFromAnswerAction(input: { question: string; ans
   if (!s) throw new Error("unauthorized");
   const answer = clip(input.answer, 1500);
   if (answer.length < 20) return { ok: false, message: "That answer is too short to make a card from." };
+  if (await tooMany(s.tenantId, s.user.id, "chat_card_suggestion")) return { ok: false, message: "That is a lot of suggestions for one day. Your For Granted team has the ones already sent." };
   const detail = JSON.stringify({ q: clip(input.question, 200), a: answer, src: (input.sources ?? []).slice(0, 8).map(x => clip(x, 200)) });
   const { error } = await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "chat_card_suggestion", detail });
   if (error) return { ok: false, message: "That did not save. Please try again." };
+  if (s.role === "client") {
+    const { data: t } = await db.from("tenant").select("name").eq("id", s.tenantId).maybeSingle();  // tenant-safe: the session's own tenant row, by id
+    await notifyClientRequest({ org: (t as { name?: string } | null)?.name ?? "a client", requester: s.user.full_name || s.user.email, what: "suggested a chat answer as a Story Card.", tenantId: s.tenantId });
+  }
   return { ok: true, message: s.role === "admin" ? "Added to this client's suggested Story Cards." : "Sent to your For Granted team, who will make it a Story Card from the documents it cites." };
 }
 
@@ -43,6 +57,7 @@ export async function suggestCardFromAnswerAction(input: { question: string; ans
 export async function answerNotRightAction(input: { lane: "invenstory" | "guide"; question: string; answer: string }): Promise<{ ok: boolean }> {
   const s = await getSession();
   if (!s) throw new Error("unauthorized");
+  if (await tooMany(s.tenantId, s.user.id, "chat_not_right")) return { ok: true };
   const detail = JSON.stringify({ lane: input.lane === "guide" ? "guide" : "invenstory", q: clip(input.question, 300), a: clip(input.answer, 600) });
   const { error } = await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "chat_not_right", detail });
   return { ok: !error };

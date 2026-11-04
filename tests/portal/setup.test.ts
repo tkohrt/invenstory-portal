@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   setupGate, resumeAt, stillToDo, stepsSettled, canSettle, goalPath, cleanRole, cleanKnownFunders, cleanDeadlines,
-  cleanInvites, cleanWebsite, knownFunderMatch, SETUP_STEPS, type SetupState,
+  cleanInvites, cleanWebsite, knownFunderMatch, goalsOn, SETUP_STEPS, type SetupState,
 } from "@/lib/setup";
 
 const base = (over: Partial<SetupState> = {}): SetupState => ({
@@ -52,6 +52,11 @@ describe("progress", () => {
     expect(goalPath("funders")).toBe("/funder-matches");
     expect(goalPath("draft")).toBe("/drafts");
     expect(goalPath("nonsense")).toBe("/invenstory");
+  });
+  test("a goal whose tool is switched off opens the Inven(s)tory, and is not offered", () => {
+    expect(goalPath("draft", { drafts: false })).toBe("/invenstory");
+    expect(goalsOn({ drafts: false })).toEqual(["funders", "organize"]);
+    expect(goalsOn({})).toEqual(["funders", "draft", "organize"]);
   });
 });
 

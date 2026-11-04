@@ -44,12 +44,18 @@ export function guideSuggestions(s: GuideStatus): SuggestionSet {
       items: [{ text: "What is left to set up, and why does it matter?" }, { text: "What should go in Layer III?" }, { text: "Show me around the Inven(s)tory", tour: "invenstory" }],
     };
   }
+  if (s.tools.funder_matches) {
+    return {
+      why: "Suggested to get you started",
+      items: [
+        { text: s.hasMatches ? "How do I read the fit report?" : s.selfSearch ? "How do I run a search?" : "How do I see the funders found for us?" },
+        { text: "How do Story Cards work?" },
+        { text: "Show me around Funder Matches", tour: "funder_matches" },
+      ],
+    };
+  }
   return {
     why: "Suggested to get you started",
-    items: [
-      { text: s.hasMatches ? "How do I read the fit report?" : "How do I run a search?" },
-      { text: "How do Story Cards work?" },
-      { text: "Show me around Funder Matches", tour: "funder_matches" },
-    ],
+    items: [{ text: "What should go in each layer?" }, { text: "How do Story Cards work?" }, { text: "Show me around the Inven(s)tory", tour: "invenstory" }],
   };
 }

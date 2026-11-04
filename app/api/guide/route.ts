@@ -10,6 +10,8 @@ import { db } from "@/lib/server/db";
 import { chatComplete } from "@/lib/server/llm";
 import { withAiUsage } from "@/lib/server/ai-usage";
 import { guideStatus, guideCounts } from "@/lib/server/portal-guide";
+import { tenantIsBrain } from "@/lib/server/brain";
+import { getFeatureVisible } from "@/lib/server/data";
 import {
   GUIDE_LIMITS, GUIDE_SYSTEM, guideUserPrompt, guideButtons, fallbackAnswer, looksLikeOrgQuestion, HANDOVER_TO_INVENSTORY,
 } from "@/lib/portal-guide";
@@ -28,9 +30,22 @@ export async function POST(req: NextRequest) {
   }
   const sid = typeof body.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(body.sessionId) ? body.sessionId : crypto.randomUUID();
 
+  // Chat is a workspace feature; the Brain is not a client.
+  if (!admin && (await tenantIsBrain(session.tenantId) || !(await getFeatureVisible(session.tenantId, "chat")))) {
+    return NextResponse.json({ error: "Chat is not switched on for your organization." }, { status: 403 });
+  }
+
+  // The question is recorded BEFORE the model is asked, and counted with
+  // itself, so parallel requests cannot all slip under the limit; a failed
+  // reservation refuses the question rather than answering it unmetered.
+  const { data: row, error: rerr } = await db.from("guide_question").insert({
+    tenant_id: session.tenantId, user_id: session.user.id, session_id: sid, question: q.slice(0, 2000),
+  }).select("id").single();
+  if (rerr || !row) return NextResponse.json({ error: "The Portal Guide is not available yet. Email info@forgranted.com with your question." }, { status: 503 });
+  const rowId = (row as { id: string }).id;
   const counts = await guideCounts(session.tenantId, session.user.id);
-  if (!counts) return NextResponse.json({ error: "The Portal Guide is not available yet. Email info@forgranted.com with your question." }, { status: 503 });
-  if (!admin && (counts.hour >= GUIDE_LIMITS.perHour || counts.day >= GUIDE_LIMITS.perDay)) {
+  if (!counts || (!admin && (counts.hour > GUIDE_LIMITS.perHour || counts.day > GUIDE_LIMITS.perDay))) {
+    await db.from("guide_question").delete().eq("tenant_id", session.tenantId).eq("id", rowId);
     return NextResponse.json({ error: "That is a lot of Portal Guide questions for now. Try again later, or email info@forgranted.com." }, { status: 429 });
   }
 
@@ -52,9 +67,6 @@ export async function POST(req: NextRequest) {
   }
   const buttons = handover ? [] : guideButtons(q, status);
 
-  await db.from("guide_question").insert({
-    tenant_id: session.tenantId, user_id: session.user.id, session_id: sid,
-    question: q.slice(0, 2000), answer, buttons, generated,
-  });
+  await db.from("guide_question").update({ answer, buttons, generated }).eq("tenant_id", session.tenantId).eq("id", rowId);
   return NextResponse.json({ sessionId: sid, answer, buttons, handover, generated });
 }

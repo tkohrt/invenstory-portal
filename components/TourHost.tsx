@@ -8,7 +8,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { setUiPrefAction } from "@/lib/server/account-actions";
 import { TOURS, TOUR_EVENT, autoStartTour, isTourKey, placeCard, presentSteps, tourForPath, tourPrefKey, type Tour, type TourStep } from "@/lib/tours";
 
-const find = (target: string) => document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
+/** The first marked element that is actually on screen (a hidden twin is skipped). */
+const find = (target: string) => Array.from(document.querySelectorAll<HTMLElement>(`[data-tour="${target}"]`))
+  .find(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) ?? null;
 
 export default function TourHost({ role, prefs }: { role: "admin" | "client"; prefs: Record<string, unknown> | null }) {
   const path = usePathname();
@@ -19,11 +21,17 @@ export default function TourHost({ role, prefs }: { role: "admin" | "client"; pr
   const [box, setBox] = useState<DOMRect | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const seen = useRef<Set<string>>(new Set());
+  /** Started in this visit: a refresh of the page's data does not start it again. */
+  const started = useRef<Set<string>>(new Set());
 
   const start = useCallback((t: Tour) => {
     const s = presentSteps(t.steps, x => !!find(x));
     if (!s.length) return;
+    started.current.add(t.key);
     setSteps(s); setI(0); setTour(t);
+    // Asked for with ?tour=1: take it out of the address, so a refresh does not start it again.
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("tour")) { u.searchParams.delete("tour"); window.history.replaceState(window.history.state, "", u.pathname + u.search + u.hash); }
   }, []);
 
   const end = useCallback(() => {
@@ -34,12 +42,20 @@ export default function TourHost({ role, prefs }: { role: "admin" | "client"; pr
     setTour(null); setBox(null);
   }, [tour]);
 
+  // A tour belongs to its page: leaving the page ends it, without marking it seen.
+  const live = tour && tour.path === path ? tour : null;
+  useEffect(() => {
+    if (!tour || tour.path === path) return;
+    const id = window.setTimeout(() => { setTour(null); setBox(null); }, 0);
+    return () => window.clearTimeout(id);
+  }, [tour, path]);
+
   // On its own, once, for a client; or when asked with ?tour=1.
   useEffect(() => {
     const t = tourForPath(path);
     if (!t) return;
     const asked = new URLSearchParams(window.location.search).get("tour") === "1";
-    if (!asked && (seen.current.has(t.key) || !autoStartTour({ key: t.key, role, prefs }))) return;
+    if (!asked && (seen.current.has(t.key) || started.current.has(t.key) || !autoStartTour({ key: t.key, role, prefs }))) return;
     const id = window.setTimeout(() => start(t), 700);
     return () => window.clearTimeout(id);
   }, [path, role, prefs, start]);
@@ -59,7 +75,7 @@ export default function TourHost({ role, prefs }: { role: "admin" | "client"; pr
 
   // Follow the element as the page moves.
   useLayoutEffect(() => {
-    if (!tour) return;
+    if (!live) return;
     const el = find(steps[i]?.target ?? "");
     if (!el) { const r = requestAnimationFrame(() => setBox(null)); return () => cancelAnimationFrame(r); }
     el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -69,17 +85,17 @@ export default function TourHost({ role, prefs }: { role: "admin" | "client"; pr
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => { cancelAnimationFrame(r); window.clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
-  }, [tour, steps, i]);
+  }, [live, steps, i]);
 
   useEffect(() => {
-    if (!tour) return;
+    if (!live) return;
     card.current?.focus();
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") end(); };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [tour, i, end]);
+  }, [live, i, end]);
 
-  if (!tour || !steps[i]) return null;
+  if (!live || !steps[i]) return null;
   const step = steps[i];
   const last = i === steps.length - 1;
   const pad = 6;

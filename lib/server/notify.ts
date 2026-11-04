@@ -157,3 +157,32 @@ export async function notifySiteInterest(d: { name: string; org: string; email: 
     } catch { /* best-effort */ }
   }
 }
+
+/**
+ * A client asked For Granted for something from setup or chat (patch 14 and
+ * 16, 3 Nov 2026): a teammate login, a founder interview, a Story Card made
+ * from an answer. Best-effort, like the rest of this file.
+ */
+export async function notifyClientRequest(d: { org: string; requester: string; what: string; tenantId: string }) {
+  const line = `${d.requester} (${d.org}) ${d.what}`;
+  const link = `${APP_URL}/admin/clients/${d.tenantId}`;
+  if (RESEND_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
+          subject: `Client request: ${d.org}`,
+          html: `<p>${line.replace(/</g, "&lt;")}</p><p><a href="${link}">Open the client's page</a></p>`,
+        }),
+      });
+    } catch { /* email best-effort */ }
+  }
+  if (SLACK_WEBHOOK) {
+    try {
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: `:raising_hand: *Client request*: ${line}  <${link}|Open>` }) });
+    } catch { /* slack best-effort */ }
+  }
+}

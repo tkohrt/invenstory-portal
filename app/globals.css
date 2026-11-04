@@ -2356,3 +2356,8 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
   .cv-page.hist-auto .cv-hist{display:none}
   .cv-page.hist-auto .cv-hist-show{display:inline-flex}
 }
+.su-card .hint{text-align:left}
+.su-kind input,.su-check input{width:auto;flex:none;margin:3px 0 0}
+.su-kind > span,.su-check > span{flex:1;text-align:left}
+.su-gate{margin:18px 0 -14px;text-align:right}
+.su-label{font-size:13px;font-weight:600;margin:12px 0 4px}

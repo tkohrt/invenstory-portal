@@ -46,7 +46,7 @@ export const RELATIONSHIPS = [
 
 export const GOALS = [
   { v: "funders", title: "Find funders", desc: "See who could fund you, and why.", where: "We will open Funder Matches first.", path: "/funder-matches" },
-  { v: "draft", title: "Draft an application", desc: "Turn a funder's questions into answers from your Story Cards.", where: "We will open your applications first.", path: "/drafts" },
+  { v: "draft", title: "Work on an application", desc: "See the applications your For Granted team is preparing with you.", where: "We will open your applications first.", path: "/drafts" },
   { v: "organize", title: "Get organized", desc: "See what your Inven(s)tory knows and what is missing.", where: "We will open your Inven(s)tory first.", path: "/invenstory" },
 ] as const;
 export type Goal = (typeof GOALS)[number]["v"];
@@ -62,6 +62,8 @@ export interface SetupAnswers {
   invites?: Invite[];
   goal?: Goal | null;
   interview_requested_at?: string | null;
+  /** The website address last read on step 1, so a failed read is not retried on every Continue. */
+  website_tried?: string | null;
 }
 
 export interface SetupState {
@@ -108,8 +110,19 @@ export function canSettle(step: SetupStepKey, how: StepState, state: Pick<SetupS
   return true;
 }
 
-export function goalPath(goal: unknown): string {
-  return GOALS.find(g => g.v === goal)?.path ?? "/invenstory";
+/** The workspace feature each goal opens (lib/workspace.ts keys); the Inven(s)tory is always on. */
+export const GOAL_FEATURE: Record<Goal, string | null> = { funders: "funder_matches", draft: "drafts", organize: null };
+
+/** Goals whose tool is switched on for this client. */
+export function goalsOn(vis: Record<string, boolean>): Goal[] {
+  return GOALS.filter(g => { const f = GOAL_FEATURE[g.v]; return !f || vis[f] !== false; }).map(g => g.v);
+}
+
+export function goalPath(goal: unknown, vis: Record<string, boolean> = {}): string {
+  const g = GOALS.find(x => x.v === goal);
+  if (!g) return "/invenstory";
+  const f = GOAL_FEATURE[g.v];
+  return f && vis[f] === false ? "/invenstory" : g.path;
 }
 
 // ---- Cleaning what a client sends ----
