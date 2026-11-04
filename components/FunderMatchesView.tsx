@@ -374,12 +374,12 @@ export default function FunderMatchesView({
         <span className="spacer" />
         <div className="fm-actions">
           {sources.length > 0 && (
-            <SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
+            <span data-tour="fm-sources" className="fm-tour-wrap"><SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
               role={isAdmin ? "admin" : "client"} preview={viewingAsClient} selfSearch={selfSearchOn}
-              canRun={canRun && configured} running={running || starting} onRun={run} adminSlot={selfSearchSlot} />
+              canRun={canRun && configured} running={running || starting} onRun={run} adminSlot={selfSearchSlot} /></span>
           )}
           {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
-          {hasResults && <a className="sb-btn sb-secondary" href="/funder-matches/report">Open the fit report</a>}
+          {hasResults && <a className="sb-btn sb-secondary" href="/funder-matches/report" data-tour="fm-report">Open the fit report</a>}
           {isAdmin && (
             <MenuButton label="More Funder Matches actions" icon={DOTS}>
               <MenuItem title={`View as ${orgName}`} hint="This page exactly as the client sees it, with nothing changeable."
@@ -389,7 +389,7 @@ export default function FunderMatchesView({
             </MenuButton>
           )}
           {canRun && (
-            <button type="button" className="sb-btn sb-primary" onClick={run} disabled={starting || running || !configured}
+            <button type="button" className="sb-btn sb-primary" data-tour="fm-search" onClick={run} disabled={starting || running || !configured}
               title={!configured ? "Ground Truth is not connected yet." : isAdmin ? undefined : "Searches Ground Truth and the sources listed under Sources. Uses part of the monthly AI allowance."}>
               {runLabel}
             </button>
@@ -546,12 +546,12 @@ export default function FunderMatchesView({
           No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}
         </div>
       ) : matches.length === 0 ? (
-        <div className="empty" id="fm-calls">
+        <div className="empty" id="fm-calls" data-tour="fm-results">
           No open calls survived screening this run. The funders below are still worth
           approaching: most foundation money never appears as a public call.
         </div>
       ) : (
-        <section id="fm-calls" className="fm-sec" aria-labelledby="fm-calls-h">
+        <section id="fm-calls" className="fm-sec" aria-labelledby="fm-calls-h" data-tour="fm-results">
           <div className="fm-sec-head">
             <h3 id="fm-calls-h">Open calls</h3>
             <span className="fm-count">{visibleMatches.length}</span>

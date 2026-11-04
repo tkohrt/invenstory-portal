@@ -33,7 +33,9 @@ export async function requestAccountClosureAction(reason: string): Promise<{ ok:
  * is a public endpoint, and the column is not a place for arbitrary data.
  */
 // hide_getting_started: the Inven(s)tory's Getting started card (1 Nov 2026).
-const UI_PREF_KEYS = new Set(["confirm_card_remove", "confirm_weave", "confirm_polish", "hide_getting_started"]);
+// Tours seen (patch 15): one key per tour, tourPrefKey in lib/tours.ts.
+const UI_PREF_KEYS = new Set(["confirm_card_remove", "confirm_weave", "confirm_polish", "hide_getting_started",
+  "tour_invenstory", "tour_chat", "tour_funder_matches", "tour_drafts"]);
 export async function setUiPrefAction(key: string, value: boolean) {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");

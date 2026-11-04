@@ -65,7 +65,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
   return (
     <div>
       {isAdmin && <div className="admin-flag" style={{ marginBottom: 6 }}>Admin · {tenantName}</div>}
-      <div className="page-head">
+      <div className="page-head" data-tour="drafts-head">
         <div><h2>Drafts</h2><p>{isAdmin
           ? `Every application For Granted is drafting for ${tenantName}, soonest deadline first.`
           : `Grant applications For Granted is preparing for ${tenantName}.`}</p></div>
@@ -94,7 +94,7 @@ export default function DraftsView({ tenantName, drafts, isAdmin, progress = {},
       )}
 
       {apps.length > 0 && (
-        <div className="dl-tools">
+        <div className="dl-tools" data-tour="drafts-filter">
           <div className="seg" role="tablist" aria-label="Show">
             {FILTERS.map(f => (
               <button key={f.key} type="button" role="tab" aria-selected={filter === f.key}

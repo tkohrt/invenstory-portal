@@ -2263,7 +2263,7 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .su-bar{height:8px;background:#eef0f3;border-radius:6px;overflow:hidden}
 .su-bar i{display:block;height:100%;background:#1f4d2e}
 .su-talk{margin-top:10px}
-.su-wait{display:grid;gap:2px;background:#fff8e6;border:1px solid #f0dca6;border-radius:10px;padding:10px 14px;margin:0 0 16px;font-size:13px}
+.su-wait{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff8e6;border:1px solid #f0dca6;border-radius:10px;padding:10px 14px;margin:0 0 16px;font-size:13px}
 .su-admin{margin:0 0 18px}
 .su-admin h4{font-size:13px;margin:12px 0 2px}
 .su-admin-steps{display:flex;flex-wrap:wrap;gap:6px 14px;list-style:none;padding:0;margin:8px 0;font-size:12px;color:var(--muted)}
@@ -2278,3 +2278,17 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
   .su-main{padding:16px}
   .su-where{display:none}
 }
+
+/* ---- Tours and the help menu (patch 15, onboarding build, 3 Nov 2026) ---- */
+.help-q{font-weight:700;font-size:15px;line-height:1}
+.fm-tour-wrap{display:inline-flex}
+.tour-layer{position:fixed;inset:0;z-index:1000;pointer-events:none}
+.tour-dim{position:fixed;inset:0;background:rgba(17,24,39,.35)}
+.tour-ring{position:fixed;border-radius:12px;box-shadow:0 0 0 3px #fff,0 0 0 6px #1f4d2e,0 0 0 9999px rgba(17,24,39,.35);transition:all .2s ease}
+.tour-card{position:fixed;width:320px;box-sizing:border-box;background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,.18);pointer-events:auto;outline:none}
+.tour-count{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.tour-card h4{margin:4px 0 4px;font-size:16px}
+.tour-card p{margin:0;font-size:13px;line-height:1.5;color:#374151}
+.tour-foot{display:flex;align-items:center;gap:8px;margin-top:12px}
+.tour-foot .spacer{flex:1}
+@media (prefers-reduced-motion:reduce){.tour-ring{transition:none}}

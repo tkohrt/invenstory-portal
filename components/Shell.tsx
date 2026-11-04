@@ -9,6 +9,8 @@ import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
 import PlantVisual from "./PlantVisual";
 import BuildNotice from "./BuildNotice";
 import BackButton from "./BackButton";
+import HelpMenu from "./HelpMenu";
+import TourHost from "./TourHost";
 import { promptHref } from "@/lib/garden-prompt";
 import { brainAllows, clientTenants, isBrain } from "@/lib/brain";
 
@@ -103,6 +105,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   return (
     <div className={`shell${collapsed ? " nav-collapsed" : ""}`}>
       <ActivityBeacon enabled={!admin} />
+      {!brain && <TourHost role={role} prefs={(user.ui_prefs as Record<string, unknown> | null) ?? null} />}
       <div className="topbar">
         <button className="menu-toggle" onClick={toggleMenu} aria-label={collapsed ? "Show the menu" : "Menu"}
           title={collapsed ? "Show the menu" : "Hide or show the menu"} aria-expanded={!collapsed}>☰</button>
@@ -112,6 +115,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           <input value={topQuery} onChange={e => setTopQuery(e.target.value)} placeholder="Search this Inven(s)tory…" aria-label="Search" />
         </form>
         <BackButton />
+        <HelpMenu guide={!brain && (admin || workspaceVis.chat !== false)} />
         <div className="userchip">
           <Link href="/account" className="userchip-link" onClick={closeNav}>
             <div className="meta">

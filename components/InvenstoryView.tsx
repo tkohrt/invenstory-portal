@@ -87,13 +87,13 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         </div>
       )}
       {!brain && startSteps && (
-        <GettingStarted steps={startSteps} isAdmin={isAdmin}
+        <div data-tour="inv-start"><GettingStarted steps={startSteps} isAdmin={isAdmin}
           onUpload={layer => { setVoiceOpen(false); setUploadLayer(layer); setUploading(true); }}
-          onVoice={() => { setVoiceOpen(true); setUploadLayer("III"); setUploading(true); }} />
+          onVoice={() => { setVoiceOpen(true); setUploadLayer("III"); setUploading(true); }} /></div>
       )}
       {!brain && asks}
       {!brain && readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} openKey={openItem ?? null} orgType={orgType} />}
-      <div className="layers-zone">
+      <div className="layers-zone" data-tour="inv-layers">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>
         {(["I", "II", "III"] as Layer[]).map(L => (
@@ -101,7 +101,7 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
         ))}
         <div className="spacer" />
         {isAdmin && <a className="btn ghost" href="/api/export" title="Download all originals as a .zip">⬇ Download all (.zip)</a>}
-        <button className="btn secondary" onClick={() => setUploading(true)}>＋ Upload</button>
+        <button className="btn secondary" data-tour="inv-upload" onClick={() => setUploading(true)}>＋ Upload</button>
       </div>
       {layers.map(L => {
         const layerDocs = docs.filter(d => d.layer === L);

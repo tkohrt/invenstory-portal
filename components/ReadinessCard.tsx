@@ -82,7 +82,7 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, openKey
   const mark = (s: string) => s === "covered" ? "✓" : s === "thin" ? "◐" : "○";
 
   return (
-    <section className="acct-card readiness-card" id="readiness">
+    <section className="acct-card readiness-card" id="readiness" data-tour="inv-readiness">
       <div className="rc-head">
         <button type="button" className="rc-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="rc-body"
           aria-label={collapsed ? "Expand the checklist" : "Collapse the checklist"} title={collapsed ? "Expand" : "Collapse"}>
