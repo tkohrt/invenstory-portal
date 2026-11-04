@@ -115,10 +115,6 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
   const [busy, setBusy] = useState<Lane | null>(null);
   const [loadingConvo, setLoadingConvo] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  // Past conversations: null follows the screen (open when wide, folded on a
-  // phone, by CSS, so nothing differs between server and browser).
-  const [histPref, setHistPref] = useState<boolean | null>(null);
-  const setHistOpen = (v: boolean) => setHistPref(v);
   const [toast, setToast] = useState<string | null>(null);
   // One request at a time per tab, each with its own Stop.
   const abort = useRef<Record<Lane, AbortController | null>>({ invenstory: null, guide: null });
@@ -232,7 +228,6 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
       }
     } catch { say("That conversation could not be opened."); }
     setLoadingConvo(false); scroll();
-    if (window.matchMedia("(max-width: 900px)").matches) setHistOpen(false);
   };
   const deleteConvo = async (e: MouseEvent, id: string) => {
     e.stopPropagation();
@@ -259,32 +254,27 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
   const writing = busy === lane;
 
   return (
-    <div className={`cv-page${histPref === true ? " hist-open" : histPref === null ? " hist-auto" : ""}`}>
-      {histPref !== false && (
-        <aside className="cv-hist" aria-label={lane === "invenstory" ? "Recent conversations" : "Recent Portal Guide questions"} data-tour="chat-history">
-          <div className="cv-hist-head">
-            <b>{lane === "invenstory" ? "Recent conversations" : "Recent Portal Guide questions"}</b>
-            <button type="button" className="sb-btn sb-quiet sb-sm sb-icon" aria-label="Hide past conversations" onClick={() => setHistOpen(false)}>‹</button>
-          </div>
-          <button type="button" className="sb-btn sb-secondary sb-sm cv-new" onClick={newChat}>+ New chat</button>
-          <div className="ch-list">
-            {convos[lane].length === 0 && <p className="ch-empty">No past conversations yet.</p>}
-            {convos[lane].map(cs => (
-              <div key={cs.id} className={`ch-item${sid[lane] === cs.id ? " active" : ""}`} title={cs.title}>
-                <button type="button" className="ch-open" onClick={() => openConvo(cs.id)}>
-                  <span className="ch-title">{cs.title || "Conversation"}</span>
-                  <span className="ch-date">{new Date(cs.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-                </button>
-                {lane === "invenstory" && <button type="button" className="ch-del" onClick={e => deleteConvo(e, cs.id)} aria-label={`Delete ${cs.title || "conversation"}`} title="Delete">✕</button>}
-              </div>
-            ))}
-          </div>
-        </aside>
-      )}
+    <div className="cv-page">
+      {/* Past conversations: always shown (Shane, 4 Nov 2026). */}
+      <aside className="cv-hist" aria-label={lane === "invenstory" ? "Recent conversations" : "Recent Portal Guide questions"} data-tour="chat-history">
+        <div className="cv-hist-head">
+          <b>{lane === "invenstory" ? "Recent conversations" : "Recent Portal Guide questions"}</b>
+        </div>
+        <button type="button" className="sb-btn sb-secondary sb-sm cv-new" onClick={newChat}>+ New chat</button>
+        <div className="ch-list">
+          {convos[lane].length === 0 && <p className="ch-empty">No past conversations yet.</p>}
+          {convos[lane].map(cs => (
+            <div key={cs.id} className={`ch-item${sid[lane] === cs.id ? " active" : ""}`} title={cs.title}>
+              <button type="button" className="ch-open" onClick={() => openConvo(cs.id)}>
+                <span className="ch-title">{cs.title || "Conversation"}</span>
+                <span className="ch-date">{new Date(cs.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              </button>
+              {lane === "invenstory" && <button type="button" className="ch-del" onClick={e => deleteConvo(e, cs.id)} aria-label={`Delete ${cs.title || "conversation"}`} title="Delete">✕</button>}
+            </div>
+          ))}
+        </div>
+      </aside>
       <div className="cv-main">
-        {histPref !== true && (
-          <button type="button" className="sb-btn sb-quiet sb-sm cv-hist-show" data-tour="chat-history" onClick={() => setHistOpen(true)}>Past conversations</button>
-        )}
         <header className="cv-head">
           <h2>Chat</h2>
           <p>Ask about {tenantName}, or ask how to use the portal.</p>
