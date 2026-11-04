@@ -2292,3 +2292,67 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .tour-foot{display:flex;align-items:center;gap:8px;margin-top:12px}
 .tour-foot .spacer{flex:1}
 @media (prefers-reduced-motion:reduce){.tour-ring{transition:none}}
+
+/* ---- Chat in two tabs (patch 16, onboarding build, 3 Nov 2026) ----
+   Mockup "Chat: Inven(s)tory and Portal Guide": centred header and tabs, the
+   question box anchored at the bottom, a foldable past-conversations panel. */
+.cv-page{display:flex;gap:16px;height:calc(100dvh - 58px - 48px);min-height:420px}
+.cv-hist{width:240px;flex:none;display:flex;flex-direction:column;gap:10px;border-right:1px solid var(--line);padding-right:14px;min-height:0}
+.cv-hist-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px}
+.cv-new{width:100%}
+.cv-hist .ch-list{flex:1;min-height:0}
+.ch-open{all:unset;display:flex;flex-direction:column;gap:1px;min-width:0;cursor:pointer}
+.ch-open:focus-visible{outline:2px solid #1f4d2e;border-radius:4px}
+.ch-del:focus-visible{opacity:1;outline:2px solid #1f4d2e}
+.cv-main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;max-width:820px;margin:0 auto}
+.cv-hist-show{align-self:flex-start}
+.cv-head{text-align:center;padding:4px 0 10px}
+.cv-head h2{margin:0}
+.cv-head p{margin:2px 0 10px;color:var(--muted);font-size:14px}
+.cv-tabs{display:inline-flex;gap:4px;background:#eef0f3;border-radius:11px;padding:4px}
+.cv-tabs button{all:unset;cursor:pointer;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600;color:var(--ink)}
+.cv-tabs button.on{background:#1f2430;color:#fff;font-weight:700}
+.cv-tabs button:focus-visible{outline:2px solid #1f4d2e}
+.cv-short{display:none}
+.cv-stream{flex:1;overflow:auto;padding:8px 2px 12px;min-height:0}
+.cv-empty{text-align:center;padding:28px 8px}
+.cv-empty h3{font-family:var(--font-heading),serif;font-size:24px;margin:0 0 6px}
+.cv-why{font-size:12px;color:var(--muted);margin:0 0 12px}
+.cv-suggest{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.cv-suggest button{all:unset;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px}
+.cv-suggest button:hover{border-color:#9aa1ad}
+.cv-suggest button:focus-visible{outline:2px solid #1f4d2e}
+.cv-msg{margin:0 0 16px;display:flex;flex-direction:column}
+.cv-msg.me{align-items:flex-end}
+.cv-msg.me .cv-bubble{background:#eef0f3;border-radius:14px 14px 4px 14px;padding:10px 14px;max-width:80%}
+.cv-msg.ai .cv-bubble{font-size:14px;line-height:1.6}
+.cv-bubble p{margin:0 0 6px}
+.cv-from{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.cv-carried{font-size:12px;color:var(--muted);margin-bottom:4px}
+.cv-controls{display:flex;gap:4px;margin-top:4px;opacity:0;transition:opacity .12s}
+.cv-msg.ai:hover .cv-controls,.cv-controls:focus-within{opacity:1}
+@media (hover:none){.cv-controls{opacity:1}}
+.cv-handover{margin-top:8px}
+.cv-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.cv-dock{border-top:1px solid var(--line);padding-top:10px;background:var(--bg)}
+.cv-input{display:flex;gap:10px;align-items:flex-end;border:1px solid #d5d8de;border-radius:14px;padding:8px;background:#fff}
+.cv-input:focus-within{border-color:#1f4d2e}
+.cv-input textarea{flex:1;border:none;box-shadow:none;resize:none;font:inherit;font-size:14px;line-height:1.5;max-height:160px;min-height:24px;padding:6px 4px;field-sizing:content}
+.cv-input textarea:focus{outline:none;box-shadow:none}
+.cv-foot{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
+.cv-foot .fc-link{font-size:12px}
+.cv-toast{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;z-index:5}
+button.cite{font:inherit;font-size:12px;cursor:pointer;color:inherit}
+button.cite:focus-visible{outline:2px solid #1f4d2e}
+@media (max-width:900px){
+  .cv-page{height:calc(100dvh - 58px - 32px)}
+  .cv-page.hist-open .cv-main{display:none}
+  .cv-hist{width:100%;border-right:0;padding-right:0}
+  .cv-long{display:none}.cv-short{display:inline}
+  .cv-tabs button{padding:8px 12px}
+}
+.cv-page.hist-auto .cv-hist-show{display:none}
+@media (max-width:900px){
+  .cv-page.hist-auto .cv-hist{display:none}
+  .cv-page.hist-auto .cv-hist-show{display:inline-flex}
+}

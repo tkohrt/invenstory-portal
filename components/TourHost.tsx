@@ -61,14 +61,14 @@ export default function TourHost({ role, prefs }: { role: "admin" | "client"; pr
   useLayoutEffect(() => {
     if (!tour) return;
     const el = find(steps[i]?.target ?? "");
-    if (!el) { setBox(null); return; }
+    if (!el) { const r = requestAnimationFrame(() => setBox(null)); return () => cancelAnimationFrame(r); }
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     const measure = () => setBox(el.getBoundingClientRect());
-    measure();
+    const r = requestAnimationFrame(measure);
     const t = window.setTimeout(measure, 400);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
-    return () => { window.clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
+    return () => { cancelAnimationFrame(r); window.clearTimeout(t); window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); };
   }, [tour, steps, i]);
 
   useEffect(() => {

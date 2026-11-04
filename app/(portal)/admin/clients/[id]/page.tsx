@@ -9,6 +9,8 @@ import { getVoiceProfile } from "@/lib/server/voice-profile";
 import { readerSwitchesFor } from "@/lib/server/reader";
 import { getSetupState, ownerName } from "@/lib/server/setup";
 import AdminSetupPanel from "@/components/AdminSetupPanel";
+import AdminChatFeedback from "@/components/AdminChatFeedback";
+import { chatFeedback } from "@/lib/server/portal-guide";
 
 export default async function ClientActivityPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ m?: string }>;
@@ -29,10 +31,12 @@ export default async function ClientActivityPage({ params, searchParams }: {
   // Company setup (patch 14). Absent before 0077 runs.
   const setup = await getSetupState(id).catch(() => null);
   const setupOwner = setup ? await ownerName(id, setup.ownerUserId).catch(() => null) : null;
+  const feedback = await chatFeedback(id).catch(() => []);
   if (!data) notFound();
   return (
     <>
       {setup && <AdminSetupPanel tenantId={id} state={setup} ownerName={setupOwner} />}
+      <AdminChatFeedback items={feedback} />
       <ClientActivityView data={data} voice={voice} reader={reader} />
     </>
   );
