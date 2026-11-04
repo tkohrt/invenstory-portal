@@ -11,6 +11,7 @@ import BuildNotice from "./BuildNotice";
 import BackButton from "./BackButton";
 import HelpMenu from "./HelpMenu";
 import TourHost from "./TourHost";
+import LedgerWarmer from "./LedgerWarmer";
 import { promptHref } from "@/lib/garden-prompt";
 import { brainAllows, clientTenants, isBrain } from "@/lib/brain";
 
@@ -105,6 +106,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   return (
     <div className={`shell${collapsed ? " nav-collapsed" : ""}`}>
       <ActivityBeacon enabled={!admin} />
+      {!brain && <LedgerWarmer />}
       {!brain && <TourHost role={role} prefs={(user.ui_prefs as Record<string, unknown> | null) ?? null} />}
       <div className="topbar">
         <button className="menu-toggle" onClick={toggleMenu} aria-label={collapsed ? "Show the menu" : "Menu"}

@@ -21,8 +21,9 @@ import { grantQueries, funderQueries, assessProfile } from "@/lib/search-profile
 import { getSearchProfile } from "./search-profile-read";
 import { buildDossier, addRationales } from "./match-rationale";
 import {
-  findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable,
+  findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable, warmLedger,
 } from "./ledger";
+import { RUN_WAKE_MS, ASLEEP_MESSAGE } from "@/lib/ledger-wake";
 import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 // Signal 1 is pure and lives outside server-only so it can be unit tested.
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
@@ -155,6 +156,13 @@ export async function runMatch(
   const phrases = searchPhrases(p);
   const noOpen: OpenResults = { opportunities: [], funders: [], ukFunders: [], canadaProgrammes: [], calls: [] };
 
+  // Ground Truth naps (patch 19): if it does not answer a quick health check,
+  // wake it first, in this run, rather than firing every question at a host
+  // that is still starting and refuses them all at once.
+  // One call: it returns at once when the service is already awake.
+  step(0, 5, "checking Ground Truth is awake (it naps when nobody has searched for a while)");
+  await warmLedger(RUN_WAKE_MS).catch(() => null);
+
   step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
   const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
@@ -179,7 +187,7 @@ export async function runMatch(
   const openAnswered = openRes.calls.some(c => c.ok);
   if (grantEnvs.length && grantEnvs.every(e => !e.ok) && funderEnvs.every(e => !e.ok) && !openAnswered) {
     throw new LedgerUnavailable(
-      "Ground Truth did not answer any query. Nothing has been changed. It may have been asleep: try again in a minute.");
+      ASLEEP_MESSAGE);
   }
   const failedQueries = [...grantEnvs, ...funderEnvs].filter(e => !e.ok).length;
 

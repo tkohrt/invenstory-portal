@@ -14,6 +14,7 @@ import "server-only";
 
 import type { FunderCard, GrantCard, LedgerEnvelope } from "@/lib/ledger-types";
 import { unwrapLedgerList } from "@/lib/ledger-envelope";
+import { isStartingUp, nextDelay } from "@/lib/ledger-wake";
 export { LEDGER_AS_OF } from "@/lib/ledger-types";
 export type { FunderCard, GrantCard, LedgerEnvelope } from "@/lib/ledger-types";
 
@@ -60,21 +61,33 @@ async function callTool<T>(tool: LedgerTool, args: Record<string, unknown>): Pro
   const key = process.env.FUNDER_LEDGER_KEY;
   if (key) headers["x-ledger-key"] = key;
 
-  let res: Response;
-  try {
-    res = await fetch(`${base.replace(/\/$/, "")}/api/tool`, {
-      method: "POST", headers, body: JSON.stringify({ tool, args }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      cache: "no-store",
-    });
-  } catch (e) {
-    // A napping free-tier host looks exactly like this on the first hit.
-    throw new LedgerUnavailable(
-      e instanceof Error && e.name === "TimeoutError"
-        ? "The Ledger did not answer in time. It may have been asleep; try again."
-        : "Could not reach the Ledger service.",
-    );
+  // While the service starts up its host answers at once with 502, 503 or
+  // 504, and a refused connection looks the same. Those are retried, with
+  // growing waits, inside a budget that fits the function (patch 19). A
+  // timeout is not retried: it has already spent its share of the budget.
+  let res: Response | undefined;
+  const began = Date.now();
+  for (let n = 0; ; n++) {
+    let failed: "timeout" | "unreachable" | null = null;
+    try {
+      res = await fetch(`${base.replace(/\/$/, "")}/api/tool`, {
+        method: "POST", headers, body: JSON.stringify({ tool, args }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        cache: "no-store",
+      });
+    } catch (e) {
+      failed = e instanceof Error && e.name === "TimeoutError" ? "timeout" : "unreachable";
+    }
+    if (failed === "timeout") throw new LedgerUnavailable("The Ledger did not answer in time. It may have been asleep; try again.");
+    const startingUp = failed === "unreachable" || !res || isStartingUp(res.status);
+    if (!startingUp) break;
+    const wait = nextDelay(n, Date.now() - began);
+    if (wait === null) {
+      throw new LedgerUnavailable(failed || !res ? "Could not reach the Ledger service." : `The Ledger returned HTTP ${res.status}.`);
+    }
+    await new Promise(r => setTimeout(r, wait));
   }
+  if (!res) throw new LedgerUnavailable("Could not reach the Ledger service.");
 
   if (res.status === 401) throw new LedgerUnavailable("The Ledger rejected our key (check FUNDER_LEDGER_KEY).");
   if (!res.ok) throw new LedgerUnavailable(`The Ledger returned HTTP ${res.status}.`);
@@ -129,19 +142,26 @@ export function lookupFunder(name: string) {
  * Never throws. A failed warm-up is not a failed anything; the run will try
  * again on its own.
  */
-export async function warmLedger(): Promise<{ awake: boolean; ms: number }> {
+export async function warmLedger(budgetMs = WAKE_TIMEOUT_MS): Promise<{ awake: boolean; ms: number }> {
   const base = process.env.FUNDER_LEDGER_URL;
   if (!base) return { awake: false, ms: 0 };
   const started = Date.now();
-  try {
-    const res = await fetch(`${base.replace(/\/$/, "")}/api/health`, {
-      signal: AbortSignal.timeout(WAKE_TIMEOUT_MS),
-      cache: "no-store",
-    });
-    return { awake: res.ok, ms: Date.now() - started };
-  } catch {
-    return { awake: false, ms: Date.now() - started };
+  // A host still starting answers 502 straight away; keep asking until it is
+  // up or the budget is spent (patch 19), rather than calling one 502 "awake: false".
+  while (Date.now() - started < budgetMs) {
+    try {
+      const res = await fetch(`${base.replace(/\/$/, "")}/api/health`, {
+        signal: AbortSignal.timeout(Math.max(1_000, budgetMs - (Date.now() - started))),
+        cache: "no-store",
+      });
+      if (res.ok) return { awake: true, ms: Date.now() - started };
+      if (!isStartingUp(res.status)) return { awake: false, ms: Date.now() - started };
+    } catch (e) {
+      if (e instanceof Error && e.name === "TimeoutError") break;
+    }
+    await new Promise(r => setTimeout(r, 2_500));
   }
+  return { awake: false, ms: Date.now() - started };
 }
 
 export async function ledgerHealth(): Promise<{ ok: boolean; detail: string }> {

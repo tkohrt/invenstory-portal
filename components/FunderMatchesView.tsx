@@ -3,10 +3,12 @@
 // match and reads the results here. Every card is a June 2026 lead, and the page
 // says so rather than letting anyone forget it.
 import { knownFunderMatch, RELATIONSHIP_LABEL, type KnownFunder } from "@/lib/setup";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
 import JobProgress, { useJob } from "./JobProgress";
+import { useLedgerWake } from "./useLedgerWake";
+import { looksAsleep } from "@/lib/ledger-wake";
 import type { Job } from "@/lib/job";
 import type { Verdict } from "@/lib/server/matching";
 import type { FunderRow } from "@/lib/funder-rows";
@@ -289,12 +291,36 @@ export default function FunderMatchesView({
   // inside a run is the difference between finishing and being killed at the
   // function limit. Out here it costs nothing: by the time somebody has read
   // the page and pressed Run, it is usually already awake.
-  useEffect(() => {
-    if (!canRun || !configured) return;
-    void fetch("/api/ledger/warm", { method: "POST" }).catch(() => { /* a failed warm-up is not a failure */ });
-  }, [canRun, configured]);
+  // Patch 19: the page now knows when the wake-up has finished, so a search
+  // pressed before then waits for it (up to half a minute) instead of failing.
+  const lw = useLedgerWake(canRun && configured);
+  const [waitingForWake, setWaitingForWake] = useState(false);
+  const run = async () => {
+    setDismissed(false); setErr(null);
+    if (lw.waking) { setWaitingForWake(true); await lw.ready(); setWaitingForWake(false); }
+    void startJob("/api/jobs/match", "match");
+  };
 
-  const run = () => { setDismissed(false); setErr(null); void startJob("/api/jobs/match", "match"); };
+  // A run that still found Ground Truth asleep is tried again once, on its
+  // own, after waking it. Only a run started on this visit; an old failure
+  // shown on load is left as it is.
+  const [openedAt] = useState(() => Date.now());
+  const retried = useRef(false);
+  const [wakeNotice, setWakeNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canRun || retried.current || job?.status !== "failed" || !looksAsleep(job.error)) return;
+    if (Date.parse(job.startedAt) < openedAt) return;
+    retried.current = true;
+    // Not cleared on re-render: the retry flag is already set, so clearing it
+    // here would lose the retry for good.
+    setTimeout(() => {
+      setWakeNotice("Ground Truth was asleep. It is starting up now, and the search will try again on its own.");
+      setDismissed(true);
+      void lw.wakeAgain()
+        .then(() => { setDismissed(false); return startJob("/api/jobs/match", "match"); })
+        .finally(() => setWakeNotice(null));
+    }, 0);
+  }, [canRun, job?.status, job?.error, job?.startedAt, openedAt, lw, startJob]);
 
   // Explanations are the long tail of a run and the part most likely to be cut
   // off by the function limit. They are also the only part that is safe to
@@ -348,7 +374,7 @@ export default function FunderMatchesView({
     </div>
   ) : null;
 
-  const runLabel = running ? "Searching…" : starting ? "Starting…"
+  const runLabel = waitingForWake || wakeNotice ? "Waiting for Ground Truth…" : running ? "Searching…" : starting ? "Starting…"
     : matches.length ? (isAdmin ? "Re-run matching" : "Search again") : (isAdmin ? "Run matching" : "Search for funding");
   const hasResults = matches.length > 0 || funders.length > 0;
 
@@ -376,7 +402,7 @@ export default function FunderMatchesView({
           {sources.length > 0 && (
             <span data-tour="fm-sources" className="fm-tour-wrap"><SourcesPanel states={sources} lastRun={sourcesRun} orgName={orgName}
               role={isAdmin ? "admin" : "client"} preview={viewingAsClient} selfSearch={selfSearchOn}
-              canRun={canRun && configured} running={running || starting} onRun={run} adminSlot={selfSearchSlot} /></span>
+              canRun={canRun && configured} running={running || starting || waitingForWake || !!wakeNotice} onRun={() => void run()} adminSlot={selfSearchSlot} /></span>
           )}
           {/* Patch 6 (1 Nov 2026): every lead on one printable page with the fit answers. */}
           {hasResults && <a className="sb-btn sb-secondary" href="/funder-matches/report" data-tour="fm-report">Open the fit report</a>}
@@ -389,7 +415,7 @@ export default function FunderMatchesView({
             </MenuButton>
           )}
           {canRun && (
-            <button type="button" className="sb-btn sb-primary" data-tour="fm-search" onClick={run} disabled={starting || running || !configured}
+            <button type="button" className="sb-btn sb-primary" data-tour="fm-search" onClick={() => void run()} disabled={starting || running || waitingForWake || !!wakeNotice || !configured}
               title={!configured ? "Ground Truth is not connected yet." : isAdmin ? undefined : "Searches Ground Truth and the sources listed under Sources. Uses part of the monthly AI allowance."}>
               {runLabel}
             </button>
@@ -507,6 +533,9 @@ export default function FunderMatchesView({
           job={profileJob} stored={profileStored} />
       )}
 
+      {(wakeNotice || (canRun && configured && lw.waking && waitingForWake)) && (
+        <p className="fm-wake" role="status">{wakeNotice ?? "Waking Ground Truth, which naps when nobody has searched for a while. Your search starts as soon as it answers."}</p>
+      )}
       <JobProgress job={shownJob} events={events} onDismiss={() => setDismissed(true)} lostContact={gaveUp} />
       <JobProgress job={rJob} events={rEvents} lostContact={rGaveUp} />
 

@@ -19,8 +19,10 @@ export async function POST() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   // A client who may run its own searches wakes the service too (patch 7).
+  // Others are told nothing and wake nothing: every portal page calls this
+  // now (patch 19), and a client who cannot search has no reason to.
   if (session.role !== "admin" && !(await selfSearchOn(session.tenantId))) {
-    return NextResponse.json({ error: "admin required" }, { status: 403 });
+    return NextResponse.json({ awake: false, allowed: false });
   }
   if (!ledgerConfigured()) return NextResponse.json({ awake: false, configured: false });
   const r = await warmLedger();
