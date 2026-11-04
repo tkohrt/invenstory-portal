@@ -276,8 +276,8 @@ export default function ChatView({ tenantName, isAdmin, sessions: initialSession
       </aside>
       <div className="cv-main">
         <header className="cv-head">
-          <h2>Chat</h2>
-          <p>Ask about {tenantName}, or ask how to use the portal.</p>
+          {/* No visible title (Shane, 4 Nov 2026): the tabs lead. Kept for screen readers. */}
+          <h2 className="sr-only">Chat</h2>
           <div className="cv-tabs" role="tablist" aria-label="Chat" data-tour="chat-tabs">
             <button type="button" role="tab" aria-selected={lane === "invenstory"} className={lane === "invenstory" ? "on" : ""} onClick={() => setLane("invenstory")}>
               <span className="cv-long">Chat with your Inven(s)tory</span><span className="cv-short">Your Inven(s)tory</span>
