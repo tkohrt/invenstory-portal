@@ -10,7 +10,7 @@ import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import AllowanceRequest from "./AllowanceRequest";
 
-function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+export function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [draft, setDraft] = useState("");
   const add = () => { const v = draft.trim(); if (v && !values.includes(v)) onChange([...values, v]); setDraft(""); };
   return (
@@ -32,7 +32,7 @@ function TagField({ label, values, onChange, placeholder }: { label: string; val
  * eligibility, 1 Nov 2026). A datalist rather than 250 buttons: the list is
  * long and people know the name they want.
  */
-function CountryField({ label, values, onChange, exclude }: { label: string; values: string[]; onChange: (v: string[]) => void; exclude?: string }) {
+export function CountryField({ label, values, onChange, exclude }: { label: string; values: string[]; onChange: (v: string[]) => void; exclude?: string }) {
   const [draft, setDraft] = useState("");
   const [miss, setMiss] = useState(false);
   const add = () => {

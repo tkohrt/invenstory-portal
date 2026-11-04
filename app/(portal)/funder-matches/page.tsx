@@ -12,6 +12,7 @@ import { getLastRunQueries, pendingRationaleCount } from "@/lib/server/matching"
 import { latestJob } from "@/lib/server/jobs";
 import { getJudgments } from "@/lib/server/triage";
 import FunderMatchesView from "@/components/FunderMatchesView";
+import { getSetupState } from "@/lib/server/setup";
 import { closedInBrain } from "@/lib/server/brain";
 import WebFinds from "@/components/WebFinds";
 import { getLeads, webSearchAvailable } from "@/lib/server/discovery";
@@ -36,6 +37,8 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
   const asAdmin = isAdmin && !viewingAsClient;
 
   const configured = ledgerConfigured();
+  // Funders the client already knows (company setup, patch 14).
+  const knownFunders = (await getSetupState(session.tenantId).catch(() => null))?.answers.known_funders ?? [];
   // Sources (patch 11): every session sees which databases are searched and
   // why; the query text stays For Granted's.
   const [sources, sourcesRun] = await Promise.all([
@@ -138,6 +141,7 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
       sources={sources}
       sourcesRun={sourcesRun}
       selfSearchOn={selfOn}
+      knownFunders={knownFunders}
     />
   );
 }

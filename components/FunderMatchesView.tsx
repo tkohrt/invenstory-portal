@@ -2,6 +2,7 @@
 // Funder matching results. Hidden from clients by default; For Granted runs the
 // match and reads the results here. Every card is a June 2026 lead, and the page
 // says so rather than letting anyone forget it.
+import { knownFunderMatch, RELATIONSHIP_LABEL, type KnownFunder } from "@/lib/setup";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
@@ -179,8 +180,10 @@ export default function FunderMatchesView({
   matches, funders, orgName, configured, health, isAdmin, contacts, eligibility,
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
-  sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false,
+  sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
 }: {
+  /** Funders the client said they already know, from company setup (patch 14). */
+  knownFunders?: KnownFunder[];
   /** Every source and whether it is searched (patch 11). */
   sources?: SourceState[];
   /** What each source did on the last run, with no query text. */
@@ -661,6 +664,7 @@ export default function FunderMatchesView({
                       ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>
                       : f.name}
                     {f.location && <div className="fm-listed">{f.location}</div>}
+                    {(() => { const k = knownFunderMatch(f.name, knownFunders); return k && <div className="fm-known" title="From the funders listed in company setup">Already known to you: {RELATIONSHIP_LABEL[k.relationship].toLowerCase()}</div>; })()}
                     {originLine(f.source) && <div className="fm-listed">{originLine(f.source)}</div>}
                     {hiddenByScreen(f) && (
                       <div className="fm-nohistory"
