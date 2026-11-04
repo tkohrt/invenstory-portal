@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   if (!webSearchAvailable()) {
-    return NextResponse.json({ error: "Web search is not available here: it needs Claude on Vertex (LLM_PROVIDER=vertex)." }, { status: 400 });
+    return NextResponse.json({ error: "Web search is not available here: it needs Bedrock and AGENTCORE_GATEWAY_URL (Web Search on Bedrock AgentCore)." }, { status: 400 });
   }
   const tenantId = session.tenantId;
   const tenant = await getTenant(tenantId);

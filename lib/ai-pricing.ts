@@ -1,8 +1,8 @@
 // What one model call cost, from the tokens it reports.
 //
 // List prices per million tokens (Anthropic, October 2026). From Sonnet 4.5 and
-// Haiku 4.5 on, Bedrock's and Google Cloud's regional and multi-region endpoints
-// (a "us." inference profile, a Vertex region) carry a 10% premium over global
+// Haiku 4.5 on, Bedrock's regional and multi-region endpoints (a "us."
+// inference profile) carry a 10% premium over global
 // ones. An unknown model is priced as Sonnet, the portal's default, so a cost is
 // never silently zero. Pure, so the meter and its tests agree.
 
@@ -43,7 +43,9 @@ export function costMicros(modelId: string, inputTokens: number, outputTokens: n
 export const dollars = (micros: number) => micros / 1_000_000;
 
 /**
- * Claude's web search tool is billed per search on top of tokens: $10 per
- * 1,000 searches, so one cent each (patch 5, 1 Nov 2026).
+ * Web search is billed per search on top of tokens. Since the Bedrock-only
+ * build (3 Nov 2026) it is Web Search on Amazon Bedrock AgentCore: $7 per
+ * 1,000 queries, so 0.7 of a cent each. (Claude's own tool on Vertex was $10
+ * per 1,000.)
  */
-export const WEB_SEARCH_MICROS = 10_000;
+export const WEB_SEARCH_MICROS = 7_000;

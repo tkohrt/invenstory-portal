@@ -39,7 +39,7 @@ export default function WebFinds({ leads: allLeads, isAdmin, orgName, available,
   leads: WebLead[];
   isAdmin: boolean;
   orgName: string;
-  /** Web search works in this deployment (Claude on Vertex). */
+  /** Web search works in this deployment (Bedrock plus Web Search on AgentCore). */
   available: boolean;
   /** Why the web search cannot run, when it cannot (patch 11): off in Sources, or not set up here. */
   offReason?: string | null;

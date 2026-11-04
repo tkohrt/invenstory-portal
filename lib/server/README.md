@@ -22,7 +22,6 @@ All files here run only on the server. Grouped by concern:
 ## Search / AI
 - `llm.ts` — provider-agnostic generation (`chatComplete`, provider selection).
 - `bedrock.ts` / `bedrock-check.ts` — AWS Bedrock client + diagnostics.
-- `vertex-check.ts` — Google Vertex diagnostics.
 - `rag.ts` — retrieval-augmented, cited answer construction.
 
 ## Features

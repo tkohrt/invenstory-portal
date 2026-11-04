@@ -97,7 +97,7 @@ export async function runDiscoveryPass(
     return { found: 0, proposed: 0, remaining: 0, note: null };
   }
   if (!webSearchAvailable()) {
-    const note = "Web search is not available in this environment (it needs Claude on Vertex).";
+    const note = "Web search is not available in this environment (it needs Bedrock and the AgentCore web search gateway).";
     await db.from("discovery_run").update({ note, finished_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("id", runId);
     return { found: 0, proposed: 0, remaining: 0, note };
   }

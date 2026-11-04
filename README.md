@@ -29,8 +29,8 @@ most important guarantee.
 - **Supabase**: Postgres (with **pgvector**), Auth (`@supabase/ssr`, httpOnly
   cookies), Storage (original files). **Row-Level Security is the core isolation
   control** — see `SECURITY.md`.
-- **AI**: AWS Bedrock (Claude) for chat/generation, Google Vertex fallback, behind
-  a provider-agnostic layer (`lib/server/llm.ts`). Embeddings via a Supabase Edge
+- **AI**: Claude on AWS Bedrock for chat and generation (`lib/server/llm.ts`), and
+  Web Search on Amazon Bedrock AgentCore for the web search. No Google Vertex. Embeddings via a Supabase Edge
   Function (gte-small, 384-dim).
 - **Email**: Resend (client notifications; growth emails built but flag-gated).
 

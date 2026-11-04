@@ -45,8 +45,10 @@ chunk (Supabase Edge Function, gte-small 384-dim) → store in `document_chunk` 
 
 ## AI layer
 
-`lib/server/llm.ts` is provider-agnostic: `generationProvider()` selects Bedrock
-(primary) or Vertex (fallback); `chatComplete()` is the single entry point.
+`lib/server/llm.ts` runs Claude on Amazon Bedrock (Converse); `generationProvider()`
+is "bedrock" or "none", and `chatComplete()` is the single entry point. Web search
+is a Bedrock tool loop answered by Web Search on Amazon Bedrock AgentCore
+(`lib/server/agentcore.ts`). Google Vertex was removed on 3 November 2026.
 `lib/server/rag.ts` builds grounded, cited answers from retrieved chunks. Model
 output is treated as untrusted content — it is never allowed to drive a privileged
 action.

@@ -45,7 +45,7 @@ export default async function FunderMatchesPage({ searchParams }: { searchParams
   const webState = sources.find(s => s.id === "web");
   const webOn = webState?.on ?? true;
   const webOffReason = !webSearchAvailable()
-    ? (asAdmin ? "Web search needs Claude on Vertex in this environment." : "The web search is not available right now.")
+    ? (asAdmin ? "Web search needs the AgentCore web search gateway in this environment." : "The web search is not available right now.")
     : webState && !webState.on ? `The web search is off. ${webState.unavailable ?? webState.why} See Sources.` : null;
   const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn] = await Promise.all([
     getTenant(session.tenantId),

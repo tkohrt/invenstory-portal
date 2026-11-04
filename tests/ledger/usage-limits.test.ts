@@ -74,8 +74,8 @@ describe("cost", () => {
     expect(dollars(costMicros("global.anthropic.claude-sonnet-4-5-20250929-v1:0", 1_000_000, 0))).toBeCloseTo(3, 5);
     expect(dollars(costMicros("us.anthropic.claude-haiku-4-5-20251001-v1:0", 1_000_000, 0))).toBeCloseTo(1.1, 5);
   });
-  test("an older model on Vertex has no premium; an unknown model is priced as Sonnet", () => {
-    expect(rateFor("claude-sonnet-4@20250514").premium).toBe(false);
+  test("an older model has no premium; an unknown model is priced as Sonnet", () => {
+    expect(rateFor("anthropic.claude-sonnet-4-20250514-v1:0").premium).toBe(false);
     expect(dollars(costMicros("something-new", 1_000_000, 0))).toBeCloseTo(3, 5);
   });
   test("a typical chat message costs about a cent", () => {

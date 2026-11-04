@@ -110,29 +110,6 @@ export function clientFacts(p: EligibilityProfile, orgName: string, profileLines
 /** A page the search actually returned, which is what a lead must point at. */
 export interface WebSource { url: string; title: string | null; pageAge: string | null }
 
-export type SearchBlock = { type: string; text?: string; content?: unknown; citations?: unknown };
-
-/** Pages from search results and citations, de-duplicated by URL. */
-export function sourcesFrom(blocks: SearchBlock[]): WebSource[] {
-  const out = new Map<string, WebSource>();
-  for (const b of blocks) {
-    if (b.type === "web_search_tool_result" && Array.isArray(b.content)) {
-      for (const r of b.content as { type?: string; url?: string; title?: string; page_age?: string }[]) {
-        if (r?.type === "web_search_result" && typeof r.url === "string") {
-          out.set(r.url, { url: r.url, title: r.title ?? null, pageAge: r.page_age ?? null });
-        }
-      }
-    }
-    if (b.type === "text" && Array.isArray(b.citations)) {
-      for (const c of b.citations as { url?: string; title?: string }[]) {
-        if (typeof c?.url === "string" && !out.has(c.url)) out.set(c.url, { url: c.url, title: c.title ?? null, pageAge: null });
-      }
-    }
-  }
-  return [...out.values()];
-}
-
-
 export interface RawLead {
   kind?: unknown; money_kind?: unknown; title?: unknown; funder?: unknown; url?: unknown;
   deadline?: unknown; amount?: unknown; geography?: unknown; eligibility?: unknown; why?: unknown; quote?: unknown;

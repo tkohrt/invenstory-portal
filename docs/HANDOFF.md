@@ -7,8 +7,8 @@ focused on the thing that matters most: **keeping each client's data isolated
 from every other client.**
 
 The portal is a Next.js (App Router) app on Vercel, backed by Supabase
-(Postgres + Auth + Storage + pgvector), with AI generation via AWS Bedrock and a
-Google Vertex fallback. It's multi-tenant: every client ("tenant") sees only
+(Postgres + Auth + Storage + pgvector), with AI generation via Claude on AWS
+Bedrock (Google Vertex was removed on 3 November 2026). It's multi-tenant: every client ("tenant") sees only
 their own Inven(s)tory.
 
 ---

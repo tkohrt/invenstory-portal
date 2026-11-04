@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 import {
   discoveryAngles, placePhrase, discoverUser, clientFacts, parseLeads, urlKey, groundLeads, overlayDraft,
-  amountNumber, currencyOf, geographyCodes, additionFits, sourcesFrom, MAX_ANGLES, type Lead,
+  amountNumber, currencyOf, geographyCodes, additionFits, MAX_ANGLES, type Lead,
 } from "@/lib/web-discovery";
 import { EMPTY_PROFILE, type EligibilityProfile } from "@/lib/eligibility-fields";
 
@@ -51,14 +51,6 @@ describe("reading the answer", () => {
       .toBe("example.org/calls/2026?a=1&b=2");
     expect(urlKey("ftp://example.org/x")).toBeNull();
     expect(urlKey("not a url")).toBeNull();
-  });
-  test("pages from results and citations, once each", () => {
-    const blocks = [
-      { type: "server_tool_use" },
-      { type: "web_search_tool_result", content: [{ type: "web_search_result", url: "https://a.org/x", title: "A", page_age: "1 day" }] },
-      { type: "text", text: "...", citations: [{ type: "web_search_result_location", url: "https://a.org/x" }, { url: "https://b.org/y", title: "B" }] },
-    ];
-    expect(sourcesFrom(blocks).map(s => s.url)).toEqual(["https://a.org/x", "https://b.org/y"]);
   });
 });
 

@@ -34,7 +34,7 @@ export function sourceAvailability(viewer: "admin" | "client" = "admin"): Availa
   const notYet = "Not available yet. Your For Granted team is setting it up.";
   for (const id of off) if (isSourceId(id) && id !== "ledger") a[id] = viewer === "admin" ? "Switched off for every client (OPEN_SOURCES_DISABLED)." : "Paused for now by For Granted.";
   if (!a.iati && !process.env.IATI_API_KEY) a.iati = viewer === "admin" ? "Not set up yet: it needs IATI_API_KEY in Vercel." : notYet;
-  if (!a.web && !webSearchAvailable()) a.web = viewer === "admin" ? "Not available here: it needs Claude on Vertex." : notYet;
+  if (!a.web && !webSearchAvailable()) a.web = viewer === "admin" ? "Not available here: it needs AGENTCORE_GATEWAY_URL (Web Search on Bedrock AgentCore) in Vercel." : notYet;
   return a;
 }
 
