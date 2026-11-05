@@ -26,7 +26,7 @@ import { createJob, supersedeRunning, finishJob, failJob, releaseJob, latestJob,
 import { describeMerge } from "@/lib/server/card-build";
 import { scheduleCardPass } from "@/lib/server/job-chain";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const session = await getSession();

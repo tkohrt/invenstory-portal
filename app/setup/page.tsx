@@ -11,7 +11,7 @@ import SetupFlow from "@/components/SetupFlow";
 
 export const dynamic = "force-dynamic";
 // Step 1 and the link boxes read a web page and index it inside the action.
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export default async function SetupPage() {
   const session = await getSession();

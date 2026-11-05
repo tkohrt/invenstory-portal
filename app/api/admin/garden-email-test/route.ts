@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { sendTestGrowthEmails, GROWTH_EMAILS_ENABLED } from "@/lib/server/garden-email";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const session = await getSession();

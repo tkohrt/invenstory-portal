@@ -22,7 +22,7 @@ import {
   createJob, updateJob, finishJob, failJob, claimJob, releaseJob, getJob, recordEvent,
 } from "@/lib/server/jobs";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const session = await getSession();

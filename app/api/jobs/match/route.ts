@@ -20,18 +20,12 @@ import { BRAIN_REFUSAL, isBrain } from "@/lib/brain";
 import { mayStartSearch } from "@/lib/server/client-view";
 import { withAiUsage } from "@/lib/server/ai-usage";
 
-// The plan's ceiling, not a wish. This Vercel team is on Hobby, which caps a
-// function at 60 seconds, so a larger number here is silently ignored rather
-// than granted, and pretending otherwise is how a run gets killed mid-write
-// with the code believing it had five minutes.
-//
-// 60 seconds is genuinely tight for this work: the Ledger sleeps when idle and
-// one cold call can eat most of the budget. That is why the job row exists.
-// Work that runs out of time leaves a row that stops heartbeating and reads as
-// stalled, which is recoverable and legible, rather than a dead spinner over
-// half-written data. Raising this to 300 is a one-line change the day the plan
-// allows it.
-export const maxDuration = 60;
+// Five minutes (patch 21, 5 Nov 2026). The project runs on Fluid compute,
+// whose limit is 300 seconds even on Hobby; the 60 here was an older belief
+// about the plan. A run that still runs out of time leaves a row that stops
+// heartbeating and reads as stalled, which is recoverable and legible, rather
+// than a dead spinner over half-written data.
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const session = await getSession();

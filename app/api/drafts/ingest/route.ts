@@ -18,7 +18,7 @@ import {
 } from "@/lib/application-text";
 import { Plain, readUrl, type Original } from "@/lib/server/read-url";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /** Vercel refuses request bodies over 4.5 MB before this code runs. */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;

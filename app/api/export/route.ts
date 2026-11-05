@@ -6,7 +6,7 @@ import { db } from "@/lib/server/db";
 import { downloadFilename } from "@/lib/server/filename";
 import { answersMarkdown, cardsCsv } from "@/lib/server/exports";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // Export the signed-in client's entire Inven(s)tory as a .zip: original files
 // grouped by layer, plus a manifest. Reinforces "you own your Inven(s)tory".

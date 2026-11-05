@@ -6,7 +6,7 @@ import { db } from "@/lib/server/db";
 import { verifyChain, scheduleAnalysisPass } from "@/lib/server/job-chain";
 import { runAnalysisPass } from "@/lib/server/analysis-build";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as { tenantId?: string; jobId?: string; sig?: string };

@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { startDocTextBackfill } from "@/lib/server/doc-text-backfill";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const session = await getSession();

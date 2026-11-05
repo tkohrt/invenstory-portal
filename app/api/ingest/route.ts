@@ -6,7 +6,7 @@ import { processDocument } from "@/lib/server/ingest";
 import { clientActionsLastDay } from "@/lib/server/ai-usage";
 import { decideReprocess } from "@/lib/usage-limits";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const session = await getSession();

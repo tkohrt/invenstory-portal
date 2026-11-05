@@ -19,7 +19,7 @@ import {
   type ContextSourceKind,
 } from "@/lib/draft-context";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const MIME: Record<"pdf" | "docx" | "txt", string> = {
   pdf: "application/pdf",

@@ -17,7 +17,7 @@ import { createJob, updateJob, finishJob, failJob, recordEvent } from "@/lib/ser
 import { mayContinueSearch } from "@/lib/server/client-view";
 import { withAiUsage } from "@/lib/server/ai-usage";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST() {
   const session = await getSession();

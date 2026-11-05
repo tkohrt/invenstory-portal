@@ -11,7 +11,7 @@ import { getDraftContext } from "@/lib/server/draft-context";
 
 // Confirming an application's questions re-matches any edited question to the
 // question bank, which is a model call inside the confirm action.
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export default async function DraftDetailPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ q?: string; since?: string; ctx?: string }>;
