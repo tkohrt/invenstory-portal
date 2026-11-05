@@ -2,6 +2,7 @@ import "server-only";
 // Bedrock diagnostic: pinpoints which layer is blocking generation.
 //  1) availability  -> model access / entitlement / region (via control plane)
 //  2) converse probe -> the exact runtime error, mapped to a human verdict
+import { converseParams } from "@/lib/model-rules";
 import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { GetFoundationModelAvailabilityCommand } from "@aws-sdk/client-bedrock";
 import { bedrockRuntime, bedrockControl, bedrockAuthMode, BEDROCK_REGION, CHAT_MODEL_ID } from "./bedrock";
@@ -43,7 +44,7 @@ function interpret(probe: BedrockCheck["probe"], av: Record<string, unknown>): {
 }
 
 export async function runBedrockCheck(modelOverride?: string): Promise<BedrockCheck> {
-  const modelId = modelOverride || CHAT_MODEL_ID || "us.anthropic.claude-sonnet-4-20250514-v1:0";
+  const modelId = modelOverride || CHAT_MODEL_ID || "us.anthropic.claude-sonnet-5-5";
   const usingInferenceProfile = /^(us|eu|apac|global|us-gov)\./.test(modelId);
   const config = { region: BEDROCK_REGION, authMode: bedrockAuthMode(), modelId, usingInferenceProfile };
 
@@ -67,7 +68,8 @@ export async function runBedrockCheck(modelOverride?: string): Promise<BedrockCh
     await bedrockRuntime().send(new ConverseCommand({
       modelId,
       messages: [{ role: "user", content: [{ text: "ping" }] }],
-      inferenceConfig: { maxTokens: 5, temperature: 0 },
+      // Sent exactly as the app sends it for this model (patch 20).
+      ...converseParams(modelId, 16, 0),
     }));
     probe.ok = true;
   } catch (e) {

@@ -9,6 +9,8 @@
 interface Rate { input: number; output: number }
 
 const SONNET: Rate = { input: 3, output: 15 };
+// Sonnet 5 and 5.5 (patch 20): $2 / $10 per million, $2.20 / $11 on a "us." profile.
+const SONNET_5: Rate = { input: 2, output: 10 };
 const HAIKU_45: Rate = { input: 1, output: 5 };
 const HAIKU_3: Rate = { input: 0.8, output: 4 };
 const OPUS_45: Rate = { input: 5, output: 25 };
@@ -16,7 +18,7 @@ const OPUS_4: Rate = { input: 15, output: 75 };
 
 /** Version as a number from an id like "claude-sonnet-4-5-20250929" or "claude-sonnet-4@2025". */
 function version(id: string): number {
-  const m = id.match(/claude-(?:sonnet|haiku|opus)-(\d+)(?:-(\d)(?!\d))?/i);
+  const m = id.match(/claude-(?:sonnet|haiku|opus|fable|mythos)-(\d+)(?:-(\d)(?!\d))?/i);
   if (!m) return 0;
   return Number(m[1]) + (m[2] ? Number(m[2]) / 10 : 0);
 }
@@ -24,7 +26,7 @@ function version(id: string): number {
 export function rateFor(modelId: string): Rate & { premium: boolean } {
   const id = modelId.toLowerCase();
   const v = version(id);
-  let rate = SONNET;
+  let rate = v >= 5 ? SONNET_5 : SONNET;
   if (id.includes("haiku")) rate = v >= 4.5 ? HAIKU_45 : HAIKU_3;
   else if (id.includes("opus")) rate = v >= 4.5 ? OPUS_45 : OPUS_4;
   // Global endpoints carry no premium; regional ones do from 4.5 on.

@@ -6,6 +6,7 @@ import "server-only";
 // LLM_PROVIDER is no longer read. Without Bedrock configured the provider is
 // "none" and callers degrade to extractive text.
 // On ANY failure chatComplete returns null so callers degrade to extractive text.
+import { converseParams, effortFrom } from "@/lib/model-rules";
 import { ConverseCommand, type ContentBlock, type Message, type Tool } from "@aws-sdk/client-bedrock-runtime";
 import { bedrockRuntime, bedrockConfigured, CHAT_MODEL_ID } from "./bedrock";
 import { recordAiUsage } from "./ai-usage";
@@ -17,6 +18,10 @@ import { withRule, untrusted } from "@/lib/untrusted";
 
 /** What a provider answered, with the tokens it reports (for the usage meter). */
 interface Completion { text: string | null; inputTokens: number; outputTokens: number }
+
+// Patch 20: what to send depends on the model's generation (lib/model-rules.ts).
+// BEDROCK_EFFORT may set the effort for the newer models; high by default.
+const EFFORT = effortFrom(process.env.BEDROCK_EFFORT);
 
 export type GenProvider = "bedrock" | "none";
 
@@ -30,7 +35,7 @@ async function bedrockComplete(system: string, user: string, maxTokens: number, 
     modelId: CHAT_MODEL_ID,
     system: [{ text: system }],
     messages: [{ role: "user", content: [{ text: user }] }],
-    inferenceConfig: { maxTokens, temperature },
+    ...converseParams(CHAT_MODEL_ID, maxTokens, temperature, EFFORT),
   }));
   return {
     text: res.output?.message?.content?.map(c => c.text).filter(Boolean).join("") || null,
@@ -119,7 +124,7 @@ export async function webSearchComplete(input: WebSearchOpts): Promise<WebSearch
         system: [{ text: system }],
         messages,
         toolConfig: { tools: [SEARCH_TOOL] },
-        inferenceConfig: { maxTokens: input.maxTokens, temperature: input.temperature },
+        ...converseParams(CHAT_MODEL_ID, input.maxTokens, input.temperature, EFFORT),
       }));
       inTok += res.usage?.inputTokens ?? 0;
       outTok += res.usage?.outputTokens ?? 0;
