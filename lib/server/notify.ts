@@ -1,4 +1,5 @@
 import "server-only";
+import { isDemoTenant } from "@/lib/demo";
 // Notify the For Granted team when a CLIENT uploads a document: email
 // info@forgranted.com (via Resend) and ping the team Slack channel (webhook).
 // Both are best-effort — a notification failure never blocks the upload.
@@ -6,7 +7,8 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 const SLACK_WEBHOOK = process.env.SLACK_ADMIN_WEBHOOK_URL;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://portal.forgranted.com";
 
-export async function notifyClientUpload(d: { org: string; uploader: string; title: string; layer: string }) {
+export async function notifyClientUpload(d: { org: string; uploader: string; title: string; layer: string; tenantId?: string }) {
+  if (isDemoTenant(d.tenantId)) return;  // demo runs never page the team
   const line = `${d.uploader} (${d.org}) uploaded "${d.title}" to Layer ${d.layer}.`;
 
   if (RESEND_KEY) {
@@ -35,7 +37,8 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
   }
 }
 
-export async function notifyAccountClosure(d: { org: string; requester: string; email: string; reason: string }) {
+export async function notifyAccountClosure(d: { org: string; requester: string; email: string; reason: string; tenantId?: string }) {
+  if (isDemoTenant(d.tenantId)) return;
   const line = `${d.requester} (${d.org}, ${d.email}) requested to close their account.` + (d.reason ? ` Reason: ${d.reason}` : "");
   if (RESEND_KEY) {
     try {
@@ -54,7 +57,8 @@ export async function notifyAccountClosure(d: { org: string; requester: string; 
 }
 
 /** A client reached an AI usage limit and asked for more (6 October 2026). */
-export async function notifyUsageRequest(d: { org: string; requester: string; kind: string }) {
+export async function notifyUsageRequest(d: { org: string; requester: string; kind: string; tenantId?: string }) {
+  if (isDemoTenant(d.tenantId)) return;
   const what = d.kind === "ai_month" ? "this month's AI allowance" : d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
   const line = `${d.requester} (${d.org}) has used ${what} and asked For Granted for more.`;
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -84,7 +88,8 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
  * decision 32). Sent once each a month. Past the allowance nothing stops; at the
  * ceiling chat, readiness re-runs and Story Intelligence wait for a grant.
  */
-export async function notifyAllowance(d: { org: string; level: "over" | "ceiling"; spent: string; line: string; ceiling: string }) {
+export async function notifyAllowance(d: { org: string; level: "over" | "ceiling"; spent: string; line: string; ceiling: string; tenantId?: string }) {
+  if (isDemoTenant(d.tenantId)) return;
   const line = d.level === "over"
     ? `${d.org} has passed this month's AI allowance: ${d.spent} of ${d.line}. Nothing has stopped; the hard limit is ${d.ceiling}.`
     : `${d.org} has reached this month's hard AI limit: ${d.spent} of ${d.ceiling}. Chat, readiness re-runs and Story Intelligence now wait for a grant; document reads carry on.`;
@@ -111,7 +116,8 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
 }
 
 /** A client answered a question For Granted asked from the Storyboard (9 October 2026). */
-export async function notifyAskAnswered(d: { org: string; answerer: string; kind: string; draftId: string | null }) {
+export async function notifyAskAnswered(d: { org: string; answerer: string; kind: string; draftId: string | null; tenantId?: string }) {
+  if (isDemoTenant(d.tenantId)) return;
   const line = `${d.answerer} (${d.org}) answered your question for ${d.kind}. It is saved as a user-generated Story Card, ready in the Storyboard.`;
   const link = d.draftId ? `${APP_URL}/drafts/${d.draftId}` : `${APP_URL}/admin/card-library`;
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -164,6 +170,7 @@ export async function notifySiteInterest(d: { name: string; org: string; email: 
  * from an answer. Best-effort, like the rest of this file.
  */
 export async function notifyClientRequest(d: { org: string; requester: string; what: string; tenantId: string }) {
+  if (isDemoTenant(d.tenantId)) return;
   const line = `${d.requester} (${d.org}) ${d.what}`;
   const link = `${APP_URL}/admin/clients/${d.tenantId}`;
   if (RESEND_KEY) {

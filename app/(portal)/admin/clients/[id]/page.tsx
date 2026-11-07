@@ -11,6 +11,7 @@ import { getSetupState, ownerName } from "@/lib/server/setup";
 import AdminSetupPanel from "@/components/AdminSetupPanel";
 import AdminChatFeedback from "@/components/AdminChatFeedback";
 import { chatFeedback } from "@/lib/server/portal-guide";
+import { isDemoTenant } from "@/lib/demo";
 
 export default async function ClientActivityPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ m?: string }>;
@@ -35,6 +36,11 @@ export default async function ClientActivityPage({ params, searchParams }: {
   if (!data) notFound();
   return (
     <>
+      {isDemoTenant(id) && (
+        <div className="demo-banner">
+          <strong>Demo account.</strong> This client is wiped back to day one on every client sign-in: setup and tours replay, and all documents, chats, cards, drafts and matches are deleted. Never file real client material here. Demo activity sends no team emails or Slack pings.
+        </div>
+      )}
       {setup && <AdminSetupPanel tenantId={id} state={setup} ownerName={setupOwner} />}
       <AdminChatFeedback items={feedback} />
       <ClientActivityView data={data} voice={voice} reader={reader} />

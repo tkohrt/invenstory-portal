@@ -84,7 +84,7 @@ async function alertOnce(tenantId: string, level: "over" | "ceiling", state: All
     const tenant = await getTenant(tenantId);
     const cents = (m: number) => usdFromCents(Math.round(m / MICROS_PER_CENT));
     await notifyAllowance({
-      org: tenant?.name ?? "A client", level,
+      org: tenant?.name ?? "A client", level, tenantId,
       spent: cents(state.spentMicros), line: cents(lineMicros(state)), ceiling: cents(ceilingMicros(state)),
     });
   } catch (e) {

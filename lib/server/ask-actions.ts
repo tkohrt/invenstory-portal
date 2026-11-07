@@ -95,7 +95,7 @@ export async function answerAskAction(askId: string, answer: string): Promise<Re
   await notifyAskAnswered({
     org: tenant?.name ?? "A client", answerer: s.user.full_name || s.user.email,
     kind: CARD_KIND_MAP[ask.kind as string]?.label.toLowerCase() ?? (ask.kind as string),
-    draftId: (ask.draft_id as string | null) ?? null,
+    draftId: (ask.draft_id as string | null) ?? null, tenantId: s.tenantId,
   }).catch(() => null);
   revalidatePath("/invenstory");
   return { ok: true, cardId };

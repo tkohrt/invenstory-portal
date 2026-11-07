@@ -22,7 +22,7 @@ export async function requestMoreUsageAction(kind: RequestKind) {
   const { error } = await db.from("usage_request").insert({ tenant_id: s.tenantId, user_id: s.user.id, kind });
   if (error) throw new Error(`Could not send the request: ${error.message}`);
   const tenant = await getTenant(s.tenantId);
-  await notifyUsageRequest({ org: tenant?.name ?? "A client", requester: s.user.full_name ?? "A client user", kind });
+  await notifyUsageRequest({ org: tenant?.name ?? "A client", requester: s.user.full_name ?? "A client user", kind, tenantId: s.tenantId });
   revalidatePath("/admin/clients", "layout");
   return { ok: true, already: false };
 }

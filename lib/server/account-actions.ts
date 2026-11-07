@@ -22,7 +22,7 @@ export async function requestAccountClosureAction(reason: string): Promise<{ ok:
   const session = await getSession();
   if (!session) return { ok: false, error: "unauthorized" };
   const { data: t } = await db.from("tenant").select("name").eq("id", session.tenantId).single();
-  await notifyAccountClosure({ org: t?.name ?? "a client", requester: session.user.full_name, email: session.user.email, reason });
+  await notifyAccountClosure({ org: t?.name ?? "a client", requester: session.user.full_name, email: session.user.email, reason, tenantId: session.tenantId });
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: session.tenantId, action: "closure_request", detail: reason.slice(0, 200) });
   return { ok: true };
 }

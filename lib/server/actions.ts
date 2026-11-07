@@ -3,13 +3,25 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { userClient } from "./supabase";
 import { db } from "./db";
+import { demoTenantIds, isDemoTenant } from "@/lib/demo";
+import { resetDemoTenant } from "./demo";
 
 export async function signInAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const supabase = await userClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) redirect("/?error=" + encodeURIComponent("Invalid email or password."));
+  // The Demo Client starts from day one on every sign-in: full wipe, setup
+  // and tours replay (lib/demo.ts). Only for client logins to a tenant named
+  // in DEMO_TENANT_IDS; the env check first keeps ordinary sign-ins free.
+  if (data?.user && demoTenantIds().length) {
+    const { data: me } = await db.from("app_user").select("tenant_id, role").eq("auth_id", data.user.id).maybeSingle();
+    const u = me as { tenant_id: string | null; role: string } | null;
+    if (u?.role === "client" && isDemoTenant(u.tenant_id)) {
+      try { await resetDemoTenant(u.tenant_id!); } catch (e) { console.error("[demo] reset failed", e instanceof Error ? e.message : e); }
+    }
+  }
   redirect("/invenstory");
 }
 

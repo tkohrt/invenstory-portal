@@ -79,7 +79,7 @@ export async function fileUploadedDocument(i: FileInput): Promise<{ id: string }
   // Notify the For Granted team when a client (not an admin) uploads.
   if (i.role === "client") {
     const { data: t } = await db.from("tenant").select("name").eq("id", i.tenantId).single();
-    await notifyClientUpload({ org: t?.name ?? "a client", uploader: i.userName, title: i.title || i.filename, layer: i.layer });
+    await notifyClientUpload({ org: t?.name ?? "a client", uploader: i.userName, title: i.title || i.filename, layer: i.layer, tenantId: i.tenantId });
   }
   return { id: i.docId };
 }
