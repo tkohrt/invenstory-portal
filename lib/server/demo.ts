@@ -31,9 +31,23 @@ async function storageKeys(tenantId: string): Promise<string[]> {
  * Wipe the demo tenant back to day one. Refuses any tenant not named in
  * DEMO_TENANT_IDS, however it is called. Best-effort throughout: a partial
  * reset must never stop the sign-in, so failures are logged, not thrown.
+ *
+ * Two keys since the red-team review (H1, 9 Nov 2026): the env var alone is
+ * not enough. The tenant's own row must ALSO say is_demo = true (migration
+ * 0079, set by hand), so one mistyped UUID in Vercel can never wipe a real
+ * client. A refusal is logged and written to the audit log, then the sign-in
+ * continues untouched.
  */
 export async function resetDemoTenant(tenantId: string): Promise<void> {
   if (!isDemoTenant(tenantId)) return;
+  const { data: t, error: tErr } = await db.from("tenant").select("is_demo").eq("id", tenantId).maybeSingle();
+  if (tErr || !t || t.is_demo !== true) {
+    console.error(`[demo] REFUSED wipe of tenant ${tenantId}: DEMO_TENANT_IDS names it but tenant.is_demo is not true` +
+      (tErr ? ` (read failed: ${tErr.message})` : ""));
+    await db.from("audit_log").insert({ tenant_id: tenantId, action: "demo_reset_refused",
+      detail: "DEMO_TENANT_IDS names this tenant but tenant.is_demo is not true; wipe refused (red-team H1)" });
+    return;
+  }
 
   // 1. Storage: every uploaded file.
   try {

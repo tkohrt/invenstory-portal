@@ -4,12 +4,7 @@
 // steps done by hand for the seed clients, now self-service for Tyler/Shane.
 import { getSession } from "./session";
 import { db } from "./db";
-
-function tempPassword() {
-  const c = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
-  let s = ""; for (let i = 0; i < 12; i++) s += c[Math.floor(Math.random() * c.length)];
-  return s + "A9!";
-}
+import { tempPassword } from "./passwords";
 
 export interface NewClientResult { ok: boolean; email?: string; tempPassword?: string; error?: string }
 

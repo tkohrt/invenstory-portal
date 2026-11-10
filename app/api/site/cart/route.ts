@@ -45,7 +45,19 @@ export async function POST(req: Request) {
     if (visit) {
       await db.from("site_event").insert({ visit_id: visit, name: "cart_submit", props: { cards: cards.length } }); // tenant-safe: website log, not client data
     }
-    await notifySiteInterest({ name, org, email, cards: cards.map(c => SITE_CARDS[c]) });
+    // Protect the alert channel (red-team M4, 9 Nov 2026): rotating email
+    // strings beat the ten-minute dedupe, so a flood of submissions could
+    // drown Slack and the inbox, the channels the team actually watches.
+    // Past 8 leads in 15 minutes, keep storing but stop notifying; the rows
+    // are all still in site_interest for review.
+    const floodSince = new Date(Date.now() - 15 * 60_000).toISOString();
+    const { count: recentLeads } = await db.from("site_interest").select("id", { count: "exact", head: true }) // tenant-safe: website intake, not client data
+      .gte("created_at", floodSince);
+    if ((recentLeads ?? 0) > 8) {
+      console.error(`[site] interest flood: ${recentLeads} leads in 15 minutes; notification suppressed for ${email}`);
+    } else {
+      await notifySiteInterest({ name, org, email, cards: cards.map(c => SITE_CARDS[c]) });
+    }
     return answer(200, true);
   } catch {
     return answer(400, false);

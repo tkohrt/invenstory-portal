@@ -5,10 +5,10 @@
 // sends is cleaned by the pure rules in lib/setup.ts before it is stored.
 // For Granted can see, finish, or reset a client's setup, and turns a
 // teammate request into a login (clients cannot make logins themselves).
-import crypto from "crypto";
 import { revalidatePath } from "next/cache";
 import { getSession, type PortalSession } from "./session";
 import { db } from "./db";
+import { tempPassword } from "./passwords";
 import { getSetupState, addWebDocument, hasWebsiteDoc } from "./setup";
 import { getEligibilityProfile } from "./eligibility";
 import { getWorkspaceVisibility } from "./data";
@@ -228,9 +228,6 @@ export async function adminSetSetupAction(tenantId: string, to: "complete" | "re
   return { ok: true };
 }
 
-function tempPassword(): string {
-  return crypto.randomBytes(12).toString("base64url");
-}
 
 /** Turn a teammate request into a login. Returns the temporary password once. */
 export async function createTeammateLoginAction(tenantId: string, email: string): Promise<{ ok: true; email: string; tempPassword: string } | { ok: false; error: string }> {

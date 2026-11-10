@@ -52,7 +52,15 @@ const TENANT_SCOPED = new Set([
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);
 
-const ROOTS = ["lib/server", "app"];
+// db.rpc functions that have been reviewed (red-team H2, 9 Nov 2026): each
+// takes an explicit tenant argument or runs SECURITY INVOKER under RLS. Any
+// OTHER function name called through the service-role client fails the build
+// until it is reviewed and added here.
+const RPC_REVIEWED = new Set(["client_ai_spend_micros", "tenant_word_count"]);
+
+// Widened from ["lib/server", "app"] (red-team H2): a "use server" file or a
+// db import can appear anywhere under these roots.
+const ROOTS = ["lib", "app", "components"];
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
@@ -64,12 +72,26 @@ function walk(dir, out = []) {
 }
 
 const CALL = /\bdb\.from\(\s*["'`](\w+)["'`]\s*\)/g;
+// Re-assigning db to another name would hide every later call from this
+// script (red-team H2): `const svc = db; svc.from(...)` was never scanned.
+// Ban the aliasing itself. Destructuring imports are matched too.
+const ALIAS = /(?:const|let|var)\s+(?:\w+|\{[^}]*\})\s*=\s*db\s*[;,\n)]/g;
+const RPC = /\bdb\.rpc\(\s*["'`](\w+)["'`]/g;
 const violations = [];
 for (const root of ROOTS) {
   let files; try { files = walk(root); } catch { continue; }
   for (const file of files) {
     const src = readFileSync(file, "utf8");
     let m;
+    while ((m = ALIAS.exec(src))) {
+      const line = src.slice(0, m.index).split("\n").length;
+      violations.push({ file, line, table: "(alias)", snippet: `re-assigning db hides calls from this check: ${m[0].trim().slice(0, 80)}` });
+    }
+    while ((m = RPC.exec(src))) {
+      if (RPC_REVIEWED.has(m[1])) continue;
+      const line = src.slice(0, m.index).split("\n").length;
+      violations.push({ file, line, table: `(rpc ${m[1]})`, snippet: "service-role rpc not in RPC_REVIEWED; review it (tenant arg or SECURITY INVOKER) and add the name" });
+    }
     while ((m = CALL.exec(src))) {
       const table = m[1];
       if (!TENANT_SCOPED.has(table)) continue;
