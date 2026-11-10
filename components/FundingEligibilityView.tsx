@@ -10,16 +10,31 @@ import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import AllowanceRequest from "./AllowanceRequest";
 
-export function TagField({ label, values, onChange, placeholder }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+export function TagField({ label, values, onChange, placeholder, hint }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string; hint?: string }) {
   const [draft, setDraft] = useState("");
-  const add = () => { const v = draft.trim(); if (v && !values.includes(v)) onChange([...values, v]); setDraft(""); };
+  // "storytelling, education, youth" is three tags, not one (9 Nov 2026, from
+  // the 7 Nov walkthrough, where four comma-separated cause areas were saved
+  // as one amalgamated tag). Split on commas and semicolons, trim, drop
+  // duplicates; typing one at a time still works exactly as before. Blur also
+  // commits, so clicking Save without pressing Enter loses nothing.
+  const add = () => {
+    const parts = draft.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+    if (parts.length) {
+      const next = [...values];
+      for (const p of parts) if (!next.includes(p)) next.push(p);
+      if (next.length !== values.length) onChange(next);
+    }
+    setDraft("");
+  };
   return (
     <div className="fe-field">
       <label>{label}</label>
       <div className="tag-input-row">
-        <input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }} placeholder={placeholder} />
+        <input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          onBlur={() => { if (draft.trim()) add(); }} placeholder={placeholder} />
         <button type="button" className="btn inline" onClick={add}>Add</button>
       </div>
+      {hint && <div className="hint">{hint}</div>}
       {values.length > 0 && <div className="fe-tags">{values.map(v => (
         <span key={v} className="fe-tag">{v}<button type="button" onClick={() => onChange(values.filter(x => x !== v))}>×</button></span>
       ))}</div>}

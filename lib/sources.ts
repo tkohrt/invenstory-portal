@@ -210,7 +210,7 @@ export function summaryLine(states: SourceState[]): string {
 }
 
 const EU_TYPES_FOR: Record<FundingKind, string[]> = {
-  grants: ["1", "2", "8"], programs: ["8"], contracts: ["0"], investment: [],
+  grants: ["1", "2", "8"], programs: ["8"], contracts: ["0"],
 };
 
 /**

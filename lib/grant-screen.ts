@@ -96,7 +96,7 @@ export interface ScreenedGrant {
   rationale_source?: "llm" | "rule" | "pending";
   from_overlay?: boolean;
   verified_at?: string | null;  // when For Granted last confirmed this at the source
-  /** grants | contracts | programs | investment (patch 4). Ground Truth rows are grants. */
+  /** grants | contracts | programs (patch 4; investment removed 9 Nov 2026). Ground Truth rows are grants. */
   money_kind?: string;
   /** ISO currency of award_ceiling when it is not US dollars (EU calls are in euros). */
   currency?: string | null;

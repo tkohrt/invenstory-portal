@@ -38,8 +38,9 @@ describe("planOpenSources", () => {
     expect(plan.worldbank).toBeNull();
     expect(plan.eu?.types).toEqual(["1", "2", "8"]);
   });
-  test("investment alone has no public source here (the web search covers it)", () => {
-    expect(planOpenSources({ ...kenyan, funding_kinds: ["investment"] })).toEqual({ worldbank: null, eu: null, iati: null, threesixty: false, canada: null });
+  test("a stored investment choice (removed 9 Nov 2026) is ignored and reads as grants", () => {
+    expect(planOpenSources({ ...kenyan, funding_kinds: ["investment"] }))
+      .toEqual(planOpenSources({ ...kenyan, funding_kinds: ["grants"] }));
   });
   test("a region with no countries searches the region's members, capped", () => {
     expect(searchCountries({ ...ohio, international: true, regions_served: ["east_africa"] }, 3)).toEqual(["BI", "KM", "DJ"]);

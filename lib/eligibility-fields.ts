@@ -34,14 +34,19 @@ export const FEDERAL_REG = [
  * What kind of money the organization is looking for (patch 2 of the 1 Nov
  * 2026 build). Not an eligibility fact but a choice, kept on the same page
  * because it decides which searches run: grants come from Ground Truth;
- * contracts from procurement notices; programmes and investment mostly from
- * the web search. Order is the order the form shows them.
+ * contracts from procurement notices; programmes mostly from the web search.
+ * Order is the order the form shows them.
+ *
+ * Impact investment and loans were removed on 9 Nov 2026 (Shane: not a focus
+ * of For Granted at this time, and no source behind them). Stored "investment"
+ * values are ignored at read time by kindsSought's isFundingKind filter; no
+ * migration. To bring the kind back, restore its entry here and its angle in
+ * lib/web-discovery.ts.
  */
 export const FUNDING_KINDS = [
   { v: "grants", l: "Grants", hint: "Foundation, government and corporate grants" },
   { v: "contracts", l: "Contracts and RFPs", hint: "Paid work: tenders, requests for proposals, expressions of interest" },
   { v: "programs", l: "Accelerators, prizes and competitions", hint: "Including fellowships and challenge funds" },
-  { v: "investment", l: "Impact investment and loans", hint: "Recoverable grants, programme-related investment, impact funds" },
 ] as const;
 export type FundingKind = (typeof FUNDING_KINDS)[number]["v"];
 export const FUNDING_KIND_LABEL: Record<FundingKind, string> =

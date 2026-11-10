@@ -92,14 +92,13 @@ describe("choices", () => {
 
 describe("the plan", () => {
   test("all Automatic plans exactly what planOpenSources plans", () => {
-    for (const p of [kenyan, ohio, { ...kenyan, funding_kinds: ["investment"] }]) {
+    for (const p of [kenyan, ohio, { ...kenyan, funding_kinds: ["contracts"] }]) {
       expect(planFromSources(p, resolveSources(p, {}))).toEqual(planOpenSources(p));
     }
   });
-  test("EU turned on for an investment-only client asks for every call type", () => {
-    const p = { ...kenyan, funding_kinds: ["investment"] };
-    const states = resolveSources(p, { eu_ft: { mode: "on", locked: false, setByRole: "admin" } });
-    expect(planFromSources(p, states).eu).toEqual({ types: ["0", "1", "2", "8"] });
+  test("EU turned on by hand for a US-only client asks for its kinds' call types", () => {
+    const states = resolveSources(ohio, { eu_ft: { mode: "on", locked: false, setByRole: "admin" } });
+    expect(planFromSources(ohio, states).eu).toEqual({ types: ["1", "2", "8"] });
   });
   test("summary counts what is searched", () => {
     expect(summaryLine(resolveSources(ohio, {}))).toBe("Searching 2 of 7 sources");
@@ -130,6 +129,5 @@ describe("the last run", () => {
   });
   test("Funding Eligibility notes name the sources each kind switches on", () => {
     expect(sourcesForKind("contracts")).toEqual(["EU Funding & Tenders Portal", "World Bank procurement notices"]);
-    expect(sourcesForKind("investment")).toEqual([]);
   });
 });

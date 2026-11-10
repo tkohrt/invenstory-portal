@@ -55,8 +55,6 @@ export function discoveryAngles(p: EligibilityProfile, identity: string, work: s
       question: `Current requests for proposals, tenders or expressions of interest that a ${who} offering ${what} could bid on${where}.` });
     if (k === "programs") out.push({ key: "programs", kind: "programs",
       question: `Accelerators, prizes, competitions or fellowships accepting applications now from a ${who} working on ${what}${where}.` });
-    if (k === "investment") out.push({ key: "investment", kind: "investment",
-      question: `Impact investors, recoverable grants or programme-related investment open to a ${who} working on ${what}${where}.` });
   }
   if (kindsSought(p).includes("grants")) out.push({ key: "funders", kind: "funders",
     question: `Foundations and other funders actively funding ${what}${where}, and how each accepts requests.` });
@@ -74,7 +72,7 @@ Search the web for the question you are given and return what you find as JSON. 
 6. At most 8 items. Fewer good items beat more weak ones. No em dashes.
 
 Return ONLY this JSON, no other text:
-{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs"|"investment","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"why":"...","quote":"..."}]}`;
+{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"why":"...","quote":"..."}]}`;
 
 /** The user turn: today's date, the client in brief (fenced), the question. */
 export function discoverUser(angle: Angle, facts: string[], today: string): string {
@@ -163,7 +161,7 @@ function hostOf(key: string): string { return key.split("/")[0]; }
 const s = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.trim() ? v.replace(/\s+/g, " ").trim().slice(0, max) : null;
 
-const KINDS: readonly FundingKind[] = ["grants", "contracts", "programs", "investment"];
+const KINDS: readonly FundingKind[] = ["grants", "contracts", "programs"];
 
 /**
  * Model-written text a client reads carries no links of its own (the security

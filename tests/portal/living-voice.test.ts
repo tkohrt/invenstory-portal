@@ -9,7 +9,7 @@ import {
 describe("the questions", () => {
   test("cover why they started, what drives them, who they work with and where", () => {
     const titles = voiceSections("nonprofit").map(s => s.title);
-    expect(titles).toEqual(["Where it started", "What drives you", "Who you work with", "Where you work, and why there", "What comes next"]);
+    expect(titles).toEqual(["Where it started", "What drives you", "Who you work with", "Where you work, and why there", "What comes next", "In your own words"]);
   });
   test("a company is also asked why it is a company", () => {
     const keys = allPrompts("startup").map(p => p.key);

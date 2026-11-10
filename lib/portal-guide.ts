@@ -127,7 +127,7 @@ Upload with the "+ Upload" button, choosing a layer. Accepted: PDF, Word, text, 
 Getting started lists the first things to do. The readiness check shows what funders usually ask for and whether the Inven(s)tory holds it; "Run Readiness Check" refreshes it.
 
 FUNDING ELIGIBILITY
-Who can fund the organization: organization type, where it is registered, cause areas, and what kind of money it wants (grants, contracts and RFPs, accelerators and prizes, impact investment). Optional answers sharpen matches: budget, other countries, federal (SAM.gov) registration, ability to match funds. A search needs at least the organization type and one cause area.
+Who can fund the organization: organization type, where it is registered, cause areas, and what kind of money it wants (grants, contracts and RFPs, accelerators and prizes). Optional answers sharpen matches: budget, other countries, federal (SAM.gov) registration, ability to match funds. A search needs at least the organization type and one cause area.
 
 FUNDER MATCHES
 Open calls and funders screened against Funding Eligibility first, then fit, then funding history. "Search for funding" runs a search (or the For Granted team runs it, for clients without self-service search). "Searching N of M sources" opens Sources: every database searched, whether it is on, and why; Automatic follows Funding Eligibility. Mark a lead "Worth a look" or "Not for us" and the For Granted team sees it. "Open the fit report" puts every lead on one printable page, grouped into Apply, Approach and Research first. Every match is a lead: check deadlines and eligibility on the funder's own site.

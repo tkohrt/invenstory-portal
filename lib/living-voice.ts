@@ -45,6 +45,13 @@ const BASE: VoiceSection[] = [
       { key: "obstacle", question: "What is the one thing holding the work back today?" },
     ],
   },
+  // Added 9 Nov 2026 (Shane, from the 7 Nov walkthrough): an open field, so
+  // anything the set questions did not ask for still has a place to land.
+  {
+    key: "open", title: "In your own words", prompts: [
+      { key: "anything_else", question: "Anything else you want funders to know? Say it however you would say it out loud." },
+    ],
+  },
 ];
 
 /** A company is asked one more thing funders always want to know. */

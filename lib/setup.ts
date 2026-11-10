@@ -34,6 +34,7 @@ export const ROLES = [
   { v: "development", l: "Development or grants lead" },
   { v: "program", l: "Program staff" },
   { v: "board", l: "Board member" },
+  { v: "consultant", l: "Consultant or grant writer" },
   { v: "other", l: "Other" },
 ] as const;
 

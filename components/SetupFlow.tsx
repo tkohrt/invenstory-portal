@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  SETUP_STEPS, ROLES, RELATIONSHIPS, GOALS, canSettle, resumeAt,
+  SETUP_STEPS, ROLES, RELATIONSHIPS, GOALS, canSettle, resumeAt, stepsSettled,
   type SetupState, type SetupStepKey, type KnownFunder, type Deadline, type Goal,
 } from "@/lib/setup";
 import {
@@ -44,6 +44,10 @@ const LAYERS = { I: "l1", II: "l2", III: "l3" } as const;
 export default function SetupFlow(p: Props) {
   const router = useRouter();
   const [step, setStep] = useState<SetupStepKey>(() => resumeAt(p.state));
+  // A branded welcome before step 1, shown only on a fresh setup (9 Nov 2026,
+  // from the 7 Nov walkthrough). Someone returning mid-setup goes straight to
+  // their step.
+  const [welcome, setWelcome] = useState(() => stepsSettled(p.state) === 0 && !p.state.answers.role);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,10 +80,24 @@ export default function SetupFlow(p: Props) {
 
   const settled = p.state.steps;
 
+  if (welcome) {
+    return (
+      <div className="su-page su-welcome-page">
+        <div className="su-welcome" role="main">
+          <img src="/forgranted-logo.png" alt="For Granted" className="su-welcome-logo" />
+          <h1>Welcome to For Granted</h1>
+          <p className="su-lede">This is the Inven(s)tory Portal, {p.tenantName}&rsquo;s home for everything that makes you fundable. A few short steps set it up; everything saves as you go.</p>
+          <button type="button" className="sb-btn sb-primary" onClick={() => setWelcome(false)}>Begin</button>
+          <p className="su-small">About 15 minutes. You can stop at any step and come back.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="su-page">
       <header className="su-top">
-        <span className="su-brand">For Granted</span>
+        <img src="/forgranted-logo.png" alt="For Granted" className="su-brand-logo" />
         <span className="su-where">Inven(s)tory Portal · Setting up {p.tenantName}</span>
         <span className="spacer" />
         <span className="su-saved">Saved as you go</span>
@@ -109,7 +127,10 @@ export default function SetupFlow(p: Props) {
         {step === "you" && <YouStep {...p} busy={busy} onSave={v => run(() => saveYouAction(v))} />}
         {step === "eligibility" && <EligibilityStep profile={p.profile} busy={busy} onBack={back}
           onSave={(v, how) => run(() => saveSetupEligibilityAction(v, how))} />}
-        {(step === "layer1" || step === "layer2") && <LayerStep layer={step === "layer1" ? "I" : "II"} docs={p.docs} busy={busy} onBack={back}
+        {/* key={step} so Layer I's link box, errors and pending list never
+            carry over into Layer II (the carryover bug from the 7 Nov
+            walkthrough: React reuses the component between the two steps). */}
+        {(step === "layer1" || step === "layer2") && <LayerStep key={step} layer={step === "layer1" ? "I" : "II"} docs={p.docs} busy={busy} onBack={back}
           onSettle={how => run(() => settleStepAction(step, how))} />}
         {step === "layer3" && <Layer3Step state={p.state} orgType={p.orgType} docs={p.docs} busy={busy} onBack={back}
           onSettle={how => run(() => settleStepAction("layer3", how))} />}
@@ -218,10 +239,14 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
   return (
     <div className="su-grid">
       <section className="su-card">
-        <h1>Who can fund you</h1>
-        <p className="su-lede">Funding Eligibility tells the portal which funders could say yes to you. It takes about three minutes.</p>
-        <div className="su-group">
-          <h3>Needed to search</h3>
+        <h1>Funding Eligibility <span className="su-sub">Who can fund you?</span></h1>
+        <p className="su-lede">This tells the portal which funders could say yes to you. It takes about three minutes.</p>
+        <div className={`su-group su-need ${ready ? "ok" : ""}`}>
+          <div className="su-group-head">
+            <h3>Needed to search</h3>
+            <span className="spacer" />
+            <span className={`su-badge ${ready ? "ok" : ""}`}>{ready ? "✓ Complete" : "Must have"}</span>
+          </div>
           <p className="su-small">Funder Matches cannot search until you give an organization type and at least one cause area. You can still finish them later.</p>
           <label htmlFor="su-otype">Organization type</label>
           <select id="su-otype" value={p.org_type ?? ""} onChange={e => set("org_type", e.target.value || null)}>
@@ -232,7 +257,8 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
           <select id="su-country" value={p.country_code ?? "US"} onChange={e => set("country_code", e.target.value)}>
             {COUNTRY_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
-          <TagField label="Cause areas" values={p.cause_areas} onChange={v => set("cause_areas", v)} placeholder="e.g. Youth development" />
+          <TagField label="Cause areas" values={p.cause_areas} onChange={v => set("cause_areas", v)} placeholder="e.g. Youth development"
+            hint="Add one at a time, or separate several with commas. Each becomes its own tag." />
           <div className="su-label" id="su-kinds-l">What you are looking for</div>
           <div className="su-small">This decides where we search, not what you are eligible for.</div>
           <div className="su-kinds" role="group" aria-labelledby="su-kinds-l">
@@ -244,9 +270,10 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
             ))}
           </div>
         </div>
-        <div className="su-group">
+        <div className="su-group su-opt">
           <div className="su-group-head">
             <h3>Improves your matches</h3>
+            <span className="su-badge opt">Nice to have</span>
             <span className="spacer" />
             <button type="button" className="sb-btn sb-quiet sb-sm" aria-expanded={more} onClick={() => setMore(m => !m)}>{more ? "Skip these for now" : "Show these"}</button>
           </div>
@@ -277,7 +304,7 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
         </Foot>
       </section>
       <aside className="su-aside">
-        <h4>Why first?</h4>
+        <h4>Why eligibility first</h4>
         <p className="su-small">Every search screens funders against these answers. A wrong organization type is the most common reason a promising funder turns out to be a dead end.</p>
       </aside>
     </div>
@@ -311,12 +338,24 @@ function LayerStep({ layer, docs, busy, onBack, onSettle }: {
   return (
     <div className="su-grid">
       <section className="su-card">
+        {/* The explainer between eligibility and the first upload (9 Nov 2026,
+            from the 7 Nov walkthrough): nobody has seen an Inven(s)tory
+            before, so define it, dictionary-style, before asking for
+            documents. Layer I only; links are Layer I only too, since Layer II
+            is about the actual documents (same decision). */}
+        {layer === "I" && (
+          <div className="su-def">
+            <div className="su-def-word">In&middot;ven(s)&middot;to&middot;ry <span>noun</span></div>
+            <p>An inventory of your story: a complete, running record of who your organization is (public, private, past, present and fundable future). Every document you add here builds one brain, and that brain is what finds your funders and drafts your applications.</p>
+            <p className="su-small">Your eligibility profile is done. Now we build the brain.</p>
+          </div>
+        )}
         <h1>{c.title}</h1>
         <p className="su-lede">{c.lede}</p>
         <div className={`su-layerbox ${LAYERS[layer]}`}>
           <h3>{c.box}</h3>
           <p className="su-small">{c.boxSub}</p>
-          <Uploader layer={layer} docs={mine} allowLinks />
+          <Uploader layer={layer} docs={mine} allowLinks={layer === "I"} />
           <h4>Good examples</h4>
           <ul className="su-list">{c.examples.map(e => <li key={e}>{e}</li>)}</ul>
         </div>
@@ -442,7 +481,7 @@ function Layer3Step({ state, orgType, docs, busy, onBack, onSettle }: {
     <div className="su-grid">
       <section className="su-card">
         <h1>Layer III: your living voice</h1>
-        <p className="su-lede">The step most people want to skip, and the one that makes the biggest difference. Please read this part; the recording can wait.</p>
+        <p className="su-lede">The shortest step here, and the one funders remember. Please read this part; the recording can wait.</p>
         <div className="su-layerbox l3">
           <h3>Why your voice matters most</h3>
           <p>Funders read hundreds of applications that say the right things. What they remember is the person behind the work: why you started, who you do it for, what keeps you going. That is your living voice, and it is the one thing no document already holds.</p>
