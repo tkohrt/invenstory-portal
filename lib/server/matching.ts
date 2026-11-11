@@ -311,6 +311,10 @@ export async function runMatch(
     ...canadaFunderRows(openRes.canadaProgrammes ?? [], c => countryName(c) ?? c),
   ].filter((f, i, all) => all.findIndex(x => x.funder_id === f.funder_id) === i);
 
+  // For the run digest (0080): what this run swept away, counted and named
+  // before the delete so disappearances are reported, never silent.
+  let swept = 0;
+  let sweptTitles: string[] = [];
   if (screened.length) {
     const { error } = await db.from("eligible_grant").upsert(
       screened.map(s => ({
@@ -343,6 +347,12 @@ export async function runMatch(
     // return is stale by definition, and leaving it behind blends runs together
     // (which is how rows with no title survived a schema change and sat in the
     // results table looking like current matches).
+    // Recorded before it is deleted (migration 0080): a grant that drops off
+    // the shortlist is reported in the run digest, never silently vanished.
+    const { data: sweptRows } = await db.from("eligible_grant")
+      .select("title").eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    swept = sweptRows?.length ?? 0;
+    sweptTitles = (sweptRows ?? []).map(r => r.title).filter((t): t is string => !!t).slice(0, 10);
     const { error: sweepError } = await db.from("eligible_grant")
       .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
     if (sweepError) console.error("could not clear stale matches", sweepError);
@@ -351,6 +361,10 @@ export async function runMatch(
     // standing as though they were current. Bounded by ranAt like the funder
     // sweep, so a concurrent run's fresh rows are not collateral, and loud on
     // failure rather than silent.
+    const { data: sweptRows } = await db.from("eligible_grant")
+      .select("title").eq("tenant_id", tenantId).lt("matched_at", ranAt);
+    swept = sweptRows?.length ?? 0;
+    sweptTitles = (sweptRows ?? []).map(r => r.title).filter((t): t is string => !!t).slice(0, 10);
     const { error: clearErr } = await db.from("eligible_grant")
       .delete().eq("tenant_id", tenantId).lt("matched_at", ranAt);
     if (clearErr) console.error("could not clear grant matches", clearErr);
@@ -421,6 +435,7 @@ export async function runMatch(
       ? `${health?.note ?? ""} ${failedQueries} of ${queries.length} queries failed this run.`.trim()
       : health?.note ?? null,
     kept: screened.length, dropped, funders: funderRows.length,
+    swept, swept_titles: sweptTitles,
   };
   // Fill in the row opened before the calls. Inserting a second one when that
   // failed keeps the record complete rather than losing this run's queries
@@ -536,10 +551,11 @@ export async function getLastRunQueries(tenantId: string): Promise<RunQuery[]> {
 export interface RunHistoryRow {
   id: string; ran_at: string; kept: number; dropped: number;
   funders: number; used_profile: boolean;
+  swept: number; swept_titles: string[];
 }
 export async function getRunHistory(tenantId: string, limit = 10): Promise<RunHistoryRow[]> {
   const { data, error } = await db.from("match_run")
-    .select("id, ran_at, kept, dropped, funders, used_profile")
+    .select("id, ran_at, kept, dropped, funders, used_profile, swept, swept_titles")
     .eq("tenant_id", tenantId)
     .order("ran_at", { ascending: false })
     .limit(limit);

@@ -36,6 +36,24 @@ export async function requestAccountClosureAction(reason: string): Promise<{ ok:
 // Tours seen (patch 15): one key per tour, tourPrefKey in lib/tours.ts.
 const UI_PREF_KEYS = new Set(["confirm_card_remove", "confirm_weave", "confirm_polish", "hide_getting_started",
   "tour_invenstory", "tour_chat", "tour_funder_matches", "tour_drafts"]);
+/**
+ * The client visited a Funding mode (patch 25): records when, so the NEW tag
+ * can mean "new since YOUR last visit" rather than "new to the latest run".
+ * Client sessions only, on purpose: an admin reading a client's page (or
+ * previewing as them) must never consume the client's tags. Fire-and-forget
+ * from the page; failing to record is never worth an error in the client's
+ * face.
+ */
+export async function markFundingSeenAction(mode: "grants" | "funders") {
+  const s = await getSession();
+  if (!s || s.role !== "client") return;
+  const key = mode === "funders" ? "funding_seen_funders" : "funding_seen_grants";
+  const prefs = { ...((s.user.ui_prefs as Record<string, unknown> | null) ?? {}), [key]: new Date().toISOString() };
+  const { error } = await db.from("app_user").update({ ui_prefs: prefs })  // tenant-safe: the signed-in person's own row, by id from the session
+    .eq("id", s.user.id);
+  if (error) console.error("could not record funding visit", error);
+}
+
 export async function setUiPrefAction(key: string, value: boolean) {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");

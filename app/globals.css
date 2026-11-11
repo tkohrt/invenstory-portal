@@ -2139,6 +2139,8 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .fm-page .fund-run-none{padding:4px 9px}
 .fm-page .fund-age-aging{color:#8a6514;font-weight:600}
 .fm-page .fund-age-stale{color:#8a2f22;font-weight:600}
+.fm-page .fund-digest{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fm-page .fund-digest .sb-btn{margin-left:auto}
 .fm-page .fund-main{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:14px}
 .fm-page .fund-tiles{display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:12px}
 .fm-page .fund-tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}

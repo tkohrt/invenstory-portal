@@ -9,6 +9,7 @@ import { knownFunderMatch, RELATIONSHIP_LABEL, type KnownFunder } from "@/lib/se
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
+import { markFundingSeenAction } from "@/lib/server/account-actions";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
 import { looksAsleep } from "@/lib/ledger-wake";
@@ -42,6 +43,7 @@ export type FundingMode = "grants" | "funders";
 export interface RunRow {
   id: string; ran_at: string; kept: number; dropped: number;
   funders: number; used_profile: boolean;
+  swept: number; swept_titles: string[];
 }
 
 interface Cached {
@@ -194,8 +196,11 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true,
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null,
 }: {
+  /** When this client last visited this mode (patch 25); null for admins, the
+      as-client preview, and a first visit. Drives the NEW tags. */
+  seenAt?: string | null;
   /** Which Funding mode this page shows (patch 24). The page clamps it to an enabled mode for clients. */
   mode?: FundingMode;
   /** The search history, newest first: dates and counts only, no query text. */
@@ -265,7 +270,8 @@ export default function FunderMatchesView({
   // how somebody acts on the wrong data.
   useEffect(() => {
     if (finished === "done" || finished === "failed") router.refresh();
-  }, [finished, router]);
+    if (finished === "done" && job?.id) setDigestFor(job.id);
+  }, [finished, router, job?.id]);
   // Rows the source records as making no grants to anyone. Set aside rather
   // than dropped, and one click from view, so a wrong screen is visible.
   const [showNoHistory, setShowNoHistory] = useState(false);
@@ -416,10 +422,38 @@ export default function FunderMatchesView({
     </div>
   ) : null;
 
+  /**
+   * NEW, for a client, means new since YOUR last visit to this mode (patch
+   * 25), not new to the latest run: two searches between visits keep both
+   * batches tagged until the client comes back. A first visit shows no tags
+   * (a wall of NEW on day one would make the word meaningless) and quietly
+   * sets the baseline. Admins keep the run-relative reading, which is the
+   * right question for the person running searches.
+   */
+  const rowIsNew = (row: { matched_at?: string | null; first_matched_at?: string | null }): boolean => {
+    if (isAdmin) return firstSeen(row).label === "New";
+    if (!seenAt || !row.first_matched_at) return false;
+    return new Date(row.first_matched_at).getTime() > new Date(seenAt).getTime();
+  };
+  const newHelp = isAdmin
+    ? "First surfaced by the most recent run. It was not on the previous shortlist."
+    : "First appeared since your last visit to this page.";
+
+  // Record the visit once per mode, clients only (the action ignores admins
+  // too, so a preview can never consume the client's tags). The tags on screen
+  // stay for this whole visit; the next visit starts from now.
+  useEffect(() => {
+    if (!isAdmin && !viewingAsClient) void markFundingSeenAction(mode);
+  }, [isAdmin, viewingAsClient, mode]);
+
+  // The run digest (patch 25): when a search finishes on this visit, one
+  // dismissible line reports what happened, disappearances included.
+  const [digestFor, setDigestFor] = useState<string | null>(null);
+
   // The snapshot tiles and the history rail read the lists as this session
   // sees them (after screening, triage and the client's own Not-for-us), so
   // the numbers match the tables below them.
-  const newGrants = () => visibleMatches.filter(m => firstSeen(m).label === "New").length;
+  const newGrants = () => visibleMatches.filter(m => rowIsNew(m)).length;
   const closingSoon = () => visibleMatches.filter(m => {
     if (!m.close_date) return false;
     const days = Math.ceil((new Date(m.close_date).getTime() - Date.now()) / 86_400_000);
@@ -619,6 +653,20 @@ export default function FunderMatchesView({
       {jobError && <div className="ap-error" role="alert">{jobError}</div>}
       {err && <div className="ap-error" role="alert">{err}</div>}
 
+      {/* The run digest (patch 25): what the search that just finished did,
+          disappearances included, so nothing drops off the list silently. */}
+      {digestFor && runs[0] && (
+        <div className="ov-note fund-digest" role="status">
+          Search finished: {runs[0].kept} open call{runs[0].kept === 1 ? "" : "s"} ({newGrants()} new), {runs[0].funders} funder{runs[0].funders === 1 ? "" : "s"}
+          {runs[0].swept > 0 && (
+            <span title={runs[0].swept_titles.length ? `No longer returned by any source: ${runs[0].swept_titles.join("; ")}` : undefined}>
+              , {runs[0].swept} no longer open
+            </span>
+          )}.
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => setDigestFor(null)}>Dismiss</button>
+        </div>
+      )}
+
       {/* Past thirty days the age graduates from a stamp to a notice (the
           staleness ladder, 10 Nov): the one nudge this page is allowed. */}
       {hasResults && canRun && ageDays != null && ageDays > 30 && (
@@ -646,7 +694,7 @@ export default function FunderMatchesView({
           </div>
           {runs.map((r, i) => (
             <div key={r.id} className="fund-run"
-              title={`${r.dropped} screened out · built from ${r.used_profile ? "the Inven(s)tory" : "the eligibility answers"}`}>
+              title={`${r.dropped} screened out${r.swept ? ` · ${r.swept} dropped off the list` : ""} · built from ${r.used_profile ? "the Inven(s)tory" : "the eligibility answers"}`}>
               <strong>{new Date(r.ran_at).toLocaleDateString()}{i === 0 ? " · latest" : ""}</strong>
               <span className="fund-run-meta">{r.kept} call{r.kept === 1 ? "" : "s"} · {r.funders} funder{r.funders === 1 ? "" : "s"}</span>
             </div>
@@ -666,7 +714,7 @@ export default function FunderMatchesView({
               <div className="fund-tile"><div className="fund-n">{visibleMatches.length}</div><div className="fund-l">Open call{visibleMatches.length === 1 ? "" : "s"}</div></div>
               <div className="fund-tile"><div className="fund-n">{visibleMatches.filter(m => m.verdict === "eligible").length}</div><div className="fund-l">Eligible now</div></div>
               <div className="fund-tile"><div className="fund-n">{closingSoon()}</div><div className="fund-l">Closing within 30 days</div></div>
-              <div className="fund-tile"><div className="fund-n">{newGrants()}</div><div className="fund-l">New this search</div></div>
+              <div className="fund-tile"><div className="fund-n">{newGrants()}</div><div className="fund-l">{isAdmin ? "New this search" : "New since your last visit"}</div></div>
             </>
           ) : (
             <>
@@ -730,8 +778,8 @@ export default function FunderMatchesView({
                   <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
                   <td className="fm-seen">
                     {/* Patch 12: first seen and verified share a column, so the reason fits beside them. */}
-                    <span className={firstSeen(m).label === "New" ? "fm-new" : "ov-muted"}
-                          title={firstSeen(m).help}>{firstSeen(m).label === "New" || firstSeen(m).label === "Earlier" ? firstSeen(m).label : `Since ${firstSeen(m).label}`}</span>
+                    <span className={rowIsNew(m) ? "fm-new" : "ov-muted"}
+                          title={rowIsNew(m) ? newHelp : firstSeen(m).help}>{rowIsNew(m) ? "New" : firstSeen(m).label === "Earlier" ? "Earlier" : `Since ${firstSeen(m).label === "New" ? new Date(m.first_matched_at!).toLocaleDateString() : firstSeen(m).label}`}</span>
                     <div className={m.verified_at ? "fm-verified" : "ov-muted"} title={verified(m).help}>
                       {verified(m).label}
                     </div>
@@ -878,8 +926,8 @@ export default function FunderMatchesView({
                   )}
                   <td className="fm-seen">
                     {/* Patch 12: first seen and verified share a column, so the reason fits beside them. */}
-                    <span className={firstSeen(f).label === "New" ? "fm-new" : "ov-muted"}
-                          title={firstSeen(f).help}>{firstSeen(f).label === "New" || firstSeen(f).label === "Earlier" ? firstSeen(f).label : `Since ${firstSeen(f).label}`}</span>
+                    <span className={rowIsNew(f) ? "fm-new" : "ov-muted"}
+                          title={rowIsNew(f) ? newHelp : firstSeen(f).help}>{rowIsNew(f) ? "New" : firstSeen(f).label === "Earlier" ? "Earlier" : `Since ${firstSeen(f).label === "New" ? new Date(f.first_matched_at!).toLocaleDateString() : firstSeen(f).label}`}</span>
                     <div className={f.verified_at ? "fm-verified" : "ov-muted"} title={verified(f).help}>
                       {verified(f).label}
                     </div>

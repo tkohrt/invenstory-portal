@@ -42,6 +42,14 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   let mode: FundingMode = sp.mode === "funders" ? "funders" : "grants";
   if (mode === "funders" && !fundersOn) mode = "grants";
   if (mode === "grants" && !grantsOn) mode = "funders";
+  // When this person last visited this mode (patch 25): drives the NEW tags.
+  // Null for admins and for the as-client preview, which cannot know the
+  // client's own reading history, so the preview shows the first-visit
+  // baseline (no tags) rather than a guess.
+  const prefs = (session.user.ui_prefs as Record<string, unknown> | null) ?? {};
+  const seenAt = session.role === "client"
+    ? ((prefs[mode === "funders" ? "funding_seen_funders" : "funding_seen_grants"] as string | undefined) ?? null)
+    : null;
 
   // Patch 7 (1 Nov 2026): For Granted can see the page exactly as the client
   // does (?view=client). Everything below then loads as for a client session.
@@ -159,6 +167,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       knownFunders={knownFunders}
       mode={mode}
       runs={runs}
+      seenAt={seenAt}
       grantsOn={grantsOn}
       fundersOn={fundersOn}
     />
