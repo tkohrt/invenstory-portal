@@ -46,7 +46,7 @@ export const RELATIONSHIPS = [
 ] as const;
 
 export const GOALS = [
-  { v: "funders", title: "Find funders", desc: "See who could fund you, and why.", where: "We will open Funder Matches first.", path: "/funder-matches" },
+  { v: "funders", title: "Find funders", desc: "See who could fund you, and why.", where: "We will open Funding first.", path: "/funding" },
   { v: "draft", title: "Work on an application", desc: "See the applications your For Granted team is preparing with you.", where: "We will open your applications first.", path: "/drafts" },
   { v: "organize", title: "Get organized", desc: "See what your Inven(s)tory knows and what is missing.", where: "We will open your Inven(s)tory first.", path: "/invenstory" },
 ] as const;

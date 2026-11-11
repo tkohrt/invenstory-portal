@@ -45,7 +45,7 @@ export async function setSourceAction(input: { source: string; mode: string; loc
     : await db.from("match_source_setting").upsert(row, { onConflict: "tenant_id,source" });
   // A guarded write that touched nothing found the row locked meanwhile.
   if (!isAdmin && !res.error && current && Array.isArray(res.data) && res.data.length === 0) {
-    revalidatePath("/funder-matches");
+    revalidatePath("/funder-matches"); revalidatePath("/funding");
     return { ok: false, error: "For Granted has just set this source. Ask your For Granted team to change it." };
   }
   if (res.error) {
@@ -56,6 +56,6 @@ export async function setSourceAction(input: { source: string; mode: string; loc
     actor_user_id: s.user.id, tenant_id: s.tenantId, action: "match_source",
     detail: `${input.source}=${MODE_LABEL[input.mode]}${locked ? " (locked)" : ""}`,
   });
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
   return { ok: true };
 }

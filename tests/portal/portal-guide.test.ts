@@ -37,7 +37,7 @@ describe("which tab a question belongs in", () => {
 describe("buttons under a guide answer", () => {
   test("a search question gets the Funder Matches tour, and Funding Eligibility when a search is blocked", () => {
     const b = guideButtons("Why can't I search for funding yet?", status({ eligibility: { orgType: true, causeAreas: false, country: true, kinds: true } }));
-    expect(b.map(x => x.label)).toEqual(["Open Funding Eligibility", "Show me around Funder Matches"]);
+    expect(b.map(x => x.label)).toEqual(["Open Funding Eligibility", "Show me around Funding"]);
   });
   test("no tour for a tool that is switched off", () => {
     const b = guideButtons("How do I run a search?", status({ tools: { chat: true, funder_matches: false, drafts: true, card_review: true, eligibility: true } }));
@@ -59,7 +59,7 @@ describe("what the guide is told", () => {
     expect(lines).toContain("Layer III (living voice)");
   });
   test("the guide names every tool and has no em dashes", () => {
-    for (const t of ["THE INVEN(S)TORY", "FUNDING ELIGIBILITY", "FUNDER MATCHES", "CHAT", "STORY CARDS", "DRAFTS", "HELP"]) expect(GUIDE_TEXT).toContain(t);
+    for (const t of ["THE INVEN(S)TORY", "FUNDING ELIGIBILITY", "FUNDING", "CHAT", "STORY CARDS", "DRAFTS", "HELP"]) expect(GUIDE_TEXT).toContain(t);
     expect(GUIDE_TEXT + GUIDE_SYSTEM).not.toMatch(/—/);
   });
   test("without the model, the closest guide section is given", () => {

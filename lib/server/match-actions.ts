@@ -20,5 +20,5 @@ export async function clearMatchesAction() {
   // though it were current while the grants vanished.
   await db.from("eligible_grant").delete().eq("tenant_id", s.tenantId);
   await db.from("matched_funder").delete().eq("tenant_id", s.tenantId);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }

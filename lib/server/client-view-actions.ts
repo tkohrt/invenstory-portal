@@ -21,7 +21,7 @@ export async function setClientViewAction(input: { kind: string; targetId: strin
   }, { onConflict: "tenant_id,kind,target_id" });
   if (error) { console.error("[client-view] save refused", error.message); return { ok: false, error: "That could not be saved. Please try again." }; }
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "client_match_view", detail: `${v.kind}:${v.state}` });
-  revalidatePath("/funder-matches"); revalidatePath("/funder-matches/report");
+  revalidatePath("/funder-matches"); revalidatePath("/funding"); revalidatePath("/funder-matches/report");
   return { ok: true };
 }
 
@@ -32,7 +32,7 @@ export async function clearClientViewAction(kind: string, targetId: string): Pro
   const { error } = await db.from("client_match_view").delete()
     .eq("tenant_id", s.tenantId).eq("kind", kind).eq("target_id", targetId);
   if (error) return { ok: false, error: "That could not be undone. Please try again." };
-  revalidatePath("/funder-matches"); revalidatePath("/funder-matches/report");
+  revalidatePath("/funder-matches"); revalidatePath("/funding"); revalidatePath("/funder-matches/report");
   return { ok: true };
 }
 
@@ -45,6 +45,6 @@ export async function setSelfSearchAction(on: boolean): Promise<Result> {
   }, { onConflict: "tenant_id,feature_key" });
   if (error) return { ok: false, error: "Could not save the switch." };
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "feature_visibility", detail: `${SELF_SEARCH_KEY}=${on ? "visible" : "hidden"}` });
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
   return { ok: true };
 }

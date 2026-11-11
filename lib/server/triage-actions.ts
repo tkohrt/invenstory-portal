@@ -61,7 +61,7 @@ export async function setTriageAction(input: {
   }, { onConflict: "tenant_id,kind,target_id" });
   if (error) throw new Error(`Could not save that decision: ${error.message}`);
 
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }
 
 /** Undo a judgment entirely, putting the row back in the list unmarked. */
@@ -75,5 +75,5 @@ export async function clearTriageAction(kind: string, targetId: string) {
   const { error } = await db.from("match_triage")
     .delete().eq("tenant_id", s.tenantId).eq("kind", k).eq("target_id", targetId);
   if (error) throw new Error(`Could not undo that: ${error.message}`);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }

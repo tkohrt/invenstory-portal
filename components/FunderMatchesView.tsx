@@ -1,6 +1,9 @@
 "use client";
-// Funder matching results. Hidden from clients by default; For Granted runs the
-// match and reads the results here. Every card is a June 2026 lead, and the page
+// The Funding page (patch 24, the Funding split): one page, two modes, the
+// chat-tabs pattern. GRANTS mode (Grant Finder) shows open calls; FUNDERS mode
+// (Funder Compass) shows funders worth approaching. Each mode opens on a
+// snapshot (stat tiles) with a search-history rail at the left; the switch at
+// the top flips between them. Every card is a June 2026 lead, and the page
 // says so rather than letting anyone forget it.
 import { knownFunderMatch, RELATIONSHIP_LABEL, type KnownFunder } from "@/lib/setup";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -32,6 +35,14 @@ import MenuButton, { MenuItem, DOTS } from "./MenuButton";
 import InfoTip from "./InfoTip";
 import { SPARK } from "./Spark";
 import type { SourceState, SourceRun, SourceId } from "@/lib/sources";
+
+export type FundingMode = "grants" | "funders";
+
+/** One search in the history rail: dates and counts only, never query text. */
+export interface RunRow {
+  id: string; ran_at: string; kept: number; dropped: number;
+  funders: number; used_profile: boolean;
+}
 
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
@@ -183,7 +194,15 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true,
 }: {
+  /** Which Funding mode this page shows (patch 24). The page clamps it to an enabled mode for clients. */
+  mode?: FundingMode;
+  /** The search history, newest first: dates and counts only, no query text. */
+  runs?: RunRow[];
+  /** Whether each mode is on for this client (admins: always both). Drives which switch pills show. */
+  grantsOn?: boolean;
+  fundersOn?: boolean;
   /** Funders the client said they already know, from company setup (patch 14). */
   knownFunders?: KnownFunder[];
   /** Every source and whether it is searched (patch 11). */
@@ -281,8 +300,11 @@ export default function FunderMatchesView({
   const setAside = (kind: "grant" | "funder", id: string) => !isAdmin && viewOf(kind, id)?.state === "not_for_us";
   const visibleMatches = showSetAside ? visibleMatches0 : visibleMatches0.filter(m => !setAside("grant", m.grant_id));
   const visibleFunders = showSetAside ? visibleFunders0 : visibleFunders0.filter(f => !setAside("funder", f.funder_id));
-  const setAsideCount = matches.filter(m => setAside("grant", m.grant_id)).length
-    + funders.filter(f => setAside("funder", f.funder_id)).length;
+  // Counted for the mode on screen, so the toggle's number matches its table.
+  const modeSetAside = mode === "grants"
+    ? matches.filter(m => setAside("grant", m.grant_id)).length
+    : funders.filter(f => setAside("funder", f.funder_id)).length;
+  const modeRuledOut = mode === "grants" ? ruledOutGrants.length : ruledOutFunders.length;
   // Why rows were set aside, so the toggle names a reason rather than a number.
   const hiddenReasons = [...new Set(screened.hidden.map(h => h.reason))];
 
@@ -378,6 +400,44 @@ export default function FunderMatchesView({
     : matches.length ? (isAdmin ? "Re-run matching" : "Search again") : (isAdmin ? "Run matching" : "Search for funding");
   const hasResults = matches.length > 0 || funders.length > 0;
 
+  // The mode switch (patch 24): plain links, so the browser history works and
+  // nothing re-mounts the jobs machinery. A client sees only the modes turned
+  // on for them; the one-pill case shows no switch at all.
+  const modeHref = (m: FundingMode) => `/funding?mode=${m}${viewingAsClient ? "&view=client" : ""}`;
+  const pills: { m: FundingMode; label: string }[] = [];
+  if (isAdmin || grantsOn) pills.push({ m: "grants", label: "Grants" });
+  if (isAdmin || fundersOn) pills.push({ m: "funders", label: "Funders" });
+  const modeSwitch = pills.length > 1 ? (
+    <div role="group" aria-label="Grants or funders" className="fund-switch">
+      {pills.map(p => (
+        <a key={p.m} href={modeHref(p.m)} aria-current={mode === p.m ? "page" : undefined}
+           className={mode === p.m ? "on" : ""}>{p.label}</a>
+      ))}
+    </div>
+  ) : null;
+
+  // The snapshot tiles and the history rail read the lists as this session
+  // sees them (after screening, triage and the client's own Not-for-us), so
+  // the numbers match the tables below them.
+  const newGrants = () => visibleMatches.filter(m => firstSeen(m).label === "New").length;
+  const closingSoon = () => visibleMatches.filter(m => {
+    if (!m.close_date) return false;
+    const days = Math.ceil((new Date(m.close_date).getTime() - Date.now()) / 86_400_000);
+    return days >= 0 && days <= 30;
+  }).length;
+
+  // Freshness of the whole page: when the last search ran, in plain words,
+  // wearing the attention color from two weeks and graduating to a notice
+  // past thirty days (the staleness ladder, decided 10 Nov).
+  const latestRunAt = runs[0]?.ran_at ?? null;
+  const ageDays = latestRunAt ? Math.floor((Date.now() - new Date(latestRunAt).getTime()) / 86_400_000) : null;
+  const ageLabel = ageDays == null ? null
+    : ageDays <= 0 ? "Updated today" : ageDays === 1 ? "Updated yesterday"
+    : ageDays < 14 ? `Updated ${ageDays} days ago`
+    : ageDays <= 30 ? `Updated ${Math.round(ageDays / 7)} weeks ago`
+    : `Updated ${new Date(latestRunAt!).toLocaleDateString()}`;
+  const ageCls = ageDays == null ? "" : ageDays > 30 ? " fund-age-stale" : ageDays >= 14 ? " fund-age-aging" : "";
+
   /**
    * The heading and the page's actions (patch 12, the Storyboard rules): the
    * title first; Sources and the fit report as secondary buttons; rare tools in
@@ -387,9 +447,14 @@ export default function FunderMatchesView({
     <>
       <div className="page-head fm-head">
         <div className="fm-head-text">
-          <h2>Funder Matches</h2>
+          <div className="fund-title-row">
+            <h2>Funding</h2>
+            {modeSwitch}
+          </div>
           <p>
-            Opportunities and funders screened for {orgName}: eligibility first, then fit, then funding history.{" "}
+            {mode === "grants"
+              ? <>Open calls screened for {orgName}: eligibility first, then the soonest deadline.</>
+              : <>Funders whose giving lines up with {orgName}&apos;s work, with the evidence.</>}{" "}
             <InfoTip label="How to read these matches">
               {isAdmin
                 ? <>Anything not yet checked against Ground Truth is a <strong>lead, not a fact</strong>. Verify eligibility and deadlines on the funder&apos;s own site before it reaches a client or an application.</>
@@ -409,7 +474,7 @@ export default function FunderMatchesView({
           {isAdmin && (
             <MenuButton label="More Funder Matches actions" icon={DOTS}>
               <MenuItem title={`View as ${orgName}`} hint="This page exactly as the client sees it, with nothing changeable."
-                onClick={() => router.push("/funder-matches?view=client")} />
+                onClick={() => router.push(`/funding?mode=${mode}&view=client`)} />
               <MenuItem title="Clear cached matches" hint="Empties these tables. The next search builds them again."
                 disabled={!hasResults || pending} onClick={clear} />
             </MenuButton>
@@ -430,7 +495,7 @@ export default function FunderMatchesView({
       {viewingAsClient && (
         <div className="ov-note fm-asclient">
           You are seeing this page as {orgName} sees it: no contacts, no Search Profile, none of For Granted&apos;s
-          decisions, and nothing For Granted ruled out. <a href="/funder-matches">Back to For Granted&apos;s view</a>
+          decisions, and nothing For Granted ruled out. <a href={`/funding?mode=${mode}`}>Back to For Granted&apos;s view</a>
         </div>
       )}
 
@@ -554,30 +619,72 @@ export default function FunderMatchesView({
       {jobError && <div className="ap-error" role="alert">{jobError}</div>}
       {err && <div className="ap-error" role="alert">{err}</div>}
 
-      {/* What is on the page, and where: account for everything (guide 1.3). */}
-      {hasResults && (
-        <nav className="fm-strip" aria-label="On this page">
-          <a href="#fm-calls">{visibleMatches.length} open call{visibleMatches.length === 1 ? "" : "s"}</a>
-          {(visibleFunders.length > 0 || screened.hidden.length > 0)
-            ? <a href="#fm-funders">{visibleFunders.length} funder{visibleFunders.length === 1 ? "" : "s"}</a>
-            : <span className="fm-strip-meta">No funders shown</span>}
-          {webSection && <a href="#fm-web">Found on the web</a>}
-          <span className="spacer" />
-          {compiled && <span className="fm-strip-meta">Compiled {new Date(compiled).toLocaleDateString()}</span>}
-          {isAdmin && selfSearch !== null && (
-            <span className="fm-strip-meta">{orgName} {selfSearch ? "can" : "cannot"} run searches</span>
-          )}
-        </nav>
+      {/* Past thirty days the age graduates from a stamp to a notice (the
+          staleness ladder, 10 Nov): the one nudge this page is allowed. */}
+      {hasResults && canRun && ageDays != null && ageDays > 30 && (
+        <div className="ov-note">
+          These results are from {new Date(latestRunAt!).toLocaleDateString()}. A fresh search usually
+          finds new openings; the {isAdmin ? "Run matching" : "Search"} button above does it.
+        </div>
       )}
 
-      {matches.length === 0 && visibleFunders.length === 0 && !screened.hidden.length ? (
-        <div className="empty">
-          No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}
+      <div className="fund-body">
+        {/* The search history: every run, dates and counts only. Current
+            results always sit on top, with the page's freshness in plain
+            words. Results roll up into the tables; past runs are the record
+            of the work (decided 10 Nov). */}
+        <aside className="fund-rail" aria-label="Search history">
+          <div className="fund-rail-head">{mode === "grants" ? "Grant searches" : "Funder searches"}</div>
+          <div className="fund-run on">
+            <strong>Current results</strong>
+            <span className={`fund-run-meta${ageCls}`}>{ageLabel ?? (compiled ? `Compiled ${new Date(compiled).toLocaleDateString()}` : "No search yet")}</span>
+            <span className="fund-run-meta">
+              {mode === "grants"
+                ? `${visibleMatches.length} open call${visibleMatches.length === 1 ? "" : "s"}`
+                : `${visibleFunders.length} funder${visibleFunders.length === 1 ? "" : "s"}`}
+            </span>
+          </div>
+          {runs.map((r, i) => (
+            <div key={r.id} className="fund-run"
+              title={`${r.dropped} screened out · built from ${r.used_profile ? "the Inven(s)tory" : "the eligibility answers"}`}>
+              <strong>{new Date(r.ran_at).toLocaleDateString()}{i === 0 ? " · latest" : ""}</strong>
+              <span className="fund-run-meta">{r.kept} call{r.kept === 1 ? "" : "s"} · {r.funders} funder{r.funders === 1 ? "" : "s"}</span>
+            </div>
+          ))}
+          {runs.length === 0 && <span className="fund-run-meta fund-run-none">Searches appear here once the first one runs.</span>}
+          {isAdmin && selfSearch !== null && (
+            <span className="fund-run-meta fund-run-none">{orgName} {selfSearch ? "can" : "cannot"} run searches</span>
+          )}
+        </aside>
+
+        <div className="fund-main">
+      {/* The snapshot: four numbers that match the tables below them. */}
+      {hasResults && (
+        <div className="fund-tiles">
+          {mode === "grants" ? (
+            <>
+              <div className="fund-tile"><div className="fund-n">{visibleMatches.length}</div><div className="fund-l">Open call{visibleMatches.length === 1 ? "" : "s"}</div></div>
+              <div className="fund-tile"><div className="fund-n">{visibleMatches.filter(m => m.verdict === "eligible").length}</div><div className="fund-l">Eligible now</div></div>
+              <div className="fund-tile"><div className="fund-n">{closingSoon()}</div><div className="fund-l">Closing within 30 days</div></div>
+              <div className="fund-tile"><div className="fund-n">{newGrants()}</div><div className="fund-l">New this search</div></div>
+            </>
+          ) : (
+            <>
+              <div className="fund-tile"><div className="fund-n">{visibleFunders.length}</div><div className="fund-l">Aligned funder{visibleFunders.length === 1 ? "" : "s"}</div></div>
+              <div className="fund-tile"><div className="fund-n">{visibleFunders.filter(f => f.from_graph).length}</div><div className="fund-l">Already fund orgs like yours</div></div>
+              <div className="fund-tile"><div className="fund-n">{visibleFunders.filter(f => f.verified_at).length}</div><div className="fund-l">Verified by For Granted</div></div>
+              <div className="fund-tile"><div className="fund-n">{visibleFunders.filter(f => knownFunderMatch(f.name, knownFunders)).length}</div><div className="fund-l">Already known to you</div></div>
+            </>
+          )}
         </div>
-      ) : matches.length === 0 ? (
+      )}
+
+      {mode === "grants" && (matches.length === 0 ? (
         <div className="empty" id="fm-calls" data-tour="fm-results">
-          No open calls survived screening this run. The funders below are still worth
-          approaching: most foundation money never appears as a public call.
+          {!hasResults
+            ? <>No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}</>
+            : <>No open calls survived screening this run. The funders under the Funders
+              switch are still worth approaching: most foundation money never appears as a public call.</>}
         </div>
       ) : (
         <section id="fm-calls" className="fm-sec" aria-labelledby="fm-calls-h" data-tour="fm-results">
@@ -654,12 +761,22 @@ export default function FunderMatchesView({
           </table>
           </div>
         </section>
-      )}
+      ))}
 
       {/* Gated on hidden too. Otherwise a run where every funder is screened
           out hides the toggle inside the block the toggle would have to open,
           and the rows become unreachable rather than one click away. */}
-      {(visibleFunders.length > 0 || screened.hidden.length > 0) && (
+      {mode === "funders" && !hasResults && (
+        <div className="empty">
+          No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}
+        </div>
+      )}
+      {mode === "funders" && hasResults && visibleFunders.length === 0 && !screened.hidden.length && (
+        <div className="empty">
+          No funders to show from this search. The open calls under the Grants switch may still be worth a look.
+        </div>
+      )}
+      {mode === "funders" && (visibleFunders.length > 0 || screened.hidden.length > 0) && (
         <section id="fm-funders" className="fm-sec" aria-labelledby="fm-funders-h">
           <div className="fm-sec-head">
             <h3 id="fm-funders-h">Funders worth approaching</h3>
@@ -817,28 +934,31 @@ export default function FunderMatchesView({
         </section>
       )}
 
-      {!isAdmin && setAsideCount > 0 && (
+      {!isAdmin && modeSetAside > 0 && (
         <button type="button" className="sb-btn sb-quiet sb-sm fm-toggle" onClick={() => setShowSetAside(v => !v)}>
-          {showSetAside ? "Hide the ones you marked Not for us" : `Show ${setAsideCount} you marked Not for us`}
+          {showSetAside ? "Hide the ones you marked Not for us" : `Show ${modeSetAside} you marked Not for us`}
         </button>
       )}
 
-      {webSection}
+      {mode === "grants" && webSection}
 
-      {isAdmin && (ruledOutFunders.length > 0 || ruledOutGrants.length > 0) && (
+      {isAdmin && modeRuledOut > 0 && (
         <div className="ov-note tri-hidden">
           {/* Set aside, never silently. A shortlist that quietly drops rows is
               impossible to audit, and a wrong judgment would be invisible. */}
-          {ruledOutGrants.length > 0 && `${ruledOutGrants.length} opportunit${ruledOutGrants.length === 1 ? "y" : "ies"}`}
-          {ruledOutGrants.length > 0 && ruledOutFunders.length > 0 && " and "}
-          {ruledOutFunders.length > 0 && `${ruledOutFunders.length} funder${ruledOutFunders.length === 1 ? "" : "s"}`}
-          {" "}ruled out by For Granted and hidden from these tables.
+          {mode === "grants"
+            ? `${ruledOutGrants.length} opportunit${ruledOutGrants.length === 1 ? "y" : "ies"}`
+            : `${ruledOutFunders.length} funder${ruledOutFunders.length === 1 ? "" : "s"}`}
+          {" "}ruled out by For Granted and hidden from this table.
           {" "}
           <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => setShowRuledOut(v => !v)}>
             {showRuledOut ? "Hide them again" : "Show them"}
           </button>
         </div>
       )}
+
+        </div>
+      </div>
 
     </div>
   );

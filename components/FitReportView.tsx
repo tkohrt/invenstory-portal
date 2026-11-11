@@ -62,7 +62,7 @@ export default function FitReportView({ report, orgName, isAdmin, generatedAt, l
   return (
     <div className="fr-page">
       <div className="fr-actions no-print">
-        <a className="sb-btn sb-quiet sb-sm" href="/funder-matches">Funder Matches</a>
+        <a className="sb-btn sb-quiet sb-sm" href="/funding">Funding</a>
         <span className="spacer" />
         <div className="fr-filter" role="group" aria-label="Show">
           {(["all", "opportunity", "funder"] as const).map(k => (

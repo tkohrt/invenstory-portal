@@ -24,7 +24,13 @@ export const WORKSPACE_FEATURES: WorkspaceFeature[] = [
   // Funder matching against the Ledger. defaultVisible:false = hidden from
   // every client account until an admin turns it on for that client. For
   // Granted runs matches on the client's behalf in the meantime.
-  { key: "funder_matches", href: "/funder-matches", label: "Funder Matches",   icon: "◈", defaultVisible: false },
+  // Since the Funding split (patch 24, 11 Nov 2026) this key is GRANTS mode of
+  // the Funding page (Grant Finder). The stored per-client settings carry over
+  // unchanged: a client who had Funder Matches on has Grants mode on.
+  { key: "funder_matches", href: "/funding", label: "Funding: Grant Finder (Grants mode)", icon: "◈", defaultVisible: false },
+  // FUNDERS mode of the Funding page (Funder Compass). Its own switch, so the
+  // two tools can be turned on separately per client (decided 9 Nov 2026).
+  { key: "funder_compass", href: "/funding?mode=funders", label: "Funding: Funder Compass (Funders mode)", icon: "⌖", defaultVisible: false },
   // The client's own Story Cards, to verify, correct or mark out of date in
   // short batches (Phase 3.1). Hidden until an admin turns it on for a client,
   // like Funder Matches: Decision 1 of the drafter spec kept cards For Granted's

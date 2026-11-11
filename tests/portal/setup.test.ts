@@ -49,7 +49,7 @@ describe("progress", () => {
     expect(canSettle("next", "skipped", { layer3ReadAt: null })).toBe(false);
   });
   test("each goal opens its tool; anything else opens the Inven(s)tory", () => {
-    expect(goalPath("funders")).toBe("/funder-matches");
+    expect(goalPath("funders")).toBe("/funding");
     expect(goalPath("draft")).toBe("/drafts");
     expect(goalPath("nonsense")).toBe("/invenstory");
   });

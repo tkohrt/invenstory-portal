@@ -36,7 +36,7 @@ export async function switchGateFor(tenantId: string): Promise<GateResult & { in
   return { ...switchGate(input), input };
 }
 
-const PATHS = ["/admin/analysis", "/invenstory", "/funding-eligibility", "/analysis", "/story-cards", "/admin/card-library", "/funder-matches"];
+const PATHS = ["/admin/analysis", "/invenstory", "/funding-eligibility", "/analysis", "/story-cards", "/admin/card-library", "/funder-matches", "/funding"];
 
 /** Switch the client being viewed to the analysis. Checked on the server, whatever the page shows. */
 export async function switchToAnalysisAction() {

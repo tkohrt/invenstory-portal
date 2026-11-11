@@ -32,7 +32,7 @@ export const TOURS: Record<TourKey, Tour> = {
     ],
   },
   funder_matches: {
-    key: "funder_matches", path: "/funder-matches", name: "Funder Matches",
+    key: "funder_matches", path: "/funding", name: "Funding",
     steps: [
       { target: "fm-search", title: "Search for funding", body: "Runs a search for your organization. Every result is screened against your Funding Eligibility first." },
       { target: "fm-sources", title: "Sources", body: "Every database we search, whether it is on, and why. Automatic follows what you told us you are looking for." },

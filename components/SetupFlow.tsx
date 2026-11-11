@@ -686,7 +686,7 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
         <ul className="su-tools">
           <li><b>The Inven(s)tory</b><span>Everything that makes you fundable, in three layers and Story Cards.</span></li>
           {tools.chat && <li><b>Chat</b><span>Ask anything about your organization, or how the portal works.</span></li>}
-          {tools.funder_matches && <li><b>Funder Matches</b><span>Funders and open calls screened against your eligibility, with a fit report.</span></li>}
+          {tools.funder_matches && <li><b>Funding</b><span>Grants you can apply to and funders worth approaching, screened against your eligibility, with a fit report.</span></li>}
           {tools.drafts && <li><b>Drafts</b><span>The applications your For Granted team is preparing with you.</span></li>}
         </ul>
         {todo.length > 0 && <>

@@ -69,7 +69,7 @@ export function guideButtons(q: string, s: GuideStatus): GuideButton[] {
   const about = (re: RegExp) => re.test(t);
   if (about(/\b(search|funder|funders|match|matches|sources?|fit report|open calls?)\b/)) {
     if (missing.length && s.tools.eligibility) out.push({ kind: "link", href: "/funding-eligibility", label: "Open Funding Eligibility" });
-    if (s.tools.funder_matches) out.push({ kind: "tour", tour: "funder_matches", label: "Show me around Funder Matches" });
+    if (s.tools.funder_matches) out.push({ kind: "tour", tour: "funder_matches", label: "Show me around Funding" });
   }
   if (about(/\b(upload|document|documents|layer|layers|readiness|getting started|inven\(s\)tory|invenstory)\b/)) {
     out.push({ kind: "tour", tour: "invenstory", label: "Show me around the Inven(s)tory" });
@@ -93,10 +93,10 @@ export function statusLines(s: GuideStatus): string[] {
   const lines = [
     `Organization: ${s.orgName}. The person asking is ${s.role === "admin" ? "on the For Granted team" : "a client"}.`,
     missing.length
-      ? `Funder Matches cannot search yet: Funding Eligibility still needs ${missing.join(" and ")}.`
+      ? `Funding cannot search yet: Funding Eligibility still needs ${missing.join(" and ")}.`
       : "Funding Eligibility has what a search needs.",
     `Documents: Layer I ${s.docs.I}, Layer II ${s.docs.II}, Layer III ${s.docs.III}${s.docs.reading ? `, ${s.docs.reading} still being read` : ""}.`,
-    s.hasMatches ? "Funder Matches has results." : "Funder Matches has no results yet.",
+    s.hasMatches ? "Funding has results." : "Funding has no results yet.",
     s.selfSearch ? "This client can run searches themselves." : "Searches are run by the For Granted team for this client.",
   ];
   const off = Object.entries(s.tools).filter(([, on]) => !on).map(([k]) => TOOL_NAME[k as keyof GuideStatus["tools"]]);
@@ -106,7 +106,7 @@ export function statusLines(s: GuideStatus): string[] {
 }
 
 const TOOL_NAME: Record<keyof GuideStatus["tools"], string> = {
-  chat: "Chat", funder_matches: "Funder Matches", drafts: "Drafts", card_review: "Story Cards", eligibility: "Funding Eligibility",
+  chat: "Chat", funder_matches: "Funding", drafts: "Drafts", card_review: "Story Cards", eligibility: "Funding Eligibility",
 };
 const SETUP_NAME: Record<string, string> = {
   eligibility: "Funding Eligibility", layer1: "Layer I documents", layer2: "Layer II documents", layer3: "Layer III (living voice)",
@@ -129,8 +129,8 @@ Getting started lists the first things to do. The readiness check shows what fun
 FUNDING ELIGIBILITY
 Who can fund the organization: organization type, where it is registered, cause areas, and what kind of money it wants (grants, contracts and RFPs, accelerators and prizes). Optional answers sharpen matches: budget, other countries, federal (SAM.gov) registration, ability to match funds. A search needs at least the organization type and one cause area.
 
-FUNDER MATCHES
-Open calls and funders screened against Funding Eligibility first, then fit, then funding history. "Search for funding" runs a search (or the For Granted team runs it, for clients without self-service search). "Searching N of M sources" opens Sources: every database searched, whether it is on, and why; Automatic follows Funding Eligibility. Mark a lead "Worth a look" or "Not for us" and the For Granted team sees it. "Open the fit report" puts every lead on one printable page, grouped into Apply, Approach and Research first. Every match is a lead: check deadlines and eligibility on the funder's own site.
+FUNDING
+One page, two modes, switched with the Grants and Funders pills at the top (each mode can be turned on separately per client). GRANTS MODE (Grant Finder): open calls screened against Funding Eligibility first, then the soonest deadline, with a snapshot of counts above the table. FUNDERS MODE (Funder Compass): funders whose giving lines up with the organization's work, with the evidence of who they already fund. The left rail lists every past search with its date and counts; "Current results" on top says how fresh the page is. "Search for funding" runs a search of both modes at once (or the For Granted team runs it, for clients without self-service search). Sources shows every database searched, whether it is on, and why; Automatic follows Funding Eligibility. Mark a lead "Worth a look" or "Not for us" and the For Granted team sees it. "Open the fit report" puts every lead on one printable page, grouped into Apply, Approach and Research first. Every match is a lead: check deadlines and eligibility on the funder's own site.
 
 CHAT
 Two tabs. "Chat with your Inven(s)tory" answers questions about the organization from its own Story Cards and documents, naming each source; select a source to open the document. Its questions count toward the monthly AI allowance. "Portal Guide" answers how to use the portal and never counts against the allowance. Enter sends; Shift and Enter makes a new line; Stop ends an answer being written. Past conversations are kept in the side panel; "+ New chat" starts another.

@@ -527,6 +527,28 @@ export async function getLastRunQueries(tenantId: string): Promise<RunQuery[]> {
   return ((data?.queries ?? []) as RunQuery[]);
 }
 
+/**
+ * The search history rail (Funding split, patch 24): every run with its date
+ * and counts, newest first. CLIENT-SAFE BY CONSTRUCTION: no `queries` column,
+ * so the exact query text (For Granted's working view) never leaves the
+ * server for a client session. Counts and dates only.
+ */
+export interface RunHistoryRow {
+  id: string; ran_at: string; kept: number; dropped: number;
+  funders: number; used_profile: boolean;
+}
+export async function getRunHistory(tenantId: string, limit = 10): Promise<RunHistoryRow[]> {
+  const { data, error } = await db.from("match_run")
+    .select("id, ran_at, kept, dropped, funders, used_profile")
+    .eq("tenant_id", tenantId)
+    .order("ran_at", { ascending: false })
+    .limit(limit);
+  // Best-effort: the rail is context, never the content. An empty rail beats
+  // a broken page.
+  if (error) return [];
+  return (data ?? []) as RunHistoryRow[];
+}
+
 /** How many matches are still waiting for a real explanation. */
 export async function pendingRationaleCount(tenantId: string): Promise<number> {
   const { count } = await db.from("eligible_grant")

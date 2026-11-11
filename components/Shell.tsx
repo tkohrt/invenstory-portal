@@ -97,7 +97,8 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     { key: "drafts",         href: "/drafts",          ic: "✎", label: "Drafts",                 toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
-    { key: "funder_matches", href: "/funder-matches",  ic: "◈", label: "Funder Matches",        toggle: true },
+    // One nav item for both Funding modes; see the visibility special case below.
+    { key: "funder_matches", href: "/funding",          ic: "◈", label: "Funding",               toggle: true },
     { key: "card_review",    href: "/story-cards",     ic: "▣", label: "Story Cards",           toggle: true },
     { key: "analysis",       href: "/analysis",        ic: "◎", label: "Analyze my Inven(s)tory", toggle: true },
   ];
@@ -187,7 +188,14 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               </Link>
             );
           }
-          const visible = item.toggle ? (workspaceVis[item.key!] ?? false) : true;
+          // Funding is one nav item backed by two switches (patch 24): it shows
+          // when EITHER mode is on for this client. The modes themselves are
+          // clamped on the page.
+          const visible = item.toggle
+            ? item.key === "funder_matches"
+              ? (workspaceVis.funder_matches ?? false) || (workspaceVis.funder_compass ?? false)
+              : (workspaceVis[item.key!] ?? false)
+            : true;
           if (item.toggle && !admin && !visible) return null;
           return (
             <Link key={item.href} onClick={closeNav}

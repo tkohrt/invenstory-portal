@@ -44,7 +44,7 @@ export async function hideFactAction(factId: string, note?: string) {
     edited_by: s.user.id, updated_at: new Date().toISOString(),
   }, { onConflict: "tenant_id,fact_id" });
   if (error) throw new Error(`Could not remove that line: ${error.message}`);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }
 
 /** Rewrite the clause, keeping the quote it was drawn from. */
@@ -67,7 +67,7 @@ export async function editFactAction(factId: string, text: string, facet?: strin
     edited_by: s.user.id, updated_at: new Date().toISOString(),
   }, { onConflict: "tenant_id,fact_id" });
   if (error) throw new Error(`Could not save that edit: ${error.message}`);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }
 
 /**
@@ -92,7 +92,7 @@ export async function addFactAction(facet: string, text: string, note?: string) 
     edited_by: s.user.id,
   });
   if (error) throw new Error(`Could not add that line: ${error.message}`);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }
 
 /** Undo any correction, putting the extracted line back as it was. */
@@ -102,5 +102,5 @@ export async function restoreFactAction(factId: string) {
   const { error } = await db.from("profile_edit")
     .delete().eq("tenant_id", s.tenantId).eq("fact_id", factId);
   if (error) throw new Error(`Could not restore that line: ${error.message}`);
-  revalidatePath("/funder-matches");
+  revalidatePath("/funder-matches"); revalidatePath("/funding");
 }

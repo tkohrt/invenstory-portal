@@ -142,7 +142,7 @@ export async function saveFundingSoFarAction(input: { known_funders?: unknown; d
     : state.answers;
   const err = await write(s.tenantId, { answers, steps: withStep(state, "funding", how) });
   if (err) return { ok: false, error: "That did not save. Please try again." };
-  revalidatePath("/setup"); revalidatePath("/funder-matches");
+  revalidatePath("/setup"); revalidatePath("/funder-matches"); revalidatePath("/funding"); revalidatePath("/funding");
   return { ok: true };
 }
 
