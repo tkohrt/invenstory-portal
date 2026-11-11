@@ -29,7 +29,7 @@ import type { GrantCard, FunderCard, RawGrantResult } from "@/lib/ledger-types";
 import { screenGrant, needText, typicalGrantSize, normalizeGrant, dedupeScreened, qualifyGrantIds, GRANT_ID_MAX } from "@/lib/grant-screen";
 // Public international sources (patch 4, 1 Nov 2026): planned from the profile,
 // searched in parallel with Ground Truth, screened by the same rules.
-import { searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, canadaFunderRows, searchCountries, MAX_IATI_COUNTRIES } from "@/lib/open-data";
+import { searchPhrases, keepForProfile, toGrantCard, iatiFunderRows, threeSixtyFunderRows, canadaFunderRows, searchCountries, MAX_IATI_COUNTRIES, SOURCE_LABEL } from "@/lib/open-data";
 import { countryName } from "@/lib/countries";
 import { resolveSources, planFromSources } from "@/lib/sources";
 import { getSourceSettings, sourceAvailability } from "./sources";
@@ -336,7 +336,20 @@ export async function runMatch(
   // before the delete so disappearances are reported, never silent.
   let swept = 0;
   let sweptTitles: string[] = [];
+  let newIds: string[] = [];
+  let newTitles: string[] = [];
   if (screened.length) {
+    // What this run newly found (migration 0082), judged against the cache as
+    // it stood BEFORE the upsert, and recorded on the run itself. The run
+    // record is the durable place: eligible_grant rows get swept, and a rail
+    // summary read weeks later should still name what that search turned up.
+    const { data: beforeRows } = await db.from("eligible_grant")
+      .select("grant_id").eq("tenant_id", tenantId);
+    const beforeIds = new Set((beforeRows ?? []).map(r => r.grant_id));
+    const newRows = screened.filter(s => !beforeIds.has(s.grant_id.slice(0, GRANT_ID_MAX)));
+    newIds = newRows.map(s => s.grant_id.slice(0, GRANT_ID_MAX)).slice(0, 50);
+    newTitles = newRows.map(s => s.title).filter((t): t is string => !!t).slice(0, 10);
+
     const { error } = await db.from("eligible_grant").upsert(
       screened.map(s => ({
         tenant_id: tenantId, grant_id: s.grant_id.slice(0, GRANT_ID_MAX), verdict: s.verdict,
@@ -461,6 +474,7 @@ export async function runMatch(
     // watchlist (patch 26) is deliberately not part of that number.
     kept: screened.filter(s => s.verdict !== "watch").length, dropped, funders: funderRows.length,
     swept, swept_titles: sweptTitles,
+    new_ids: newIds, new_titles: newTitles,
   };
   // Fill in the row opened before the calls. Inserting a second one when that
   // failed keeps the record complete rather than losing this run's queries
@@ -577,17 +591,51 @@ export interface RunHistoryRow {
   id: string; ran_at: string; kept: number; dropped: number;
   funders: number; used_profile: boolean;
   swept: number; swept_titles: string[];
+  /** What that run newly found (0082); empty for runs before it. */
+  new_titles: string[];
+  /** Which sources answered, as display labels only. Never query text. */
+  sources: string[];
 }
+
+/**
+ * Which sources a run searched, as labels a client may see. Derived from the
+ * run's query log but shipping ONLY the track names translated to labels: the
+ * query text itself stays server-side, which is the rail's standing rule.
+ */
+function runSources(queries: unknown): string[] {
+  if (!Array.isArray(queries)) return [];
+  const out: string[] = [];
+  for (const q of queries as { track?: string; ok?: boolean }[]) {
+    const t = typeof q?.track === "string" ? q.track : "";
+    const label =
+      t === "grants" || t === "funders" || t === "watch" ? "Ground Truth"
+      : t.startsWith("open:") ? (SOURCE_LABEL[t.slice(5)] ?? null)
+      : null;
+    if (label && q?.ok !== false && !out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
 export async function getRunHistory(tenantId: string, limit = 10): Promise<RunHistoryRow[]> {
   const { data, error } = await db.from("match_run")
-    .select("id, ran_at, kept, dropped, funders, used_profile, swept, swept_titles")
+    .select("id, ran_at, kept, dropped, funders, used_profile, swept, swept_titles, new_titles, queries")
     .eq("tenant_id", tenantId)
     .order("ran_at", { ascending: false })
     .limit(limit);
   // Best-effort: the rail is context, never the content. An empty rail beats
   // a broken page.
   if (error) return [];
-  return (data ?? []) as RunHistoryRow[];
+  // Mapped field by field ON PURPOSE: queries holds the exact query text and
+  // must never ride along to a client session. Only its derived labels leave.
+  return (data ?? []).map(r => ({
+    id: r.id as string, ran_at: r.ran_at as string,
+    kept: (r.kept as number) ?? 0, dropped: (r.dropped as number) ?? 0,
+    funders: (r.funders as number) ?? 0, used_profile: !!r.used_profile,
+    swept: (r.swept as number) ?? 0,
+    swept_titles: (r.swept_titles as string[]) ?? [],
+    new_titles: (r.new_titles as string[]) ?? [],
+    sources: runSources(r.queries),
+  }));
 }
 
 /** How many matches are still waiting for a real explanation. */

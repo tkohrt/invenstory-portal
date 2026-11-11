@@ -2137,6 +2137,14 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .fm-page .fund-run strong{font-size:13px;color:var(--ink)}
 .fm-page .fund-run-meta{font-size:12px;color:#5b6170}
 .fm-page .fund-run-none{padding:4px 9px}
+/* Read-only run summaries (patch 27): the rail entry is a button; its summary
+   opens inline beneath it. */
+.fm-page .fund-run-btn{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;
+  background:none;border:0;padding:0;font:inherit;color:inherit;border-radius:6px}
+.fm-page .fund-run-btn:hover strong{text-decoration:underline}
+.fm-page .fund-run-detail{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);
+  font-size:12px;color:#5b6170;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+.fm-page .fund-run-detail strong{font-size:12px;color:var(--ink)}
 .fm-page .fund-age-aging{color:#8a6514;font-weight:600}
 .fm-page .fund-age-stale{color:#8a2f22;font-weight:600}
 .fm-page .fund-digest{display:flex;align-items:center;gap:10px;flex-wrap:wrap}

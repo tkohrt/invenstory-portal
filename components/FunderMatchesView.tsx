@@ -45,6 +45,10 @@ export interface RunRow {
   id: string; ran_at: string; kept: number; dropped: number;
   funders: number; used_profile: boolean;
   swept: number; swept_titles: string[];
+  /** Patch 27 (0082): what that run newly found, and which sources answered
+      (labels only). Empty for runs recorded before the migration. */
+  new_titles: string[];
+  sources: string[];
 }
 
 /** One saved-for-later row (patch 26), mirroring lib/server/saved.ts. */
@@ -468,6 +472,9 @@ export default function FunderMatchesView({
   // dismissible line reports what happened, disappearances included.
   const [digestFor, setDigestFor] = useState<string | null>(null);
 
+  // Which past search's summary is open in the rail (patch 27); one at a time.
+  const [openRun, setOpenRun] = useState<string | null>(null);
+
   // Save for later (patch 26): the star. Optimistic, with the server's answer
   // winning: a failed toggle puts the star back and says why.
   const savedKeyOf = (kind: string, id: string) => `${kind}:${id}`;
@@ -756,11 +763,33 @@ export default function FunderMatchesView({
                 : `${visibleFunders.length} funder${visibleFunders.length === 1 ? "" : "s"}`}
             </span>
           </div>
+          {/* Each past search opens a lightweight read-only summary (patch 27,
+              decided 10 Nov): results roll up into Current results only, and
+              the rail keeps the record of the work. Dates, counts and source
+              labels, never the query text. */}
           {runs.map((r, i) => (
-            <div key={r.id} className="fund-run"
-              title={`${r.dropped} screened out${r.swept ? ` · ${r.swept} dropped off the list` : ""} · built from ${r.used_profile ? "the Inven(s)tory" : "the eligibility answers"}`}>
-              <strong>{new Date(r.ran_at).toLocaleDateString()}{i === 0 ? " · latest" : ""}</strong>
-              <span className="fund-run-meta">{r.kept} call{r.kept === 1 ? "" : "s"} · {r.funders} funder{r.funders === 1 ? "" : "s"}</span>
+            <div key={r.id} className="fund-run">
+              <button type="button" className="fund-run-btn" aria-expanded={openRun === r.id}
+                onClick={() => setOpenRun(openRun === r.id ? null : r.id)}
+                title={openRun === r.id ? "Close this search's summary" : "Open this search's summary"}>
+                <strong>{new Date(r.ran_at).toLocaleDateString()}{i === 0 ? " · latest" : ""}</strong>
+                <span className="fund-run-meta">{r.kept} call{r.kept === 1 ? "" : "s"} · {r.funders} funder{r.funders === 1 ? "" : "s"}</span>
+              </button>
+              {openRun === r.id && (
+                <div className="fund-run-detail">
+                  <div>{new Date(r.ran_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
+                  <div>{r.kept} open call{r.kept === 1 ? "" : "s"} kept · {r.dropped} screened out · {r.funders} funder{r.funders === 1 ? "" : "s"}</div>
+                  {r.new_titles.length > 0 && (
+                    <div><strong>New that search:</strong> {r.new_titles.join("; ")}</div>
+                  )}
+                  {r.swept > 0 && (
+                    <div><strong>No longer open after it:</strong> {r.swept_titles.length ? r.swept_titles.join("; ") : `${r.swept} call${r.swept === 1 ? "" : "s"}`}</div>
+                  )}
+                  {r.sources.length > 0 && <div>Searched: {r.sources.join(", ")}</div>}
+                  <div>Built from {r.used_profile ? "the Inven(s)tory" : "the eligibility answers"}.</div>
+                  <div className="ov-muted">Results roll up into Current results; this is the record of the search.</div>
+                </div>
+              )}
             </div>
           ))}
           {runs.length === 0 && <span className="fund-run-meta fund-run-none">Searches appear here once the first one runs.</span>}
