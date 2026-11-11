@@ -26,6 +26,34 @@ describe("screenGrant", () => {
     expect(screenGrant(grant({}), nonprofit, TODAY)).not.toBeNull();
   });
 
+  // The Watchlist (patch 26): with allowClosed a closed call runs the full
+  // screen, and only a clean fit earns the watch verdict.
+  test("allowClosed: a closed 501(c)(3) fit becomes watch, not null", () => {
+    const g = grant({ close_date: "2026-07-01", eligibility: "Open to 501(c)(3) organizations only." });
+    const r = screenGrant(g, nonprofit, TODAY, { allowClosed: true });
+    expect(r?.verdict).toBe("watch");
+    expect(r?.reason).toMatch(/last cycle closed/);
+  });
+
+  test("allowClosed: closed with a blocker is still dropped", () => {
+    const g = grant({ close_date: "2026-07-01", agency: "grants.gov", eligibility: "See the NOFO." });
+    expect(screenGrant(g, nonprofit, TODAY, { allowClosed: true })).toBeNull();
+  });
+
+  test("allowClosed: closed with nothing but topical similarity is dropped", () => {
+    expect(screenGrant(grant({ close_date: "2026-07-01" }), nonprofit, TODAY, { allowClosed: true })).toBeNull();
+  });
+
+  test("allowClosed: an open call keeps its normal verdict", () => {
+    const g = grant({ close_date: "2026-12-01", eligibility: "Open to 501(c)(3) organizations only." });
+    expect(screenGrant(g, nonprofit, TODAY, { allowClosed: true })?.verdict).toBe("eligible");
+  });
+
+  test("without allowClosed a closed fit still drops (default unchanged)", () => {
+    const g = grant({ close_date: "2026-07-01", eligibility: "Open to 501(c)(3) organizations only." });
+    expect(screenGrant(g, nonprofit, TODAY)).toBeNull();
+  });
+
   test("keeps a future deadline", () => {
     const r = screenGrant(grant({ close_date: "2026-12-01" }), nonprofit, TODAY);
     expect(r?.close_date).toBe("2026-12-01");

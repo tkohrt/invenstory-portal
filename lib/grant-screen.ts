@@ -82,7 +82,7 @@ export function normalizeGrant(r: RawGrantResult): GrantCard {
   };
 }
 
-export type Verdict = "eligible" | "likely" | "check";
+export type Verdict = "eligible" | "likely" | "check" | "watch";
 
 export interface ScreenedGrant {
   grant_id: string; title: string; verdict: Verdict; reason: string;
@@ -270,8 +270,18 @@ export function qualifyGrantIds<T extends { opportunity_number?: string; title?:
  * Returns null to DROP the opportunity outright (closed, or structurally
  * impossible). Otherwise a verdict: "eligible" only when a rule affirmatively
  * matched, "check" whenever the honest answer is that a human must read it.
+ *
+ * The Watchlist (patch 26): with allowClosed, a closed call is no longer
+ * dropped outright. It runs the full screen, and only if nothing blocks it
+ * does it come back as "watch": the last cycle has closed but the fit is
+ * real, so it is worth watching for the next one. Closed AND blocked is
+ * still null; a lead that needs a caveat before it is even open is not a
+ * lead worth a client's watchlist.
  */
-export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Date()): ScreenedGrant | null {
+export function screenGrant(
+  g: GrantCard, p: EligibilityProfile, today = new Date(),
+  opts?: { allowClosed?: boolean },
+): ScreenedGrant | null {
   const title = g.title ?? g.name ?? g.opportunity_number ?? "Untitled opportunity";
   // The id is assigned once by qualifyGrantIds, before the merge, and must not
   // be recomputed here — a second opinion about a record's identity is exactly
@@ -281,9 +291,15 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
   const ceiling = g.max_award ?? g.award_ceiling ?? null;
 
   // Closed is closed. Rolling opportunities carry no close_date and survive.
+  // Under allowClosed a closed call is remembered and screened anyway: it can
+  // still earn a place on the watchlist below, but never among open calls.
+  let closed = false;
   if (g.close_date) {
     const d = new Date(g.close_date);
-    if (!isNaN(d.getTime()) && d < today) return null;
+    if (!isNaN(d.getTime()) && d < today) {
+      if (!opts?.allowClosed) return null;
+      closed = true;
+    }
   }
 
   // Two separate ledgers: what stops this being actionable, and what makes it
@@ -340,6 +356,16 @@ export function screenGrant(g: GrantCard, p: EligibilityProfile, today = new Dat
 
   const reasons = [...blockers, ...positives];
   if (!reasons.length) reasons.push("topical alignment only; eligibility text needs a human read");
+
+  // The watchlist rung (patch 26). Only clean fits make it: a closed call
+  // that would already need a caveat while open is dropped, not watched, and
+  // so is one with nothing going for it beyond topical similarity. The
+  // watchlist is a promise about next year; it has to be earned.
+  if (closed) {
+    if (blockers.length || (!invited && !positives.length)) return null;
+    verdict = "watch";
+    reasons.unshift(`last cycle closed ${new Date(g.close_date!).toLocaleDateString("en-US")}; funders often run the same programme on a similar calendar each year`);
+  }
 
   return {
     grant_id: id, title, verdict, reason: reasons.join("; "),

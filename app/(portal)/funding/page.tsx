@@ -20,6 +20,7 @@ import { getClientViews, selfSearchOn } from "@/lib/server/client-view";
 import { suppresses } from "@/lib/triage";
 import type { Judgment } from "@/lib/server/triage";
 import { getSourceStates, getLastRunBySource } from "@/lib/server/sources";
+import { getSavedItems } from "@/lib/server/saved";
 import { getWorkspaceVisibility } from "@/lib/server/data";
 import type { FundingMode } from "@/components/FunderMatchesView";
 
@@ -71,7 +72,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   const webOffReason = !webSearchAvailable()
     ? (asAdmin ? "Web search needs the AgentCore web search gateway in this environment." : "The web search is not available right now.")
     : webState && !webState.on ? `The web search is off. ${webState.unavailable ?? webState.why} See Sources.` : null;
-  const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn, runs] = await Promise.all([
+  const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn, runs, savedItems] = await Promise.all([
     getTenant(session.tenantId),
     getCachedMatches(session.tenantId),
     getCachedFunders(session.tenantId),
@@ -85,6 +86,8 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
     selfSearchOn(session.tenantId),
     // The history rail: dates and counts only, safe for every session.
     getRunHistory(session.tenantId).catch(() => []),
+    // The save-for-later bucket (patch 26), tenant's own rows only.
+    getSavedItems(session.tenantId),
   ]);
 
   const ruledOut = new Set<string>();
@@ -167,6 +170,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       knownFunders={knownFunders}
       mode={mode}
       runs={runs}
+      savedItems={savedItems}
       seenAt={seenAt}
       grantsOn={grantsOn}
       fundersOn={fundersOn}

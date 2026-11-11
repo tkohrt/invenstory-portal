@@ -164,8 +164,16 @@ export async function runMatch(
   await warmLedger(RUN_WAKE_MS).catch(() => null);
 
   step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
-  const [grantEnvs, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
+  const [grantEnvs, watchEnv, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
+    // The watch track (patch 26): one extra question with closed calls allowed,
+    // so recently-closed-but-aligned programmes can reach the watchlist. One
+    // query, the primary need, because this track feeds a short "worth
+    // watching" panel, not the shortlist. A failure here costs the panel, never
+    // the run: it is deliberately outside the outage check below.
+    grantQs.length
+      ? attempt(`watch query "${grantQs[0].slice(0, 60)}"`, () => findGrants({ need: grantQs[0], open_only: false }))
+      : Promise.resolve({ ok: true as const, results: [] }),
     Promise.all(funderQs.map(need => attempt(`funder query "${need.slice(0, 60)}"`, () =>
       findFunders({ need, location: p.state_code ?? undefined, grant_size: size })))),
     attempt("graph query", () => fundersLikeMine({
@@ -192,7 +200,10 @@ export async function runMatch(
   const failedQueries = [...grantEnvs, ...funderEnvs].filter(e => !e.ok).length;
 
   const grantsEnv = {
-    results: grantEnvs.flatMap(e => e.results),
+    // Watch-track results join the same pool: qualifyGrantIds drops exact
+    // duplicates (same link AND title), so a call found by both tracks is one
+    // record, and screening with allowClosed sorts open from watch by date.
+    results: [...grantEnvs.flatMap(e => e.results), ...watchEnv.results],
     // The first note from any query that actually ran, not from a slot that
     // failed and has no note to give.
     note: grantEnvs.find(e => e.ok && e.note)?.note,
@@ -257,7 +268,7 @@ export async function runMatch(
   const collected: ScreenedGrant[] = [];
   let dropped = 0;
   for (const rec of merged) {
-    const s = screenGrant(rec as unknown as GrantCard, p);
+    const s = screenGrant(rec as unknown as GrantCard, p, new Date(), { allowClosed: true });
     if (!s) { dropped += 1; continue; }
     if (rec._overlay) {
       s.from_overlay = true;
@@ -270,14 +281,24 @@ export async function runMatch(
 
   // Several programmes can share one landing page, so ids must be made unique
   // before they reach a single upsert batch.
-  const screened = dedupeScreened(collected);
+  const deduped = dedupeScreened(collected);
 
-  // Sort by how confidently we can act: eligible, then likely, then check;
-  // soonest deadline first inside each band, rolling last.
-  const rank: Record<Verdict, number> = { eligible: 0, likely: 1, check: 2 };
-  screened.sort((a, b) =>
+  // Sort by how confidently we can act: eligible, then likely, then check,
+  // then the watchlist; soonest deadline first inside each open band, rolling
+  // last. Watch rows sort the other way: the most recently closed call is the
+  // one most likely to reopen soonest, so it leads.
+  const rank: Record<Verdict, number> = { eligible: 0, likely: 1, check: 2, watch: 3 };
+  deduped.sort((a, b) =>
     rank[a.verdict] - rank[b.verdict] ||
-    (a.close_date ?? "9999").localeCompare(b.close_date ?? "9999"));
+    (a.verdict === "watch" && b.verdict === "watch"
+      ? (b.close_date ?? "0000").localeCompare(a.close_date ?? "0000")
+      : (a.close_date ?? "9999").localeCompare(b.close_date ?? "9999")));
+
+  // The watchlist is a short panel, not a second shortlist. Cap it after the
+  // sort so the most recently closed survive the cut.
+  const MAX_WATCH = 8;
+  let watchKept = 0;
+  const screened = deduped.filter(s => s.verdict !== "watch" || ++watchKept <= MAX_WATCH);
 
   /**
    * SAVE FIRST, EXPLAIN AFTER. The order here is the whole point.
@@ -426,6 +447,8 @@ export async function runMatch(
   const queries = [
     ...grantQs.map((text, i) => ({ track: "grants" as const, text, ok: grantEnvs[i]?.ok ?? false, results: grantEnvs[i]?.results.length ?? 0 })),
     ...funderQs.map((text, i) => ({ track: "funders" as const, text, ok: funderEnvs[i]?.ok ?? false, results: funderEnvs[i]?.results.length ?? 0 })),
+    // The watch track (patch 26), recorded like any other question that ran.
+    ...(grantQs.length ? [{ track: "watch" as const, text: grantQs[0], ok: watchEnv.ok, results: watchEnv.results.length }] : []),
     // What each public source was asked, kept beside Ground Truth's queries.
     ...openRes.calls.map(c => ({ track: `open:${c.source}`, text: c.note ? `${c.text} (${c.note})` : c.text, ok: c.ok, results: c.results })),
   ];
@@ -434,7 +457,9 @@ export async function runMatch(
     profile_note: (health?.note ?? null) && failedQueries
       ? `${health?.note ?? ""} ${failedQueries} of ${queries.length} queries failed this run.`.trim()
       : health?.note ?? null,
-    kept: screened.length, dropped, funders: funderRows.length,
+    // kept means OPEN calls: the digest line reads it as such, and the
+    // watchlist (patch 26) is deliberately not part of that number.
+    kept: screened.filter(s => s.verdict !== "watch").length, dropped, funders: funderRows.length,
     swept, swept_titles: sweptTitles,
   };
   // Fill in the row opened before the calls. Inserting a second one when that

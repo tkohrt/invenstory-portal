@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
 import { markFundingSeenAction } from "@/lib/server/account-actions";
+import { toggleSavedAction } from "@/lib/server/saved-actions";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
 import { looksAsleep } from "@/lib/ledger-wake";
@@ -46,6 +47,13 @@ export interface RunRow {
   swept: number; swept_titles: string[];
 }
 
+/** One saved-for-later row (patch 26), mirroring lib/server/saved.ts. */
+export interface SavedRow {
+  kind: "grant" | "funder"; target_id: string; title: string | null;
+  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null };
+  saved_at: string;
+}
+
 interface Cached {
   grant_id: string; verdict: Verdict; reason: string | null;
   close_date: string | null; award_ceiling: number | null; matched_at: string;
@@ -57,7 +65,7 @@ interface Cached {
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
-  eligible: "Eligible", likely: "Likely", check: "Needs a check",
+  eligible: "Eligible", likely: "Likely", check: "Needs a check", watch: "Watchlist",
 };
 
 // What each rung of the ladder actually means, shown on hover.
@@ -95,6 +103,9 @@ const VERDICT_HELP: Record<Verdict, string> = {
   check:
     "Either something is blocking (federal money without SAM.gov, a cost match you cannot meet), "
     + "or there is nothing to go on but topical similarity. Read the eligibility text before spending time on it.",
+  watch:
+    "Not open right now. The last cycle has closed and the fit looks real, so it is worth watching "
+    + "for the next one. Save it, and confirm dates on the funder's own page as the season approaches.",
 };
 
 /**
@@ -196,11 +207,13 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null,
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [],
 }: {
   /** When this client last visited this mode (patch 25); null for admins, the
       as-client preview, and a first visit. Drives the NEW tags. */
   seenAt?: string | null;
+  /** The save-for-later bucket (patch 26). Survives sweeps; newest first. */
+  savedItems?: SavedRow[];
   /** Which Funding mode this page shows (patch 24). The page clamps it to an enabled mode for clients. */
   mode?: FundingMode;
   /** The search history, newest first: dates and counts only, no query text. */
@@ -306,6 +319,11 @@ export default function FunderMatchesView({
   const setAside = (kind: "grant" | "funder", id: string) => !isAdmin && viewOf(kind, id)?.state === "not_for_us";
   const visibleMatches = showSetAside ? visibleMatches0 : visibleMatches0.filter(m => !setAside("grant", m.grant_id));
   const visibleFunders = showSetAside ? visibleFunders0 : visibleFunders0.filter(f => !setAside("funder", f.funder_id));
+  // The Watchlist (patch 26): closed-but-aligned calls live under their own
+  // panel, never among open calls, so every "open" number excludes them.
+  const openMatches = visibleMatches.filter(m => m.verdict !== "watch");
+  const watchMatches = visibleMatches.filter(m => m.verdict === "watch");
+  const openMatchesAll = matches.filter(m => m.verdict !== "watch");
   // Counted for the mode on screen, so the toggle's number matches its table.
   const modeSetAside = mode === "grants"
     ? matches.filter(m => setAside("grant", m.grant_id)).length
@@ -450,11 +468,57 @@ export default function FunderMatchesView({
   // dismissible line reports what happened, disappearances included.
   const [digestFor, setDigestFor] = useState<string | null>(null);
 
+  // Save for later (patch 26): the star. Optimistic, with the server's answer
+  // winning: a failed toggle puts the star back and says why.
+  const savedKeyOf = (kind: string, id: string) => `${kind}:${id}`;
+  const savedBase = new Set(savedItems.map(s2 => savedKeyOf(s2.kind, s2.target_id)));
+  const [savedOverride, setSavedOverride] = useState<Record<string, boolean>>({});
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const isSaved = (kind: "grant" | "funder", id: string) =>
+    savedOverride[savedKeyOf(kind, id)] ?? savedBase.has(savedKeyOf(kind, id));
+  const toggleSave = async (m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null }) => {
+    const key = savedKeyOf("grant", m.grant_id);
+    const next = !isSaved("grant", m.grant_id);
+    setSavedOverride(o => ({ ...o, [key]: next }));
+    const r = await toggleSavedAction({
+      kind: "grant", target_id: m.grant_id, title: m.title,
+      detail: { funder: m.funder, url: m.url, close_date: m.close_date, award_ceiling: m.award_ceiling },
+    });
+    if ("error" in r) { setSavedOverride(o => ({ ...o, [key]: !next })); setSaveErr(r.error); }
+    else setSaveErr(null);
+  };
+  const SaveStar = ({ m }: { m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null } }) => {
+    const on = isSaved("grant", m.grant_id);
+    return (
+      <button type="button" className={`fm-star${on ? " fm-star-on" : ""}`} aria-pressed={on}
+        title={on ? "Remove from your saved list." : "Save for later. Saved grants keep their place even after a new search replaces this list."}
+        onClick={() => void toggleSave(m)}>
+        {on ? "★ Saved" : "☆ Save"}
+      </button>
+    );
+  };
+  // The saved bucket as this visit sees it: the server list, minus removals,
+  // plus stars pressed just now (rendered from the live row they came from).
+  const savedGrants = [
+    ...Object.entries(savedOverride)
+      .filter(([k, v]) => v && k.startsWith("grant:") && !savedBase.has(k))
+      .map(([k]) => {
+        const id = k.slice("grant:".length);
+        const m = matches.find(x => x.grant_id === id);
+        return {
+          kind: "grant" as const, target_id: id, title: m?.title ?? id,
+          detail: { funder: m?.funder ?? null, url: m?.url ?? null, close_date: m?.close_date ?? null, award_ceiling: m?.award_ceiling ?? null },
+          saved_at: new Date().toISOString(),
+        };
+      }),
+    ...savedItems.filter(s2 => s2.kind === "grant"),
+  ].filter(s2 => savedOverride[savedKeyOf("grant", s2.target_id)] !== false);
+
   // The snapshot tiles and the history rail read the lists as this session
   // sees them (after screening, triage and the client's own Not-for-us), so
   // the numbers match the tables below them.
-  const newGrants = () => visibleMatches.filter(m => rowIsNew(m)).length;
-  const closingSoon = () => visibleMatches.filter(m => {
+  const newGrants = () => openMatches.filter(m => rowIsNew(m)).length;
+  const closingSoon = () => openMatches.filter(m => {
     if (!m.close_date) return false;
     const days = Math.ceil((new Date(m.close_date).getTime() - Date.now()) / 86_400_000);
     return days >= 0 && days <= 30;
@@ -688,7 +752,7 @@ export default function FunderMatchesView({
             <span className={`fund-run-meta${ageCls}`}>{ageLabel ?? (compiled ? `Compiled ${new Date(compiled).toLocaleDateString()}` : "No search yet")}</span>
             <span className="fund-run-meta">
               {mode === "grants"
-                ? `${visibleMatches.length} open call${visibleMatches.length === 1 ? "" : "s"}`
+                ? `${openMatches.length} open call${openMatches.length === 1 ? "" : "s"}`
                 : `${visibleFunders.length} funder${visibleFunders.length === 1 ? "" : "s"}`}
             </span>
           </div>
@@ -711,10 +775,10 @@ export default function FunderMatchesView({
         <div className="fund-tiles">
           {mode === "grants" ? (
             <>
-              <div className="fund-tile"><div className="fund-n">{visibleMatches.length}</div><div className="fund-l">Open call{visibleMatches.length === 1 ? "" : "s"}</div></div>
-              <div className="fund-tile"><div className="fund-n">{visibleMatches.filter(m => m.verdict === "eligible").length}</div><div className="fund-l">Eligible now</div></div>
+              <div className="fund-tile"><div className="fund-n">{openMatches.length}</div><div className="fund-l">Open call{openMatches.length === 1 ? "" : "s"}</div></div>
               <div className="fund-tile"><div className="fund-n">{closingSoon()}</div><div className="fund-l">Closing within 30 days</div></div>
-              <div className="fund-tile"><div className="fund-n">{newGrants()}</div><div className="fund-l">{isAdmin ? "New this search" : "New since your last visit"}</div></div>
+              <div className="fund-tile"><div className="fund-n">{watchMatches.length}</div><div className="fund-l">On your watchlist</div></div>
+              <div className="fund-tile"><div className="fund-n">{savedGrants.length}</div><div className="fund-l">Saved for later</div></div>
             </>
           ) : (
             <>
@@ -727,18 +791,21 @@ export default function FunderMatchesView({
         </div>
       )}
 
-      {mode === "grants" && (matches.length === 0 ? (
+      {/* A failed star says why, wherever it was pressed. */}
+      {mode === "grants" && saveErr && <div className="ov-note">{saveErr}</div>}
+
+      {mode === "grants" && (openMatchesAll.length === 0 ? (
         <div className="empty" id="fm-calls" data-tour="fm-results">
           {!hasResults
             ? <>No matches yet.{canRun && configured ? ` Press ${isAdmin ? "Run matching" : "Search for funding"} to build the list, and check Sources to see where it will look.` : " Your For Granted team will run the first search."}</>
-            : <>No open calls survived screening this run. The funders under the Funders
+            : <>No open calls survived screening this run.{watchMatches.length > 0 && <> The watchlist below has calls worth being ready for.</>} The funders under the Funders
               switch are still worth approaching: most foundation money never appears as a public call.</>}
         </div>
       ) : (
         <section id="fm-calls" className="fm-sec" aria-labelledby="fm-calls-h" data-tour="fm-results">
           <div className="fm-sec-head">
             <h3 id="fm-calls-h">Open calls</h3>
-            <span className="fm-count">{visibleMatches.length}</span>
+            <span className="fm-count">{openMatches.length}</span>
             <InfoTip label="What the verdicts mean">
               <strong>Eligible</strong>: {VERDICT_HELP.eligible}<br /><br />
               <strong>Likely</strong>: {VERDICT_HELP.likely}<br /><br />
@@ -756,7 +823,7 @@ export default function FunderMatchesView({
               </tr>
             </thead>
             <tbody>
-              {visibleMatches.map(m => (
+              {openMatches.map(m => (
                 <tr key={m.grant_id}>
                   <td className="fm-name">
                     {m.url
@@ -796,11 +863,13 @@ export default function FunderMatchesView({
                       <ClientVerdict kind="grant" targetId={m.grant_id} view={viewOf("grant", m.grant_id)} mode="admin" />
                       <a className="sb-btn sb-secondary sb-sm fm-draft" href={`/draft/new?grant=${encodeURIComponent(m.grant_id)}`}
                          title="Start a draft from this opportunity's application. For Granted only.">Draft this</a>
+                      <SaveStar m={m} />
                     </td>
                   )}
                   {!isAdmin && (
                     <td className="fm-decide">
                       <ClientVerdict kind="grant" targetId={m.grant_id} view={viewOf("grant", m.grant_id)} mode={viewingAsClient ? "admin" : "client"} />
+                      <SaveStar m={m} />
                     </td>
                   )}
                 </tr>
@@ -810,6 +879,90 @@ export default function FunderMatchesView({
           </div>
         </section>
       ))}
+
+      {/* The Watchlist (patch 26): closed calls that screened as a real fit.
+          Most recently closed first; the most recent close is the one most
+          likely to reopen soonest. */}
+      {mode === "grants" && watchMatches.length > 0 && (
+        <section id="fm-watch" className="fm-sec" aria-labelledby="fm-watch-h">
+          <div className="fm-sec-head">
+            <h3 id="fm-watch-h">Not open now, worth watching</h3>
+            <span className="fm-count">{watchMatches.length}</span>
+            <InfoTip label="What this list is">
+              These calls fit {orgName}, but their last cycle has closed. Funders often run the
+              same programme on a similar calendar each year, so the most recently closed sit first.
+              Save the ones you want to be ready for, and confirm dates on the funder&rsquo;s own page
+              as the season approaches.
+            </InfoTip>
+          </div>
+          <p className="fm-sub">Closed calls that screened as a real fit for {orgName}. Save one to keep it past the next search.</p>
+          <div className="fm-scroll">
+          <table className="aq-table fm-table">
+            <thead>
+              <tr><th>Opportunity</th><th>Funder</th><th>Last deadline</th><th>Ceiling</th><th>Why this client</th><th>Save</th></tr>
+            </thead>
+            <tbody>
+              {watchMatches.map(m => (
+                <tr key={m.grant_id}>
+                  <td className="fm-name">
+                    {m.url
+                      ? <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title || m.grant_id}</a>
+                      : (m.title || m.grant_id)}
+                  </td>
+                  <td className="fm-funder">{m.funder || <span className="ov-muted">Unknown</span>}</td>
+                  <td className="fm-nowrap" title="When the last cycle closed. The next cycle's dates are the funder's to announce.">
+                    {m.close_date ? new Date(m.close_date).toLocaleDateString() : "Not listed"}
+                  </td>
+                  <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
+                  <td className="fm-why">{m.rationale || <span className="ov-muted">{m.reason ?? "No explanation yet"}</span>}</td>
+                  <td className="fm-decide"><SaveStar m={m} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </section>
+      )}
+
+      {/* Saved for later (patch 26): the client's own bucket. Not a snapshot;
+          it survives every sweep, which is why a row can outlive its source. */}
+      {mode === "grants" && savedGrants.length > 0 && (
+        <section id="fm-saved" className="fm-sec" aria-labelledby="fm-saved-h">
+          <div className="fm-sec-head">
+            <h3 id="fm-saved-h">Saved for later</h3>
+            <span className="fm-count">{savedGrants.length}</span>
+            <InfoTip label="What this list is">
+              Grants somebody starred. They stay here through every new search, so when a call
+              reopens you already know you were interested. Press the star again to remove one.
+            </InfoTip>
+          </div>
+          <div className="fm-scroll">
+          <table className="aq-table fm-table">
+            <thead>
+              <tr><th>Opportunity</th><th>Funder</th><th>Last known deadline</th><th>Ceiling</th><th>Saved</th><th></th></tr>
+            </thead>
+            <tbody>
+              {savedGrants.map(s2 => (
+                <tr key={s2.target_id}>
+                  <td className="fm-name">
+                    {s2.detail.url
+                      ? <a href={s2.detail.url} target="_blank" rel="noopener noreferrer">{s2.title || s2.target_id}</a>
+                      : (s2.title || s2.target_id)}
+                  </td>
+                  <td className="fm-funder">{s2.detail.funder || <span className="ov-muted">Unknown</span>}</td>
+                  <td className="fm-nowrap">{s2.detail.close_date ? new Date(s2.detail.close_date).toLocaleDateString() : "Not listed"}</td>
+                  <td className="fm-nowrap">{money(s2.detail.award_ceiling ?? null)}</td>
+                  <td className="fm-nowrap">{new Date(s2.saved_at).toLocaleDateString()}</td>
+                  <td className="fm-decide">
+                    <SaveStar m={{ grant_id: s2.target_id, title: s2.title, funder: s2.detail.funder ?? null, url: s2.detail.url ?? null, close_date: s2.detail.close_date ?? null, award_ceiling: s2.detail.award_ceiling ?? null }} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </section>
+      )}
 
       {/* Gated on hidden too. Otherwise a run where every funder is screened
           out hides the toggle inside the block the toggle would have to open,

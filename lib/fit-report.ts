@@ -44,7 +44,7 @@ export interface FitRow {
 }
 
 export interface MatchInput {
-  grant_id: string; verdict: "eligible" | "likely" | "check"; reason: string | null;
+  grant_id: string; verdict: "eligible" | "likely" | "check" | "watch"; reason: string | null;
   close_date: string | null; award_ceiling: number | null; title: string | null; funder: string | null;
   url: string | null; rationale: string | null; rationale_source?: string | null; verified_at: string | null;
   source?: string | null; money_kind?: string | null; currency?: string | null;
@@ -238,7 +238,9 @@ export function buildFitReport(input: {
 }): FitReport {
   const today = input.today ?? new Date();
   const rows: FitRow[] = [
-    ...input.matches.map(m => opportunityRow(m, input.eligibility, today)),
+    // Watch rows (patch 26) stay out: the fit report is about what to act on
+    // now, and a closed call's next step is "wait", which is not a row here.
+    ...input.matches.filter(m => m.verdict !== "watch").map(m => opportunityRow(m, input.eligibility, today)),
     ...input.funders.map(f => funderRow(f, input.eligibility)),
     ...input.leads.map(l => leadRow(l, input.eligibility, today)),
   ].map(r => {
