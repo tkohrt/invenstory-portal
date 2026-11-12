@@ -91,7 +91,11 @@ export default function ReadinessCard({ readiness, computedAt, onUpload, openKey
         <b style={{ fontSize: 22, color: pctColor }}>{readiness.pct}%</b>
         <h3 style={{ margin: 0 }}>Inven(s)tory Readiness Checklist</h3>
         {!collapsed && <span className="acct-note" style={{ margin: 0 }}>✓ covered · ◐ thin · ○ missing.</span>}
-        <button className={`btn rc-run-cta${computedAt ? "" : " rc-run-pulse"}`} style={{ flex: 1, alignSelf: "center" }} onClick={analyze} disabled={analyzing}>{analyzing ? "Running Readiness Check…" : computedAt ? "Re-Run Readiness Check" : "Run Readiness Check"}</button>
+        {/* Always "Run", never "Re-Run" (P1, patch 29): onboarding now runs the
+            first check itself, so a client's first view arrives assessed and
+            the button should not imply they already pressed anything. The
+            checked-on date below carries the history. */}
+        <button className={`btn rc-run-cta${computedAt ? "" : " rc-run-pulse"}`} style={{ flex: 1, alignSelf: "center" }} onClick={analyze} disabled={analyzing}>{analyzing ? "Running Readiness Check…" : "Run Readiness Check"}</button>
       </div>
       <div className="fe-bar" style={{ maxWidth: "none", margin: "8px 0 12px" }}><span style={{ width: `${readiness.pct}%`, background: pctColor }} /></div>
       {allowance && <AllowanceRequest message={allowance} />}

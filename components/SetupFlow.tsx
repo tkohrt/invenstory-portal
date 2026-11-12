@@ -11,7 +11,7 @@ import {
 } from "@/lib/setup";
 import {
   saveYouAction, saveSetupEligibilityAction, addSetupLinkAction, markLayer3ReadAction, requestInterviewAction,
-  saveFundingSoFarAction, saveTeamAction, settleStepAction, finishSetupAction,
+  saveFundingSoFarAction, saveTeamAction, settleStepAction, finishSetupAction, suggestFundersAction,
 } from "@/lib/server/setup-actions";
 import { signOutAction } from "@/lib/server/actions";
 import { ORG_TYPES, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, FUNDING_KINDS, type EligibilityProfile } from "@/lib/eligibility-fields";
@@ -22,7 +22,10 @@ import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/up
 import { browserClient } from "@/lib/supabase-browser";
 import type { TenantOrgType } from "@/lib/living-voice";
 
-export interface SetupDoc { id: string; title: string; layer: string; status: string }
+export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null }
+
+/** One readiness-checklist item with its live coverage (P1, patch 29). */
+export interface GroceryItem { key: string; label: string; tier: "essential" | "important" | "enriching"; state: "covered" | "thin" | "missing" }
 
 interface Props {
   tenantName: string;
@@ -33,6 +36,8 @@ interface Props {
   state: SetupState;
   profile: EligibilityProfile;
   docs: SetupDoc[];
+  /** The readiness grocery list, re-read as documents process. */
+  grocery?: GroceryItem[];
   /** Goals whose tool is on for this client. */
   goals: Goal[];
   /** Tools switched on for this client. */
@@ -130,11 +135,11 @@ export default function SetupFlow(p: Props) {
         {/* key={step} so Layer I's link box, errors and pending list never
             carry over into Layer II (the carryover bug from the 7 Nov
             walkthrough: React reuses the component between the two steps). */}
-        {(step === "layer1" || step === "layer2") && <LayerStep key={step} layer={step === "layer1" ? "I" : "II"} docs={p.docs} busy={busy} onBack={back}
+        {(step === "layer1" || step === "layer2") && <LayerStep key={step} layer={step === "layer1" ? "I" : "II"} docs={p.docs} grocery={p.grocery} busy={busy} onBack={back}
           onSettle={how => run(() => settleStepAction(step, how))} />}
-        {step === "layer3" && <Layer3Step state={p.state} orgType={p.orgType} docs={p.docs} busy={busy} onBack={back}
+        {step === "layer3" && <Layer3Step state={p.state} orgType={p.orgType} docs={p.docs} grocery={p.grocery} busy={busy} onBack={back}
           onSettle={how => run(() => settleStepAction("layer3", how))} />}
-        {step === "funding" && <FundingStep state={p.state} busy={busy} onBack={back}
+        {step === "funding" && <FundingStep state={p.state} docs={p.docs} busy={busy} onBack={back}
           onSave={(v, how) => run(() => saveFundingSoFarAction(v, how))} />}
         {step === "team" && <TeamStep state={p.state} busy={busy} onBack={back}
           onSave={(v, how) => run(() => saveTeamAction(v, how))} />}
@@ -157,7 +162,7 @@ function Foot({ onBack, children }: { onBack?: () => void; children: React.React
   );
 }
 
-function LayerKey({ here }: { here?: "I" | "II" | "III" }) {
+function LayerKey({ here, grocery }: { here?: "I" | "II" | "III"; grocery?: GroceryItem[] }) {
   const rows: { k: "I" | "II" | "III"; name: string; what: string }[] = [
     { k: "I", name: "Layer I, Public story.", what: "What the world can already see." },
     { k: "II", name: "Layer II, Internal.", what: "Plans, budgets and past applications." },
@@ -172,7 +177,38 @@ function LayerKey({ here }: { here?: "I" | "II" | "III" }) {
           {here === r.k && <span className="su-here">You are here</span>}
         </div>
       ))}
+      {grocery && grocery.length > 0 && <Grocery items={grocery} />}
     </aside>
+  );
+}
+
+/**
+ * The readiness grocery list (P1, patch 29): what funders ask for, ticking
+ * green as uploads are read. Documents are read the moment they arrive and the
+ * page refreshes while anything is processing, so this moves during setup.
+ * Nothing here is required; it is the shopping list, not a gate.
+ */
+function Grocery({ items }: { items: GroceryItem[] }) {
+  const order = { essential: 0, important: 1, enriching: 2 } as const;
+  const sorted = [...items].sort((a, b) => order[a.tier] - order[b.tier] || a.label.localeCompare(b.label));
+  const got = items.filter(i => i.state !== "missing").length;
+  const mark = (s: GroceryItem["state"]) => s === "covered" ? "✓" : s === "thin" ? "◑" : "○";
+  const title = (s: GroceryItem["state"]) => s === "covered" ? "Found in what you have added"
+    : s === "thin" ? "Found, but thin so far" : "Not found yet";
+  return (
+    <div className="su-grocery">
+      <h4>What funders ask for <span className="su-grocery-n">{got} of {items.length}</span></h4>
+      <p className="su-small">Ticks itself as your documents are read. Nothing here is required to continue; it is the shopping list.</p>
+      <ul>
+        {sorted.map(i => (
+          <li key={i.key} className={`su-g-${i.state}`} title={title(i.state)}>
+            <em aria-hidden="true">{mark(i.state)}</em>
+            <span>{i.label}</span>
+            {i.tier === "essential" && i.state === "missing" && <b className="su-g-tier">essential</b>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -330,8 +366,8 @@ const LAYER_COPY = {
   },
 } as const;
 
-function LayerStep({ layer, docs, busy, onBack, onSettle }: {
-  layer: "I" | "II"; docs: SetupDoc[]; busy: boolean; onBack: () => void; onSettle: (how: "done" | "skipped") => void;
+function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
+  layer: "I" | "II"; docs: SetupDoc[]; grocery?: GroceryItem[]; busy: boolean; onBack: () => void; onSettle: (how: "done" | "skipped") => void;
 }) {
   const c = LAYER_COPY[layer];
   const mine = docs.filter(d => d.layer === layer);
@@ -366,7 +402,7 @@ function LayerStep({ layer, docs, busy, onBack, onSettle }: {
             onClick={() => onSettle("done")}>{c.cta}</button>
         </Foot>
       </section>
-      <LayerKey here={layer} />
+      <LayerKey here={layer} grocery={grocery} />
     </div>
   );
 }
@@ -374,7 +410,7 @@ function LayerStep({ layer, docs, busy, onBack, onSettle }: {
 interface Pending { key: string; name: string; state: "uploading" | "failed"; error?: string }
 
 /** Files and links into one layer. Reading starts as soon as each arrives. */
-function Uploader({ layer, docs, allowLinks }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean }) {
+function Uploader({ layer, docs, allowLinks, typeTag = "" }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean; typeTag?: string }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -399,7 +435,7 @@ function Uploader({ layer, docs, allowLinks }: { layer: "I" | "II" | "III"; docs
         .uploadToSignedUrl(sb.path, sb.token, file, { contentType: file.type || "application/octet-stream" });
       if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
       const c = await fetch("/api/upload/complete", json({
-        docId: sb.docId, filename: file.name, contentType: file.type, title: file.name.replace(/\.[^.]+$/, ""), layer, tags: "setup", typeTag: "", outcome: "",
+        docId: sb.docId, filename: file.name, contentType: file.type, title: file.name.replace(/\.[^.]+$/, ""), layer, tags: "setup", typeTag, outcome: "",
       }));
       const cb = await c.json().catch(() => ({}));
       if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
@@ -457,8 +493,8 @@ function Uploader({ layer, docs, allowLinks }: { layer: "I" | "II" | "III"; docs
 
 // ---- 5. Layer III ----
 
-function Layer3Step({ state, orgType, docs, busy, onBack, onSettle }: {
-  state: SetupState; orgType: TenantOrgType; docs: SetupDoc[]; busy: boolean; onBack: () => void; onSettle: (how: "done" | "skipped") => void;
+function Layer3Step({ state, orgType, docs, grocery, busy, onBack, onSettle }: {
+  state: SetupState; orgType: TenantOrgType; docs: SetupDoc[]; grocery?: GroceryItem[]; busy: boolean; onBack: () => void; onSettle: (how: "done" | "skipped") => void;
 }) {
   const router = useRouter();
   const [read, setRead] = useState(!!state.layer3ReadAt);
@@ -524,19 +560,37 @@ function Layer3Step({ state, orgType, docs, busy, onBack, onSettle }: {
             onClick={() => onSettle("done")}>Continue</button>
         </Foot>
       </section>
-      <LayerKey here="III" />
+      <LayerKey here="III" grocery={grocery} />
     </div>
   );
 }
 
 // ---- 6. Funding so far ----
 
-function FundingStep({ state, busy, onBack, onSave }: {
-  state: SetupState; busy: boolean; onBack: () => void;
+function FundingStep({ state, docs, busy, onBack, onSave }: {
+  state: SetupState; docs: SetupDoc[]; busy: boolean; onBack: () => void;
   onSave: (v: { known_funders: KnownFunder[]; deadlines: Deadline[] }, how: "done" | "skipped") => void;
 }) {
   const [funders, setFunders] = useState<KnownFunder[]>(state.answers.known_funders?.length ? state.answers.known_funders : [{ name: "", relationship: "funded" }]);
   const [dates, setDates] = useState<Deadline[]>(state.answers.deadlines?.length ? state.answers.deadlines : [{ what: "", date: null }]);
+  // Funder-name type-ahead against Ground Truth (P1, patch 29): suggestions
+  // for the name being typed, debounced, so what gets stored matches the
+  // record the portal screens against. Typing anything else still works; a
+  // lookup failure just means no suggestions.
+  const [suggestions, setSuggestions] = useState<{ name: string; location: string | null }[]>([]);
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupSeq = useRef(0);
+  const lookup = (text: string) => {
+    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    const q = text.trim();
+    if (q.length < 3) { setSuggestions([]); return; }
+    lookupTimer.current = setTimeout(async () => {
+      const seq = ++lookupSeq.current;
+      const r = await suggestFundersAction(q).catch(() => []);
+      if (seq === lookupSeq.current) setSuggestions(r);
+    }, 600);
+  };
+  const funderForms = docs.filter(d => d.typeTag === "funder_form");
   return (
     <div className="su-grid su-single">
       <section className="su-card">
@@ -548,7 +602,8 @@ function FundingStep({ state, busy, onBack, onSave }: {
           <div className="su-row su-row-head"><span>Funder</span><span>Relationship</span><span /></div>
           {funders.map((f, i) => (
             <div key={i} className="su-row">
-              <input aria-label="Funder" value={f.name} onChange={e => setFunders(fs => fs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <input aria-label="Funder" value={f.name} list="su-funder-suggest"
+                onChange={e => { const v = e.target.value; setFunders(fs => fs.map((x, j) => j === i ? { ...x, name: v } : x)); lookup(v); }} />
               <select aria-label="Relationship" value={f.relationship} onChange={e => setFunders(fs => fs.map((x, j) => j === i ? { ...x, relationship: e.target.value as KnownFunder["relationship"] } : x))}>
                 {RELATIONSHIPS.map(r => <option key={r.v} value={r.v}>{r.l}</option>)}
               </select>
@@ -570,6 +625,12 @@ function FundingStep({ state, busy, onBack, onSave }: {
           ))}
         </div>
         <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => setDates(ds => [...ds, { what: "", date: null }])}>+ Add a deadline</button>
+        <datalist id="su-funder-suggest">
+          {suggestions.map(sg => <option key={sg.name} value={sg.name}>{sg.location ?? undefined}</option>)}
+        </datalist>
+        <h3>Have a funder&rsquo;s application in hand?</h3>
+        <p className="su-small">Upload the application form, questions or guidelines for anything you are working toward. Your For Granted team sees exactly what the funder asks, and the portal files it as the funder&rsquo;s material, never as your story.</p>
+        <Uploader layer="II" docs={funderForms} typeTag="funder_form" />
         <Foot onBack={onBack}>
           <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => onSave({ known_funders: funders, deadlines: dates }, "skipped")}>Skip</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy} onClick={() => onSave({ known_funders: funders, deadlines: dates }, "done")}>{busy ? "Saving…" : "Save and continue"}</button>
@@ -645,13 +706,38 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
   const todo = useMemo(() => Object.entries(state.steps).filter(([, v]) => v === "skipped").map(([k]) => STEP_TODO[k as SetupStepKey]).filter(Boolean) as string[], [state.steps]);
   const g = GOALS.find(x => x.v === goal) ?? GOALS[2];
 
+  // The completion moment (P1, patch 29): finishing earns a beat of
+  // congratulation before the portal, not an abrupt page change.
+  const [done, setDone] = useState<string | null>(null);
   const finish = async () => {
     setBusy(true); setErr(null);
     const r = await finishSetupAction(goal).catch(() => null);
-    if (r && r.ok) { router.push(r.next ?? "/invenstory"); router.refresh(); return; }
+    if (r && r.ok) { setBusy(false); setDone(r.next ?? "/invenstory"); window.scrollTo({ top: 0 }); return; }
     setBusy(false);
     setErr(r && !r.ok ? r.error : "That did not save. Please check your connection and try again.");
   };
+
+  if (done) {
+    return (
+      <div className="su-grid su-single">
+        <section className="su-card su-done" role="status">
+          <div className="su-done-mark" aria-hidden="true">&#10003;</div>
+          <h1>That&rsquo;s it. Your Inven(s)tory is live.</h1>
+          <p className="su-lede">Everything you added is being read and woven into one brain: your facts, your numbers, your voice. From here, every search and every draft starts from a place of preparation instead of a blank page.</p>
+          <ul className="su-list">
+            {total > 0 && <li>{read === total ? `All ${total} document${total === 1 ? "" : "s"} read.` : `${read} of ${total} documents read so far; the rest finish on their own.`}</li>}
+            <li>Your readiness is being assessed now, so your first look at the Inven(s)tory shows a scored checklist.</li>
+            {todo.length > 0 && <li>The steps you skipped wait under Getting started; nothing is lost.</li>}
+          </ul>
+          <div className="su-foot">
+            <button type="button" className="sb-btn sb-primary" onClick={() => { router.push(done); router.refresh(); }}>
+              {g.v === "funders" ? "Open Funding" : g.v === "draft" ? "Open your applications" : "Open your Inven(s)tory"}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="su-grid">

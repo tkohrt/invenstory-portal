@@ -2,33 +2,14 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { withAiUsage, type UsageCtx } from "./ai-usage";
+import { withAiUsage } from "./ai-usage";
 import { checkAllowance } from "./allowance";
 import { onAnalysis } from "./analysis-source";
+import { runExtractionCoverage } from "./readiness-run";
 import { applyReadiness } from "./analysis-switch";
 import { getEligibilityProfile } from "./eligibility";
 import { clientTenants } from "@/lib/brain";
 import { tenantIsBrain } from "./brain";
-
-async function storeExtractionCoverage(
-  tenantId: string, orgType: string | null,
-  who: Pick<UsageCtx, "actor" | "userId"> = { actor: "admin" },
-): Promise<{ covered: number; thin: number; missing: number }> {
-  const { extractDocumentEvidence } = await import("./doc-extract");
-  const trace = await withAiUsage({ tenantId, ...who, feature: "readiness_refresh" }, () => extractDocumentEvidence(tenantId, orgType));
-  const cov: Record<string, { state: string; sources: { id: string; title: string; quote?: string }[] }> = {};
-  const counts = { covered: 0, thin: 0, missing: 0 } as Record<string, number>;
-  for (const it of trace.items) {
-    const seen = new Set<string>(); const sources: { id: string; title: string; quote?: string }[] = [];
-    for (const e of it.evidence) { if (e.documentId && !seen.has(e.documentId)) { seen.add(e.documentId); sources.push({ id: e.documentId, title: e.title, quote: (e.quote || "").trim() || undefined }); } }
-    cov[it.key] = { state: it.state, sources: it.state !== "missing" ? sources : [] };
-    counts[it.state] = (counts[it.state] ?? 0) + 1;
-  }
-  await db.from("eligibility_gap").upsert(
-    { tenant_id: tenantId, content_gaps: cov, computed_at: new Date().toISOString() },
-    { onConflict: "tenant_id" });
-  return { covered: counts.covered, thin: counts.thin, missing: counts.missing };
-}
 
 /**
  * Run Readiness Check. A client can press it, so it is metered as whoever
@@ -52,7 +33,7 @@ export async function runGapAnalysisAction(): Promise<{ ok: true } | { ok: false
   const allowance = await checkAllowance(actor, s.tenantId);
   if (!allowance.ok) return { ok: false, allowance: allowance.message };
   const profile = await getEligibilityProfile(s.tenantId);
-  await storeExtractionCoverage(s.tenantId, profile.org_type, { actor, userId: s.user.id });
+  await runExtractionCoverage(s.tenantId, profile.org_type, { actor, userId: s.user.id });
   revalidatePath("/funding-eligibility"); revalidatePath("/invenstory");
   return { ok: true };
 }
@@ -73,7 +54,7 @@ export async function refreshAllReadinessAction(): Promise<{ results: RefreshRes
         continue;
       }
       const { data: prof } = await db.from("eligibility_profile").select("org_type").eq("tenant_id", t.id).maybeSingle();
-      const c = await storeExtractionCoverage(t.id, (prof?.org_type as string | null) ?? null);
+      const c = await runExtractionCoverage(t.id, (prof?.org_type as string | null) ?? null);
       results.push({ tenant: t.name, ok: true, ...c });
     } catch (e) { results.push({ tenant: t.name, ok: false, error: e instanceof Error ? e.message : "failed" }); }
   }

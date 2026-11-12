@@ -2414,6 +2414,25 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .su-def-word{font-family:var(--font-heading),serif;font-size:22px;font-weight:700;color:#1a1a1a}
 .su-def-word span{font-size:13px;font-style:italic;font-weight:400;color:var(--muted);margin-left:8px}
 .su-def p{margin:6px 0 0;font-size:14px}
+/* The readiness grocery list in onboarding (P1, patch 29). */
+.su-grocery{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.su-grocery h4{display:flex;align-items:baseline;gap:8px}
+.su-grocery-n{font-weight:400;font-size:12px;color:var(--muted)}
+.su-grocery ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.su-grocery li{display:flex;align-items:baseline;gap:7px;font-size:13px;color:#5b6170}
+.su-grocery li em{font-style:normal;width:14px;text-align:center;flex:none}
+.su-grocery .su-g-covered{color:#2f7d44}
+.su-grocery .su-g-covered em{color:#2f7d44;font-weight:700}
+.su-grocery .su-g-thin{color:#8a6514}
+.su-grocery .su-g-thin em{color:#8a6514}
+.su-g-tier{font-weight:600;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#8a6514;background:#fdf6e3;border-radius:4px;padding:0 5px;flex:none}
+/* The completion moment (P1, patch 29). */
+.su-done{text-align:center;padding:48px 32px}
+.su-done-mark{width:64px;height:64px;border-radius:50%;background:#1f4d2e;color:#fff;font-size:32px;line-height:64px;margin:0 auto 18px}
+.su-done h1{margin-bottom:10px}
+.su-done .su-lede{max-width:560px;margin:0 auto 14px}
+.su-done .su-list{display:inline-block;text-align:left;margin:0 auto}
+.su-done .su-foot{justify-content:center;border-top:0}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .fm-page .fm-wake{background:#f3f8f4;border:1px solid #cfe3d5;border-radius:8px;padding:8px 12px;font-size:13px;margin:0 0 12px}
 

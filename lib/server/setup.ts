@@ -70,10 +70,13 @@ export async function ownerName(tenantId: string, userId: string | null): Promis
 }
 
 /** Documents per layer, for the step screens. */
-export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string }[]> {
-  const { data } = await db.from("document").select("id, title, layer, status")
+export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string; typeTag: string | null }[]> {
+  const { data } = await db.from("document").select("id, title, layer, status, type_tag")
     .eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
-  return (data ?? []) as { id: string; title: string; layer: string; status: string }[];
+  return (data ?? []).map(d => ({
+    id: d.id as string, title: d.title as string, layer: d.layer as string, status: d.status as string,
+    typeTag: (d as { type_tag?: string | null }).type_tag ?? null,
+  }));
 }
 
 /**

@@ -6,6 +6,7 @@
 // For Granted can see, finish, or reset a client's setup, and turns a
 // teammate request into a login (clients cannot make logins themselves).
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { getSession, type PortalSession } from "./session";
 import { db } from "./db";
 import { tempPassword } from "./passwords";
@@ -202,7 +203,52 @@ export async function finishSetupAction(goal: string): Promise<Result> {
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "setup_complete", detail: g ?? "no goal" });
   revalidatePath("/", "layout");
   const vis = await getWorkspaceVisibility(s.tenantId).catch(() => ({} as Record<string, boolean>));
+  // Auto-run the readiness check on what onboarding collected (P1, patch 29):
+  // the first portal view should show an assessed score, not a button to
+  // press. After the response, so Finish never waits on it; per-document
+  // extraction already filled most of the coverage in while they uploaded,
+  // so even a cut-short run leaves a real score behind.
+  after(async () => {
+    try {
+      const { tenantIsBrain } = await import("./brain");
+      if (await tenantIsBrain(s.tenantId)) return;
+      const { onAnalysis } = await import("./analysis-source");
+      if (await onAnalysis(s.tenantId)) {
+        const { applyReadiness } = await import("./analysis-switch");
+        await applyReadiness(s.tenantId);
+      } else {
+        const profile = await getEligibilityProfile(s.tenantId);
+        const { runExtractionCoverage } = await import("./readiness-run");
+        await runExtractionCoverage(s.tenantId, profile.org_type, { actor: "client", userId: s.user.id });
+      }
+      revalidatePath("/invenstory"); revalidatePath("/funding-eligibility");
+    } catch (e) { console.error("[setup] auto readiness run failed", e); }
+  });
   return { ok: true, next: goalPath(g, vis) };
+}
+
+/**
+ * Funder-name type-ahead for step 6 (P1, patch 29): a few Ground Truth funder
+ * names for what the person has typed, so the stored name matches the record
+ * the portal will later screen against (a right name is what lets "Already
+ * known to you" catch the relationship instead of presenting a discovery).
+ * Suggestions only: anything typed is kept as typed. Quiet on every failure.
+ */
+export async function suggestFundersAction(q: string): Promise<{ name: string; location: string | null }[]> {
+  const o = await owner(); if ("error" in o) return [];
+  const text = String(q ?? "").trim().slice(0, 120);
+  if (text.length < 3) return [];
+  try {
+    const { findFunders, ledgerConfigured } = await import("./ledger");
+    if (!ledgerConfigured()) return [];
+    const r = await findFunders({ need: text, limit: 6 });
+    const seen = new Set<string>();
+    return (r.results ?? [])
+      .filter(f => typeof f.name === "string" && f.name.trim())
+      .filter(f => { const k = f.name.trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, 6)
+      .map(f => ({ name: f.name.trim().slice(0, 200), location: f.location?.slice(0, 120) ?? null }));
+  } catch { return []; }
 }
 
 // ---- For Granted ----
