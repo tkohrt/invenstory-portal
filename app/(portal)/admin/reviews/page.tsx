@@ -11,23 +11,39 @@ import { clientTenants } from "@/lib/brain";
 import AdminReviewsView from "@/components/AdminReviewsView";
 import AdminLedgerOverlayView from "@/components/AdminLedgerOverlayView";
 import AdminTabs from "@/components/AdminTabs";
+import AdminRequestsView from "@/components/AdminRequestsView";
+import { getRequests, openRequestCount } from "@/lib/server/requests";
 
 export default async function ReviewQueuesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/");
   if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
-  const tab = sp.tab === "ground-truth" ? "ground-truth" : "story";
+  const tab = sp.tab === "ground-truth" ? "ground-truth" : sp.tab === "requests" ? "requests" : "story";
 
-  // Both counts load regardless of tab, so each pill can wear its own badge.
-  const [pending, queue] = await Promise.all([getPendingReviews(), getOverlayQueue()]);
+  // All three counts load regardless of tab, so each pill wears its own badge.
+  const [pending, queue, reqOpen] = await Promise.all([getPendingReviews(), getOverlayQueue(), openRequestCount()]);
 
   const tabs = (
     <AdminTabs active={tab} tabs={[
       { key: "story", href: "/admin/reviews", label: "Story Intelligence", badge: pending.length },
       { key: "ground-truth", href: "/admin/reviews?tab=ground-truth", label: "Ground Truth", badge: queue.length },
+      { key: "requests", href: "/admin/reviews?tab=requests", label: "Client requests", badge: reqOpen },
     ]} />
   );
+
+  // The Requests inbox (patch 37): the system of record behind the Slack
+  // pings. Open items are work; FYIs and the handled list ride beneath.
+  if (tab === "requests") {
+    const { open, recent } = await getRequests();
+    return (
+      <div className="rq-page">
+        <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
+        {tabs}
+        <AdminRequestsView open={open} recent={recent} />
+      </div>
+    );
+  }
 
   if (tab === "ground-truth") {
     const [decided, lastRun, tenants] = await Promise.all([

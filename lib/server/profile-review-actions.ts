@@ -31,6 +31,10 @@ export async function reviewFactAction(input: {
     const { error } = await db.from("profile_fact_review")
       .delete().eq("tenant_id", s.tenantId).eq("fact_id", factId);
     if (error) { console.error("[profile-review] clear failed", error); return { ok: false, error: "That did not save. Try again." }; }
+    // Auto-resolution (patch 37): an unflagged fact closes its inbox row, so
+    // the queue never asks For Granted about a flag the client withdrew.
+    const { resolveBySource } = await import("./requests");
+    await resolveBySource(s.tenantId, `flag:${factId}`, "Resolved itself: the client unflagged the fact.");
   } else {
     const note = input.state === "flagged" ? (input.note ?? "").trim().slice(0, 600) || null : null;
     const { error } = await db.from("profile_fact_review").upsert({
@@ -50,6 +54,11 @@ export async function reviewFactAction(input: {
           ? `flagged a matching-profile fact${fact ? ` ("${fact}")` : ""}${note ? `: ${note}` : ""}`
           : `removed a matching-profile fact from their searches${fact ? ` ("${fact}")` : ""}. No action needed; it is undoable on their profile page.`,
         tenantId: s.tenantId,
+        // Inbox routing (patch 37): flags are work (auto-closed if the client
+        // unflags); removals are FYIs, logged without becoming chores.
+        inbox: input.state === "flagged"
+          ? { kind: "profile_flag", sourceKey: `flag:${factId}` }
+          : { kind: "profile_removal", status: "seen" },
       }).catch(e => console.error("[profile-review] notify failed", e));
     }
   }

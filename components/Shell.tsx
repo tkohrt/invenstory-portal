@@ -18,7 +18,7 @@ import { brainAllows, clientTenants, isBrain } from "@/lib/brain";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
-  tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number; overlayPendingCount: number;
+  tenants: Tenant[]; artifactTypes: NavArtifact[]; pendingCount: number; overlayPendingCount: number; requestsOpenCount?: number;
   workspaceVis: Record<string, boolean>;
   /** Null in the Brain, which grows no plant (Auto-Draft patch 3). */
   garden: GardenState | null;
@@ -44,7 +44,7 @@ function subscribeNav(cb: () => void) {
   return () => { window.removeEventListener(NAV_EVENT, cb); window.removeEventListener("storage", cb); };
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, workspaceVis, garden, storyCardsWaiting = 0, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, requestsOpenCount = 0, workspaceVis, garden, storyCardsWaiting = 0, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -236,7 +236,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients" title={collapsed ? "All clients" : undefined}><span className="ic">◫</span> All clients</Link>
             <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews" title={collapsed ? "Review queues" : undefined}>
               <span className="ic">✦</span> Review queues
-              {pendingCount + overlayPendingCount > 0 && <span className="badge-count">{pendingCount + overlayPendingCount}</span>}
+              {pendingCount + overlayPendingCount + requestsOpenCount > 0 && <span className="badge-count">{pendingCount + overlayPendingCount + requestsOpenCount}</span>}
             </Link>
             <Link onClick={closeNav} className={nav("/admin/questions")} href="/admin/questions" title={collapsed ? "Question bank" : undefined}><span className="ic">◎</span> Question bank</Link>
             <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library" title={collapsed ? "Card Library" : undefined}><span className="ic">▣</span> Card Library</Link>

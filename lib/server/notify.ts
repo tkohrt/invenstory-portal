@@ -1,5 +1,6 @@
 import "server-only";
 import { isDemoTenant } from "@/lib/demo";
+import { recordRequest } from "./requests";
 // Notify the For Granted team when a CLIENT uploads a document: email
 // info@forgranted.com (via Resend) and ping the team Slack channel (webhook).
 // Both are best-effort — a notification failure never blocks the upload.
@@ -17,6 +18,9 @@ const slackSafe = (x: string) => x.replace(/[<>|]/g, " ");
 export async function notifyClientUpload(d: { org: string; uploader: string; title: string; layer: string; tenantId?: string }) {
   if (isDemoTenant(d.tenantId)) return;  // demo runs never page the team
   const line = `${d.uploader} (${d.org}) uploaded "${d.title}" to Layer ${d.layer}.`;
+  // The inbox row comes first (patch 37): Slack and email are pagers, the row
+  // is the record. Uploads arrive as "seen": logged, never a chore.
+  await recordRequest({ tenantId: d.tenantId, kind: "upload", detail: line, status: "seen" });
 
   if (RESEND_KEY) {
     try {
@@ -47,6 +51,7 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
 export async function notifyAccountClosure(d: { org: string; requester: string; email: string; reason: string; tenantId?: string }) {
   if (isDemoTenant(d.tenantId)) return;
   const line = `${d.requester} (${d.org}, ${d.email}) requested to close their account.` + (d.reason ? ` Reason: ${d.reason}` : "");
+  await recordRequest({ tenantId: d.tenantId, kind: "closure", detail: line });
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -68,6 +73,7 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
   if (isDemoTenant(d.tenantId)) return;
   const what = d.kind === "ai_month" ? "this month's AI allowance" : d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
   const line = `${d.requester} (${d.org}) has used ${what} and asked For Granted for more.`;
+  await recordRequest({ tenantId: d.tenantId, kind: "allowance", detail: line });
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -99,6 +105,7 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
   const line = d.level === "over"
     ? `${d.org} has passed this month's AI allowance: ${d.spent} of ${d.line}. Nothing has stopped; the hard limit is ${d.ceiling}.`
     : `${d.org} has reached this month's hard AI limit: ${d.spent} of ${d.ceiling}. Chat, readiness re-runs and Story Intelligence now wait for a grant; document reads carry on.`;
+  await recordRequest({ tenantId: d.tenantId, kind: "allowance_alert", detail: line, status: "seen" });
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -124,6 +131,7 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
 export async function notifyAskAnswered(d: { org: string; answerer: string; kind: string; draftId: string | null; tenantId?: string }) {
   if (isDemoTenant(d.tenantId)) return;
   const line = `${d.answerer} (${d.org}) answered your question for ${d.kind}. It is saved as a user-generated Story Card, ready in the Storyboard.`;
+  await recordRequest({ tenantId: d.tenantId, kind: "answer", detail: line });
   const link = d.draftId ? `${APP_URL}/drafts/${d.draftId}` : `${APP_URL}/admin/card-library`;
   if (RESEND_KEY) {
     try {
@@ -144,6 +152,7 @@ export async function notifyAskAnswered(d: { org: string; answerer: string; kind
 /** Someone sent an Interest Cart from forgranted.com (website intake, 14 October 2026). */
 export async function notifySiteInterest(d: { name: string; org: string; email: string; cards: string[] }) {
   const list = d.cards.join(", ");
+  await recordRequest({ kind: "website_lead", detail: `${d.name} (${d.org}, ${d.email}) sent an Interest Cart: ${list}` });
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -172,9 +181,18 @@ export async function notifySiteInterest(d: { name: string; org: string; email: 
  * 16, 3 Nov 2026): a teammate login, a founder interview, a Story Card made
  * from an answer. Best-effort, like the rest of this file.
  */
-export async function notifyClientRequest(d: { org: string; requester: string; what: string; tenantId: string }) {
+export async function notifyClientRequest(d: {
+  org: string; requester: string; what: string; tenantId: string;
+  /** Inbox refinements (patch 37): a finer kind, an FYI status, or a source
+      key for auto-resolution (e.g. flag:<factId> closes when unflagged). */
+  inbox?: { kind?: string; status?: "open" | "seen"; sourceKey?: string };
+}) {
   if (isDemoTenant(d.tenantId)) return;
   const line = `${d.requester} (${d.org}) ${d.what}`;
+  await recordRequest({
+    tenantId: d.tenantId, kind: d.inbox?.kind ?? "request", detail: line,
+    status: d.inbox?.status ?? "open", sourceKey: d.inbox?.sourceKey ?? null,
+  });
   const link = `${APP_URL}/admin/clients/${d.tenantId}`;
   if (RESEND_KEY) {
     try {

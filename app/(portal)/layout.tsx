@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { openRequestCount } from "@/lib/server/requests";
 import Shell from "@/components/Shell";
 import { getSession } from "@/lib/server/session";
 import { getWorkspaceVisibility, getNavArtifactTypes, getPendingReviews, getTenants } from "@/lib/server/data";
@@ -24,19 +25,21 @@ export default async function PortalLayout({ children }: { children: React.React
   const gate = setupGate(await getSetupState(session.tenantId), session.user, brain);
   if (gate.kind === "run") redirect("/setup");
   const setupBy = gate.kind === "wait" ? await ownerName(session.tenantId, (await getSetupState(session.tenantId))?.ownerUserId ?? null) : null;
-  const [tenants, types, pending, workspaceVis, garden, overlayPending] = await Promise.all([
+  const [tenants, types, pending, workspaceVis, garden, overlayPending, requestsOpen] = await Promise.all([
     getTenants(),
     getNavArtifactTypes(session.tenantId, session.role === "admin"),
     session.role === "admin" ? getPendingReviews() : Promise.resolve([]),
     getWorkspaceVisibility(session.tenantId),
     brain ? Promise.resolve(null) : getGardenState(session.tenantId),
     session.role === "admin" ? getOverlayPendingCount() : Promise.resolve(0),
+    // The Requests inbox badge (patch 37), admins only.
+    session.role === "admin" ? openRequestCount().catch(() => 0) : Promise.resolve(0),
   ]);
   // The sidebar badge on Story Cards, only where the page is on.
   const storyCardsWaiting = workspaceVis.card_review && !brain ? await clientCardsWaiting(session.tenantId).catch(() => 0) : 0;
   return (
     <Shell user={session.user} role={session.role} tenantId={session.tenantId}
-      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}>
+      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} requestsOpenCount={requestsOpen} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}>
       {gate.kind === "wait" && <SetupUnderWay by={setupBy} done={gate.done} total={gate.total} />}
       {children}
     </Shell>

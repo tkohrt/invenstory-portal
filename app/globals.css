@@ -2504,3 +2504,17 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 
 /* The Demo Client's admin warning (7 Nov 2026): amber family, like .ap-warn. */
 .demo-banner{background:#fdf6e3;border:1px solid #c8b273;color:#7a6320;border-radius:10px;padding:10px 14px;margin:0 0 12px;font-size:14px}
+
+/* The Requests inbox (patch 37): client requests as cards, FYI fold, handled fold. */
+.rq-item{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 10px}
+.rq-item-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 6px}
+.rq-kind{display:inline-flex;align-items:center;background:#eef3ee;border:1px solid #cfe3d5;color:#1f4d2e;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+.rq-when{color:var(--muted);font-size:12px;margin-left:auto}
+.rq-detail{font-size:14px;margin:0 0 8px;white-space:pre-wrap}
+.rq-verbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rq-verbs input{flex:1;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:13px}
+.rq-item.rq-fyi{background:#fbfcfb;border-style:dashed}
+.rq-item.rq-done{opacity:.75}
+.rq-resolution{color:var(--muted);font-size:13px;margin:6px 0 0;font-style:italic}
+.rq-fold{margin:14px 0 0}
+.rq-fold>summary{cursor:pointer;font-size:14px;color:var(--muted);user-select:none;margin:0 0 8px}
