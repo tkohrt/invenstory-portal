@@ -14,9 +14,17 @@ interface Suggest {
   drafts: { id: string; title: string }[];
 }
 
-interface Row { key: string; href: string; group: string; label: string; meta?: string }
+// kind drives the row's colored left edge; dot is the within-kind signal
+// (layer for documents, status for grants), per the house dot+word rule.
+interface Row {
+  key: string; href: string; group: string; label: string; meta?: string;
+  kind: "doc" | "grant" | "funder" | "draft";
+  dot?: string; // CSS color
+}
 
 const WHERE_LABEL = { open: "Open call", watch: "Watchlist", saved: "Saved" } as const;
+const WHERE_DOT = { open: "#2f7d44", watch: "#8a6514", saved: "var(--accent)" } as const;
+const LAYER_DOT: Record<string, string> = { I: "var(--l1)", II: "var(--l2)", III: "var(--l3)" };
 
 export default function SearchSuggest() {
   const router = useRouter();
@@ -40,19 +48,19 @@ export default function SearchSuggest() {
         if (mySeq !== seq.current) return; // a newer keystroke superseded this
         const next: Row[] = [
           ...(body.documents ?? []).map(d => ({
-            key: `d:${d.id}`, href: `/documents/${d.id}`, group: "Documents",
-            label: d.title, meta: `Layer ${d.layer} · opens in the reader`,
+            key: `d:${d.id}`, href: `/documents/${d.id}`, group: "Documents", kind: "doc" as const,
+            label: d.title, meta: `Layer ${d.layer} · opens in the reader`, dot: LAYER_DOT[d.layer],
           })),
           ...(body.grants ?? []).map(g => ({
-            key: `g:${g.id}`, href: `/funding?focus=${encodeURIComponent(`g:${g.id}`)}`, group: "Grants",
-            label: g.title, meta: [WHERE_LABEL[g.where], g.funder].filter(Boolean).join(" · "),
+            key: `g:${g.id}`, href: `/funding?focus=${encodeURIComponent(`g:${g.id}`)}`, group: "Grants", kind: "grant" as const,
+            label: g.title, meta: [WHERE_LABEL[g.where], g.funder].filter(Boolean).join(" · "), dot: WHERE_DOT[g.where],
           })),
           ...(body.funders ?? []).map(f => ({
-            key: `f:${f.id}`, href: `/funding?mode=funders&focus=${encodeURIComponent(`f:${f.id}`)}`, group: "Funders",
+            key: `f:${f.id}`, href: `/funding?mode=funders&focus=${encodeURIComponent(`f:${f.id}`)}`, group: "Funders", kind: "funder" as const,
             label: f.name,
           })),
           ...(body.drafts ?? []).map(d => ({
-            key: `dr:${d.id}`, href: `/drafts/${d.id}`, group: "Drafts",
+            key: `dr:${d.id}`, href: `/drafts/${d.id}`, group: "Drafts", kind: "draft" as const,
             label: d.title,
           })),
         ];
@@ -104,10 +112,11 @@ export default function SearchSuggest() {
             lastGroup = r.group;
             return (
               <div key={r.key}>
-                {header && <div className="ts-group">{header}</div>}
+                {header && <div className={`ts-group ts-g-${r.kind}`}>{header}</div>}
                 <button type="button" role="option" aria-selected={i === active}
-                  className={`ts-row${i === active ? " ts-active" : ""}`}
+                  className={`ts-row ts-k-${r.kind}${i === active ? " ts-active" : ""}`}
                   onMouseEnter={() => setActive(i)} onClick={() => go(r.href)}>
+                  {r.dot && <span className="ts-dot" style={{ background: r.dot }} aria-hidden="true" />}
                   <span className="ts-label">{r.label}</span>
                   {r.meta && <span className="ts-meta">{r.meta}</span>}
                 </button>

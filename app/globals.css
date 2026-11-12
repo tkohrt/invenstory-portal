@@ -323,8 +323,19 @@ button.vis-dot.busy{opacity:.5}
   border-radius:12px;box-shadow:0 12px 32px rgba(23,28,38,.14);padding:6px;z-index:60;max-height:70vh;overflow:auto}
 .ts-group{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 10px 4px}
 .ts-row{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:0;
-  border-radius:8px;padding:7px 10px;font:inherit;font-size:14px;color:inherit;cursor:pointer}
+  border-left:3px solid transparent;border-radius:8px;padding:7px 10px;font:inherit;font-size:14px;color:inherit;cursor:pointer}
 .ts-row.ts-active{background:var(--accent-soft)}
+/* Kind color coding (patch 33): the left edge says what KIND of thing a row
+   is; the dot inside says its state or layer (dot+word, per the style guide).
+   Kind hues stay off the layer palette so the two mechanics never collide. */
+.ts-row.ts-k-doc{border-left-color:#1f4d2e}
+.ts-row.ts-k-grant{border-left-color:#8a6514}
+.ts-row.ts-k-funder{border-left-color:#44607a}
+.ts-row.ts-k-draft{border-left-color:#9aa1ad}
+.ts-group.ts-g-doc{color:#1f4d2e}
+.ts-group.ts-g-grant{color:#8a6514}
+.ts-group.ts-g-funder{color:#44607a}
+.ts-dot{flex:none;width:8px;height:8px;border-radius:50%;align-self:center}
 .ts-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ts-meta{flex:none;font-size:12px;color:var(--muted)}
 .ts-all{border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px;color:var(--muted)}
