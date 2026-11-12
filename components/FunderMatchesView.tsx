@@ -214,10 +214,14 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [], focusId = null,
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [], focusId = null, profileAwaiting = 0, profileGeneratedAt = null,
 }: {
   /** Row to scroll to and flash (patch 32): "g:<grant_id>" or "f:<funder_id>". */
   focusId?: string | null;
+  /** Matching-profile facts not yet confirmed or flagged (patch 34); drives
+      the funders-mode ladder's top rung. */
+  profileAwaiting?: number;
+  profileGeneratedAt?: string | null;
   /** Notification-bar keys this person has dismissed (patch 28). */
   dismissedNotices?: string[];
   /** When this client last visited this mode (patch 25); null for admins, the
@@ -608,6 +612,19 @@ export default function FunderMatchesView({
       }
     }
     if (mode === "funders") {
+      // The ladder's top funders rung (decided 10 Nov): profile facts awaiting
+      // review. Keyed by the profile's build stamp, so a dismissal holds until
+      // the profile is rebuilt with new facts.
+      if (profileAwaiting > 0) {
+        const k = `profilefacts:${profileGeneratedAt ?? "none"}`;
+        if (!isDismissed(k)) {
+          return {
+            key: k,
+            text: `${profileAwaiting} matching-profile fact${profileAwaiting === 1 ? " is" : "s are"} waiting for your eye. Confirm what is right; flag what is not.`,
+            cta: { href: "/matching-profile", label: "Review them" },
+          };
+        }
+      }
       const nv = visibleFunders.filter(f => f.verified_at && rowIsNew(f));
       if (nv.length) {
         const k = `verified:${nv[0].funder_id}:${nv[0].first_matched_at ?? ""}`;
@@ -642,6 +659,12 @@ export default function FunderMatchesView({
           <div className="fund-title-row">
             <h2>Funding</h2>
             {modeSwitch}
+            {/* Your matching profile (patch 34): the header button decided 10
+                Nov, in both modes. One profile, two lenses. */}
+            <a className="sb-btn sb-quiet sb-sm fund-profile-link" href="/matching-profile"
+               title="Every fact the searches run on, with the document line behind each. Confirm what is right; flag what is not.">
+              Your matching profile
+            </a>
           </div>
           <p>
             {mode === "grants"

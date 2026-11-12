@@ -7,6 +7,8 @@ import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
 import { getEligibilityProfile } from "@/lib/server/eligibility";
 import { getSearchProfile } from "@/lib/server/search-profile-read";
+import { getFactReviews } from "@/lib/server/profile-review";
+import { factId } from "@/lib/search-profile";
 import { profileBuildProgress } from "@/lib/server/search-profile-extract";
 import { getLastRunQueries, pendingRationaleCount, getRunHistory } from "@/lib/server/matching";
 import { latestJob } from "@/lib/server/jobs";
@@ -117,6 +119,19 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       ])
     : [{}, null, [], null, null, 0, { done: 0, total: 0 }];
 
+  // The matching-profile page (patch 34, decided 10 Nov) shows the profile's
+  // FACTS to clients with their quotes; the exact query text remains For
+  // Granted's working view, as above. Here only a NUMBER crosses to the view:
+  // how many facts await the client's review, for the funders-mode rung.
+  const [profForCount, factReviews] = await Promise.all([
+    asAdmin ? Promise.resolve(profile) : getSearchProfile(session.tenantId).catch(() => null),
+    getFactReviews(session.tenantId),
+  ]);
+  const profileAwaiting = profForCount
+    ? profForCount.facts.filter(f => f.subject === "organization" && f.documentId && !factReviews.has(factId(f))).length
+    : 0;
+  const profileGeneratedAt = profForCount?.generatedAt ?? null;
+
   // A client For Granted lets search for itself runs matching and the web
   // search from this page (patch 7), and rejoins its own run on reload.
   const clientRuns = !isAdmin && selfOn;
@@ -175,6 +190,8 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       savedItems={savedItems}
       dismissedNotices={dismissed}
       focusId={typeof sp.focus === "string" ? sp.focus.slice(0, 220) : null}
+      profileAwaiting={profileAwaiting}
+      profileGeneratedAt={profileGeneratedAt}
       seenAt={seenAt}
       grantsOn={grantsOn}
       fundersOn={fundersOn}

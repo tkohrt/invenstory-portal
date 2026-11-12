@@ -342,6 +342,31 @@ button.vis-dot.busy{opacity:.5}
 /* Row focus flash when arriving from a search suggestion (patch 32). */
 @keyframes fm-focus{0%{background:var(--accent-soft)}100%{background:transparent}}
 .fm-focus-flash{animation:fm-focus 2.4s ease-out 1}
+
+/* ---------- Your matching profile (patch 34) ---------- */
+.mp-page{max-width:860px}
+.mp-meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted);margin-bottom:14px}
+.mp-stale{color:#8a6514}
+.mp-sec{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.mp-sec-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.mp-sec-head h3{margin:0;font-size:16px}
+.mp-feeds{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:1px 8px;white-space:nowrap}
+.mp-feeds-g{color:#1f4d2e;border-color:#1f4d2e40}
+.mp-feeds-f{color:#44607a;border-color:#44607a40}
+.mp-fact{padding:10px 0;border-top:1px solid var(--line)}
+.mp-fact:first-of-type{border-top:0}
+.mp-fact-text{font-size:14px}
+.mp-quote{margin:6px 0 0;padding:6px 12px;border-left:3px solid var(--line);color:#5b6170;font-size:13px}
+.mp-quote cite{display:flex;align-items:center;gap:6px;font-style:normal;font-size:12px;color:var(--muted);margin-top:4px}
+.mp-byhand{font-size:12px;color:var(--muted);margin-top:4px}
+.mp-verbs{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.mp-confirmed{border-color:#2f7d44;color:#2f7d44;background:#f0f7f2}
+.mp-flagged{font-size:13px;color:#8a6514;display:inline-flex;align-items:center;gap:8px}
+.mp-flagbox{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mp-flagbox input{width:280px;max-width:60vw;padding:6px 10px;font-size:13px}
+.mp-foot{font-size:12px;margin-top:16px}
+.fund-profile-link{white-space:nowrap}
 .userchip-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:10px;padding:4px 6px}
 .userchip-link:hover{background:#f3f4f6}
 @media (max-width:900px){ .topbar-search{margin:0 10px;max-width:none} .topbar-search input::placeholder{color:transparent} }
