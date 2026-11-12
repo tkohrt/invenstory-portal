@@ -5,6 +5,7 @@
 // model is called. Safe to press again: a run only takes documents with no
 // stored text, so pressing twice never stores anything twice.
 import { NextResponse } from "next/server";
+import { chainOrigin } from "@/lib/server/job-chain";
 import { getSession } from "@/lib/server/session";
 import { startDocTextBackfill } from "@/lib/server/doc-text-backfill";
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   if (session.role !== "admin") return NextResponse.json({ error: "Only For Granted can do this." }, { status: 403 });
   try {
-    const r = await startDocTextBackfill(new URL(req.url).origin, session.user.id);
+    const r = await startDocTextBackfill(chainOrigin(req), session.user.id);
     return NextResponse.json(r);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Could not start." }, { status: 500 });

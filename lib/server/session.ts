@@ -21,6 +21,10 @@ export async function getSession(): Promise<PortalSession | null> {
   if (user.role === "admin") {
     const jar = await cookies();
     tenantId = jar.get("active_tenant")?.value ?? null;
+    // Red-team L5 (patch 30): the cookie is admin-set but still a cookie. A
+    // non-UUID value used to surface as Postgres cast errors (500s); now any
+    // malformed value is simply ignored and the default tenant wins.
+    if (tenantId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) tenantId = null;
     if (!tenantId) {
       // The first client by name, never the Brain (Auto-Draft patch 3).
       const { data: ts } = await db.from("tenant").select("*").order("name");

@@ -11,7 +11,7 @@ import { NextResponse, after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import { createJob, supersedeRunning, failJob, releaseJob, recordEvent } from "@/lib/server/jobs";
-import { scheduleAutodraftPass } from "@/lib/server/job-chain";
+import { scheduleAutodraftPass, chainOrigin } from "@/lib/server/job-chain";
 import { autodraftPreview, markAutoDrafted } from "@/lib/server/autodraft";
 import { saveBeforeAutoDraftAction } from "@/lib/server/version-actions";
 import { runningAutodraft, type RunState } from "@/lib/server/autodraft-run";
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
       + "A version named \"Before auto-draft\" was saved first. This page can be closed.",
   });
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: tenantId, action: "autodraft_started", detail: `${draftId}: ${state.run.length} questions` });
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => { await scheduleAutodraftPass(origin, tenantId, jobId); });
   return NextResponse.json({ jobId, total: state.run.length });
 }

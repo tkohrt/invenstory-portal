@@ -10,21 +10,29 @@ import { db } from "./db";
 import { isDemoTenant, DEMO_WIPE_TABLES, stripFirstRunPrefs } from "@/lib/demo";
 
 /** Every file under {tenantId}/ in the private documents bucket. */
-async function storageKeys(tenantId: string): Promise<string[]> {
+async function storageKeys(tenantId: string): Promise<{ keys: string[]; incomplete: boolean }> {
   const out: string[] = [];
+  let incomplete = false;
   const walk = async (prefix: string, depth: number): Promise<void> => {
-    if (depth > 4) return;
-    const { data, error } = await db.storage.from("documents").list(prefix, { limit: 1000 });
-    if (error || !data) return;
-    for (const e of data) {
-      const path = `${prefix}/${e.name}`;
-      // A folder has no id; a file does.
-      if (e.id) out.push(path);
-      else await walk(path, depth + 1);
+    if (depth > 4) { incomplete = true; return; }
+    // Red-team L6 (patch 30): paginate rather than trusting one 1000-row page,
+    // and say when the listing could not be completed, so a reset that left
+    // files behind is recorded instead of silently promising "day one".
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await db.storage.from("documents").list(prefix, { limit: 1000, offset });
+      if (error) { incomplete = true; return; }
+      if (!data?.length) return;
+      for (const e of data) {
+        const path = `${prefix}/${e.name}`;
+        // A folder has no id; a file does.
+        if (e.id) out.push(path);
+        else await walk(path, depth + 1);
+      }
+      if (data.length < 1000) return;
     }
   };
   await walk(tenantId, 1);
-  return out;
+  return { keys: out, incomplete };
 }
 
 /**
@@ -50,13 +58,17 @@ export async function resetDemoTenant(tenantId: string): Promise<void> {
   }
 
   // 1. Storage: every uploaded file.
+  let storageNote = "";
   try {
-    const keys = await storageKeys(tenantId);
+    const { keys, incomplete } = await storageKeys(tenantId);
     for (let i = 0; i < keys.length; i += 100) {
-      await db.storage.from("documents").remove(keys.slice(i, i + 100));
+      const { error } = await db.storage.from("documents").remove(keys.slice(i, i + 100));
+      if (error) storageNote = `; some storage removals failed (${error.message})`;
     }
+    if (incomplete) storageNote += "; the storage listing could not be completed, files may remain";
   } catch (e) {
     console.error("[demo] storage wipe failed", e instanceof Error ? e.message : e);
+    storageNote = "; the storage wipe failed partway";
   }
 
   // 2. Content tables, referencing tables first. A second pass catches any
@@ -83,6 +95,8 @@ export async function resetDemoTenant(tenantId: string): Promise<void> {
     await db.from("app_user").update({ ui_prefs: prefs }).eq("tenant_id", tenantId).eq("id", u.id);
   }
 
-  // 4. Say so, so the admin page's history explains the empty account.
-  await db.from("audit_log").insert({ tenant_id: tenantId, action: "demo_reset", detail: "demo tenant wiped on sign-in" });
+  // 4. Say so, so the admin page's history explains the empty account; a
+  // partial reset names what failed rather than only logging it (L6).
+  const tableNote = failed.length ? `; tables retried: ${failed.join(", ")}` : "";
+  await db.from("audit_log").insert({ tenant_id: tenantId, action: "demo_reset", detail: `demo tenant wiped on sign-in${storageNote}${tableNote}` });
 }

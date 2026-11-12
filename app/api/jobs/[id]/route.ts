@@ -6,7 +6,7 @@
 import { NextResponse, after as afterResponse } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { getJob, jobEvents } from "@/lib/server/jobs";
-import { reviveStalledChains } from "@/lib/server/job-chain";
+import { reviveStalledChains, chainOrigin } from "@/lib/server/job-chain";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -18,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // its own analysis (a client's Analyze page has no other poll) restarts the
   // chain if Vercel stopped it (see reviveStalledChains). Cheap when nothing stalled.
   if (job.status === "running" && (job.kind === "analysis" || job.kind === "cards" || job.kind === "autodraft")) {
-    const origin = new URL(req.url).origin;
+    const origin = chainOrigin(req);
     const tenantId = session.tenantId;
     afterResponse(async () => { await reviveStalledChains(origin, { tenantId }).catch(() => undefined); });
   }

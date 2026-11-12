@@ -17,16 +17,41 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "./db";
 import { chainStalled } from "@/lib/job";
 
+let warnedFallback = false;
 function secret(): string {
-  const k = process.env.JOB_CHAIN_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!k) throw new Error("No server secret is configured to sign build continuations.");
-  return k;
+  // Red-team L1 (patch 30): a dedicated JOB_CHAIN_SECRET, so the most
+  // powerful credential in the system is not moonlighting as an HMAC key.
+  // The service-role fallback remains ONLY so a deploy that predates the
+  // Vercel env var does not break running builds; it nags until the var is
+  // set (any long random string; rotating it only breaks in-flight chains).
+  const k = process.env.JOB_CHAIN_SECRET;
+  if (k) return k;
+  const fallback = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!fallback) throw new Error("No server secret is configured to sign build continuations.");
+  if (!warnedFallback) {
+    warnedFallback = true;
+    console.error("[job-chain] JOB_CHAIN_SECRET is not set; falling back to the service-role key as an HMAC key. Set JOB_CHAIN_SECRET in Vercel (red-team L1).");
+  }
+  return fallback;
 }
 
 /**
  * Which chain a signature is for. A Card Library signature cannot continue an
  * analysis, or the reverse: the scope is part of what is signed.
  */
+
+/**
+ * Where chain continuations post back to. Pinned to NEXT_PUBLIC_APP_URL when
+ * set (red-team informational, patch 30), so a misconfigured preview alias
+ * cannot have stages posting their signatures to an unexpected host; the
+ * request's own origin is only the fallback.
+ */
+export function chainOrigin(req: Request): string {
+  const pinned = process.env.NEXT_PUBLIC_APP_URL;
+  if (pinned) { try { return new URL(pinned).origin; } catch { /* fall through */ } }
+  return new URL(req.url).origin;
+}
+
 export type ChainScope = "card-chain" | "analysis-chain" | "autodraft-chain" | "doc-text-chain";
 
 export function signChain(tenantId: string, jobId: string, scope: ChainScope = "card-chain"): string {

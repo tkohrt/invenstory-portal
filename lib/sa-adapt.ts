@@ -18,8 +18,8 @@
 // that breaks the rules is refused whole and the Standard Answer stays as
 // copied. A bridge stays only between the same two pieces, still side by side.
 
+import { defuse, untrusted } from "@/lib/untrusted";
 import { wordingRefusal } from "./polish";
-import { untrusted } from "@/lib/untrusted";
 
 // ---------------------------------------------------------------------------
 // The record kept on the question (draft_section.sa_adaptation, 0065).
@@ -350,7 +350,9 @@ export function adaptUser(input: {
   voiceProfile: string; application: string; funderContext: string; clientContext: string;
 }): string {
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-  const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
+  // Red-team L4 (patch 30): card and question text originate in client
+  // uploads, so everything placed inside these static tags is defused.
+  const tidy = (s: string) => defuse(s.replace(/\s+/g, " ").trim());
   const line = (p: AdaptPromptPiece) => `${p.ref}. [${p.kind}${p.label ? `, ${p.label}` : ""}, ${words(p.text)} words] ${clip(tidy(p.text), 900)}`;
   const parts = [
     `<question>\n${tidy(input.question)}${input.guidance ? `\n${tidy(input.guidance)}` : ""}\n</question>`,
@@ -360,7 +362,7 @@ export function adaptUser(input: {
     `<standard_answer>\n${input.pieces.map(line).join("\n")}\n</standard_answer>`,
     input.offered.length ? `<other_cards>\n${input.offered.map(line).join("\n")}\n</other_cards>` : "There are no other cards to add.",
   ];
-  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${clip(input.voiceProfile.trim(), 4000)}\n</voice_profile>`);
+  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${defuse(clip(input.voiceProfile.trim(), 4000))}\n</voice_profile>`);
   if (input.funderContext.trim()) parts.push(`<funder_context>\n${untrusted("FUNDER_CONTEXT", clip(input.funderContext.trim(), 6000))}\n</funder_context>`);
   if (input.clientContext.trim()) parts.push(`<client_context>\n${untrusted("CLIENT_CONTEXT", clip(input.clientContext.trim(), 3000))}\n</client_context>`);
   if (input.application.trim()) parts.push(`<application>\n${untrusted("APPLICATION_TEXT", clip(input.application.trim(), 3000))}\n</application>`);

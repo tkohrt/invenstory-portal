@@ -3,7 +3,7 @@
 // this chain so no other chain's signature can continue it (lib/server/job-chain.ts).
 import { NextResponse, after } from "next/server";
 import { db } from "@/lib/server/db";
-import { verifyChain } from "@/lib/server/job-chain";
+import { verifyChain, chainOrigin } from "@/lib/server/job-chain";
 import { runDocTextPass, scheduleDocTextPass } from "@/lib/server/doc-text-backfill";
 
 export const maxDuration = 300;
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!job || job.kind !== "doc_text" || job.status !== "running") {
     return NextResponse.json({ skipped: true }, { status: 202 });
   }
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => {
     const out = await runDocTextPass(tenantId, jobId, { chained: true });
     if (out.kind === "more") await scheduleDocTextPass(origin, tenantId, jobId);

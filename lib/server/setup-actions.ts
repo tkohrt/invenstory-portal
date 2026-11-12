@@ -64,8 +64,18 @@ export async function saveYouAction(input: { website?: string; fullName?: string
     const changed = (t as { website?: string | null } | null)?.website !== site;
     if (changed) await db.from("tenant").update({ website: site }).eq("id", s.tenantId);  // tenant-safe: the session's own tenant row, by id
     if (changed || (state.answers.website_tried !== site && !(await hasWebsiteDoc(s.tenantId)))) {
-      const r = await addWebDocument({ tenantId: s.tenantId, userId: s.user.id, role: "client", url: site, layer: "I", tag: "website" });
-      message = r.ok ? "We read your website and added it to Layer I." : `Your website could not be read: ${r.error}`;
+      // Red-team informational (patch 30): this fetch now sits inside the same
+      // daily link budget as addSetupLinkAction, so re-saving a changing URL
+      // cannot mint unlimited documents and ingestion runs.
+      const { count } = await db.from("audit_log").select("id", { count: "exact", head: true })
+        .eq("tenant_id", s.tenantId).eq("action", "setup_link").gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
+      if ((count ?? 0) >= 20) {
+        message = "Your website address was saved; reading it is paused until tomorrow (the daily link budget is used up).";
+      } else {
+        await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "setup_link", detail: site.slice(0, 300) });
+        const r = await addWebDocument({ tenantId: s.tenantId, userId: s.user.id, role: "client", url: site, layer: "I", tag: "website" });
+        message = r.ok ? "We read your website and added it to Layer I." : `Your website could not be read: ${r.error}`;
+      }
     }
   }
   const answers: SetupAnswers = { ...state.answers, role: cleanRole(input.role), website_tried: site ?? state.answers.website_tried ?? null };

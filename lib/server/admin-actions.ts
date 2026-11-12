@@ -38,11 +38,20 @@ export async function createClientAction(input: {
     .select("id").single();
   if (e2 || !tenant) { await db.auth.admin.deleteUser(au.user.id); return { ok: false, error: e2?.message ?? "Could not create client." }; }
 
-  // 3. app_user (client)
+  // 3. app_user (client). Red-team L8 (patch 30): the duplicate pre-checks
+  // above are check-then-insert races (two admins at once can both pass), so
+  // the conflict error is handled here as the real guard, and a failure at
+  // this step cleans up BOTH orphans it would otherwise leave: the auth user
+  // and the tenant row.
   const { error: e3 } = await db.from("app_user").insert({
     tenant_id: tenant.id, email, full_name: contactName, role: "client", auth_id: au.user.id,
   });
-  if (e3) return { ok: false, error: e3.message };
+  if (e3) {
+    await db.auth.admin.deleteUser(au.user.id).catch(() => {});
+    await db.from("tenant").delete().eq("id", tenant.id);
+    const taken = e3.code === "23505";
+    return { ok: false, error: taken ? "A user with that email already exists." : e3.message };
+  }
 
   // 4. Story Intelligence sets so the tabs render
   const { data: types } = await db.from("artifact_type").select("slug");

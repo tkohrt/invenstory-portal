@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { chatComplete } from "./llm";
+import { defuse } from "@/lib/untrusted";
 import { withAiUsage } from "./ai-usage";
 import { BLOCK_COLS, loadCards, resolveBlocks, type WsBlock } from "./workspace";
 import { orgTypeOf } from "./application-parse";
@@ -610,8 +611,10 @@ export async function tidyAction(sectionId: string): Promise<TidyProposal | { er
   if (live.length < 3) return { error: "Tidy needs at least three pieces to suggest an order." };
   if (live.length !== blocks.length) return { error: "Fill in or remove the empty text block first." };
 
-  const user = `<question>\n${section.prompt}${section.guidance ? `\n${section.guidance}` : ""}\n</question>\n\n<pieces>\n`
-    + live.map((b, i) => `${i + 1}. ${b.text.replace(/\s+/g, " ").trim().slice(0, 1200)}`).join("\n")
+  // Red-team L4 (patch 30): the question and piece text originate in client
+  // uploads, so each is defused before it sits inside these static tags.
+  const user = `<question>\n${defuse(section.prompt)}${section.guidance ? `\n${defuse(section.guidance)}` : ""}\n</question>\n\n<pieces>\n`
+    + live.map((b, i) => `${i + 1}. ${defuse(b.text.replace(/\s+/g, " ").trim().slice(0, 1200))}`).join("\n")
     + `\n</pieces>`;
   const res = await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "tidy" },
     () => chatComplete({ system: TIDY_SYSTEM, user, maxTokens: 400, temperature: 0 }));
@@ -1104,10 +1107,11 @@ export async function weaveSectionAction(sectionId: string): Promise<WeaveResult
   const examples = ((ex ?? []) as { long_answer: string; draft_section_id: string | null }[])
     .filter(a => a.draft_section_id !== sectionId).slice(0, 2).map(a => a.long_answer.slice(0, 1200));
 
-  const user = `<question>\n${section.prompt}${section.guidance ? `\n${section.guidance}` : ""}\n</question>\n\n<pieces>\n`
-    + pieces.map((p, i) => `${i + 1}. ${p.text.replace(/\s+/g, " ").trim().slice(0, 1500)}`).join("\n")
+  // Red-team L4 (patch 30): defused, as in Tidy above.
+  const user = `<question>\n${defuse(section.prompt)}${section.guidance ? `\n${defuse(section.guidance)}` : ""}\n</question>\n\n<pieces>\n`
+    + pieces.map((p, i) => `${i + 1}. ${defuse(p.text.replace(/\s+/g, " ").trim().slice(0, 1500))}`).join("\n")
     + `\n</pieces>\n\nGaps you may bridge: ${gaps.map(g => `after ${g + 1}`).join(", ")}.`
-    + (examples.length ? `\n\n<examples>\n${examples.join("\n---\n")}\n</examples>` : "");
+    + (examples.length ? `\n\n<examples>\n${examples.map(e => defuse(e)).join("\n---\n")}\n</examples>` : "");
   const res = await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor, feature: "weave" },
     () => chatComplete({ system: WEAVE_SYSTEM, user, maxTokens: 900, temperature: 0.3 }));
   if (!res) return { ok: false, error: "The model did not answer, so nothing was woven. Nothing changed." };

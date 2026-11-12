@@ -15,6 +15,7 @@
 import { getSession } from "./session";
 import { db } from "./db";
 import { chatComplete } from "./llm";
+import { defuse } from "@/lib/untrusted";
 import { withAiUsage } from "./ai-usage";
 import { checkAllowance } from "./allowance";
 import { resolveBlocks, BLOCK_COLS } from "./workspace";
@@ -79,9 +80,10 @@ export async function polishSectionAction(sectionId: string): Promise<Result<{ o
   if (!allowed.ok) return { ok: false, error: allowed.message, canRequest: true };
 
   const ids = blocks.map(b => b.id);
-  const user = `<question>\n${sec.prompt}${sec.guidance ? `\n${sec.guidance}` : ""}\n</question>\n\n`
+  // Red-team L4 (patch 30): defused; this text originates in client uploads.
+  const user = `<question>\n${defuse(sec.prompt)}${sec.guidance ? `\n${defuse(sec.guidance)}` : ""}\n</question>\n\n`
     + `The answer is ${count} ${unit}; the limit is ${sec.limit_value} ${unit}. Cut at least ${over} ${unit}, and a little more if it reads better.\n\n<pieces>\n`
-    + blocks.map((b, i) => `${i + 1}. ${b.text.replace(/\s+/g, " ").trim().slice(0, 2000)}`).join("\n") + "\n</pieces>";
+    + blocks.map((b, i) => `${i + 1}. ${defuse(b.text.replace(/\s+/g, " ").trim().slice(0, 2000))}`).join("\n") + "\n</pieces>";
   const res = await withAiUsage({ tenantId: s.tenantId, userId: s.user.id, actor: "admin", feature: "polish" },
     () => chatComplete({ system: POLISH_SYSTEM, user, maxTokens: 1800, temperature: 0.2 }));
   if (!res) return { ok: false, error: "The model did not answer, so nothing was drafted. Nothing changed." };

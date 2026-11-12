@@ -21,9 +21,9 @@
 //      stays a gap, for Add it now or Ask the client.
 // Weave, Polish and suggested wording come in later patches.
 
+import { defuse, untrusted } from "@/lib/untrusted";
 import type { Ranked } from "./story-card-rank";
 import type { GateIssue } from "./card-gate";
-import { untrusted } from "@/lib/untrusted";
 
 // ---------------------------------------------------------------------------
 // What a run touches.
@@ -233,7 +233,9 @@ export function arrangeUser(input: {
   voiceProfile: string; application: string; funderContext: string; clientContext: string;
 }): string {
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
-  const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
+  // Red-team L4 (patch 30): card and question text originate in client
+  // uploads, so everything placed inside these static tags is defused.
+  const tidy = (s: string) => defuse(s.replace(/\s+/g, " ").trim());
   const parts: string[] = [];
   parts.push(`<question>\n${tidy(input.question)}${input.guidance ? `\n${tidy(input.guidance)}` : ""}\n</question>`);
   parts.push(input.limit.value
@@ -244,7 +246,7 @@ export function arrangeUser(input: {
     parts.push(`<already_in_the_answer>\nThese stay as they are, first. Choose cards to follow them.\n${input.existing.map(t => `- ${clip(tidy(t), 400)}`).join("\n")}\n</already_in_the_answer>`);
   }
   parts.push(`<cards>\n${input.cards.map(c => `${c.n}. [${c.kindLabel}${c.layer ? `, Layer ${c.layer}` : ""}, ${c.words} words] ${clip(tidy(c.text), 700)}`).join("\n")}\n</cards>`);
-  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${clip(input.voiceProfile.trim(), 4000)}\n</voice_profile>`);
+  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${defuse(clip(input.voiceProfile.trim(), 4000))}\n</voice_profile>`);
   if (input.funderContext.trim()) parts.push(`<funder_context>\n${untrusted("FUNDER_CONTEXT", clip(input.funderContext.trim(), 6000))}\n</funder_context>`);
   if (input.clientContext.trim()) parts.push(`<client_context>\n${untrusted("CLIENT_CONTEXT", clip(input.clientContext.trim(), 3000))}\n</client_context>`);
   if (input.application.trim()) parts.push(`<application>\n${untrusted("APPLICATION_TEXT", clip(input.application.trim(), 3000))}\n</application>`);

@@ -24,7 +24,7 @@ import { db } from "@/lib/server/db";
 import { clearCardDocs, cardBuildProgress, remergeLibrary } from "@/lib/server/card-extract";
 import { createJob, supersedeRunning, finishJob, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
 import { describeMerge } from "@/lib/server/card-build";
-import { scheduleCardPass } from "@/lib/server/job-chain";
+import { scheduleCardPass, chainOrigin } from "@/lib/server/job-chain";
 
 export const maxDuration = 300;
 
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     kind: "phase",
     text: "Reading in stages on the server. This page can be closed: the build carries on, and the portal shows its progress wherever you are.",
   });
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => { await scheduleCardPass(origin, tenantId, jobId); });
   return NextResponse.json({ jobId, chained: true, complete: false, ...await cardBuildProgress(tenantId) });
 }

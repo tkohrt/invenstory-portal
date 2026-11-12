@@ -20,7 +20,7 @@ import { getTenant, getFeatureVisible } from "@/lib/server/data";
 import { db } from "@/lib/server/db";
 import { clearAnalysisDocs, analysisProgress, REREAD_MARK } from "@/lib/server/analysis-extract";
 import { createJob, supersedeRunning, failJob, releaseJob, latestJob, recordEvent } from "@/lib/server/jobs";
-import { scheduleAnalysisPass } from "@/lib/server/job-chain";
+import { scheduleAnalysisPass, chainOrigin } from "@/lib/server/job-chain";
 import { pendingReading } from "@/lib/server/analysis-extract";
 import { checkAllowance } from "@/lib/server/allowance";
 import { onAnalysis } from "@/lib/server/analysis-source";
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
     kind: "phase",
     text: "Reading in stages on the server. This page can be closed; come back to it to see the results.",
   });
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => { await scheduleAnalysisPass(origin, tenantId, jobId); });
   return NextResponse.json({ jobId, chained: true, complete: false, ...await analysisProgress(tenantId) });
 }

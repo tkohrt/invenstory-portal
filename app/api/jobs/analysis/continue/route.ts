@@ -3,7 +3,7 @@
 // analysis so a Card Library signature cannot continue it (lib/server/job-chain.ts).
 import { NextResponse, after } from "next/server";
 import { db } from "@/lib/server/db";
-import { verifyChain, scheduleAnalysisPass } from "@/lib/server/job-chain";
+import { verifyChain, scheduleAnalysisPass, chainOrigin } from "@/lib/server/job-chain";
 import { runAnalysisPass } from "@/lib/server/analysis-build";
 
 export const maxDuration = 300;
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!job || job.kind !== "analysis" || job.status !== "running") {
     return NextResponse.json({ skipped: true }, { status: 202 });
   }
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => {
     const out = await runAnalysisPass(tenantId, jobId, { chained: true });
     if (out.kind === "more") await scheduleAnalysisPass(origin, tenantId, jobId);

@@ -15,7 +15,7 @@ import { getSession } from "@/lib/server/session";
 import { db } from "@/lib/server/db";
 import { getFeatureVisible } from "@/lib/server/data";
 import { estimateRemainingMs, STALL_AFTER_MS } from "@/lib/job";
-import { analysisRunning, reviveStalledChains } from "@/lib/server/job-chain";
+import { analysisRunning, reviveStalledChains, chainOrigin } from "@/lib/server/job-chain";
 
 interface AutoRun { jobId: string; draftId: string; title: string; done: number; total: number; resuming: boolean }
 interface AutoDone { jobId: string; draftId: string; title: string; status: string; text: string | null }
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   // client's, since For Granted switches between clients while builds run; a
   // client only their own.
   const admin = session.role === "admin";
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => { await reviveStalledChains(origin, admin ? { allTenants: true } : { tenantId }); });
   // An analysis running anywhere keeps an admin's notice polling quickly, so a
   // stopped chain is picked up within seconds rather than a minute.

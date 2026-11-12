@@ -37,11 +37,16 @@ export async function switchTenantAction(tenantId: string) {
   const supabase = await userClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/");
-  const { data: me } = await db.from("app_user").select("role").eq("auth_id", user.id).single();
+  const { data: me } = await db.from("app_user").select("id, role").eq("auth_id", user.id).single();
   if (me?.role !== "admin") redirect("/invenstory");
+  // Red-team L5 (patch 30): only a real tenant's UUID is ever stored, and the
+  // audit row carries the admin's app_user id, not just an email in free text.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) return;
+  const { data: t } = await db.from("tenant").select("id").eq("id", tenantId).maybeSingle();
+  if (!t) return;
   (await cookies()).set("active_tenant", tenantId, { httpOnly: true, sameSite: "lax", secure: true, path: "/" });
   // audit the cross-tenant view
-  await db.from("audit_log").insert({ actor_user_id: null, tenant_id: tenantId, action: "admin_switch_tenant", detail: `admin ${user.email} viewing tenant ${tenantId}` });
+  await db.from("audit_log").insert({ actor_user_id: me.id, tenant_id: tenantId, action: "admin_switch_tenant", detail: `admin ${user.email} viewing tenant ${tenantId}` });
 }
 
 export async function requestPasswordResetAction(formData: FormData) {

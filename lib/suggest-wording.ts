@@ -16,14 +16,14 @@
 // rather than a different claim.
 import { wordingRefusal } from "./polish";
 import { words } from "./autodraft";
-import { untrusted } from "@/lib/untrusted";
+import { defuse, untrusted } from "@/lib/untrusted";
 
 /** At most this many cards are offered for rewording in one question. */
 export const MAX_SUGGESTIONS = 8;
 
 export type SuggestRefusal = "same" | "long" | "short" | "drift" | "negation" | "number" | "name" | "quote";
 
-const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
+const tidy = (s: string) => defuse(s.replace(/\s+/g, " ").trim());  // defused: client text (red-team L4, patch 30)
 /** Words that turn a claim around; the short ones the drift test cannot see. */
 const NEGATION = /\b(?:not|no|never|none|nobody|nothing|neither|nor|without)\b|n['’]t\b/gi;
 const negations = (s: string) => (s.match(NEGATION) ?? []).length;
@@ -105,7 +105,7 @@ export function suggestUser(input: {
     `<cards>\n${input.cards.map(c => `${c.n}. [${c.kindLabel}, ${words(c.text)} words] ${clip(tidy(c.text), 900)}`).join("\n")}\n</cards>`,
     `<answer_as_it_reads>\n${clip(tidy(input.answer), 5000)}\n</answer_as_it_reads>`,
   ];
-  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${clip(input.voiceProfile.trim(), 4000)}\n</voice_profile>`);
+  if (input.voiceProfile.trim()) parts.push(`<voice_profile>\n${defuse(clip(input.voiceProfile.trim(), 4000))}\n</voice_profile>`);
   if (input.funderContext.trim()) parts.push(`<funder_context>\n${untrusted("FUNDER_CONTEXT", clip(input.funderContext.trim(), 6000))}\n</funder_context>`);
   if (input.clientContext.trim()) parts.push(`<client_context>\n${untrusted("CLIENT_CONTEXT", clip(input.clientContext.trim(), 3000))}\n</client_context>`);
   return parts.join("\n\n");

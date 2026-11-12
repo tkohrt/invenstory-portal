@@ -7,6 +7,13 @@ const RESEND_KEY = process.env.RESEND_API_KEY;
 const SLACK_WEBHOOK = process.env.SLACK_ADMIN_WEBHOOK_URL;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://portal.forgranted.com";
 
+// Red-team L3 (patch 30): client-controlled text (document titles, names,
+// reasons) reaches the two people with admin access through these messages,
+// so every interpolated value is escaped for HTML, and values placed inside
+// Slack's <url|label> syntax lose the characters that could break out of it.
+const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const slackSafe = (x: string) => x.replace(/[<>|]/g, " ");
+
 export async function notifyClientUpload(d: { org: string; uploader: string; title: string; layer: string; tenantId?: string }) {
   if (isDemoTenant(d.tenantId)) return;  // demo runs never page the team
   const line = `${d.uploader} (${d.org}) uploaded "${d.title}" to Layer ${d.layer}.`;
@@ -20,7 +27,7 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
           from: "For Granted Portal <noreply@forgranted.com>",
           to: ["info@forgranted.com"],
           subject: `New client upload — ${d.org}`,
-          html: `<p>${line}</p><p><a href="${APP_URL}/invenstory">Open the portal</a></p>`,
+          html: `<p>${esc(line)}</p><p><a href="${APP_URL}/invenstory">Open the portal</a></p>`,
         }),
       });
     } catch { /* email best-effort */ }
@@ -31,7 +38,7 @@ export async function notifyClientUpload(d: { org: string; uploader: string; tit
       await fetch(SLACK_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:inbox_tray: *New client upload* — ${line}  <${APP_URL}/invenstory|Open portal>` }),
+        body: JSON.stringify({ text: `:inbox_tray: *New client upload* — ${slackSafe(line)}  <${APP_URL}/invenstory|Open portal>` }),
       });
     } catch { /* slack best-effort */ }
   }
@@ -45,13 +52,13 @@ export async function notifyAccountClosure(d: { org: string; requester: string; 
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"], subject: `Account closure request — ${d.org}`, html: `<p>${line}</p><p>Follow up with the client to handle offboarding, export, and any contractual wind-down.</p>` }),
+        body: JSON.stringify({ from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"], subject: `Account closure request — ${d.org}`, html: `<p>${esc(line)}</p><p>Follow up with the client to handle offboarding, export, and any contractual wind-down.</p>` }),
       });
     } catch { /* best-effort */ }
   }
   if (SLACK_WEBHOOK) {
     try {
-      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:warning: *Account closure request* — ${line}` }) });
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:warning: *Account closure request* — ${slackSafe(line)}` }) });
     } catch { /* best-effort */ }
   }
 }
@@ -61,7 +68,6 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
   if (isDemoTenant(d.tenantId)) return;
   const what = d.kind === "ai_month" ? "this month's AI allowance" : d.kind === "chat_month" ? "this month's chat questions" : "today's chat questions";
   const line = `${d.requester} (${d.org}) has used ${what} and asked For Granted for more.`;
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -78,7 +84,7 @@ export async function notifyUsageRequest(d: { org: string; requester: string; ki
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:speech_balloon: *${d.kind === "ai_month" ? "More AI allowance" : "More questions"} requested* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
+        body: JSON.stringify({ text: `:speech_balloon: *${d.kind === "ai_month" ? "More AI allowance" : "More questions"} requested* ${slackSafe(line)}  <${APP_URL}/admin/clients|Open portal>` }) });
     } catch { /* best-effort */ }
   }
 }
@@ -93,7 +99,6 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
   const line = d.level === "over"
     ? `${d.org} has passed this month's AI allowance: ${d.spent} of ${d.line}. Nothing has stopped; the hard limit is ${d.ceiling}.`
     : `${d.org} has reached this month's hard AI limit: ${d.spent} of ${d.ceiling}. Chat, readiness re-runs and Story Intelligence now wait for a grant; document reads carry on.`;
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -110,7 +115,7 @@ export async function notifyAllowance(d: { org: string; level: "over" | "ceiling
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:moneybag: *${d.level === "over" ? "Past the AI allowance" : "At the AI limit"}* ${line}  <${APP_URL}/admin/clients|Open portal>` }) });
+        body: JSON.stringify({ text: `:moneybag: *${d.level === "over" ? "Past the AI allowance" : "At the AI limit"}* ${slackSafe(line)}  <${APP_URL}/admin/clients|Open portal>` }) });
     } catch { /* best-effort */ }
   }
 }
@@ -120,7 +125,6 @@ export async function notifyAskAnswered(d: { org: string; answerer: string; kind
   if (isDemoTenant(d.tenantId)) return;
   const line = `${d.answerer} (${d.org}) answered your question for ${d.kind}. It is saved as a user-generated Story Card, ready in the Storyboard.`;
   const link = d.draftId ? `${APP_URL}/drafts/${d.draftId}` : `${APP_URL}/admin/card-library`;
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   if (RESEND_KEY) {
     try {
       await fetch("https://api.resend.com/emails", {
@@ -132,14 +136,13 @@ export async function notifyAskAnswered(d: { org: string; answerer: string; kind
   }
   if (SLACK_WEBHOOK) {
     try {
-      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:speech_balloon: *Client answered* ${line} <${link}|Open the draft>` }) });
+      await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: `:speech_balloon: *Client answered* ${slackSafe(line)} <${link}|Open the draft>` }) });
     } catch { /* best-effort */ }
   }
 }
 
 /** Someone sent an Interest Cart from forgranted.com (website intake, 14 October 2026). */
 export async function notifySiteInterest(d: { name: string; org: string; email: string; cards: string[] }) {
-  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const list = d.cards.join(", ");
   if (RESEND_KEY) {
     try {
@@ -159,7 +162,7 @@ export async function notifySiteInterest(d: { name: string; org: string; email: 
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:shopping_trolley: *New Interest Cart* from ${d.name} (${d.org}, ${d.email}). Their org needs: ${list}` }) });
+        body: JSON.stringify({ text: `:shopping_trolley: *New Interest Cart* from ${slackSafe(d.name)} (${slackSafe(d.org)}, ${slackSafe(d.email)}). Their org needs: ${slackSafe(list)}` }) });
     } catch { /* best-effort */ }
   }
 }
@@ -181,7 +184,7 @@ export async function notifyClientRequest(d: { org: string; requester: string; w
         body: JSON.stringify({
           from: "For Granted Portal <noreply@forgranted.com>", to: ["info@forgranted.com"],
           subject: `Client request: ${d.org}`,
-          html: `<p>${line.replace(/</g, "&lt;")}</p><p><a href="${link}">Open the client's page</a></p>`,
+          html: `<p>${esc(line)}</p><p><a href="${link}">Open the client's page</a></p>`,
         }),
       });
     } catch { /* email best-effort */ }
@@ -189,7 +192,7 @@ export async function notifyClientRequest(d: { org: string; requester: string; w
   if (SLACK_WEBHOOK) {
     try {
       await fetch(SLACK_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `:raising_hand: *Client request*: ${line}  <${link}|Open>` }) });
+        body: JSON.stringify({ text: `:raising_hand: *Client request*: ${slackSafe(line)}  <${link}|Open>` }) });
     } catch { /* slack best-effort */ }
   }
 }

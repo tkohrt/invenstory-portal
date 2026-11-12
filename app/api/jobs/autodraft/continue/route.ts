@@ -3,7 +3,7 @@
 // auto-draft so no other chain's signature can continue it (lib/server/job-chain.ts).
 import { NextResponse, after } from "next/server";
 import { db } from "@/lib/server/db";
-import { verifyChain, scheduleAutodraftPass } from "@/lib/server/job-chain";
+import { verifyChain, scheduleAutodraftPass, chainOrigin } from "@/lib/server/job-chain";
 import { runAutodraftPass } from "@/lib/server/autodraft-run";
 
 export const maxDuration = 300;
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!job || job.kind !== "autodraft" || job.status !== "running") {
     return NextResponse.json({ skipped: true }, { status: 202 });
   }
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => {
     const out = await runAutodraftPass(tenantId, jobId, { chained: true });
     if (out.kind === "more") await scheduleAutodraftPass(origin, tenantId, jobId);

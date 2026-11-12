@@ -6,7 +6,7 @@
 // invocation inside the 60-second limit.
 import { NextResponse, after } from "next/server";
 import { db } from "@/lib/server/db";
-import { verifyChain, scheduleCardPass } from "@/lib/server/job-chain";
+import { verifyChain, scheduleCardPass, chainOrigin } from "@/lib/server/job-chain";
 import { runCardPass } from "@/lib/server/card-build";
 
 export const maxDuration = 300;
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (!job || job.kind !== "cards" || job.status !== "running") {
     return NextResponse.json({ skipped: true }, { status: 202 });
   }
-  const origin = new URL(req.url).origin;
+  const origin = chainOrigin(req);
   after(async () => {
     const out = await runCardPass(tenantId, jobId, { chained: true });
     // "busy": another stage holds the lease and will hand on itself.

@@ -12,8 +12,23 @@ const run = (t: string) => model.run(t.slice(0, 8000), { mean_pool: true, normal
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
 
+// Constant-time comparison (red-team L2): equality that does not leak where
+// the first wrong byte sits. Lengths may differ; that alone is not a secret.
+function safeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const x = enc.encode(a); const y = enc.encode(b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
-  if (SECRET && req.headers.get("x-embed-secret") !== SECRET) return json({ error: "unauthorized" }, 401);
+  // Fail closed (red-team L2): without the secret configured, this function
+  // refuses to serve rather than serving everyone. Set EMBED_FN_SECRET as an
+  // edge-function secret before deploying this version.
+  if (!SECRET) return json({ error: "EMBED_FN_SECRET is not configured; refusing to serve." }, 503);
+  if (!safeEqual(req.headers.get("x-embed-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
   let body: { text?: unknown; texts?: unknown } = {};
   try { body = await req.json(); } catch { /* bad body */ }
 

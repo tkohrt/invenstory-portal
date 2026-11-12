@@ -12,7 +12,10 @@ const securityHeaders = [
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
-    "connect-src 'self' https://dafofmvbbggrmyfnjspg.supabase.co https://*.supabase.co",
+    // Red-team L7, the cheap half (patch 30): only our own Supabase project,
+    // not every *.supabase.co host. The nonce-based script-src remains queued;
+    // it needs the middleware rework.
+    "connect-src 'self' https://dafofmvbbggrmyfnjspg.supabase.co",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
