@@ -24,7 +24,7 @@ import { getSavedItems } from "@/lib/server/saved";
 import { getWorkspaceVisibility } from "@/lib/server/data";
 import type { FundingMode } from "@/components/FunderMatchesView";
 
-export default async function FundingPage({ searchParams }: { searchParams: Promise<{ view?: string; mode?: string }> }) {
+export default async function FundingPage({ searchParams }: { searchParams: Promise<{ view?: string; mode?: string; focus?: string }> }) {
   const sp = await searchParams;
   const session = await getSession();
   if (!session) redirect("/");
@@ -174,6 +174,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       runs={runs}
       savedItems={savedItems}
       dismissedNotices={dismissed}
+      focusId={typeof sp.focus === "string" ? sp.focus.slice(0, 220) : null}
       seenAt={seenAt}
       grantsOn={grantsOn}
       fundersOn={fundersOn}

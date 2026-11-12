@@ -318,6 +318,19 @@ button.vis-dot.busy{opacity:.5}
 .topbar-search .ts-icon{position:absolute;left:12px;color:var(--muted);font-size:15px;pointer-events:none}
 .topbar-search input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--line);border-radius:10px;background:#fafbfc;font-size:14px}
 .topbar-search input:focus{background:#fff;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* The predictive dropdown (patch 32). */
+.ts-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#fff;border:1px solid var(--line);
+  border-radius:12px;box-shadow:0 12px 32px rgba(23,28,38,.14);padding:6px;z-index:60;max-height:70vh;overflow:auto}
+.ts-group{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 10px 4px}
+.ts-row{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:0;
+  border-radius:8px;padding:7px 10px;font:inherit;font-size:14px;color:inherit;cursor:pointer}
+.ts-row.ts-active{background:var(--accent-soft)}
+.ts-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ts-meta{flex:none;font-size:12px;color:var(--muted)}
+.ts-all{border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px;color:var(--muted)}
+/* Row focus flash when arriving from a search suggestion (patch 32). */
+@keyframes fm-focus{0%{background:var(--accent-soft)}100%{background:transparent}}
+.fm-focus-flash{animation:fm-focus 2.4s ease-out 1}
 .userchip-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:10px;padding:4px 6px}
 .userchip-link:hover{background:#f3f4f6}
 @media (max-width:900px){ .topbar-search{margin:0 10px;max-width:none} .topbar-search input::placeholder{color:transparent} }

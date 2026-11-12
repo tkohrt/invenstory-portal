@@ -9,6 +9,7 @@ import type { AppUser, NavArtifact, Tenant, GardenState } from "@/lib/types";
 import PlantVisual from "./PlantVisual";
 import BuildNotice from "./BuildNotice";
 import BackButton from "./BackButton";
+import SearchSuggest from "./SearchSuggest";
 import HelpMenu from "./HelpMenu";
 import TourHost from "./TourHost";
 import LedgerWarmer from "./LedgerWarmer";
@@ -55,8 +56,6 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     if (window.matchMedia("(max-width: 900px)").matches) { setNavOpen(o => !o); return; }
     writeNavCollapsed(!collapsed);
   };
-  const [topQuery, setTopQuery] = useState("");
-  const submitSearch = (e: React.FormEvent) => { e.preventDefault(); const v = topQuery.trim(); if (v) router.push(`/search?q=${encodeURIComponent(v)}`); };
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null);
   const [togglingFeature, setTogglingFeature] = useState<string | null>(null);
   const admin = role === "admin";
@@ -113,10 +112,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         <button className="menu-toggle" onClick={toggleMenu} aria-label={collapsed ? "Show the menu" : "Menu"}
           title={collapsed ? "Show the menu" : "Hide or show the menu"} aria-expanded={!collapsed}>☰</button>
         <div className="brand"><img src="/forgranted-logo.png" alt="For Granted" className="brand-logo" /><h1>Inven(s)tory Portal</h1></div>
-        <form className="topbar-search" onSubmit={submitSearch}>
-          <span className="ts-icon">⌕</span>
-          <input value={topQuery} onChange={e => setTopQuery(e.target.value)} placeholder="Search this Inven(s)tory…" aria-label="Search" />
-        </form>
+        <SearchSuggest />
         <BackButton />
         <HelpMenu guide={!brain && (admin || workspaceVis.chat !== false)} />
         <div className="userchip">

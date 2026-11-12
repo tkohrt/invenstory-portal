@@ -214,8 +214,10 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [],
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [], focusId = null,
 }: {
+  /** Row to scroll to and flash (patch 32): "g:<grant_id>" or "f:<funder_id>". */
+  focusId?: string | null;
   /** Notification-bar keys this person has dismissed (patch 28). */
   dismissedNotices?: string[];
   /** When this client last visited this mode (patch 25); null for admins, the
@@ -479,6 +481,20 @@ export default function FunderMatchesView({
 
   // Which past search's summary is open in the rail (patch 27); one at a time.
   const [openRun, setOpenRun] = useState<string | null>(null);
+
+  // Row focus (patch 32): ?focus=g:<id> or f:<id>, set by the global search
+  // bar's suggestions, scrolls to the row and flashes it once. The first
+  // matching row wins (a saved grant can render in two sections).
+  useEffect(() => {
+    if (!focusId) return;
+    const el = document.querySelector(`[data-gid="${CSS.escape(focusId)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("fm-focus-flash");
+    const t = setTimeout(() => el.classList.remove("fm-focus-flash"), 2600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
 
   // Save for later (patch 26): the star. Optimistic, with the server's answer
   // winning: a failed toggle puts the star back and says why.
@@ -925,7 +941,7 @@ export default function FunderMatchesView({
             </thead>
             <tbody>
               {openMatches.map(m => (
-                <tr key={m.grant_id}>
+                <tr key={m.grant_id} data-gid={`g:${m.grant_id}`}>
                   <td className="fm-name">
                     {m.url
                       ? <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title || m.grant_id}</a>
@@ -1004,7 +1020,7 @@ export default function FunderMatchesView({
             </thead>
             <tbody>
               {watchMatches.map(m => (
-                <tr key={m.grant_id}>
+                <tr key={m.grant_id} data-gid={`g:${m.grant_id}`}>
                   <td className="fm-name">
                     {m.url
                       ? <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title || m.grant_id}</a>
@@ -1044,7 +1060,7 @@ export default function FunderMatchesView({
             </thead>
             <tbody>
               {savedGrants.map(s2 => (
-                <tr key={s2.target_id}>
+                <tr key={s2.target_id} data-gid={`g:${s2.target_id}`}>
                   <td className="fm-name">
                     {s2.detail.url
                       ? <a href={s2.detail.url} target="_blank" rel="noopener noreferrer">{s2.title || s2.target_id}</a>
@@ -1109,7 +1125,7 @@ export default function FunderMatchesView({
             </thead>
             <tbody>
               {visibleFunders.map(f => (
-                <tr key={f.funder_id}>
+                <tr key={f.funder_id} data-gid={`f:${f.funder_id}`}>
                   <td className="fm-name">
                     {f.website
                       ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>

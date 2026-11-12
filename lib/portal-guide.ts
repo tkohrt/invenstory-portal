@@ -120,6 +120,7 @@ const SETUP_NAME: Record<string, string> = {
 export const GUIDE_TEXT = `
 THE PORTAL
 For Granted's client portal. The person brings their organization's story; the portal's AI tools help them find funders and draft from it. For Granted's team works alongside them.
+The search bar at the top suggests as the person types: documents by name (opening in the reader), grants from their Funding page (open calls, watchlist and saved), matched funders, and drafts where visible. Choosing a suggestion goes straight to the thing; "Search everything" opens the full Search page, which also looks inside document text.
 
 THE INVEN(S)TORY (sidebar: the organization's Inven(s)tory)
 Everything that makes the organization fundable, in three layers. Layer I, public story: what the world can see, such as annual reports, the tax filing, press, the website. Layer II, internal strategy: plans, budgets, past applications, board minutes. Layer III, living voice: why the work matters, in the founder's or leader's own words, from an interview, a transcript, or written answers to the Living Voice questions.
