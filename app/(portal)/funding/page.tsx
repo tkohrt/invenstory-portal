@@ -51,6 +51,8 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   const seenAt = session.role === "client"
     ? ((prefs[mode === "funders" ? "funding_seen_funders" : "funding_seen_grants"] as string | undefined) ?? null)
     : null;
+  // Notification bars this person has dismissed (patch 28); keyed by the news.
+  const dismissed = Array.isArray(prefs.funding_dismissed) ? (prefs.funding_dismissed as string[]) : [];
 
   // Patch 7 (1 Nov 2026): For Granted can see the page exactly as the client
   // does (?view=client). Everything below then loads as for a client session.
@@ -171,6 +173,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       mode={mode}
       runs={runs}
       savedItems={savedItems}
+      dismissedNotices={dismissed}
       seenAt={seenAt}
       grantsOn={grantsOn}
       fundersOn={fundersOn}

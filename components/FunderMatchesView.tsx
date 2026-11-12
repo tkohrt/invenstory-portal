@@ -9,7 +9,7 @@ import { knownFunderMatch, RELATIONSHIP_LABEL, type KnownFunder } from "@/lib/se
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
-import { markFundingSeenAction } from "@/lib/server/account-actions";
+import { markFundingSeenAction, dismissFundingNoticeAction } from "@/lib/server/account-actions";
 import { toggleSavedAction } from "@/lib/server/saved-actions";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
@@ -56,6 +56,9 @@ export interface SavedRow {
   kind: "grant" | "funder"; target_id: string; title: string | null;
   detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null };
   saved_at: string;
+  /** The reopen stamp (patch 28); absent on rows from before migration 0083. */
+  reopened_at?: string | null;
+  reopened_detail?: { grant_id?: string | null; title?: string | null; close_date?: string | null; url?: string | null; award_ceiling?: number | null };
 }
 
 interface Cached {
@@ -211,8 +214,10 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [],
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [],
 }: {
+  /** Notification-bar keys this person has dismissed (patch 28). */
+  dismissedNotices?: string[];
   /** When this client last visited this mode (patch 25); null for admins, the
       as-client preview, and a first visit. Drives the NEW tags. */
   seenAt?: string | null;
@@ -516,6 +521,8 @@ export default function FunderMatchesView({
           kind: "grant" as const, target_id: id, title: m?.title ?? id,
           detail: { funder: m?.funder ?? null, url: m?.url ?? null, close_date: m?.close_date ?? null, award_ceiling: m?.award_ceiling ?? null },
           saved_at: new Date().toISOString(),
+          reopened_at: null as string | null,
+          reopened_detail: {} as SavedRow["reopened_detail"],
         };
       }),
     ...savedItems.filter(s2 => s2.kind === "grant"),
@@ -542,6 +549,70 @@ export default function FunderMatchesView({
     : ageDays <= 30 ? `Updated ${Math.round(ageDays / 7)} weeks ago`
     : `Updated ${new Date(latestRunAt!).toLocaleDateString()}`;
   const ageCls = ageDays == null ? "" : ageDays > 30 ? " fund-age-stale" : ageDays >= 14 ? " fund-age-aging" : "";
+
+  // The notification bar (patch 28; ladder decided 10 Nov): one bar per page
+  // visit, chosen by priority, always news or a reward, never a chore list,
+  // dismissible by the news's own key so the same news never returns. The run
+  // digest outranks everything while it is showing. Grants rungs built here:
+  // saved grant reopened, then deadline pressure on saved items, then search
+  // staleness. Funders rungs: newly verified funder, then staleness. The
+  // curated-list, draft-momentum and dossier rungs join as those features land.
+  const [dismissedLocal, setDismissedLocal] = useState<string[]>([]);
+  const isDismissed = (k: string) => dismissedNotices.includes(k) || dismissedLocal.includes(k);
+  const dismissNotice = (k: string) => {
+    setDismissedLocal(d => [...d, k]);
+    if (!viewingAsClient) void dismissFundingNoticeAction(k);
+  };
+  const notice = ((): { key: string; text: string; cta?: { href: string; label: string } } | null => {
+    if (digestFor) return null; // the digest is the bar right now
+    if (mode === "grants") {
+      const reopened = savedItems.find(s2 => s2.kind === "grant" && s2.reopened_at
+        && savedOverride[savedKeyOf("grant", s2.target_id)] !== false
+        && !isDismissed(`reopen:${s2.target_id}:${s2.reopened_at}`));
+      if (reopened) {
+        const d = reopened.reopened_detail ?? {};
+        const closes = d.close_date ? `, and closes ${new Date(d.close_date).toLocaleDateString()}` : "";
+        return {
+          key: `reopen:${reopened.target_id}:${reopened.reopened_at}`,
+          text: `Good news: ${d.title ?? reopened.title ?? "a grant you saved"} is open again${closes}. You saved it for exactly this.`,
+          cta: { href: "#fm-calls", label: "See the call" },
+        };
+      }
+      for (const m of openMatches) {
+        if (!m.close_date || !isSaved("grant", m.grant_id)) continue;
+        const days = Math.ceil((new Date(m.close_date).getTime() - Date.now()) / 86_400_000);
+        if (days < 0 || days > 14) continue;
+        const k = `deadline:${m.grant_id}:${m.close_date}`;
+        if (isDismissed(k)) continue;
+        return {
+          key: k,
+          text: `${m.title ?? "A grant you saved"} closes ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}. It is on your saved list.`,
+          cta: { href: "#fm-calls", label: "See the call" },
+        };
+      }
+    }
+    if (mode === "funders") {
+      const nv = visibleFunders.filter(f => f.verified_at && rowIsNew(f));
+      if (nv.length) {
+        const k = `verified:${nv[0].funder_id}:${nv[0].first_matched_at ?? ""}`;
+        if (!isDismissed(k)) {
+          return {
+            key: k,
+            text: nv.length === 1
+              ? `${nv[0].name} was verified by For Granted since your last visit.`
+              : `${nv.length} funders were verified by For Granted since your last visit.`,
+          };
+        }
+      }
+    }
+    if (hasResults && canRun && ageDays != null && ageDays > 30 && runs[0] && !isDismissed(`stale:${runs[0].id}`)) {
+      return {
+        key: `stale:${runs[0].id}`,
+        text: `These results are from ${new Date(latestRunAt!).toLocaleDateString()}. A fresh search usually finds new openings; the ${isAdmin ? "Run matching" : "Search"} button above does it.`,
+      };
+    }
+    return null;
+  })();
 
   /**
    * The heading and the page's actions (patch 12, the Storyboard rules): the
@@ -738,12 +809,13 @@ export default function FunderMatchesView({
         </div>
       )}
 
-      {/* Past thirty days the age graduates from a stamp to a notice (the
-          staleness ladder, 10 Nov): the one nudge this page is allowed. */}
-      {hasResults && canRun && ageDays != null && ageDays > 30 && (
-        <div className="ov-note">
-          These results are from {new Date(latestRunAt!).toLocaleDateString()}. A fresh search usually
-          finds new openings; the {isAdmin ? "Run matching" : "Search"} button above does it.
+      {/* The notification bar (patch 28): one per visit, by the ladder, always
+          news or a reward, dismissible. The run digest above outranks it. */}
+      {notice && (
+        <div className="ov-note fund-digest" role="status">
+          {notice.text}
+          {notice.cta && <a className="sb-btn sb-secondary sb-sm" href={notice.cta.href}>{notice.cta.label}</a>}
+          <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => dismissNotice(notice.key)}>Dismiss</button>
         </div>
       )}
 
@@ -977,6 +1049,9 @@ export default function FunderMatchesView({
                     {s2.detail.url
                       ? <a href={s2.detail.url} target="_blank" rel="noopener noreferrer">{s2.title || s2.target_id}</a>
                       : (s2.title || s2.target_id)}
+                    {s2.reopened_at && (
+                      <> <span className="fm-new" title={`A search on ${new Date(s2.reopened_at).toLocaleDateString()} found this call open again${s2.reopened_detail?.close_date ? `; it closes ${new Date(s2.reopened_detail.close_date).toLocaleDateString()}` : ""}.`}>Open again</span></>
+                    )}
                   </td>
                   <td className="fm-funder">{s2.detail.funder || <span className="ov-muted">Unknown</span>}</td>
                   <td className="fm-nowrap">{s2.detail.close_date ? new Date(s2.detail.close_date).toLocaleDateString() : "Not listed"}</td>

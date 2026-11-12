@@ -54,6 +54,26 @@ export async function markFundingSeenAction(mode: "grants" | "funders") {
   if (error) console.error("could not record funding visit", error);
 }
 
+/**
+ * Dismiss one Funding notification bar (patch 28). The bar's key names the
+ * news itself (a reopen stamp, a deadline, a stale run), so the same news
+ * never comes back, while fresh news with a new key does. Any role: each
+ * person dismisses on their own row. Kept to the last 24 keys.
+ */
+export async function dismissFundingNoticeAction(key: string) {
+  const s = await getSession();
+  if (!s) return;
+  const k = String(key).slice(0, 160);
+  if (!k) return;
+  const prev = ((s.user.ui_prefs as Record<string, unknown> | null) ?? {});
+  const old = Array.isArray(prev.funding_dismissed) ? (prev.funding_dismissed as string[]) : [];
+  const next = [...old.filter(x => x !== k), k].slice(-24);
+  const prefs = { ...prev, funding_dismissed: next };
+  const { error } = await db.from("app_user").update({ ui_prefs: prefs })  // tenant-safe: the signed-in person's own row, by id from the session
+    .eq("id", s.user.id);
+  if (error) console.error("could not record the dismissal", error);
+}
+
 export async function setUiPrefAction(key: string, value: boolean) {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");

@@ -404,6 +404,42 @@ export async function runMatch(
     if (clearErr) console.error("could not clear grant matches", clearErr);
   }
 
+  // The reopen recheck (patch 28, 0083). The saved bucket's promise was
+  // "surfaced when those applications are open again"; this is where it is
+  // kept. A saved grant counts as reopened only when its saved snapshot's
+  // close date has passed (it was a closed call when bucketed, or has since
+  // closed) AND this run finds it open, by id or by exact title. A stamped one
+  // this run no longer finds open is unstamped: the news expired.
+  {
+    const norm = (t: string) => t.trim().toLowerCase();
+    const openRows = screened.filter(s => s.verdict !== "watch");
+    const openById = new Map(openRows.map(s => [s.grant_id.slice(0, GRANT_ID_MAX), s]));
+    const openByTitle = new Map(openRows.filter(s => s.title).map(s => [norm(s.title), s]));
+    const { data: savedRows } = await db.from("saved_item")
+      .select("target_id, title, detail, reopened_at")
+      .eq("tenant_id", tenantId).eq("kind", "grant");
+    for (const sv of savedRows ?? []) {
+      const d = (sv.detail ?? {}) as { close_date?: string | null };
+      const hit = openById.get(sv.target_id) ?? (sv.title ? openByTitle.get(norm(sv.title)) : undefined);
+      const savedClosed = !!d.close_date && new Date(d.close_date).getTime() < Date.now();
+      if (hit && savedClosed && !sv.reopened_at) {
+        const { error: reErr } = await db.from("saved_item").update({
+          reopened_at: ranAt,
+          reopened_detail: {
+            grant_id: hit.grant_id.slice(0, GRANT_ID_MAX), title: hit.title ?? null,
+            close_date: hit.close_date ?? null, url: hit.website ?? null,
+            award_ceiling: hit.award_ceiling ?? null,
+          },
+        }).eq("tenant_id", tenantId).eq("kind", "grant").eq("target_id", sv.target_id);
+        if (reErr) console.error("[saved] reopen stamp failed", reErr);
+      } else if (!hit && sv.reopened_at) {
+        const { error: unErr } = await db.from("saved_item").update({ reopened_at: null, reopened_detail: {} })
+          .eq("tenant_id", tenantId).eq("kind", "grant").eq("target_id", sv.target_id);
+        if (unErr) console.error("[saved] reopen unstamp failed", unErr);
+      }
+    }
+  }
+
   // The funder side, stored under the same rule: a run is a snapshot, not an
   // accumulation. Until now these were computed and discarded, which is why an
   // approved funder correction reached no view — there was no view.
