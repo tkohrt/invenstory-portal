@@ -84,6 +84,9 @@ export const FUNDER_FACETS: readonly Facet[] =
 
 /** One line of the profile, and where it came from. */
 export interface ProfileFact {
+  /** Set only when read with includeRemoved (patch 35): the client took this
+      fact out of their searches; shown struck through with an Undo. */
+  removed?: boolean;
   facet: Facet;
   /** A short clause in the organization's own terms, usable in a query. */
   text: string;

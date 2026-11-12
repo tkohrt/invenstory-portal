@@ -366,6 +366,8 @@ button.vis-dot.busy{opacity:.5}
 .mp-flagbox{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .mp-flagbox input{width:280px;max-width:60vw;padding:6px 10px;font-size:13px}
 .mp-foot{font-size:12px;margin-top:16px}
+.mp-removed{text-decoration:line-through;color:var(--muted)}
+.mp-removed-note{font-size:13px;color:var(--muted)}
 .fund-profile-link{white-space:nowrap}
 .userchip-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;border-radius:10px;padding:4px 6px}
 .userchip-link:hover{background:#f3f4f6}

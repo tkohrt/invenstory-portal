@@ -18,7 +18,7 @@ export default async function MatchingProfilePage() {
   await closedInBrain(session.tenantId);
   const [tenant, profile, reviews, vis] = await Promise.all([
     getTenant(session.tenantId),
-    getSearchProfile(session.tenantId).catch(() => null),
+    getSearchProfile(session.tenantId, { includeRemoved: true }).catch(() => null),
     getFactReviews(session.tenantId),
     getWorkspaceVisibility(session.tenantId).catch(() => ({} as Record<string, boolean>)),
   ]);
@@ -36,6 +36,7 @@ export default async function MatchingProfilePage() {
       const r = id ? reviews.get(id) : undefined;
       return {
         id, facet: f.facet, facetLabel: FACET_LABEL[f.facet],
+        removed: !!f.removed,
         text: f.text, quote: f.quote || null,
         documentTitle: f.documentTitle || null, layer: f.layer,
         feeds: {

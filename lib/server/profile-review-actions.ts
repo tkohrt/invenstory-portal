@@ -13,10 +13,13 @@ import { notifyClientRequest } from "./notify";
 
 export async function reviewFactAction(input: {
   factId: string;
-  state: "confirmed" | "flagged" | "clear";
+  /** removed (patch 35): one click takes the fact out of the client's
+      searches, no reason required, undoable with "clear". Removal never
+      breaks provenance: nothing new is asserted. */
+  state: "confirmed" | "flagged" | "removed" | "clear";
   /** For a flag: what looks wrong, in the client's words. */
   note?: string;
-  /** For a flag's notification only; never stored beyond the note. */
+  /** For the notification only; never stored beyond the note. */
   factText?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const s = await getSession();
@@ -36,13 +39,16 @@ export async function reviewFactAction(input: {
     }, { onConflict: "tenant_id,fact_id" });
     if (error) { console.error("[profile-review] write failed", error); return { ok: false, error: "That did not save. Try again." }; }
 
-    // A flag is a request for For Granted's eyes; say so where they look.
-    if (input.state === "flagged") {
+    // A flag asks for For Granted's eyes; a removal just informs them (it is
+    // already done, and undoable). Admin self-actions notify nobody.
+    if ((input.state === "flagged" || input.state === "removed") && s.role === "client") {
       const tenant = await getTenant(s.tenantId).catch(() => null);
       const fact = (input.factText ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
       await notifyClientRequest({
         org: tenant?.name ?? "A client", requester: s.user.full_name ?? s.user.email ?? "A teammate",
-        what: `flagged a matching-profile fact${fact ? ` ("${fact}")` : ""}${note ? `: ${note}` : ""}`,
+        what: input.state === "flagged"
+          ? `flagged a matching-profile fact${fact ? ` ("${fact}")` : ""}${note ? `: ${note}` : ""}`
+          : `removed a matching-profile fact from their searches${fact ? ` ("${fact}")` : ""}. No action needed; it is undoable on their profile page.`,
         tenantId: s.tenantId,
       }).catch(e => console.error("[profile-review] notify failed", e));
     }

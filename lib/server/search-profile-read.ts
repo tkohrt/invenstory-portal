@@ -10,7 +10,7 @@ import "server-only";
 // server code that has already decided who is asking.
 import { db } from "./db";
 import {
-  applyProfileEdits, documentFingerprint,
+  applyProfileEdits, documentFingerprint, factId,
   type Facet, type ProfileEdit, type ProfileFact, type SearchProfile,
 } from "@/lib/search-profile";
 
@@ -43,7 +43,7 @@ export async function getProfileEdits(tenantId: string): Promise<ProfileEdit[]> 
 }
 
 /** The cached profile, and whether the Inven(s)tory has moved on since. */
-export async function getSearchProfile(tenantId: string): Promise<StoredProfile | null> {
+export async function getSearchProfile(tenantId: string, opts?: { includeRemoved?: boolean }): Promise<StoredProfile | null> {
   const { data, error } = await db.from("search_profile")
     .select("*").eq("tenant_id", tenantId).maybeSingle();
   if (error) throw new Error(`search profile read failed: ${error.message}`);
@@ -63,8 +63,21 @@ export async function getSearchProfile(tenantId: string): Promise<StoredProfile 
   const edits = await getProfileEdits(tenantId).catch(() => [] as ProfileEdit[]);
   const base = (row.facts ?? []) as ProfileFact[];
 
+  // Client removals (patch 35, 0085) apply in the same single place, for the
+  // same reason: a removed fact reaches no query by construction. Only the
+  // matching-profile page asks to see them (struck through, with an Undo).
+  let facts = applyProfileEdits(base, edits);
+  const { data: rem } = await db.from("profile_fact_review")
+    .select("fact_id").eq("tenant_id", tenantId).eq("state", "removed");
+  const removedIds = new Set(((rem ?? []) as { fact_id: string }[]).map(r => r.fact_id));
+  if (removedIds.size) {
+    facts = opts?.includeRemoved
+      ? facts.map(f => f.documentId && removedIds.has(factId(f)) ? { ...f, removed: true } : f)
+      : facts.filter(f => !f.documentId || !removedIds.has(factId(f)));
+  }
+
   return {
-    facts: applyProfileEdits(base, edits),
+    facts,
     generatedAt: row.generated_at,
     documentCount: row.document_count,
     layers: (row.layers ?? []) as ("I" | "II" | "III")[],
