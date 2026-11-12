@@ -185,6 +185,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .result{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
   margin-bottom:10px;cursor:pointer}
 .result:hover{border-color:#d7dae0}
+/* Find-by-name groups on the Search page (patch 31). */
+.sr-group{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 0 8px}
+a.sr-doc{display:block;text-decoration:none;color:inherit}
 .result h4{margin:0 0 3px;font-size:15px}
 .result .snippet{color:#3b4252;font-size:13px}
 .result .snippet mark{background:var(--accent-soft);color:var(--accent);padding:0 2px;border-radius:3px}
