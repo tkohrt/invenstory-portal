@@ -28,7 +28,7 @@ export function clientTenants<T extends { is_brain?: boolean | null }>(rows: T[]
  * Analyze page, which shows readiness and asks to confirm eligibility) is not.
  */
 const BRAIN_OPEN = ["/invenstory", "/chat", "/search", "/account", "/admin"];
-const BRAIN_CLOSED = ["/admin/readiness-audit"];
+const BRAIN_CLOSED = ["/admin/readiness-audit"];  // old URL; the Analysis page hides the readiness tab for brain tenants itself (patch 36)
 
 export function brainAllows(path: string): boolean {
   const under = (p: string) => path === p || path.startsWith(p + "/");

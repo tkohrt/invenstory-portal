@@ -230,19 +230,17 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
         {admin && (
           <div>
             <div className="nav-section-label" style={{ marginTop: 16 }}>Admin</div>
+            {/* Five items since the 12 Nov admin audit (patch 36): the two
+                approve/reject queues merged behind one badge, and the
+                readiness audit now lives inside Analysis. */}
             <Link onClick={closeNav} className={nav("/admin/clients")} href="/admin/clients" title={collapsed ? "All clients" : undefined}><span className="ic">◫</span> All clients</Link>
+            <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews" title={collapsed ? "Review queues" : undefined}>
+              <span className="ic">✦</span> Review queues
+              {pendingCount + overlayPendingCount > 0 && <span className="badge-count">{pendingCount + overlayPendingCount}</span>}
+            </Link>
             <Link onClick={closeNav} className={nav("/admin/questions")} href="/admin/questions" title={collapsed ? "Question bank" : undefined}><span className="ic">◎</span> Question bank</Link>
-            <Link onClick={closeNav} className={nav("/admin/reviews")} href="/admin/reviews" title={collapsed ? "Story Intelligence reviews" : undefined}>
-              <span className="ic">✦</span> Story Intelligence reviews
-              {pendingCount > 0 && <span className="badge-count">{pendingCount}</span>}
-            </Link>
-            <Link onClick={closeNav} className={nav("/admin/ledger-overlay")} href="/admin/ledger-overlay" title={collapsed ? "Ground Truth review" : undefined}>
-              <span className="ic">◈</span> Ground Truth review
-              {overlayPendingCount > 0 && <span className="badge-count">{overlayPendingCount}</span>}
-            </Link>
-            {!brain && <Link onClick={closeNav} className={nav("/admin/readiness-audit")} href="/admin/readiness-audit" title={collapsed ? "Readiness audit" : undefined}><span className="ic">◍</span> Readiness audit</Link>}
             <Link onClick={closeNav} className={nav("/admin/card-library")} href="/admin/card-library" title={collapsed ? "Card Library" : undefined}><span className="ic">▣</span> Card Library</Link>
-            <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis" title={collapsed ? "Analysis (trial)" : undefined}><span className="ic">◎</span> Analysis (trial)</Link>
+            <Link onClick={closeNav} className={nav("/admin/analysis")} href="/admin/analysis" title={collapsed ? "Analysis & readiness" : undefined}><span className="ic">◍</span> Analysis &amp; readiness</Link>
           </div>
         )}
       </div>

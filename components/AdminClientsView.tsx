@@ -32,7 +32,10 @@ export default function AdminClientsView({ portfolio: p, gardens }: { portfolio:
       <div className="page-head">
         <div><h2>All clients</h2><p>Portfolio across every For Granted client. Select a client to view their account as they see it.</p></div>
         <div className="spacer" />
-        <button className="btn secondary" onClick={() => setAdding(true)}>＋ New client</button>
+        {/* Patch 36 (admin audit): the Bedrock diagnostic keeps no nav slot;
+            this quiet link is how it stays reachable. */}
+        <a className="sb-btn sb-quiet sb-sm" href="/admin/bedrock" title="Connectivity check for the AI provider. For Granted only.">System check</a>
+        <button className="sb-btn sb-secondary" onClick={() => setAdding(true)}>＋ New client</button>
       </div>
 
       <div className="stat-grid">

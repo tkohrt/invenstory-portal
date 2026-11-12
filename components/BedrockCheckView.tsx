@@ -21,7 +21,7 @@ export default function BedrockCheckView({ initial }: { initial: BedrockCheck })
     <div>
       <div className="page-head">
         <div>
-          <h2>Bedrock diagnostic</h2>
+          <h2>System check</h2>
           <p>Pinpoints which layer is blocking generation: authentication, model access, model identifier, or quota. When this shows green, set <code>BEDROCK_CHAT_MODEL_ID</code> in production and the portal switches from extractive drafts to prose.</p>
         </div>
       </div>
@@ -35,7 +35,7 @@ export default function BedrockCheckView({ initial }: { initial: BedrockCheck })
         <label>Model id (inference-profile id for current Claude)
           <input value={model} onChange={e => setModel(e.target.value)} />
         </label>
-        <button className="btn" onClick={run} disabled={busy}>{busy ? "Checking…" : "Run check"}</button>
+        <button className="sb-btn sb-primary" onClick={run} disabled={busy}>{busy ? "Checking…" : "Run check"}</button>
       </div>
 
       <div className="section-label">Config</div>

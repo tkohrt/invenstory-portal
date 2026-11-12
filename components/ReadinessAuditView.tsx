@@ -5,7 +5,8 @@ import type { CoverageTrace, ItemTrace } from "@/lib/server/gap-agent";
 import type { DocExtractTrace, DocItemFinding } from "@/lib/server/doc-extract";
 import Busy from "./Busy";
 
-const STATE_LABEL: Record<string, string> = { covered: "ROBUST", thin: "THIN", missing: "MISSING" };
+const STATE_LABEL: Record<string, string> = { covered: "Robust", thin: "Thin", missing: "Missing" };
+const STATE_DOT: Record<string, string> = { covered: "#2f7d44", thin: "#8a6514", missing: "#9aa1ad" };
 
 function triggerDownload(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
@@ -51,7 +52,14 @@ function buildAuditMarkdown(t: CoverageTrace, name: string, ranAt: number | null
 }
 
 function StateBadge({ s }: { s: string }) {
-  return <span className={`ra-badge ra-${s}`}>{STATE_LABEL[s] ?? s}</span>;
+  // Dot + word, per the style guide (patch 36): the dot carries the color, the
+  // word carries the meaning, and neither relies on the other.
+  return (
+    <span className={`ra-badge ra-${s}`}>
+      <span className="ra-dot" style={{ background: STATE_DOT[s] ?? "#9aa1ad" }} aria-hidden="true" />
+      {STATE_LABEL[s] ?? s}
+    </span>
+  );
 }
 
 function simClass(sim: number) { return sim >= 0.6 ? "ra-sim-strong" : sim >= 0.4 ? "ra-sim-mid" : "ra-sim-weak"; }
@@ -155,7 +163,7 @@ function RefreshAllCards() {
   return (
     <div className="acct-card" style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Refreshing…" : "Refresh all client cards (document extraction)"}</button>
+        <button className="sb-btn sb-primary rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Refreshing…" : "Refresh all client cards (document extraction)"}</button>
         {busy && (
           <Busy
             label="Re-reading every document for every client"
@@ -202,9 +210,9 @@ function DocExtractPanel({ tenantName, tenantId }: { tenantName: string; tenantI
       <h3 style={{ margin: "0 0 4px" }}>Document-level extraction</h3>
       <p className="acct-note" style={{ marginTop: 0 }}>Reads each document once and asks which items it supports. This is what the Readiness Checklist uses; the retrieval audit above is kept for comparison.</p>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
-        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Reading documents…" : trace ? "Re-run extraction" : "Run document extraction"}</button>
-        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exMd}>⬇ Export Markdown</button>}
-        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exJson}>⬇ Export JSON</button>}
+        <button className="sb-btn sb-primary rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Reading documents…" : trace ? "Re-run extraction" : "Run document extraction"}</button>
+        {trace && <button className="sb-btn sb-secondary" style={{ width: "auto", margin: 0 }} onClick={exMd}>⬇ Export Markdown</button>}
+        {trace && <button className="sb-btn sb-secondary" style={{ width: "auto", margin: 0 }} onClick={exJson}>⬇ Export JSON</button>}
         {ranAt && <span className="acct-note" style={{ margin: 0 }}>Last run {new Date(ranAt).toLocaleString()} · cached in this browser</span>}
       </div>
       {err && <div className="metric-gap">{err}</div>}
@@ -256,15 +264,16 @@ export default function ReadinessAuditView({ tenantName, tenantId }: { tenantNam
   const exportJson = () => { if (trace) triggerDownload(`readiness-audit-${slug}-${stamp}.json`, JSON.stringify(trace, null, 2), "application/json"); };
   return (
     <div>
-      <div className="page-head"><div>
-        <h2>Readiness Audit — {tenantName}</h2>
+      {/* The Analysis & readiness page (patch 36) owns the h2. */}
+      <div className="page-head rq-nested"><div>
+        <h3>Readiness audit, {tenantName}</h3>
         <p>Re-runs the readiness check and shows, per checklist item, exactly what was retrieved and how it was graded. Admin-only diagnostic.</p>
       </div><div className="spacer" /></div>
       <RefreshAllCards />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 14px", flexWrap: "wrap" }}>
-        <button className="btn rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
-        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exportMd}>⬇ Export Markdown</button>}
-        {trace && <button className="btn secondary" style={{ width: "auto", margin: 0 }} onClick={exportJson}>⬇ Export JSON</button>}
+        <button className="sb-btn sb-primary rc-run-cta" style={{ width: "auto", margin: 0 }} onClick={run} disabled={busy}>{busy ? "Running audit…" : trace ? "Re-run audit" : "Run audit"}</button>
+        {trace && <button className="sb-btn sb-secondary" style={{ width: "auto", margin: 0 }} onClick={exportMd}>⬇ Export Markdown</button>}
+        {trace && <button className="sb-btn sb-secondary" style={{ width: "auto", margin: 0 }} onClick={exportJson}>⬇ Export JSON</button>}
         {ranAt && <span className="acct-note" style={{ margin: 0 }}>Last run {new Date(ranAt).toLocaleString()} · cached in this browser</span>}
       </div>
       {err && <div className="metric-gap">{err}</div>}

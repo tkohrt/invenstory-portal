@@ -184,9 +184,10 @@ export default function AdminLedgerOverlayView({
 
   return (
     <div>
-      <div className="page-head">
+      {/* The Review queues page (patch 36) owns the h2; this stays a section. */}
+      <div className="page-head rq-nested">
         <div>
-          <h2>Ground Truth review</h2>
+          <h3>Ground Truth review</h3>
           <p>
             Ground Truth is the funder base (a frozen June 2026 snapshot that never changes)
             plus For Granted&apos;s verified corrections and new finds. These are waiting for

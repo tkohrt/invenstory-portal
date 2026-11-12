@@ -119,7 +119,7 @@ function VerdictButtons({ area, itemKey, oldState, newState, verdict, note: init
           <button key={v} type="button" className={`btn ${verdict === v ? "inline cl-primary" : "secondary"} ap-mini`} disabled={pending}
             onClick={() => act(() => saveVerdictAction({ area, itemKey, verdict: v, oldState, newState, note }))}>{VERDICT_LABEL[v]}</button>
         ))}
-        {verdict && <button type="button" className="btn ghost ap-mini" disabled={pending} onClick={() => act(() => clearVerdictAction(area, itemKey))}>Clear</button>}
+        {verdict && <button type="button" className="sb-btn sb-quiet sb-sm ap-mini" disabled={pending} onClick={() => act(() => clearVerdictAction(area, itemKey))}>Clear</button>}
       </div>
       <input className="cl-search" placeholder="Note (optional): what is wrong, or why" value={note} onChange={e => setNote(e.target.value)} />
       {err && <div className="cl-error">{err}</div>}

@@ -150,31 +150,31 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
         <div className="spacer" />
         <div className="cl-actions">
           {data.source === "analysis" ? (
-            <button type="button" className="btn ghost" disabled={busy} onClick={() => void remerge()}
+            <button type="button" className="sb-btn sb-quiet" disabled={busy} onClick={() => void remerge()}
               title="Free. Rebuilds the library from what the analysis stored, without reading anything.">
               Re-merge
             </button>
           ) : nothingYet ? (
-            <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void runChain(false)}
+            <button type="button" className="sb-btn sb-primary cl-primary" disabled={busy} onClick={() => void runChain(false)}
               aria-busy={busy}>
               {busy ? "Building\u2026" : "Build the Card Library"}
             </button>
           ) : (
             <>
               {left > 0 && (
-                <button type="button" className="btn inline cl-primary" disabled={busy} onClick={() => void runChain(false)}>
+                <button type="button" className="sb-btn sb-primary cl-primary" disabled={busy} onClick={() => void runChain(false)}>
                   Read {left} new document{left === 1 ? "" : "s"}
                 </button>
               )}
-              <button type="button" className="btn secondary" disabled={busy} onClick={() => void runChain(false)}
+              <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => void runChain(false)}
                 title="Reads any document added or changed since the last build. Unchanged documents are not re-read.">
                 Check for changes
               </button>
-              <button type="button" className="btn ghost" disabled={busy} onClick={() => void remerge()}
+              <button type="button" className="sb-btn sb-quiet" disabled={busy} onClick={() => void remerge()}
                 title="Free. Rebuilds the library from documents already read, without reading anything.">
                 Re-merge
               </button>
-              <button type="button" className="btn ghost" disabled={busy}
+              <button type="button" className="sb-btn sb-quiet" disabled={busy}
                 onClick={() => { if (confirm("Re-read every document? This costs model time (minutes, and real money). Cards, edits and verifications are kept.")) void runChain(true); }}
                 title="Paid. Re-reads every document. Use after a change to what is extracted.">
                 Re-read everything
@@ -246,7 +246,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
             <button type="button" className={`chip${userOnly ? " active" : ""}`} onClick={() => setUserOnly(v => !v)}
               title="Cards a person wrote, not ones read from documents">{USER_GENERATED} <span className="cl-count">{data.cards.filter(c => c.createdFrom === "manual" && c.status !== "retired").length}</span></button>
             <input className="cl-search" placeholder="Search statements and quotes" value={q} onChange={e => setQ(e.target.value)} />
-            <a className="btn ghost" href="/api/export/cards" title="Every card with its quotes and sources, as a spreadsheet">⬇ Export cards (.csv)</a>
+            <a className="sb-btn sb-quiet" href="/api/export/cards" title="Every card with its quotes and sources, as a spreadsheet">⬇ Export cards (.csv)</a>
           </div>
 
           {shown.length === 0
@@ -257,7 +257,7 @@ export default function CardLibraryView({ orgName, data, job: initialJob }: {
 
       {data.refusals.length > 0 && (
         <div className="cl-refusals">
-          <button type="button" className="btn ghost" onClick={() => setShowRefusals(v => !v)}>
+          <button type="button" className="sb-btn sb-quiet" onClick={() => setShowRefusals(v => !v)}>
             {showRefusals ? "Hide" : "Show"} what the checks refused ({data.refusals.reduce((n, r) => n + r.count, 0)})
           </button>
           {showRefusals && (

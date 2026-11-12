@@ -109,7 +109,7 @@ export default function WebFinds({ leads: allLeads, isAdmin, orgName, available,
             {isAdmin && (
               <td className="fm-nowrap">
                 {l.review
-                  ? <a href="/admin/ledger-overlay" className={`ov-tag wf-review wf-${l.review}`}>{REVIEW_LABEL[l.review] ?? l.review}</a>
+                  ? <a href="/admin/reviews?tab=ground-truth" className={`ov-tag wf-review wf-${l.review}`}>{REVIEW_LABEL[l.review] ?? l.review}</a>
                   : <span className="ov-muted">Not filed</span>}
               </td>
             )}

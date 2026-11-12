@@ -755,7 +755,19 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ra-caret{color:var(--muted);width:12px}
 .ra-label{font-weight:600;flex:1}
 .ra-tier{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-.ra-badge{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;letter-spacing:.03em}
+.ra-badge{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;letter-spacing:.03em;
+  display:inline-flex;align-items:center;gap:5px}
+.ra-dot{width:7px;height:7px;border-radius:50%;flex:none}
+/* Merged admin pages (patch 36): shared tab pills and layout bits. */
+.adm-tabs{display:inline-flex;gap:4px;background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:3px;margin-bottom:16px}
+.adm-tabs a{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:999px;
+  font-size:13px;font-weight:600;color:var(--muted);text-decoration:none}
+.adm-tabs a.on{background:#1f4d2e;color:#fff}
+.adm-tabs a .badge-count{position:static;margin-left:2px}
+.rq-sub{color:var(--muted);font-size:14px;margin:0 0 14px}
+.rq-nested h3{margin:0 0 4px}
+.rq-nested{margin-bottom:10px}
 .ra-covered{background:#e5f3e8;color:#2f7d44}
 .ra-thin{background:#fbf1d9;color:#9a7a1e}
 .ra-missing{background:#f6e2df;color:#b0402f}

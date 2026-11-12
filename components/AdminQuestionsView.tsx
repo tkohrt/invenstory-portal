@@ -31,8 +31,8 @@ function Editor({ initial, onDone }: { initial: typeof BLANK & { id?: string }; 
       <label>Question prompt<textarea rows={2} value={f.prompt_text} onChange={e => setF({ ...f, prompt_text: e.target.value })} /></label>
       <label>Guidance (optional)<textarea rows={2} value={f.guidance} onChange={e => setF({ ...f, guidance: e.target.value })} /></label>
       <div className="al-actions">
-        <button className="btn" onClick={save} disabled={pending || !f.prompt_text || !f.category}>{pending ? "Saving…" : "Save"}</button>
-        <button className="btn ghost" onClick={onDone}>Cancel</button>
+        <button className="sb-btn sb-primary" onClick={save} disabled={pending || !f.prompt_text || !f.category}>{pending ? "Saving…" : "Save"}</button>
+        <button className="sb-btn sb-quiet" onClick={onDone}>Cancel</button>
       </div>
     </div>
   );
@@ -52,7 +52,7 @@ export default function AdminQuestionsView({ questions }: { questions: GrantQues
           <h2>Question bank</h2>
           <p>The shared grant questions behind every client&apos;s Standard Answers, and what a funder&apos;s questions are matched against. For Granted IP; changes apply to all clients.</p>
         </div>
-        {!adding && <button className="btn" onClick={() => setAdding(true)}>Add question</button>}
+        {!adding && <button className="sb-btn sb-primary" onClick={() => setAdding(true)}>Add question</button>}
       </div>
       {adding && <Editor initial={BLANK} onDone={() => setAdding(false)} />}
       <table className="aq-table">
@@ -67,8 +67,8 @@ export default function AdminQuestionsView({ questions }: { questions: GrantQues
                 {q.typical_limit ? `${q.typical_limit} words` : TYPICAL_WORDS[q.slug] ? `${TYPICAL_WORDS[q.slug]} words (proposed)` : "none"}</td>
               <td>{q.sort_order}</td><td>{q.active ? "Yes" : "No"}</td>
               <td className="aq-row-actions">
-                <button className="btn ghost" onClick={() => setEditId(q.id)}>Edit</button>
-                <button className="btn ghost" onClick={() => remove(q.id)}>Delete</button>
+                <button className="sb-btn sb-secondary sb-sm" onClick={() => setEditId(q.id)}>Edit</button>
+                <button className="sb-btn sb-quiet sb-sm" onClick={() => remove(q.id)}>Delete</button>
               </td>
             </tr>
           ))}

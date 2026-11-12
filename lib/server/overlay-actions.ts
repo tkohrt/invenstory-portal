@@ -80,7 +80,7 @@ export async function proposeOverlayAction(p: OverlayProposal) {
     actor_user_id: s.user.id, tenant_id: surfacedFor,
     action: "overlay_propose", detail: `${p.kind}:${p.title ?? p.base_id ?? data.id}`,
   });
-  revalidatePath("/admin/ledger-overlay");
+  revalidatePath("/admin/reviews");
   return data.id as string;
 }
 
@@ -90,7 +90,7 @@ export async function claimOverlayAction(id: string) {
   // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
   await db.from("ledger_overlay").update({ status: "in_review", reviewed_by: s.user.id })
     .eq("id", id).in("status", ["proposed"]);
-  revalidatePath("/admin/ledger-overlay");
+  revalidatePath("/admin/reviews");
 }
 
 /**
@@ -168,7 +168,7 @@ export async function approveOverlayAction(
     action: edits?.fields ? "overlay_edit_approve" : "overlay_approve",
     detail: `${row.kind}:${row.title ?? row.base_id ?? id}`,
   });
-  revalidatePath("/admin/ledger-overlay");
+  revalidatePath("/admin/reviews");
 }
 
 export async function rejectOverlayAction(id: string, note: string) {
@@ -185,7 +185,7 @@ export async function rejectOverlayAction(id: string, note: string) {
     actor_user_id: s.user.id, tenant_id: null, action: "overlay_reject",
     detail: `${row?.kind ?? "?"}:${row?.title ?? row?.base_id ?? id} — ${note.trim().slice(0, 140)}`,
   });
-  revalidatePath("/admin/ledger-overlay");
+  revalidatePath("/admin/reviews");
 }
 
 /**

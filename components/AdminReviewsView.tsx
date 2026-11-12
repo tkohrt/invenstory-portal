@@ -11,8 +11,9 @@ export default function AdminReviewsView({ pending }: { pending: PendingReview[]
   };
   return (
     <div>
-      <div className="page-head"><div><h2>Story Intelligence reviews</h2>
-        <p>Story Intelligence drafts across all clients, waiting for For Granted approval before they reach a client.</p></div></div>
+      {/* The Review queues page (patch 36) owns the page header; this view
+          brings only its own one-liner. */}
+      <p className="rq-sub">Story Intelligence drafts across all clients, waiting for For Granted approval before they reach a client.</p>
       {pending.length === 0 && <div className="empty">No drafts awaiting review.</div>}
       <div className="client-grid">
         {pending.map(p => (
