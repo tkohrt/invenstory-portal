@@ -255,7 +255,7 @@ export interface GardenState {
 // verified corrections and brand-new records, merged over the base at query
 // time (overlay wins). Admin-only; clients never see it.
 export type OverlayKind = "funder" | "grant";
-export type OverlayProvenance = "client_surfaced" | "scout_bot" | "manual" | "web_discovery";
+export type OverlayProvenance = "client_surfaced" | "scout_bot" | "manual" | "web_discovery" | "curated_list";
 export type OverlayStatus = "proposed" | "in_review" | "approved" | "rejected" | "superseded";
 export type OverlayConfidence = "high" | "medium" | "low";
 

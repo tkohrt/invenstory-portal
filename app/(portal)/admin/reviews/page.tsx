@@ -13,6 +13,8 @@ import AdminLedgerOverlayView from "@/components/AdminLedgerOverlayView";
 import AdminTabs from "@/components/AdminTabs";
 import AdminRequestsView from "@/components/AdminRequestsView";
 import { getRequests, openRequestCount } from "@/lib/server/requests";
+import { getCuratedLists, getCommunityMembers } from "@/lib/server/curated";
+import AdminCuratedLists from "@/components/AdminCuratedLists";
 
 export default async function ReviewQueuesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await getSession();
@@ -46,8 +48,10 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
   }
 
   if (tab === "ground-truth") {
-    const [decided, lastRun, tenants] = await Promise.all([
+    const [decided, lastRun, tenants, curated, communityClients] = await Promise.all([
       getOverlayDecided(), getLastScoutRun(), getTenants(),
+      // Curated list sweeps (P2.5, patch 39). Both reads survive a missing 0087.
+      getCuratedLists().catch(() => []), getCommunityMembers().catch(() => []),
     ]);
     // `base` stays empty until the Ledger service client lands (step 2 of the
     // build order): corrections then render as a real side-by-side diff.
@@ -55,6 +59,7 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
       <div className="rq-page">
         <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
         {tabs}
+        <AdminCuratedLists lists={curated} clients={communityClients} />
         <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={clientTenants(tenants)} base={{}} />
       </div>
     );

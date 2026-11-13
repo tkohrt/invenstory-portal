@@ -23,6 +23,7 @@ import { suppresses } from "@/lib/triage";
 import type { Judgment } from "@/lib/server/triage";
 import { getSourceStates, getLastRunBySource } from "@/lib/server/sources";
 import { getSavedItems } from "@/lib/server/saved";
+import { getCuratedMatches } from "@/lib/server/curated";
 import { getWorkspaceVisibility } from "@/lib/server/data";
 import type { FundingMode } from "@/components/FunderMatchesView";
 
@@ -86,6 +87,8 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   const webOffReason = !webSearchAvailable()
     ? (asAdmin ? "Web search needs the AgentCore web search gateway in this environment." : "The web search is not available right now.")
     : webState && !webState.on ? `The web search is off. ${webState.unavailable ?? webState.why} See Sources.` : null;
+  // Curated-list sweeps (P2.5, patch 39). Survives a missing 0087.
+  const curatedPromise = getCuratedMatches(session.tenantId).catch(() => []);
   const [tenant, allMatches, allFunders, eligibility, health, judgments, clientViews, selfOn, runs, savedItems] = await Promise.all([
     getTenant(session.tenantId),
     getCachedMatches(session.tenantId),
@@ -198,6 +201,7 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
       mode={mode}
       runs={runs}
       savedItems={savedItems}
+      curatedMatches={await curatedPromise}
       dismissedNotices={dismissed}
       focusId={typeof sp.focus === "string" ? sp.focus.slice(0, 220) : null}
       profileAwaiting={profileAwaiting}

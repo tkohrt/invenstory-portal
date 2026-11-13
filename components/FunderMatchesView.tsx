@@ -11,6 +11,8 @@ import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
 import { markFundingSeenAction, dismissFundingNoticeAction } from "@/lib/server/account-actions";
 import { toggleSavedAction } from "@/lib/server/saved-actions";
+import { requestCuratedDraftAction } from "@/lib/server/curated-actions";
+import type { CuratedMatchRow } from "@/lib/curated";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
 import { looksAsleep } from "@/lib/ledger-wake";
@@ -214,7 +216,7 @@ export default function FunderMatchesView({
   profile, lastQueries, matchJob, profileJob, profileStored, pendingRationales, judgments, webSection = null,
   canRun = false, viewingAsClient = false, selfSearch = null, clientViews = {},
   sources = [], sourcesRun = { ranAt: null, bySource: {} }, selfSearchOn = false, knownFunders = [],
-  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [], focusId = null, profileAwaiting = 0, profileGeneratedAt = null,
+  mode = "grants", runs = [], grantsOn = true, fundersOn = true, seenAt = null, savedItems = [], dismissedNotices = [], focusId = null, profileAwaiting = 0, profileGeneratedAt = null, curatedMatches = [],
 }: {
   /** Row to scroll to and flash (patch 32): "g:<grant_id>" or "f:<funder_id>". */
   focusId?: string | null;
@@ -229,6 +231,8 @@ export default function FunderMatchesView({
   seenAt?: string | null;
   /** The save-for-later bucket (patch 26). Survives sweeps; newest first. */
   savedItems?: SavedRow[];
+  /** Curated-list sweeps (P2.5, patch 39): what For Granted matched this client with. */
+  curatedMatches?: CuratedMatchRow[];
   /** Which Funding mode this page shows (patch 24). The page clamps it to an enabled mode for clients. */
   mode?: FundingMode;
   /** The search history, newest first: dates and counts only, no query text. */
@@ -596,6 +600,17 @@ export default function FunderMatchesView({
           key: `reopen:${reopened.target_id}:${reopened.reopened_at}`,
           text: `Good news: ${d.title ?? reopened.title ?? "a grant you saved"} is open again${closes}. You saved it for exactly this.`,
           cta: { href: "#fm-calls", label: "See the call" },
+        };
+      }
+      // Curated-list rung (P2.5, patch 39): second in the decided ladder.
+      // Keyed by the sweep stamp, so a re-sweep with news shows again.
+      const curated = curatedMatches.find(c => !isDismissed(`curated:${c.list_id}:${c.swept_at}`));
+      if (curated) {
+        const others = curatedMatches.filter(c => c.list_id === curated.list_id).length - 1;
+        return {
+          key: `curated:${curated.list_id}:${curated.swept_at}`,
+          text: `A new mission-aligned opportunity was added by For Granted: ${curated.title}${others > 0 ? ` (and ${others} more)` : ""}.`,
+          cta: { href: "#fm-curated", label: "See it" },
         };
       }
       for (const m of openMatches) {
@@ -1064,6 +1079,14 @@ export default function FunderMatchesView({
         </section>
       )}
 
+      {/* Added by For Granted (P2.5, patch 39): curated-list matches for this
+          client. Entries were reviewed in the Ground Truth queue; the Start a
+          draft button files a request in the inbox rather than relying on
+          anyone's memory. */}
+      {mode === "grants" && curatedMatches.length > 0 && (
+        <CuratedSection rows={curatedMatches} viewingAsClient={viewingAsClient} />
+      )}
+
       {/* Saved for later (patch 26): the client's own bucket. Not a snapshot;
           it survives every sweep, which is why a row can outlive its source. */}
       {mode === "grants" && savedGrants.length > 0 && (
@@ -1305,5 +1328,58 @@ export default function FunderMatchesView({
       </div>
 
     </div>
+  );
+}
+
+/** Added by For Granted (P2.5, patch 39): the curated-list matches. */
+function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; viewingAsClient: boolean }) {
+  const [asked, setAsked] = useState<string[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const ask = async (r: CuratedMatchRow) => {
+    setBusyId(r.overlay_id); setErr(null);
+    const res = await requestCuratedDraftAction(r.overlay_id, r.title).catch(() => ({ ok: false as const, error: "That did not send. Try again." }));
+    setBusyId(null);
+    if (!res.ok) { setErr(res.error); return; }
+    setAsked(a => [...a, r.overlay_id]);
+  };
+  const day = (ymd: string) => new Date(`${ymd.slice(0, 10)}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const lists = [...new Set(rows.map(r => r.list_name))];
+  const context = rows.find(r => r.context_note)?.context_note ?? null;
+  return (
+    <section id="fm-curated" className="fm-sec" aria-labelledby="fm-curated-h">
+      <div className="fm-sec-head">
+        <h3 id="fm-curated-h">Added by For Granted</h3>
+        <span className="fm-count">{rows.length}</span>
+      </div>
+      <p className="ov-note" style={{ marginTop: 2 }}>
+        Opportunities For Granted found{lists.length === 1 ? ` (${lists[0]})` : ""}, screened against your eligibility. Done once, shared with every community member.
+      </p>
+      {context && <div className="cu-context"><b>From For Granted:</b> {context}</div>}
+      {err && <p className="cl-error">{err}</p>}
+      <div className="cu-match-list">
+        {rows.map(r => (
+          <div key={r.overlay_id} className="cu-match">
+            <div className="cu-match-main">
+              <b>{r.title}</b>
+              <span className="cu-match-meta">
+                {r.funder && <span>{r.funder}</span>}
+                {r.close_date && <span>Closes {day(r.close_date)}</span>}
+                {r.max_award != null && <span>Up to ${Math.round(r.max_award).toLocaleString()}</span>}
+              </span>
+              {r.notes && <span className="cu-match-notes">{r.notes}</span>}
+            </div>
+            <div className="cu-match-verbs">
+              {r.website && <a className="sb-btn sb-secondary sb-sm" href={r.website} target="_blank" rel="noopener noreferrer">View the opportunity</a>}
+              {asked.includes(r.overlay_id)
+                ? <span className="cu-asked">Request sent. Your For Granted team will follow up.</span>
+                : <button type="button" className="sb-btn sb-primary sb-sm" disabled={busyId === r.overlay_id || viewingAsClient}
+                    title={viewingAsClient ? "The as-client preview cannot send requests." : undefined}
+                    onClick={() => void ask(r)}>{busyId === r.overlay_id ? "Sending…" : "Ask For Granted to start a draft"}</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

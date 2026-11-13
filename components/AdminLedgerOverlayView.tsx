@@ -18,6 +18,8 @@ const PROVENANCE_LABEL: Record<OverlayProvenance, string> = {
   // Patch 5 (1 Nov 2026): found by a client's web search, checked only against
   // the pages the search returned. Read the page before approving.
   web_discovery: "Found by the web search",
+  // P2.5 (patch 39): loaded from a curated list For Granted found.
+  curated_list: "Curated list",
 };
 
 function fmt(v: unknown): string {
