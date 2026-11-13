@@ -19,6 +19,7 @@ import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { TagField, CountryField } from "./FundingEligibilityView";
 import LivingVoicePrompts from "./LivingVoicePrompts";
 import UploadPanel from "./UploadPanel";
+import Irs990Block from "./Irs990Block";
 import { SUPPORT_EMAIL } from "@/lib/uploads";
 import type { TenantOrgType } from "@/lib/living-voice";
 
@@ -306,6 +307,13 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
             ))}
           </div>
         </div>
+        {/* The 990 importer (patch 42): nonprofits only, right after they say
+            so. No record for the EIN offers the upload steps or a skip. */}
+        {p.org_type === "nonprofit" && (
+          <div className="su-group su-opt">
+            <Irs990Block uploadHint="You can upload your 990 on the document steps ahead, or skip for now; nothing waits on this." />
+          </div>
+        )}
         <div className="su-group su-opt">
           <div className="su-group-head">
             <h3>Improves your matches</h3>

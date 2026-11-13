@@ -5,11 +5,13 @@
 // of For Granted's contacts. The page ends in a relationship action, not an
 // application form: that is what makes Funder Compass the strategy product.
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { FunderRow } from "@/lib/funder-rows";
 import type { ContactRecord } from "@/lib/funder-contact";
 import { ROLE_LABEL } from "@/lib/funder-contact";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { requestApproachAction } from "@/lib/server/dossier-actions";
+import { pullFunder990Action } from "@/lib/server/irs990-actions";
 import type { ContactShadow } from "@/lib/server/dossier";
 import type { FunderProfileRecord, EngagementRow } from "@/lib/server/funder-profile";
 import { PROFILE_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
@@ -124,6 +126,10 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
           {funder.ein && <><dt>EIN</dt><dd>{funder.ein}</dd></>}
         </dl>
         <p className="do-muted">{SOURCE_LINE[funder.source ?? "ledger"] ?? SOURCE_LINE.ledger}</p>
+        {/* The 990 importer (patch 42), decided 13 Nov: mechanical figures from
+            the funder's own sworn filing write straight to the shared profile,
+            stamped import_990 with the filing as source. Button-first. */}
+        {isAdmin && !viewingAsClient && funder.ein && <Pull990 funderId={funder.funder_id} ein={funder.ein} />}
       </section>
 
       <section className="do-sec" id="do-relationship">
@@ -175,6 +181,31 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
         </section>
       )}
     </div>
+  );
+}
+
+/** The admin's one-click filing pull (patch 42). */
+function Pull990({ funderId, ein }: { funderId: string; ein: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const pull = async () => {
+    setBusy(true); setMsg(null);
+    const r = await pullFunder990Action(funderId, ein).catch(() => ({ ok: false as const, status: "error" as const, error: "That did not finish. Try again." }));
+    setBusy(false);
+    if (!r.ok) { setMsg(r.error); return; }
+    setMsg(r.changed.length
+      ? `✓ Filled ${r.changed.length} field${r.changed.length === 1 ? "" : "s"} from the ${r.year} filing. Every client's dossier has them now.`
+      : `The ${r.year} filing holds nothing newer than what is already on file.`);
+    router.refresh();
+  };
+  return (
+    <p className="do-pull">
+      <button type="button" className="sb-btn sb-secondary sb-sm" onClick={pull} disabled={busy}>
+        {busy ? "Pulling…" : "Pull the 990"}</button>
+      <span className="su-small"> Fills assets, giving and filing year from the funder&rsquo;s own IRS filing.</span>
+      {msg && <span className="do-pull-msg">{msg}</span>}
+    </p>
   );
 }
 

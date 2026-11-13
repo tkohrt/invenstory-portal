@@ -15,6 +15,7 @@ const STEP_HREF: Record<StartStep["key"], string> = {
   layer2: "/invenstory?upload=II",
   layer3: "/invenstory?upload=III",
   readiness: "/readiness",
+  ein: "/readiness",
 };
 
 export default function SetupBanner({ steps }: { steps: StartStep[] }) {

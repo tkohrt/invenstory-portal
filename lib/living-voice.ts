@@ -116,9 +116,11 @@ export interface StartFacts {
   criticalGaps: number;
   layerCounts: { I: number; II: number; III: number };
   readinessRun: boolean;
+  /** The 990 importer (patch 42): set for nonprofits; true until a 990 is on file. */
+  needs990?: boolean;
 }
 
-export type StartStepKey = "eligibility" | "layer1" | "layer2" | "layer3" | "readiness";
+export type StartStepKey = "eligibility" | "layer1" | "layer2" | "layer3" | "readiness" | "ein";
 
 export interface StartStep { key: StartStepKey; title: string; detail: string; done: boolean }
 
@@ -139,6 +141,12 @@ export function startSteps(f: StartFacts): StartStep[] {
     { key: "readiness", title: "Check your readiness",
       detail: "See what a funder would still ask for, and what to add next.",
       done: f.readinessRun },
+    // The 990 importer (patch 42): nonprofits only, until a 990 is on file.
+    // Listed last and only while needed, so older clients see it too.
+    ...(f.needs990 !== undefined ? [{
+      key: "ein" as const, title: "Pull your IRS filings",
+      detail: "One EIN and your public 990s file themselves; it checks a readiness item for you.",
+      done: !f.needs990 }] : []),
   ];
 }
 

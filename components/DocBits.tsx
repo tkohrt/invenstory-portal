@@ -260,8 +260,10 @@ function OutcomePicker({ d }: { d: DocumentWithTags }) {
   );
 }
 
-export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgType = null, voiceOpen = false }: {
+export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgType = null, voiceOpen = false, typeTag = "" }: {
   tenantName: string; onClose: () => void; onDone: () => void; initialLayer?: "I" | "II" | "III";
+  /** Pre-set document type (the Readiness 990 fallback passes irs_990). */
+  typeTag?: string;
   /** For the Living Voice questions (1 Nov 2026). */
   orgType?: TenantOrgType;
   /** Open with the questions already showing. */
@@ -276,7 +278,7 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgTyp
     <Drawer onClose={onClose}>
       <h3>Upload documents</h3>
       <p style={{ color: "var(--muted)", marginTop: 2 }}>Add files to {tenantName}&rsquo;s Inven(s)tory. Reading starts as each one arrives.</p>
-      <UploadPanel initialLayer={initialLayer ?? "I"} allowLinks addLink={addPortalLinkAction}
+      <UploadPanel initialLayer={initialLayer ?? "I"} typeTag={typeTag} allowLinks addLink={addPortalLinkAction}
         onLayerChange={setLayer} onUploaded={onDone} />
       {/* What to say, right where a Layer III file is added (1 Nov 2026). */}
       {layer === "III" && <LivingVoicePrompts orgType={orgType} compact={!voiceOpen} onSaved={() => { onDone(); onClose(); }} />}

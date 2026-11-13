@@ -20,11 +20,13 @@ export interface StartStatus {
 export async function getStartStatus(tenantId: string): Promise<StartStatus | null> {
   try {
     const s = await userClient();
-    const [gapData, docsRes] = await Promise.all([
+    const [gapData, docsRes, tenantRes] = await Promise.all([
       getGaps(tenantId),
-      s.from("document").select("layer").eq("tenant_id", tenantId),
+      s.from("document").select("layer, type_tag").eq("tenant_id", tenantId),
+      s.from("tenant").select("org_type").eq("id", tenantId).maybeSingle(),
     ]);
-    const docs = (docsRes.data ?? []) as { layer: string }[];
+    const docs = (docsRes.data ?? []) as { layer: string; type_tag: string | null }[];
+    const nonprofit = (tenantRes.data as { org_type: string | null } | null)?.org_type === "nonprofit";
     const criticalGaps = gapData.gaps.filter(g => g.tier === "critical").length;
     const readinessRun = !!gapData.computedAt;
     const steps = startSteps({
@@ -35,6 +37,8 @@ export async function getStartStatus(tenantId: string): Promise<StartStatus | nu
         III: docs.filter(d => d.layer === "III").length,
       },
       readinessRun,
+      // The 990 step (patch 42): only a nonprofit gets it, done once filed.
+      ...(nonprofit ? { needs990: !docs.some(d => d.type_tag === "irs_990") } : {}),
     });
     return {
       steps,

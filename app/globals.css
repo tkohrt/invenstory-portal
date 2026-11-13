@@ -2598,3 +2598,15 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .do-adm-tag{display:inline-block;margin-left:8px;background:#eef3ee;border:1px solid #cfe3d5;color:#1f4d2e;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600;vertical-align:2px}
 .oe-profile{margin:10px 0 0}
 .oe-profile>summary{cursor:pointer;font-size:13px;color:var(--muted);user-select:none;margin:0 0 6px}
+
+/* The 990 importer (patch 42). */
+.i990{background:#f6faf5;border:1px solid #cfe3d5;border-radius:10px;padding:12px 14px;margin:0 0 12px}
+.i990-head{display:flex;flex-direction:column;gap:2px;margin:0 0 8px}
+.i990-row{display:flex;gap:8px;flex-wrap:wrap}
+.i990-row input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px}
+.i990-ok{margin:8px 0 0;font-size:13.5px}
+.i990-ok p{margin:0 0 6px}
+.i990-sug{background:#fdf6e3;border:1px solid #c8b273;border-radius:8px;padding:8px 11px}
+.i990-none{margin:8px 0 0;font-size:13.5px;color:#7a6320}
+.do-pull{margin:8px 0 0}
+.do-pull-msg{display:block;color:#1f4d2e;font-size:12.5px;margin-top:4px}
