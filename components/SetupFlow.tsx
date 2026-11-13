@@ -18,8 +18,8 @@ import { ORG_TYPES, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, FUNDING_KINDS, ty
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { TagField, CountryField } from "./FundingEligibilityView";
 import LivingVoicePrompts from "./LivingVoicePrompts";
-import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
-import { browserClient } from "@/lib/supabase-browser";
+import UploadPanel from "./UploadPanel";
+import { SUPPORT_EMAIL } from "@/lib/uploads";
 import type { TenantOrgType } from "@/lib/living-voice";
 
 export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null }
@@ -407,88 +407,11 @@ function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
   );
 }
 
-interface Pending { key: string; name: string; state: "uploading" | "failed"; error?: string }
-
-/** Files and links into one layer. Reading starts as soon as each arrives. */
+/** Files and links into one layer. Since P1.5 (patch 38) this is the shared
+    UploadPanel with the step's layer fixed; reading starts as each arrives. */
 function Uploader({ layer, docs, allowLinks, typeTag = "" }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean; typeTag?: string }) {
-  const router = useRouter();
-  const input = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<Pending[]>([]);
-  const [over, setOver] = useState(false);
-  const [link, setLink] = useState("");
-  const [linkBusy, setLinkBusy] = useState(false);
-  const [linkErr, setLinkErr] = useState<string | null>(null);
-
-  const one = async (file: File) => {
-    const key = `${file.name}-${file.size}-${Math.random()}`;
-    if (!isAccepted(file.name)) {
-      setPending(x => [...x, { key, name: file.name, state: "failed", error: `Not a type the portal reads. Email it to ${SUPPORT_EMAIL} and we will add it.` }]);
-      return;
-    }
-    setPending(x => [...x, { key, name: file.name, state: "uploading" }]);
-    try {
-      const json = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const s = await fetch("/api/upload/sign", json({ filename: file.name, size: file.size }));
-      const sb = await s.json().catch(() => ({}));
-      if (!s.ok) throw new Error(sb.error ?? `Upload failed (${s.status})`);
-      const { error: upErr } = await browserClient().storage.from("documents")
-        .uploadToSignedUrl(sb.path, sb.token, file, { contentType: file.type || "application/octet-stream" });
-      if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
-      const c = await fetch("/api/upload/complete", json({
-        docId: sb.docId, filename: file.name, contentType: file.type, title: file.name.replace(/\.[^.]+$/, ""), layer, tags: "setup", typeTag, outcome: "",
-      }));
-      const cb = await c.json().catch(() => ({}));
-      if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
-      setPending(x => x.filter(p => p.key !== key));
-      router.refresh();
-    } catch (e) {
-      setPending(x => x.map(p => p.key === key ? { ...p, state: "failed", error: e instanceof Error ? e.message : "Upload failed." } : p));
-    }
-  };
-  const many = (files: FileList | null) => { if (files) for (const f of Array.from(files)) void one(f); };
-
-  const addLink = async () => {
-    if (layer === "III" || !link.trim()) return;
-    setLinkBusy(true); setLinkErr(null);
-    try {
-      const r = await addSetupLinkAction(link, layer);
-      if (!r.ok) setLinkErr(r.error); else { setLink(""); router.refresh(); }
-    } catch { setLinkErr("That link could not be added. Please try again."); }
-    finally { setLinkBusy(false); }
-  };
-
-  const label = (s: string) => s === "ready" ? "Read" : s === "failed" ? "Needs attention" : s === "processing" ? "Reading" : "Waiting";
-
-  return (
-    <div className="su-upload">
-      <div className={`su-drop ${over ? "over" : ""}`}
-        onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-        onDrop={e => { e.preventDefault(); setOver(false); many(e.dataTransfer.files); }}>
-        <b>Drag files here</b>
-        <span className="su-small">{ACCEPTED_LABEL}. Up to 25 MB each.</span>
-        <button type="button" className="sb-btn sb-secondary sb-sm" onClick={() => input.current?.click()}>Choose files</button>
-        <input ref={input} type="file" multiple hidden accept={ACCEPT_ATTR} onChange={e => { many(e.target.files); e.target.value = ""; }} />
-      </div>
-      {allowLinks && layer !== "III" && (
-        <div className="su-link">
-          <input value={link} onChange={e => setLink(e.target.value)} placeholder="Or paste a web link, e.g. a press article"
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void addLink(); } }} />
-          <button type="button" className="sb-btn sb-secondary sb-sm" disabled={linkBusy || !link.trim()} onClick={addLink}>{linkBusy ? "Reading…" : "Add link"}</button>
-        </div>
-      )}
-      {linkErr && <p className="cl-error">{linkErr}</p>}
-      {(pending.length > 0 || docs.length > 0) && (
-        <div className="su-files">
-          <h4>Being read now</h4>
-          <p className="su-small">We start reading as soon as a file arrives. Carry on; nothing waits for this.</p>
-          <ul>
-            {pending.map(f => <li key={f.key} className={f.state}><span>{f.name}</span><em>{f.state === "uploading" ? "Uploading" : f.error}</em></li>)}
-            {docs.map(d => <li key={d.id} className={d.status}><span>{d.title}</span><em>{label(d.status)}</em></li>)}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+  return <UploadPanel fixedLayer={layer} typeTag={typeTag} tagsDefault="setup" allowLinks={allowLinks}
+    showTypePicker={!typeTag} addLink={addSetupLinkAction} docs={docs} />;
 }
 
 // ---- 5. Layer III ----
@@ -554,7 +477,7 @@ function Layer3Step({ state, orgType, docs, grocery, busy, onBack, onSettle }: {
         {msg && <p className="su-note" role="status">{msg}</p>}
         {!canGo && <p className="su-small su-gate">Tick &ldquo;I have read this&rdquo; to carry on.</p>}
         <Foot onBack={onBack}>
-          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} title="You can add your voice later from Getting started." onClick={() => onSettle("skipped")}>Skip for now</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} title="You can add your voice later from the Setting up banner." onClick={() => onSettle("skipped")}>Skip for now</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy || !canGo || mine.length === 0}
             title={mine.length ? undefined : "Add your voice first, or skip for now."}
             onClick={() => onSettle("done")}>Continue</button>
@@ -727,7 +650,7 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
           <ul className="su-list">
             {total > 0 && <li>{read === total ? `All ${total} document${total === 1 ? "" : "s"} read.` : `${read} of ${total} documents read so far; the rest finish on their own.`}</li>}
             <li>Your readiness is being assessed now, so your first look at the Inven(s)tory shows a scored checklist.</li>
-            {todo.length > 0 && <li>The steps you skipped wait under Getting started; nothing is lost.</li>}
+            {todo.length > 0 && <li>The steps you skipped wait in the Setting up banner at the top of the portal; nothing is lost.</li>}
           </ul>
           <div className="su-foot">
             <button type="button" className="sb-btn sb-primary" onClick={() => { router.push(done); router.refresh(); }}>
@@ -777,7 +700,7 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
         </ul>
         {todo.length > 0 && <>
           <h4>Still to do</h4>
-          <p className="su-small">These wait for you in Getting started on your Inven(s)tory.</p>
+          <p className="su-small">These wait for you in the Setting up banner at the top of the portal.</p>
           <ul className="su-list">{todo.map(t => <li key={t}>{t}</li>)}</ul>
         </>}
       </aside>

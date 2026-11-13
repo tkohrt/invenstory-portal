@@ -109,7 +109,7 @@ export function answeredCount(orgType: TenantOrgType, answers: Record<string, st
   return allPrompts(orgType).filter(p => (answers[p.key] ?? "").trim().length > 0).length;
 }
 
-// ---- Getting started (shown on the Inven(s)tory until it is done or hidden) ----
+// ---- Setting up (the Shell's banner since P1.5, patch 38; shown until done or hidden) ----
 
 export interface StartFacts {
   /** Eligibility gaps tiered critical (org type, location, tax status). */

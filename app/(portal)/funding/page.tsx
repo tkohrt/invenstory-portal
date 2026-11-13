@@ -5,7 +5,7 @@ import { getTenant } from "@/lib/server/data";
 import { getCachedMatches, getCachedFunders } from "@/lib/server/matching";
 import { ledgerConfigured, ledgerHealth } from "@/lib/server/ledger";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
-import { getEligibilityProfile } from "@/lib/server/eligibility";
+import { getEligibilityProfile, getGaps } from "@/lib/server/eligibility";
 import { getSearchProfile } from "@/lib/server/search-profile-read";
 import { getFactReviews } from "@/lib/server/profile-review";
 import { factId } from "@/lib/search-profile";
@@ -41,6 +41,16 @@ export default async function FundingPage({ searchParams }: { searchParams: Prom
   const fundersOn = session.role === "admin" || vis.funder_compass === true;
   if (!grantsOn && !fundersOn) {
     await gateFeature(session.role, session.tenantId, "funder_matches"); // redirects
+  }
+  // P1.5 (patch 38): the Funding tools open once the critical eligibility
+  // answers are in and a readiness check has run. Clients who are not there
+  // yet land on the Readiness screen, which names both keys. Admins always
+  // pass, so For Granted can work on a client's behalf, and the as-client
+  // preview passes with them (the nav badge is the signal, not a locked door
+  // in For Granted's face).
+  if (session.role === "client") {
+    const gaps = await getGaps(session.tenantId).catch(() => null);
+    if (gaps && (gaps.gaps.some(g => g.tier === "critical") || !gaps.computedAt)) redirect("/readiness?unlock=funding");
   }
   let mode: FundingMode = sp.mode === "funders" ? "funders" : "grants";
   if (mode === "funders" && !fundersOn) mode = "grants";

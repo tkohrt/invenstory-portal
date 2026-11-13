@@ -17,8 +17,7 @@ export const TOURS: Record<TourKey, Tour> = {
   invenstory: {
     key: "invenstory", path: "/invenstory", name: "The Inven(s)tory",
     steps: [
-      { target: "inv-start", title: "Getting started", body: "The first things to do, each with a button that does it. It goes away once they are done, or when you hide it." },
-      { target: "inv-readiness", title: "The readiness check", body: "What funders usually ask for, and whether your Inven(s)tory already holds it. Anything missing says how to add it." },
+      { target: "inv-readiness", title: "The readiness check", body: "Your readiness score at a glance. The full checklist of what funders usually ask for lives on its own Readiness page; the button here re-runs the check." },
       { target: "inv-upload", title: "Add documents", body: "Upload files to any layer. Each one is read, so chat, Story Cards and drafts can quote it." },
       { target: "inv-layers", title: "The three layers", body: "Layer I is your public story, Layer II how you work inside, Layer III your living voice. Drag a document to move it between layers." },
     ],

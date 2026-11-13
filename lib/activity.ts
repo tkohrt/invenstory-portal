@@ -109,6 +109,7 @@ export const VISIT_GAP_MINUTES = 30;
 
 export const FEATURES: { key: string; label: string; prefix: string }[] = [
   { key: "invenstory", label: "Inven(s)tory", prefix: "/invenstory" },
+  { key: "readiness", label: "Readiness", prefix: "/readiness" },
   { key: "chat", label: "Ask your Inven(s)tory", prefix: "/chat" },
   { key: "search", label: "Search", prefix: "/search" },
   { key: "eligibility", label: "Funding Eligibility", prefix: "/funding-eligibility" },

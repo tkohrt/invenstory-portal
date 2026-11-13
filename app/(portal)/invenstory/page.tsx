@@ -6,10 +6,12 @@ import { getGaps } from "@/lib/server/eligibility";
 import { asksForClient } from "@/lib/server/asks";
 import ClientAsks from "@/components/ClientAsks";
 import { tenantIsBrain } from "@/lib/server/brain";
-import { startSteps as buildStartSteps, showStart } from "@/lib/living-voice";
 
-export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string; brain?: string }> }) {
+export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string; brain?: string; upload?: string }> }) {
   const sp = await searchParams;
+  // P1.5 (patch 38): the checklist lives on its own screen now. Old deep links
+  // (garden prompts, tours, bookmarks) carry over with the item intact.
+  if (sp.item) redirect(`/readiness?item=${encodeURIComponent(sp.item)}`);
   const session = await getSession();
   if (!session) redirect("/");
   // The Brain (Auto-Draft patch 3) has documents only: no readiness, contact or asks.
@@ -22,18 +24,7 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
     brain ? Promise.resolve([]) : asksForClient(session.tenantId),
   ]);
   if (!tenant) redirect("/");
-  // Getting started (1 Nov 2026): worked out from what is already here, so it
-  // costs no reads beyond the page's own. Hidden once done, or by the person.
-  const steps = gapData && !brain ? buildStartSteps({
-    criticalGaps: gapData.gaps.filter(g => g.tier === "critical").length,
-    layerCounts: {
-      I: docs.filter(d => d.layer === "I").length,
-      II: docs.filter(d => d.layer === "II").length,
-      III: docs.filter(d => d.layer === "III").length,
-    },
-    readinessRun: !!gapData.computedAt,
-  }) : null;
-  const hidden = (session.user.ui_prefs as { hide_getting_started?: boolean } | null)?.hide_getting_started === true;
+  const upload = sp.upload === "I" || sp.upload === "II" || sp.upload === "III" ? sp.upload : null;
   return (
     <InvenstoryView
       tenantId={tenant.id}
@@ -45,9 +36,8 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
       readiness={gapData ? gapData.readiness : undefined}
       readinessComputedAt={gapData ? gapData.computedAt : null}
       isAdmin={session.role === "admin"}
-      openItem={sp.item ?? null}
+      openUpload={upload}
       brain={brain ? { closedPage: sp.brain === "closed" } : null}
-      startSteps={steps && showStart(steps, hidden) ? steps : null}
       asks={asks.length ? <ClientAsks asks={asks} isAdmin={session.role === "admin"} tenantName={tenant.name} /> : null}
     />
   );

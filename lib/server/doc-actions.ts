@@ -119,3 +119,26 @@ export async function finishIndexingAction(documentId: string): Promise<{ ok: tr
     return { ok: false, error: e instanceof Error ? e.message : "Indexing failed. Try again." };
   }
 }
+
+/**
+ * A web link added from the portal's unified upload panel (P1.5, patch 38).
+ * Same shape and same 20-a-day budget as onboarding's addSetupLinkAction
+ * (shared audit action "setup_link", so the two paths spend one allowance),
+ * but open after setup is complete and to admins working a client's account.
+ */
+export async function addPortalLinkAction(url: string, layer: "I" | "II"): Promise<{ ok: true; message?: string } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "You are signed out. Sign in and try again." };
+  const { cleanWebsite } = await import("@/lib/setup");
+  const clean = cleanWebsite(url);
+  if (!clean) return { ok: false, error: "That does not look like a web address." };
+  const { count } = await db.from("audit_log").select("id", { count: "exact", head: true })
+    .eq("tenant_id", session.tenantId).eq("action", "setup_link").gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString());
+  if ((count ?? 0) >= 20) return { ok: false, error: "That is a lot of links for one day. Upload the pages as files, or add more tomorrow." };
+  await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: session.tenantId, action: "setup_link", detail: clean.slice(0, 300) });
+  const { addWebDocument } = await import("./setup");
+  const r = await addWebDocument({ tenantId: session.tenantId, userId: session.user.id, role: session.role, url: clean, layer });
+  if (!r.ok) return { ok: false, error: r.error };
+  revalidatePath("/invenstory");
+  return { ok: true, message: r.title };
+}

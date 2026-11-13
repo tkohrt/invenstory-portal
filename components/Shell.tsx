@@ -15,6 +15,8 @@ import TourHost from "./TourHost";
 import LedgerWarmer from "./LedgerWarmer";
 import { promptHref } from "@/lib/garden-prompt";
 import { brainAllows, clientTenants, isBrain } from "@/lib/brain";
+import SetupBanner from "./SetupBanner";
+import type { StartStep } from "@/lib/living-voice";
 
 export interface ShellProps {
   user: AppUser; role: "client" | "admin"; tenantId: string;
@@ -24,6 +26,10 @@ export interface ShellProps {
   garden: GardenState | null;
   /** Story Cards waiting for the client to look at (0 when the page is off). */
   storyCardsWaiting?: number;
+  /** P1.5 (patch 38): the setup banner's steps, or null when done, hidden or not a client. */
+  setupSteps?: StartStep[] | null;
+  /** P1.5 (patch 38): true while the Funding tools are closed to this client (eligibility or readiness missing). */
+  fundingLocked?: boolean;
   children?: React.ReactNode;
 }
 
@@ -44,7 +50,7 @@ function subscribeNav(cb: () => void) {
   return () => { window.removeEventListener(NAV_EVENT, cb); window.removeEventListener("storage", cb); };
 }
 
-export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, requestsOpenCount = 0, workspaceVis, garden, storyCardsWaiting = 0, children }: ShellProps) {
+export default function Shell({ user, role, tenantId, tenants, artifactTypes, pendingCount, overlayPendingCount, requestsOpenCount = 0, workspaceVis, garden, storyCardsWaiting = 0, setupSteps = null, fundingLocked = false, children }: ShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
@@ -92,6 +98,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
   // adminOnly: For Granted's own tools, never shown to a client and never a toggle.
   const workspaceNav: { key?: string; href: string; ic: string; label: string; toggle: boolean; adminOnly?: boolean }[] = [
     {                        href: "/invenstory",        ic: "▦", label: invLabel,                 toggle: false },
+    {                        href: "/readiness",         ic: "◉", label: "Readiness",              toggle: false },
     {                        href: "/draft",             ic: "✚", label: "Draft an Application",   toggle: false, adminOnly: true },
     { key: "drafts",         href: "/drafts",          ic: "✎", label: "Drafts",                 toggle: true },
     { key: "chat",           href: "/chat",           ic: "✦", label: "Ask your Inven(s)tory",  toggle: true },
@@ -200,6 +207,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
               title={collapsed ? item.label : item.adminOnly ? "For Granted only" : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
               <span className="ic">{item.ic}</span> {item.label}
               {item.key === "card_review" && storyCardsWaiting > 0 && <span className="badge-count" title="New cards to look at">{storyCardsWaiting}</span>}
+              {item.key === "funder_matches" && !admin && fundingLocked && <span className="nav-alert" title="Opens once your eligibility questions are answered and a readiness check has run">!</span>}
               {item.toggle && admin && (
                 <button type="button"
                   className={`vis-dot ${visible ? "on" : "off"}${togglingFeature === item.key ? " busy" : ""}`}
@@ -246,6 +254,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
       </div>
       <div className="main">
         <BuildNotice role={role} tenantId={tenantId} cardsVisible={admin || !!workspaceVis.card_review} />
+        {setupSteps && <SetupBanner steps={setupSteps} />}
         {children}
       </div>
     </div>

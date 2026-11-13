@@ -4,23 +4,21 @@ import { useRouter } from "next/navigation";
 import { DocCard, DocDrawer, UploadDrawer, LAYER_META } from "./DocBits";
 import { updateClientProfileAction } from "@/lib/server/admin-actions";
 import { changeDocLayerAction } from "@/lib/server/doc-actions";
-import ReadinessCard from "./ReadinessCard";
-import GettingStarted from "./GettingStarted";
-import type { StartStep } from "@/lib/living-voice";
+import ReadinessStrip from "./ReadinessStrip";
 import type { ReadinessItem } from "@/lib/checklist";
 import type { DocumentWithTags, Layer } from "@/lib/types";
 
 function normalizeUrl(u: string) { return /^https?:\/\//i.test(u) ? u : `https://${u}`; }
 
-export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openItem, asks, brain = null, startSteps = null }: {
+export default function InvenstoryView({ tenantId, tenantName, orgType, website, contactName, docs, readiness, readinessComputedAt, isAdmin, openUpload = null, asks, brain = null }: {
   tenantId: string; tenantName: string; orgType: "nonprofit" | "startup" | null; website: string | null;
-  contactName: string | null; docs: DocumentWithTags[]; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean; openItem?: string | null;
+  contactName: string | null; docs: DocumentWithTags[]; readiness?: { pct: number; items: ReadinessItem[] }; readinessComputedAt?: string | null; isAdmin: boolean;
+  /** P1.5 (patch 38): a ?upload=I/II/III deep link opens the drawer on that layer (the setup banner's layer steps land here). */
+  openUpload?: "I" | "II" | "III" | null;
   /** Questions For Granted asked from the Storyboard (0058), shown under the heading. */
   asks?: ReactNode;
   /** Set when this is the Brain (Auto-Draft patch 3): documents only, no client profile or readiness. */
   brain?: { closedPage: boolean } | null;
-  /** Getting started (1 Nov 2026), or null when done, hidden or not a client. */
-  startSteps?: StartStep[] | null;
 }) {
   const contactLabel = (t: string | null) => (t === "startup" ? "Founder" : "Executive Director");
   const [editingProfile, setEditingProfile] = useState(false);
@@ -29,9 +27,8 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
   const saveProfile = async () => { setSavingPf(true); await updateClientProfileAction({ tenantId, ...pf }); setSavingPf(false); setEditingProfile(false); router.refresh(); };
   const [filter, setFilter] = useState<Layer | "all">("all");
   const [openDocId, setOpenDocId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadLayer, setUploadLayer] = useState<"I"|"II"|"III"|null>(null);
-  // Opened from Getting started's Living Voice step: the questions show at once.
+  const [uploading, setUploading] = useState(openUpload !== null);
+  const [uploadLayer, setUploadLayer] = useState<"I"|"II"|"III"|null>(openUpload);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [dragOverLayer, setDragOverLayer] = useState<Layer | null>(null);
   const router = useRouter();
@@ -86,13 +83,10 @@ export default function InvenstoryView({ tenantId, tenantName, orgType, website,
             other details unless they have agreed.</p>
         </div>
       )}
-      {!brain && startSteps && (
-        <div data-tour="inv-start"><GettingStarted steps={startSteps} isAdmin={isAdmin}
-          onUpload={layer => { setVoiceOpen(false); setUploadLayer(layer); setUploading(true); }}
-          onVoice={() => { setVoiceOpen(true); setUploadLayer("III"); setUploading(true); }} /></div>
-      )}
       {!brain && asks}
-      {!brain && readiness && <ReadinessCard readiness={readiness} computedAt={readinessComputedAt ?? null} onUpload={(layer) => { setUploadLayer(layer); setUploading(true); }} onOpenDoc={setOpenDocId} openKey={openItem ?? null} orgType={orgType} />}
+      {/* P1.5 (patch 38): the checklist has its own screen; the layers are this
+          page's marquee. The strip keeps the score and the run button here. */}
+      {!brain && readiness && <ReadinessStrip pct={readiness.pct} computedAt={readinessComputedAt ?? null} />}
       <div className="layers-zone" data-tour="inv-layers">
       <div className="filters">
         <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All layers</button>

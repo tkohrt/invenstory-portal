@@ -10,6 +10,7 @@ import { clientCardsWaiting } from "@/lib/server/client-cards";
 import { tenantIsBrain } from "@/lib/server/brain";
 import { getSetupState, ownerName } from "@/lib/server/setup";
 import { setupGate } from "@/lib/setup";
+import { getStartStatus } from "@/lib/server/start-status";
 import SetupUnderWay from "@/components/SetupUnderWay";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +26,10 @@ export default async function PortalLayout({ children }: { children: React.React
   const gate = setupGate(await getSetupState(session.tenantId), session.user, brain);
   if (gate.kind === "run") redirect("/setup");
   const setupBy = gate.kind === "wait" ? await ownerName(session.tenantId, (await getSetupState(session.tenantId))?.ownerUserId ?? null) : null;
-  const [tenants, types, pending, workspaceVis, garden, overlayPending, requestsOpen] = await Promise.all([
+  // P1.5 (patch 38): one read answers the setup banner and the Funding lock.
+  // Clients only; the Brain and For Granted have neither.
+  const startPromise = session.role === "client" && !brain ? getStartStatus(session.tenantId) : Promise.resolve(null);
+  const [tenants, types, pending, workspaceVis, garden, overlayPending, requestsOpen, startStatus] = await Promise.all([
     getTenants(),
     getNavArtifactTypes(session.tenantId, session.role === "admin"),
     session.role === "admin" ? getPendingReviews() : Promise.resolve([]),
@@ -34,12 +38,16 @@ export default async function PortalLayout({ children }: { children: React.React
     session.role === "admin" ? getOverlayPendingCount() : Promise.resolve(0),
     // The Requests inbox badge (patch 37), admins only.
     session.role === "admin" ? openRequestCount().catch(() => 0) : Promise.resolve(0),
+    startPromise,
   ]);
+  const hideStart = (session.user.ui_prefs as { hide_getting_started?: boolean } | null)?.hide_getting_started === true;
   // The sidebar badge on Story Cards, only where the page is on.
   const storyCardsWaiting = workspaceVis.card_review && !brain ? await clientCardsWaiting(session.tenantId).catch(() => 0) : 0;
   return (
     <Shell user={session.user} role={session.role} tenantId={session.tenantId}
-      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} requestsOpenCount={requestsOpen} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}>
+      tenants={tenants} artifactTypes={types} pendingCount={pending.length} overlayPendingCount={overlayPending} requestsOpenCount={requestsOpen} workspaceVis={workspaceVis} garden={garden} storyCardsWaiting={storyCardsWaiting}
+      setupSteps={startStatus && !hideStart && gate.kind !== "wait" ? startStatus.steps : null}
+      fundingLocked={startStatus ? !startStatus.fundingUnlocked : false}>
       {gate.kind === "wait" && <SetupUnderWay by={setupBy} done={gate.done} total={gate.total} />}
       {children}
     </Shell>

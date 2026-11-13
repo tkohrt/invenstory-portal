@@ -7,11 +7,11 @@ import type { DocumentWithTags, Layer } from "@/lib/types";
 import { DOC_TYPES } from "@/lib/analysis";
 import { OUTCOMES, asksOutcomeAtUpload, isWinning, parseOutcome } from "@/lib/doc-outcome";
 import { setDocOutcomeAction } from "@/lib/server/doc-outcome-actions";
-import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
+import UploadPanel from "./UploadPanel";
+import { addPortalLinkAction } from "@/lib/server/doc-actions";
 import Busy from "./Busy";
 import LivingVoicePrompts from "./LivingVoicePrompts";
 import type { TenantOrgType } from "@/lib/living-voice";
-import { browserClient } from "@/lib/supabase-browser";
 
 export const LAYER_META: Record<Layer, { name: string; desc: string; color: string; cls: string }> = {
   I: { name: "Public Story", desc: "Everything the world can see", color: "var(--l1)", cls: "l1" },
@@ -264,106 +264,24 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgTyp
   tenantName: string; onClose: () => void; onDone: () => void; initialLayer?: "I" | "II" | "III";
   /** For the Living Voice questions (1 Nov 2026). */
   orgType?: TenantOrgType;
-  /** Open with the questions already showing, from Getting started. */
+  /** Open with the questions already showing. */
   voiceOpen?: boolean;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
-  const [layer, setLayer] = useState<string>(initialLayer ?? "I");
-  const [tags, setTags] = useState("");
-  const [typeTag, setTypeTag] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (!file) { setError("Choose a file first."); return; }
-    if (!isAccepted(file.name)) { setError(`That file type isn\u2019t supported yet. Accepted: ${ACCEPTED_LABEL}. Other types can be emailed to ${SUPPORT_EMAIL}.`); return; }
-    setBusy(true); setError(null);
-    // The file goes straight to storage with a one-time URL. Posting it to the
-    // portal hit Vercel's 4.5 MB request limit (a bare 413) well below the
-    // 25 MB this form promises.
-    try {
-      const json = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const s = await fetch("/api/upload/sign", json({ filename: file.name, size: file.size }));
-      const sb = await s.json().catch(() => ({}));
-      if (!s.ok) throw new Error(sb.error ?? `Upload failed (${s.status})`);
-      const { error: upErr } = await browserClient().storage.from("documents")
-        .uploadToSignedUrl(sb.path, sb.token, file, { contentType: file.type || "application/octet-stream" });
-      if (upErr) throw new Error(`The file could not be stored: ${upErr.message}`);
-      const c = await fetch("/api/upload/complete", json({
-        docId: sb.docId, filename: file.name, contentType: file.type, title, layer, tags, typeTag,
-        outcome: asksOutcomeAtUpload(typeTag) ? outcome : "",
-      }));
-      const cb = await c.json().catch(() => ({}));
-      if (!c.ok) throw new Error(cb.error ?? `Upload failed (${c.status})`);
-    } catch (e) {
-      setBusy(false);
-      setError(e instanceof Error ? e.message : "Upload failed.");
-      return;
-    }
-    setBusy(false);
-    onDone(); onClose();
-  };
-
+  // The unified upload panel (P1.5, patch 38): the same component as
+  // onboarding, with the layer select shown. Files upload as they are dropped
+  // (title from the filename), so the drawer stays open for more and closes
+  // with Done.
+  const [layer, setLayer] = useState<"I" | "II" | "III">(initialLayer ?? "I");
   return (
     <Drawer onClose={onClose}>
-      <h3>Upload a document</h3>
-      <p style={{ color: "var(--muted)", marginTop: 2 }}>Add a file to {tenantName}&rsquo;s Inven(s)tory.</p>
-      <label>File <span className="req">*</span></label>
-      <input type="file" accept={ACCEPT_ATTR}
-        onChange={e => {
-          const f = e.target.files?.[0] ?? null;
-          if (f && !isAccepted(f.name)) {
-            setError(`That file type isn\u2019t supported yet. Accepted: ${ACCEPTED_LABEL}. Other types can be emailed to ${SUPPORT_EMAIL}.`);
-            setFile(null); e.target.value = ""; return;
-          }
-          setError(null); setFile(f); if (f && !title) setTitle(f.name.replace(/\.[^.]+$/, ""));
-        }} />
-      <div className="hint" style={{ marginTop: 4 }}>
-        Accepted: {ACCEPTED_LABEL}. Have an image, slide deck, or another file type? Email it to{" "}
-        <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and we&rsquo;ll add it for you.
-      </div>
-      <label>Title</label>
-      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Board meeting minutes — June" />
-      <label>Layer <span className="req">*</span></label>
-      <select value={layer} onChange={e => setLayer(e.target.value)}>
-        <option value="I">Layer I — Public Story</option>
-        <option value="II">Layer II — Internal Strategy</option>
-        <option value="III">Layer III — Living Voice</option>
-      </select>
+      <h3>Upload documents</h3>
+      <p style={{ color: "var(--muted)", marginTop: 2 }}>Add files to {tenantName}&rsquo;s Inven(s)tory. Reading starts as each one arrives.</p>
+      <UploadPanel initialLayer={initialLayer ?? "I"} allowLinks addLink={addPortalLinkAction}
+        onLayerChange={setLayer} onUploaded={onDone} />
       {/* What to say, right where a Layer III file is added (1 Nov 2026). */}
       {layer === "III" && <LivingVoicePrompts orgType={orgType} compact={!voiceOpen} onSaved={() => { onDone(); onClose(); }} />}
-      <label>What kind of document is it?</label>
-      <select value={typeTag} onChange={e => setTypeTag(e.target.value)}>
-        <option value="">Not sure (we&rsquo;ll suggest one)</option>
-        {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-      </select>
-      <div className="hint" style={{ marginTop: 4 }}>A pitch deck, an IRS 990, a budget and similar documents count on the readiness checklist once their type is set.</div>
-      {asksOutcomeAtUpload(typeTag) && (
-        <>
-          <label>How did this application turn out?</label>
-          <select value={outcome} onChange={e => setOutcome(e.target.value)}>
-            <option value="">Not set</option>
-            {OUTCOMES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-          <div className="hint" style={{ marginTop: 4 }}>Won marks it as a winning grant. You can set or change this later from the document.</div>
-        </>
-      )}
-      <label>Tags (comma-separated)</label>
-      <input value={tags} onChange={e => setTags(e.target.value)} placeholder="budget, transportation" />
-      {error && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {error}</div>}
-      <button className="btn" onClick={submit} disabled={busy}>
-        {busy ? "Uploading…" : "Save to Inven(s)tory"}</button>
-      {busy && (
-        <Busy
-          label="Uploading, then reading the document"
-          hint="It is read, split up and indexed so it can be searched and cited. Larger PDFs take longer."
-          slowAfterMs={20000}
-          slowHint="Still working. A long PDF can take a minute."
-        />
-      )}
       <div className="hint">Text is extracted, chunked, and embedded on upload — the document becomes searchable in seconds.</div>
+      <button className="btn secondary" style={{ marginTop: 10 }} onClick={onClose}>Done</button>
     </Drawer>
   );
 }
