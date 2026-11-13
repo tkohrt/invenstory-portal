@@ -22,6 +22,8 @@ const BLANK: OverlayManualEntry = {
   kind: "funder", base_id: "", source_url: "", surfaced_for_tenant: "", confidence: "high",
   title: "", ein: "", opportunity_number: "", name: "", website: "", location: "",
   focus: "", typical_grant_range: "", access_mode: "", access_note: "",
+  giving_cycle: "", programs: "", geography: "", application_process: "",
+  assets_usd: "", annual_giving_usd: "", fy_year: "",
   agency: "", close_date: "",
   min_award: "", max_award: "", eligibility: "", caveat: "", notes: "",
 };
@@ -291,6 +293,42 @@ export default function OverlayEntryForm({ tenants, onDone }: { tenants: Tenant[
           <input value={f.access_note ?? ""} onChange={e => set({ access_note: e.target.value })}
                  placeholder={'e.g. "We do not accept unsolicited proposals" — from their Grants page'} />
         </label>
+      )}
+
+      {/* The shared funder profile (patch 41): record only what the source
+          stated; each lands on every client's dossier with this entry's
+          provenance once approved. Blank leaves the profile alone. */}
+      {!isGrant && (
+        <details className="oe-profile">
+          <summary>Dossier fields (optional): cycles, programs, process, financials</summary>
+          <div className="row">
+            <label>Giving cycle
+              <input value={f.giving_cycle ?? ""} onChange={e => set({ giving_cycle: e.target.value })} placeholder="LOIs each January; board meets quarterly" />
+            </label>
+            <label>Named programs
+              <input value={f.programs ?? ""} onChange={e => set({ programs: e.target.value })} placeholder="their own program names, comma-separated" />
+            </label>
+          </div>
+          <div className="row">
+            <label>Where they give
+              <input value={f.geography ?? ""} onChange={e => set({ geography: e.target.value })} placeholder="e.g. Cuyahoga County; statewide Ohio; national" />
+            </label>
+            <label>Application process
+              <input value={f.application_process ?? ""} onChange={e => set({ application_process: e.target.value })} placeholder="LOI first, full proposal by invitation" />
+            </label>
+          </div>
+          <div className="row">
+            <label>Total assets ($)
+              <input value={f.assets_usd ?? ""} onChange={e => set({ assets_usd: e.target.value })} placeholder="from the 990" />
+            </label>
+            <label>Annual giving ($)
+              <input value={f.annual_giving_usd ?? ""} onChange={e => set({ annual_giving_usd: e.target.value })} placeholder="grants paid, most recent year" />
+            </label>
+            <label>Filing year
+              <input value={f.fy_year ?? ""} onChange={e => set({ fy_year: e.target.value })} placeholder="2025" />
+            </label>
+          </div>
+        </details>
       )}
 
       <label>Eligibility, in their words

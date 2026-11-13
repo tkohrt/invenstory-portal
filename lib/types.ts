@@ -316,6 +316,14 @@ export interface OverlayManualEntry {
   /** Funders only: how they take requests, and the line that says so. */
   access_mode?: string;
   access_note?: string;
+  /** Funders only: the shared-profile fields (patch 41). All optional; blank leaves the profile alone. */
+  giving_cycle?: string;
+  programs?: string;
+  geography?: string;
+  application_process?: string;
+  assets_usd?: string;
+  annual_giving_usd?: string;
+  fy_year?: string;
   agency?: string;
   close_date?: string;               // YYYY-MM-DD
   min_award?: string;

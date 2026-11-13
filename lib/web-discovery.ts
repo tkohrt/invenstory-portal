@@ -69,10 +69,11 @@ Search the web for the question you are given and return what you find as JSON. 
 3. Prefer the funder's own page over a listing site or news article. Leave out paywalled aggregators.
 4. Say what the page says. Do not invent amounts, deadlines or eligibility. If unsure, use null.
 5. "why" is one sentence on why it could fit this client, using only the client facts given. "quote" is a short exact phrase (under 20 words) copied from the page that shows it is real and current.
+5b. For a "funder" item only, you may add "giving_cycle", "programs" and "application_process" when the page STATES them (its own words, condensed). Omit any the page does not state; never infer them.
 6. At most 8 items. Fewer good items beat more weak ones. No em dashes.
 
 Return ONLY this JSON, no other text:
-{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"why":"...","quote":"..."}]}`;
+{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"why":"...","quote":"...","giving_cycle":"..."|null,"programs":"..."|null,"application_process":"..."|null}]}`;
 
 /** The user turn: today's date, the client in brief (fenced), the question. */
 export function discoverUser(angle: Angle, facts: string[], today: string): string {
@@ -111,6 +112,19 @@ export interface WebSource { url: string; title: string | null; pageAge: string 
 export interface RawLead {
   kind?: unknown; money_kind?: unknown; title?: unknown; funder?: unknown; url?: unknown;
   deadline?: unknown; amount?: unknown; geography?: unknown; eligibility?: unknown; why?: unknown; quote?: unknown;
+  // Funder-profile extras (patch 41): only when the page states them.
+  giving_cycle?: unknown; programs?: unknown; application_process?: unknown;
+}
+
+/** Funder-profile extras a parse may carry (patch 41): stated-only, optional. */
+export function leadProfileExtras(r: RawLead): { giving_cycle?: string; programs?: string; application_process?: string } {
+  const str = (v: unknown, max: number): string | undefined =>
+    typeof v === "string" && v.trim() ? v.replace(/\s+/g, " ").trim().slice(0, max) : undefined;
+  const out: { giving_cycle?: string; programs?: string; application_process?: string } = {};
+  const gc = str(r.giving_cycle, 300); if (gc) out.giving_cycle = gc;
+  const pr = str(r.programs, 600); if (pr) out.programs = pr;
+  const ap = str(r.application_process, 600); if (ap) out.application_process = ap;
+  return out;
 }
 
 export interface Lead {
@@ -129,6 +143,10 @@ export interface Lead {
   quote: string | null;
   /** exact: the URL is a page the search returned. site: only its website was. */
   grounded: "exact" | "site";
+  /** Funder-profile extras (patch 41), stated by the page or absent. */
+  giving_cycle?: string;
+  programs?: string;
+  application_process?: string;
 }
 
 /** The JSON object in a reply, tolerating a fence or a sentence around it. */
@@ -209,6 +227,7 @@ export function groundLeads(raw: RawLead[], sourceUrls: string[], angleKind: Ang
       deadline, rolling, amount: noLinks(s(r.amount, 120)), geography: noLinks(s(r.geography, 200)),
       eligibility: noLinks(s(r.eligibility, 600)), why: noLinks(s(r.why, 400)), quote: noLinks(s(r.quote, 200)),
       grounded,
+      ...leadProfileExtras(r),
     });
   }
   return out;
@@ -276,6 +295,10 @@ export function overlayDraft(l: Lead, topics: string[]): OverlayDraft {
         ...(l.eligibility ? { access_note: l.eligibility } : {}),
         ...(l.geography ? { location: l.geography } : {}),
         focus: topics.join(", ") || null,
+        // Funder-profile extras (patch 41): merged into funder_profile on approval.
+        ...(l.giving_cycle ? { giving_cycle: l.giving_cycle } : {}),
+        ...(l.programs ? { programs: l.programs } : {}),
+        ...(l.application_process ? { application_process: l.application_process } : {}),
         discovered_via: "web", geography, topics, ...(notes ? { notes } : {}),
       },
     };

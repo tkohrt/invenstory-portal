@@ -109,7 +109,7 @@ export async function approveOverlayAction(
 
   // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
   const { data: row } = await db.from("ledger_overlay")
-    .select("id, kind, base_id, title, status").eq("id", id).single();
+    .select("id, kind, base_id, ein, title, status, fields, source_url, provenance").eq("id", id).single();
   if (!row) throw new Error("no such overlay row");
   if (row.status === "approved") return;                       // already live, nothing to do
   if (row.status !== "proposed" && row.status !== "in_review")
@@ -168,6 +168,24 @@ export async function approveOverlayAction(
     action: edits?.fields ? "overlay_edit_approve" : "overlay_approve",
     detail: `${row.kind}:${row.title ?? row.base_id ?? id}`,
   });
+
+  // The shared funder profile (patch 41): approving a funder row also merges
+  // its recognized fields into funder_profile, so a fact reviewed once reaches
+  // every client's dossier at once. Non-destructive by the merge rule (a field
+  // the source did not state is left alone), best-effort by design (the
+  // approval above has already landed either way).
+  if (row.kind === "funder") {
+    const r = row as unknown as { ein: string | null; base_id: string | null; fields: Record<string, unknown>; source_url: string | null; provenance: string };
+    const finalFields = edits?.fields ?? r.fields ?? {};
+    const how = r.provenance === "web_discovery" ? "web_discovery"
+      : r.provenance === "curated_list" ? "curated_list"
+      : r.provenance === "manual" ? "manual" : "verification";
+    const { applyProfileFields } = await import("./funder-profile");
+    await applyProfileFields({
+      ein: r.ein, funderId: r.base_id ?? id, incoming: finalFields,
+      prov: { how, source_url: edits?.source_url ?? r.source_url ?? null, at: now },
+    });
+  }
   revalidatePath("/admin/reviews");
 }
 

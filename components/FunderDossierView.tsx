@@ -11,17 +11,23 @@ import { ROLE_LABEL } from "@/lib/funder-contact";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { requestApproachAction } from "@/lib/server/dossier-actions";
 import type { ContactShadow } from "@/lib/server/dossier";
+import type { FunderProfileRecord, EngagementRow } from "@/lib/server/funder-profile";
+import { PROFILE_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
 
 const SOURCE_LINE: Record<string, string> = {
   ledger: "From the funder ledger (GrantX base plus For Granted's corrections).",
   iati: "From IATI, the international aid transparency registry.",
 };
 
-export default function FunderDossierView({ funder, shadow, contacts, isAdmin, viewingAsClient, knownAs }: {
+export default function FunderDossierView({ funder, shadow, contacts, profile, history, isAdmin, viewingAsClient, knownAs }: {
   funder: FunderRow;
   shadow: ContactShadow | null;
   /** Full records, admin sessions only; a client session never loads them. */
   contacts: ContactRecord[];
+  /** The shared funder profile (patch 41), read live. */
+  profile: FunderProfileRecord | null;
+  /** Cross-client engagement history; empty for every non-admin session. */
+  history: EngagementRow[];
   isAdmin: boolean;
   viewingAsClient: boolean;
   /** How the client already knows this funder (company setup), if they do. */
@@ -103,6 +109,18 @@ export default function FunderDossierView({ funder, shadow, contacts, isAdmin, v
           {funder.mission && <><dt>Mission</dt><dd>{funder.mission}</dd></>}
           {funder.typical_grant_range && <><dt>Typical grants</dt><dd>{funder.typical_grant_range}</dd></>}
           {funder.access_note && <><dt>How they take requests</dt><dd>{funder.access_note}</dd></>}
+          {/* The shared profile (patch 41): read live, one fact for every client,
+              each with its own provenance. Empty fields simply do not render. */}
+          {PROFILE_FIELDS.map(def => {
+            const v = profile?.fields[def.key];
+            if (v === undefined || v === null || v === "") return null;
+            const m = profile?.meta[def.key] as FieldProvenance | undefined;
+            return (
+              <FieldRow key={def.key} label={def.label}
+                value={def.kind === "usd" ? `$${Math.round(Number(v)).toLocaleString()}` : String(v)}
+                prov={m ?? null} />
+            );
+          })}
           {funder.ein && <><dt>EIN</dt><dd>{funder.ein}</dd></>}
         </dl>
         <p className="do-muted">{SOURCE_LINE[funder.source ?? "ledger"] ?? SOURCE_LINE.ledger}</p>
@@ -139,6 +157,37 @@ export default function FunderDossierView({ funder, shadow, contacts, isAdmin, v
         )}
         {err && <p className="cl-error">{err}</p>}
       </section>
+
+      {/* For Granted's own picture, never a client's (patch 41): drafts across
+          ALL clients that reference this funder. Rendering is gated on a real
+          admin session; the page never even loads it otherwise. */}
+      {isAdmin && !viewingAsClient && history.length > 0 && (
+        <section className="do-sec do-admin">
+          <h3>For Granted&rsquo;s history with this funder <span className="do-adm-tag">For Granted only</span></h3>
+          <table className="do-table">
+            <thead><tr><th>Client</th><th>Draft</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody>
+              {history.map((h, i) => (
+                <tr key={i}><td>{h.tenant_name}</td><td>{h.title}</td><td>{h.submitted ? "submitted" : h.status}</td><td>{new Date(h.updated_at).toLocaleDateString()}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </div>
+  );
+}
+
+/** One shared-profile fact with its own provenance line. */
+function FieldRow({ label, value, prov }: { label: string; value: string; prov: FieldProvenance | null }) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd>{value}{prov && (
+        <span className="do-prov" title={prov.source_url ?? undefined}>
+          {provenanceLine(prov)}{prov.source_url && <> · <a href={prov.source_url} target="_blank" rel="noopener noreferrer">source ↗</a></>}
+        </span>
+      )}</dd>
+    </>
   );
 }

@@ -36,6 +36,18 @@ export function buildOverlayEntry(e: OverlayManualEntry): BuiltEntry {
     // the page says so.
     put("access_note", e.access_note);
   }
+  // The shared funder profile's fields (patch 41): carried on the overlay row,
+  // merged into funder_profile on approval. Blank means "say nothing".
+  put("giving_cycle", e.giving_cycle); put("programs", e.programs);
+  put("geography", e.geography); put("application_process", e.application_process);
+  for (const k of ["assets_usd", "annual_giving_usd", "fy_year"] as const) {
+    const raw = (e[k] ?? "").replace(/[$,\s]/g, "");
+    if (raw) {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) throw new Error(`${k.replace(/_/g, " ")} must be a number.`);
+      fields[k] = Math.round(n);
+    }
+  }
   put("agency", e.agency); put("eligibility", e.eligibility);
   put("caveat", e.caveat); put("notes", e.notes);
 

@@ -1,13 +1,13 @@
 // Curated list sweeps (P2.5, patch 39). Pure rules: how a pasted list is
 // turned into leads for the review queue, and how an approved entry is
 // screened for a tenant. Tested in tests/funding/curated.test.ts.
-import { urlKey, noLinks, type RawLead, type Lead } from "@/lib/web-discovery";
+import { urlKey, noLinks, leadProfileExtras, type RawLead, type Lead } from "@/lib/web-discovery";
 import type { GrantCard } from "@/lib/ledger-types";
 import type { FundingKind } from "@/lib/eligibility-fields";
 
 export const CURATED_PARSE_SYSTEM = `You turn a pasted list of funding opportunities into structured entries.
 Answer with ONLY a JSON object: {"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":...,"funder":...,"url":...,"deadline":"YYYY-MM-DD or null","amount":...,"geography":...,"eligibility":...,"why":null,"quote":null}]}.
-Rules: one entry per opportunity in the text, nothing invented. A field the text does not state is null. The url must appear in the text; an entry with no url is still kept (url null). Dates become YYYY-MM-DD when the text makes the date certain, else null. Keep titles under 20 words.`;
+Rules: one entry per opportunity in the text, nothing invented. A field the text does not state is null. For a "funder" entry you may also add "giving_cycle", "programs" and "application_process" when the text states them; omit them otherwise. The url must appear in the text; an entry with no url is still kept (url null). Dates become YYYY-MM-DD when the text makes the date certain, else null. Keep titles under 20 words.`;
 
 export function curatedParseUser(pasted: string, today: string): string {
   return `Today is ${today}. The pasted list:\n\n${pasted}`;
@@ -43,6 +43,7 @@ export function curatedLeads(raw: RawLead[], today: string): Lead[] {
       deadline, rolling, amount: noLinks(str(r.amount, 120)), geography: noLinks(str(r.geography, 200)),
       eligibility: noLinks(str(r.eligibility, 600)), why: null, quote: null,
       grounded: "site",
+      ...leadProfileExtras(r),
     });
   }
   return out;
