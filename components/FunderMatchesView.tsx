@@ -1173,9 +1173,10 @@ export default function FunderMatchesView({
               {visibleFunders.map(f => (
                 <tr key={f.funder_id} data-gid={`f:${f.funder_id}`}>
                   <td className="fm-name">
-                    {f.website
-                      ? <a href={f.website} target="_blank" rel="noopener noreferrer">{f.name}</a>
-                      : f.name}
+                    {/* The dossier (patch 40): the name opens the funder's own page;
+                        the external site keeps a small link of its own. */}
+                    <a href={`/funding/funder/${encodeURIComponent(f.funder_id)}${viewingAsClient ? "?view=client" : ""}`} title="Open this funder's dossier">{f.name}</a>
+                    {f.website && <a className="fm-site" href={f.website} target="_blank" rel="noopener noreferrer" title="The funder's own website">site ↗</a>}
                     {f.location && <div className="fm-listed">{f.location}</div>}
                     {(() => { const k = knownFunderMatch(f.name, knownFunders); return k && <div className="fm-known" title="From the funders listed in company setup">Already known to you: {RELATIONSHIP_LABEL[k.relationship].toLowerCase()}</div>; })()}
                     {originLine(f.source) && <div className="fm-listed">{originLine(f.source)}</div>}

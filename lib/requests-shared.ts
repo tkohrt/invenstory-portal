@@ -25,5 +25,6 @@ export const KIND_LABEL: Record<string, string> = {
   allowance_alert: "Allowance threshold",
   answer: "Client answered",
   draft_request: "Draft requested",
+  approach_request: "Approach requested",
   website_lead: "Website lead",
 };
