@@ -2610,3 +2610,17 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .i990-none{margin:8px 0 0;font-size:13.5px;color:#7a6320}
 .do-pull{margin:8px 0 0}
 .do-pull-msg{display:block;color:#1f4d2e;font-size:12.5px;margin-top:4px}
+
+/* The welcome screen (patch 43): the pre-set note, the head-start line, the
+   video, and the admin's welcome editor. */
+.su-welcome-note{background:#fdfbf4;border:1px solid #e3d9bd;border-radius:12px;padding:14px 20px;margin:0 0 14px;text-align:left;max-width:560px}
+.su-welcome-note p{margin:0 0 8px;font-size:15px;line-height:1.55}
+.su-welcome-sign{color:#1f4d2e;font-weight:600;font-style:italic;margin:4px 0 0 !important}
+.su-headstart{color:#1f4d2e;font-weight:600;font-size:14.5px;max-width:560px;margin:0 0 14px}
+.su-welcome-video{max-width:560px;width:100%;border-radius:12px;border:1px solid var(--line);margin:0 0 14px}
+.wc-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 14px}
+.wc-card h3{margin:0 0 4px}
+.wc-sub{color:var(--muted);font-size:12.5px;margin:0 0 8px}
+.wc-card textarea,.wc-card input{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;margin:0 0 8px;box-sizing:border-box}
+.wc-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wc-ok{color:#1f4d2e;font-size:13px;font-weight:600}

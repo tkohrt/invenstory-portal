@@ -10,6 +10,7 @@ import { checklistFor } from "@/lib/checklist";
 import { tenantIsBrain } from "@/lib/server/brain";
 import { setupGate, goalsOn } from "@/lib/setup";
 import SetupFlow from "@/components/SetupFlow";
+import { db } from "@/lib/server/db";
 
 export const dynamic = "force-dynamic";
 // Step 1 and the link boxes read a web page and index it inside the action.
@@ -21,6 +22,15 @@ export default async function SetupPage() {
   if (session.role !== "client" || await tenantIsBrain(session.tenantId)) redirect("/invenstory");
   const state = await claimSetup(session.tenantId, session.user.id);
   if (setupGate(state, session.user).kind !== "run" || !state) redirect("/invenstory");
+  // The welcome screen (patch 43): the pre-set note and video, when Shane or
+  // Tyler left one. Absent columns before 0090 never break setup.
+  // tenant-safe: own tenant row by id.
+  const welcomePromise = (async () => {
+    try {
+      const { data } = await db.from("tenant").select("welcome_note, welcome_video_url").eq("id", session.tenantId).maybeSingle();
+      return (data as { welcome_note: string | null; welcome_video_url: string | null } | null) ?? null;
+    } catch { return null; }
+  })();
   const [tenant, profile, docs, vis, coverage] = await Promise.all([
     getTenant(session.tenantId), getEligibilityProfile(session.tenantId), setupDocs(session.tenantId),
     getWorkspaceVisibility(session.tenantId).catch(() => ({} as Record<string, boolean>)),
@@ -43,6 +53,8 @@ export default async function SetupPage() {
       state={state}
       profile={profile}
       docs={docs}
+      welcomeNote={(await welcomePromise)?.welcome_note ?? null}
+      welcomeVideoUrl={(await welcomePromise)?.welcome_video_url ?? null}
       grocery={grocery}
       goals={goalsOn(vis)}
       tools={{ chat: vis.chat !== false, funder_matches: vis.funder_matches !== false, drafts: vis.drafts !== false }}

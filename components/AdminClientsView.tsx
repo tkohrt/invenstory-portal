@@ -67,7 +67,7 @@ export default function AdminClientsView({ portfolio: p, gardens }: { portfolio:
 }
 
 function NewClientDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [f, setF] = useState({ orgName: "", orgType: "nonprofit" as "nonprofit" | "startup", contactName: "", email: "", website: "" });
+  const [f, setF] = useState({ orgName: "", orgType: "nonprofit" as "nonprofit" | "startup", contactName: "", email: "", website: "", welcomeNote: "", welcomeVideoUrl: "" });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<NewClientResult | null>(null);
 
@@ -108,6 +108,13 @@ function NewClientDrawer({ onClose, onCreated }: { onClose: () => void; onCreate
       <input type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} placeholder="name@org.com" />
       <label>Website</label>
       <input value={f.website} onChange={e => setF({ ...f, website: e.target.value })} placeholder="www.org.com" />
+      {/* The welcome screen (patch 43): written here, at the natural moment.
+          Editable later on the client's page; blank means the default welcome. */}
+      <label>A welcome from you (optional)</label>
+      <textarea rows={3} maxLength={2000} value={f.welcomeNote} onChange={e => setF({ ...f, welcomeNote: e.target.value })}
+        placeholder="Shown once, on their first sign-in, signed Shane & Tyler. Blank means the standard welcome." />
+      <label>Welcome video link (optional)</label>
+      <input value={f.welcomeVideoUrl} onChange={e => setF({ ...f, welcomeVideoUrl: e.target.value })} placeholder="https… (a Loom or a hosted mp4)" />
       {result && !result.ok && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {result.error}</div>}
       <button className="btn" onClick={submit} disabled={busy}>{busy ? "Creating…" : "Create client & login"}</button>
     </Drawer>

@@ -39,6 +39,10 @@ interface Props {
   docs: SetupDoc[];
   /** The readiness grocery list, re-read as documents process. */
   grocery?: GroceryItem[];
+  /** The welcome screen (patch 43): a note For Granted pre-set, or null for the default. */
+  welcomeNote?: string | null;
+  /** Optional welcome video (https): a hosted file plays inline, anything else links out. */
+  welcomeVideoUrl?: string | null;
   /** Goals whose tool is on for this client. */
   goals: Goal[];
   /** Tools switched on for this client. */
@@ -87,12 +91,32 @@ export default function SetupFlow(p: Props) {
   const settled = p.state.steps;
 
   if (welcome) {
+    // The welcome screen (patch 43): the first thing every client sees. A
+    // custom note from For Granted when one was pre-set, the default lede
+    // otherwise, and the head start made visible: what was gathered for them
+    // before they ever signed in.
+    const headStart = p.docs.length > 0
+      ? `We have already been at work: ${p.docs.length} document${p.docs.length === 1 ? " about your organization is" : "s about your organization are"} in your Inven(s)tory, read and searchable.`
+      : null;
+    const video = p.welcomeVideoUrl ?? null;
+    const videoIsFile = !!video && /\.(mp4|webm|mov)(\?|$)/i.test(video);
     return (
       <div className="su-page su-welcome-page">
         <div className="su-welcome" role="main">
           <img src="/forgranted-logo.png" alt="For Granted" className="su-welcome-logo" />
           <h1>Welcome to For Granted</h1>
-          <p className="su-lede">This is the Inven(s)tory Portal, {p.tenantName}&rsquo;s home for everything that makes you fundable. A few short steps set it up; everything saves as you go.</p>
+          {p.welcomeNote ? (
+            <div className="su-welcome-note">
+              {p.welcomeNote.split(/\n+/).map((line, i) => <p key={i}>{line}</p>)}
+              <p className="su-welcome-sign">Shane &amp; Tyler, For Granted</p>
+            </div>
+          ) : (
+            <p className="su-lede">This is the Inven(s)tory Portal, {p.tenantName}&rsquo;s home for everything that makes you fundable. A few short steps set it up; everything saves as you go.</p>
+          )}
+          {headStart && <p className="su-headstart">{headStart}</p>}
+          {video && (videoIsFile
+            ? <video className="su-welcome-video" src={video} controls preload="metadata" />
+            : <p><a className="sb-btn sb-secondary" href={video} target="_blank" rel="noopener noreferrer">Watch your welcome video ↗</a></p>)}
           <button type="button" className="sb-btn sb-primary" onClick={() => setWelcome(false)}>Begin</button>
           <p className="su-small">About 15 minutes. You can stop at any step and come back.</p>
         </div>

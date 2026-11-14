@@ -9,6 +9,8 @@ import { getVoiceProfile } from "@/lib/server/voice-profile";
 import { readerSwitchesFor } from "@/lib/server/reader";
 import { getSetupState, ownerName } from "@/lib/server/setup";
 import AdminSetupPanel from "@/components/AdminSetupPanel";
+import WelcomeCard from "@/components/WelcomeCard";
+import { db } from "@/lib/server/db";
 import AdminChatFeedback from "@/components/AdminChatFeedback";
 import { chatFeedback } from "@/lib/server/portal-guide";
 import { isDemoTenant } from "@/lib/demo";
@@ -33,6 +35,10 @@ export default async function ClientActivityPage({ params, searchParams }: {
   const setup = await getSetupState(id).catch(() => null);
   const setupOwner = setup ? await ownerName(id, setup.ownerUserId).catch(() => null) : null;
   const feedback = await chatFeedback(id).catch(() => []);
+  // The welcome screen (patch 43). Absent columns before 0090 never break the page.
+  // tenant-safe: one tenant row by id, admin page.
+  const { data: wRow } = await db.from("tenant").select("welcome_note, welcome_video_url").eq("id", id).maybeSingle();
+  const w = (wRow as { welcome_note: string | null; welcome_video_url: string | null } | null) ?? null;
   if (!data) notFound();
   return (
     <>
@@ -42,6 +48,7 @@ export default async function ClientActivityPage({ params, searchParams }: {
         </div>
       )}
       {setup && <AdminSetupPanel tenantId={id} state={setup} ownerName={setupOwner} />}
+      <WelcomeCard tenantId={id} note={w?.welcome_note ?? ""} videoUrl={w?.welcome_video_url ?? ""} setupDone={setup?.status === "complete"} />
       <AdminChatFeedback items={feedback} />
       <ClientActivityView data={data} voice={voice} reader={reader} />
     </>

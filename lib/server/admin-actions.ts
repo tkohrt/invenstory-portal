@@ -2,6 +2,7 @@
 // Admin-only client provisioning ("Add client"). Creates the tenant, the auth
 // user + linked app_user, and the Story Intelligence artifact sets — the same
 // steps done by hand for the seed clients, now self-service for Tyler/Shane.
+import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
 import { tempPassword } from "./passwords";
@@ -10,6 +11,8 @@ export interface NewClientResult { ok: boolean; email?: string; tempPassword?: s
 
 export async function createClientAction(input: {
   orgName: string; orgType: "nonprofit" | "startup"; contactName: string; email: string; website?: string;
+  /** The welcome screen (patch 43): written at creation, the natural moment. Blank means the default welcome. */
+  welcomeNote?: string; welcomeVideoUrl?: string;
 }): Promise<NewClientResult> {
   const session = await getSession();
   if (!session || session.role !== "admin") return { ok: false, error: "admin required" };
@@ -32,9 +35,20 @@ export async function createClientAction(input: {
   const { data: au, error: e1 } = await db.auth.admin.createUser({ email, password: pw, email_confirm: true });
   if (e1 || !au?.user) return { ok: false, error: e1?.message ?? "Could not create login." };
 
-  // 2. tenant
+  // 2. tenant. The welcome fields ride along (patch 43); https-only on the video.
+  const welcomeNote = (input.welcomeNote ?? "").replace(/\r\n/g, "\n").trim().slice(0, 2000) || null;
+  let welcomeVideo: string | null = null;
+  const rawVideo = (input.welcomeVideoUrl ?? "").trim();
+  if (rawVideo) {
+    try {
+      const u = new URL(rawVideo);
+      if (u.protocol !== "https:") return { ok: false, error: "The welcome video link must be https." };
+      welcomeVideo = u.toString().slice(0, 1000);
+    } catch { return { ok: false, error: "That welcome video link does not look like a URL." }; }
+  }
   const { data: tenant, error: e2 } = await db.from("tenant")
-    .insert({ name: orgName, org_type: input.orgType, website: input.website?.trim() || null })
+    .insert({ name: orgName, org_type: input.orgType, website: input.website?.trim() || null,
+      welcome_note: welcomeNote, welcome_video_url: welcomeVideo })
     .select("id").single();
   if (e2 || !tenant) { await db.auth.admin.deleteUser(au.user.id); return { ok: false, error: e2?.message ?? "Could not create client." }; }
 
@@ -71,5 +85,32 @@ export async function updateClientProfileAction(input: {
     .eq("tenant_id", input.tenantId).eq("role", "client").order("created_at").limit(1).maybeSingle();
   if (u && input.contactName.trim()) await db.from("app_user").update({ full_name: input.contactName.trim() }).eq("id", u.id);  // tenant-safe: admin-only; user row resolved via tenant-scoped lookup above
   await db.from("audit_log").insert({ actor_user_id: session.user.id, tenant_id: input.tenantId, action: "edit_client_profile", detail: `${input.orgType} / ${input.website}` });
+  return { ok: true };
+}
+
+/**
+ * The welcome screen (patch 43): set or clear a client's pre-set welcome.
+ * Blank note means the default welcome; the video is optional either way.
+ */
+export async function saveWelcomeAction(input: { tenantId: string; note: string; videoUrl: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = await getSession();
+  if (!s || s.role !== "admin") return { ok: false, error: "For Granted only." };
+  const note = input.note.replace(/\r\n/g, "\n").trim().slice(0, 2000) || null;
+  let videoUrl: string | null = null;
+  const raw = input.videoUrl.trim();
+  if (raw) {
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== "https:") return { ok: false, error: "The video link must be https." };
+      videoUrl = u.toString().slice(0, 1000);
+    } catch { return { ok: false, error: "That video link does not look like a URL." }; }
+  }
+  const { error } = await db.from("tenant").update({ welcome_note: note, welcome_video_url: videoUrl }).eq("id", input.tenantId);
+  if (error) return { ok: false, error: "That did not save. Has migration 0090 been applied?" };
+  await db.from("audit_log").insert({
+    actor_user_id: s.user.id, tenant_id: input.tenantId, action: "welcome_set",
+    detail: note ? "custom welcome set" : "welcome reset to the default",
+  });
+  revalidatePath(`/admin/clients/${input.tenantId}`);
   return { ok: true };
 }
