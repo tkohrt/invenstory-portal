@@ -6,7 +6,7 @@
 // discovery, curated lists, the coming 990 importer) fills these same keys,
 // and the dossier renders whatever is filled with that field's own provenance.
 
-export type ProfileFieldKind = "text" | "long" | "usd" | "year";
+export type ProfileFieldKind = "text" | "long" | "usd" | "year" | "pct" | "num";
 
 export interface ProfileFieldDef { key: string; label: string; kind: ProfileFieldKind; hint?: string }
 
@@ -18,6 +18,10 @@ export const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: "assets_usd", label: "Total assets", kind: "usd" },
   { key: "annual_giving_usd", label: "Annual giving", kind: "usd" },
   { key: "fy_year", label: "Most recent filing year", kind: "year" },
+  // 990 phase two (patch 45): derived from the filing's own grant list.
+  { key: "new_grantee_rate", label: "New-grantee rate", kind: "pct", hint: "share of the latest filing's grantees that were new names vs the year before" },
+  { key: "typical_grant_usd", label: "Typical grant", kind: "usd", hint: "the median grant paid in the latest filing" },
+  { key: "grants_count", label: "Grants paid (latest filing)", kind: "num" },
 ];
 
 export const PROFILE_KEYS = PROFILE_FIELDS.map(f => f.key);
@@ -42,6 +46,14 @@ export function provenanceLine(p: FieldProvenance): string {
 }
 
 function cleanValue(def: ProfileFieldDef, v: unknown): unknown {
+  if (def.kind === "pct") {
+    const n = typeof v === "number" ? v : NaN;
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : undefined;
+  }
+  if (def.kind === "num") {
+    const n = typeof v === "number" ? v : NaN;
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
+  }
   if (def.kind === "usd" || def.kind === "year") {
     const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : NaN;
     if (!Number.isFinite(n) || n <= 0) return undefined;

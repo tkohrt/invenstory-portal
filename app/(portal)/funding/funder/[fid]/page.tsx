@@ -6,6 +6,7 @@ import { closedInBrain } from "@/lib/server/brain";
 import { getGaps } from "@/lib/server/eligibility";
 import { getFunderDossier, getContactShadow } from "@/lib/server/dossier";
 import { getFunderProfile, getEngagementHistory } from "@/lib/server/funder-profile";
+import { getFunderGrants } from "@/lib/server/irs990-grants";
 import { getContactsForEins } from "@/lib/server/funder-contacts";
 import { getJudgments } from "@/lib/server/triage";
 import { suppresses } from "@/lib/triage";
@@ -47,7 +48,7 @@ export default async function FunderDossierPage({ params, searchParams }: {
   const j = judgments.get(`funder:${funder.funder_id}`);
   if (!isAdmin && j && suppresses(j.state)) redirect("/funding?mode=funders");
 
-  const [shadow, contacts, profile, history] = await Promise.all([
+  const [shadow, contacts, profile, history, filingGrants] = await Promise.all([
     getContactShadow(funder.ein),
     // Full records for the admin's own eyes only; a client session never loads them.
     isAdmin && !viewingAsClient && funder.ein ? getContactsForEins([funder.ein]).then(m => m[funder.ein ?? ""] ?? []).catch(() => []) : Promise.resolve([]),
@@ -57,12 +58,14 @@ export default async function FunderDossierPage({ params, searchParams }: {
     // For Granted's own cross-client picture; never loaded for a client
     // session or the as-client preview.
     isAdmin && !viewingAsClient ? getEngagementHistory(funder.ein, funder.name).catch(() => []) : Promise.resolve([]),
+    // 990 phase two (patch 45): the latest ingested grant list. Survives a missing 0092.
+    getFunderGrants(funder.ein).catch(() => null),
   ]);
   const known = knownFunderMatch(funder.name, setup?.answers.known_funders ?? []);
 
   return (
     <FunderDossierView funder={funder} shadow={shadow} contacts={contacts}
-      profile={profile} history={history}
+      profile={profile} history={history} filingGrants={filingGrants}
       isAdmin={isAdmin} viewingAsClient={viewingAsClient}
       knownAs={known ? RELATIONSHIP_LABEL[known.relationship] : null} />
   );

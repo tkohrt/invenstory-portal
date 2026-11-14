@@ -18,6 +18,8 @@ export interface Filing990 {
   /** Grants paid (990-PF), when the filing data carries it. */
   grants_paid: number | null;
   pdf_url: string | null;
+  /** The IRS e-file object id, the key to the filing's full XML. */
+  object_id: string | null;
 }
 
 export interface Org990 {
@@ -50,6 +52,7 @@ export function parseProPublica(json: unknown, ein: string): Org990 | null {
     // the first recognizable one and otherwise say nothing.
     grants_paid: num(f.grntspayableend) ?? num(f.totgrntspaid) ?? num(f.grntsandsimlramtspaid) ?? null,
     pdf_url: typeof f.pdf_url === "string" && f.pdf_url ? f.pdf_url : null,
+    object_id: typeof f.object_id === "string" || typeof f.object_id === "number" ? String(f.object_id) : null,
   })).filter(f => f.year > 1990).sort((a, b) => b.year - a.year);
   const postcards = Array.isArray(j?.filings_without_data) ? j.filings_without_data.length : 0;
   return {

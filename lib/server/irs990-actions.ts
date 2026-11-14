@@ -109,3 +109,17 @@ export async function applyBudgetBandAction(band: string): Promise<{ ok: boolean
   await saveEligibilityProfileAction({ budget_band: band });
   return { ok: true };
 }
+
+export type PullGrantsResult =
+  | { ok: true; years: number[]; count: number; sentence: string | null }
+  | { ok: false; status: "none" | "error" | "denied"; error: string };
+
+/** 990 phase two (patch 45): pull the grant list and derive the intelligence. */
+export async function pullFunderGrantsAction(funderId: string, einRaw: string): Promise<PullGrantsResult> {
+  const s = await getSession();
+  if (!s || s.role !== "admin") return { ok: false, status: "denied", error: "For Granted only." };
+  const { ingestFunderGrants } = await import("./irs990-grants");
+  const r = await ingestFunderGrants(funderId, einRaw);
+  if (!r.ok) return r;
+  return { ok: true, years: r.years, count: r.stats.grants_count, sentence: r.sentence };
+}

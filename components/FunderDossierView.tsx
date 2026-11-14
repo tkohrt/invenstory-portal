@@ -11,7 +11,8 @@ import type { ContactRecord } from "@/lib/funder-contact";
 import { ROLE_LABEL } from "@/lib/funder-contact";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { requestApproachAction } from "@/lib/server/dossier-actions";
-import { pullFunder990Action } from "@/lib/server/irs990-actions";
+import { pullFunder990Action, pullFunderGrantsAction } from "@/lib/server/irs990-actions";
+import type { getFunderGrants } from "@/lib/server/irs990-grants";
 import type { ContactShadow } from "@/lib/server/dossier";
 import type { FunderProfileRecord, EngagementRow } from "@/lib/server/funder-profile";
 import { PROFILE_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
@@ -21,7 +22,7 @@ const SOURCE_LINE: Record<string, string> = {
   iati: "From IATI, the international aid transparency registry.",
 };
 
-export default function FunderDossierView({ funder, shadow, contacts, profile, history, isAdmin, viewingAsClient, knownAs }: {
+export default function FunderDossierView({ funder, shadow, contacts, profile, history, filingGrants = null, isAdmin, viewingAsClient, knownAs }: {
   funder: FunderRow;
   shadow: ContactShadow | null;
   /** Full records, admin sessions only; a client session never loads them. */
@@ -30,6 +31,8 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
   profile: FunderProfileRecord | null;
   /** Cross-client engagement history; empty for every non-admin session. */
   history: EngagementRow[];
+  /** 990 phase two (patch 45): the latest ingested filing's grant list. */
+  filingGrants?: Awaited<ReturnType<typeof getFunderGrants>> | null;
   isAdmin: boolean;
   viewingAsClient: boolean;
   /** How the client already knows this funder (company setup), if they do. */
@@ -76,6 +79,26 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
       {knownAs && <div className="do-known">Already known to you: {knownAs}. Your existing relationship beats any cold approach; this dossier is for deepening it.</div>}
       {funder.caveat && <div className="do-caveat">{funder.caveat}</div>}
 
+      {/* The giving record's own numbers (patch 45), led by the NEW-GRANTEE
+          RATE: the best "can an outsider get in" signal a filing can give. */}
+      {(profile?.fields.new_grantee_rate !== undefined || profile?.fields.typical_grant_usd !== undefined) && (
+        <div className="do-stats">
+          {profile?.fields.new_grantee_rate !== undefined && (
+            <div className="do-stat do-stat-rate">
+              <b>{String(profile.fields.new_grantee_rate)}%</b>
+              <span>new-grantee rate</span>
+              <em>{rateRead(Number(profile.fields.new_grantee_rate))}</em>
+            </div>
+          )}
+          {profile?.fields.typical_grant_usd !== undefined && (
+            <div className="do-stat"><b>${Math.round(Number(profile.fields.typical_grant_usd)).toLocaleString()}</b><span>typical grant</span></div>
+          )}
+          {profile?.fields.grants_count !== undefined && (
+            <div className="do-stat"><b>{String(profile.fields.grants_count)}</b><span>grants paid{profile?.fields.fy_year !== undefined ? ` in ${profile.fields.fy_year}` : ""}</span></div>
+          )}
+        </div>
+      )}
+
       <section className="do-sec">
         <h3>Why this funder</h3>
         {funder.match_reason ? <p>{funder.match_reason}</p> : <p className="do-muted">No written rationale on file for this match yet.</p>}
@@ -102,6 +125,21 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
         ) : (
           <p className="do-muted">No peer grantees on file for this match. The giving record may still exist; it was not what surfaced this funder.</p>
         )}
+        {filingGrants && (
+          <>
+            <h4 className="do-sub-h">From their {filingGrants.year} filing ({filingGrants.total} grants on record)</h4>
+            <table className="do-table">
+              <thead><tr><th>Recipient</th><th>Amount</th><th>Purpose</th><th>State</th></tr></thead>
+              <tbody>
+                {filingGrants.top.map((g, i) => (
+                  <tr key={i}><td>{g.recipient}</td><td>{g.amount !== null ? `$${Math.round(g.amount).toLocaleString()}` : ""}</td><td className="do-purpose">{g.purpose ?? ""}</td><td>{g.recipient_state ?? ""}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="do-muted">Straight from the foundation&rsquo;s own 990-PF, Part XV.</p>
+          </>
+        )}
+        {isAdmin && !viewingAsClient && funder.ein && <PullGrants funderId={funder.funder_id} ein={funder.ein} />}
       </section>
 
       <section className="do-sec">
@@ -181,6 +219,37 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
         </section>
       )}
     </div>
+  );
+}
+
+/** The rate, read honestly (patch 45). Mirrors lib/irs990-grants rateSentence. */
+function rateRead(r: number): string {
+  return r >= 50 ? "genuinely open to new names"
+    : r >= 25 ? "open to new names, with a stable core"
+    : r >= 10 ? "mostly repeat grantees; the way in is narrow"
+    : "almost entirely repeat grantees; a relationship play";
+}
+
+/** The admin's grant-list pull (patch 45). */
+function PullGrants({ funderId, ein }: { funderId: string; ein: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const pull = async () => {
+    setBusy(true); setMsg(null);
+    const r = await pullFunderGrantsAction(funderId, ein).catch(() => ({ ok: false as const, status: "error" as const, error: "That did not finish. Try again." }));
+    setBusy(false);
+    if (!r.ok) { setMsg(r.error); return; }
+    setMsg(`✓ Read ${r.count} grants from the ${r.years.join(" and ")} filing${r.years.length > 1 ? "s" : ""}.${r.sentence ? ` ${r.sentence}` : " Pull again when the next filing lands to unlock the new-grantee rate."}`);
+    router.refresh();
+  };
+  return (
+    <p className="do-pull">
+      <button type="button" className="sb-btn sb-secondary sb-sm" onClick={pull} disabled={busy}>
+        {busy ? "Reading the filing…" : "Pull their grant list"}</button>
+      <span className="su-small"> Reads Part XV of their 990-PF: every grant they paid, and the new-grantee rate.</span>
+      {msg && <span className="do-pull-msg">{msg}</span>}
+    </p>
   );
 }
 
