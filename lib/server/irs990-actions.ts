@@ -85,12 +85,18 @@ export async function importClient990Action(einRaw: string): Promise<Import990Re
   // only when the person says so.
   const latest = r.org.filings[0] ?? null;
   let sug: { band: string; label: string; revenue: number; year: number } | null = null;
-  if (latest?.revenue) {
-    const p = await getEligibilityProfile(s.tenantId).catch(() => null);
-    if (p && !p.budget_band) {
-      const b = budgetBandFrom(latest.revenue);
-      if (b) sug = { ...b, revenue: latest.revenue, year: latest.year };
-    }
+  const prof = await getEligibilityProfile(s.tenantId).catch(() => null);
+  if (latest?.revenue && prof && !prof.budget_band) {
+    const b = budgetBandFrom(latest.revenue);
+    if (b) sug = { ...b, revenue: latest.revenue, year: latest.year };
+  }
+  // The hardened screen (patch 44): the earliest filing year is a floor on the
+  // founding year, good enough for "N years of operating history" rules.
+  // Filled only when unknown; a stated year is never overwritten.
+  const earliest = r.org.filings[r.org.filings.length - 1] ?? null;
+  if (earliest && prof && !prof.founded_year) {
+    await db.from("eligibility_profile").update({ founded_year: earliest.year })
+      .eq("tenant_id", s.tenantId).is("founded_year", null);
   }
   return { ok: true, title, year: latest?.year ?? null, postcardOnly: r.org.postcard_only, suggestion: sug };
 }

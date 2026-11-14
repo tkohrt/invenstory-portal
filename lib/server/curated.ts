@@ -130,7 +130,15 @@ export async function getCuratedLists(): Promise<CuratedListRow[]> {
 export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchRow[]> {
   const { data } = await db.from("curated_match").select("overlay_id, list_id, verdict, swept_at")
     .eq("tenant_id", tenantId).order("swept_at", { ascending: false }).limit(40);
-  const rows = (data ?? []) as { overlay_id: string; list_id: string; verdict: string; swept_at: string }[];
+  let rows = (data ?? []) as { overlay_id: string; list_id: string; verdict: string; swept_at: string }[];
+  if (!rows.length) return [];
+  // The feedback loop (patch 44): a curated entry the client marked "Not for
+  // us" never resurfaces here, in the bar, or on the coming calendar.
+  const { data: dismissed } = await db.from("client_match_view").select("target_id")
+    .eq("tenant_id", tenantId).eq("kind", "grant").eq("state", "not_for_us")
+    .in("target_id", rows.map(r => r.overlay_id));
+  const hidden = new Set(((dismissed ?? []) as { target_id: string }[]).map(d => d.target_id));
+  rows = rows.filter(r => !hidden.has(r.overlay_id));
   if (!rows.length) return [];
   const [{ data: entries }, { data: lists }] = await Promise.all([
     // tenant-safe: shared overlay entries, read by the ids this tenant's matches point at; client-safe fields only are shipped below.

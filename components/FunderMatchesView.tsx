@@ -1371,6 +1371,7 @@ function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; vi
               {r.notes && <span className="cu-match-notes">{r.notes}</span>}
             </div>
             <div className="cu-match-verbs">
+              {!viewingAsClient && <ClientVerdict kind="grant" targetId={r.overlay_id} view={null} mode="client" />}
               {r.website && <a className="sb-btn sb-secondary sb-sm" href={r.website} target="_blank" rel="noopener noreferrer">View the opportunity</a>}
               {asked.includes(r.overlay_id)
                 ? <span className="cu-asked">Request sent. Your For Granted team will follow up.</span>

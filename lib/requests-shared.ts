@@ -26,5 +26,6 @@ export const KIND_LABEL: Record<string, string> = {
   answer: "Client answered",
   draft_request: "Draft requested",
   approach_request: "Approach requested",
+  eligibility_miss: "Eligibility miss",
   website_lead: "Website lead",
 };

@@ -6,6 +6,7 @@
 // or a database. The orchestration lives in lib/server/matching.ts.
 import { ORG_TYPES, homeLabel, reachLabels, isUsBased, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { countryNames, regionNames, textNames, COUNTRY_NAME } from "@/lib/countries";
+import { statesNamed } from "@/lib/us-states";
 import type { GrantCard, RawGrantResult } from "@/lib/ledger-types";
 
 /** "$500,000" -> 500000. Anything unparseable -> null, never NaN. */
@@ -195,6 +196,46 @@ const INVITES: Record<string, RegExp> = {
 
 const GOV_ONLY = /\b(units? of local government|state agencies only|governmental entities only|tribal governments only)\b/i;
 
+// ---- The hardened screen's patterns (patch 44). Conservative on purpose:
+// every one grows against the screen_miss corpus, never against guesses. ----
+const INDIVIDUALS_ONLY = /\b(open (only )?to individuals\b|individuals? only\b|individual (artists|applicants|researchers|fellows|writers|scholars)\b|must be an individual\b|scholarships? (are )?for (students|individuals)\b)/i;
+const GRANTEES_ONLY = /\b((current|existing|previous|past) grantees only|open (only )?to (current|existing|returning) grantees|renewal applications? only|by invitation only|invited applicants only)\b/i;
+const GEO_RESTRICT = /\b(based in|located in|headquartered in|organizations? (in|within|of)|serving (residents of|communities (in|of)|the people of)|must (be|operate) (in|within)|within the state of|operating (in|within)|work(ing)? in|residents? of)\b/i;
+const GEO_SOFT = /\b(priorit(y|ies|ize)|preference|preferred|primarily|especially|particular (interest|focus)|emphasis)\b/i;
+const COUNTY_RE = /\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?) [Cc]ount(?:y|ies)\b/;
+const BUDGET_MIN = /(?:annual |operating )?budgets? (?:of )?(?:at least|above|over|exceeding|greater than|no less than) \$?([\d,.]+)\s*(k|m|thousand|million)?/i;
+const BUDGET_MAX = /(?:annual |operating )?budgets? (?:of )?(?:under|below|less than|not (?:to )?exceed(?:ing)?|up to|smaller than|no more than) \$?([\d,.]+)\s*(k|m|thousand|million)?/i;
+const AUDIT_REQ = /\b(audited financial statements?|most recent (financial )?audit|independent audit)\b/i;
+const MUST_SERVE = /\bmust (?:primarily |principally |exclusively )?serve\b|\bexclusively serv(?:e|ing)\b|\bprimarily serv(?:e|ing)\b/i;
+const WORD_NUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, ten: 10 };
+
+/** The dollar figure a budget rule names, or null. */
+function moneyAfter(text: string, re: RegExp): number | null {
+  const m = text.match(re);
+  if (!m) return null;
+  const n = Number(m[1].replace(/[,]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = (m[2] ?? "").toLowerCase();
+  const mul = unit === "m" || unit === "million" ? 1_000_000 : unit === "k" || unit === "thousand" ? 1_000 : 1;
+  return Math.round(n * mul);
+}
+
+/** "at least three years of operating history" -> 3, or null. */
+function yearsRequired(text: string): number | null {
+  const m = text.match(/\b(?:at least|minimum of|more than|a minimum) (\w+|\d+)\s*(?:\(\d+\)\s*)?(?:full |fiscal |consecutive )?years?(?: of)? (?:operating|operations?|existence|history|incorporation|being incorporated|in business|programming)\b/i)
+    ?? text.match(/\boperating for (?:at least )?(\w+|\d+) years?\b/i);
+  if (!m) return null;
+  const raw = m[1].toLowerCase();
+  const n = /^\d+$/.test(raw) ? Number(raw) : WORD_NUM[raw] ?? null;
+  return n && n > 0 && n < 30 ? n : null;
+}
+
+/** The band's dollar range (patch 44), for budget floor/ceiling rules. */
+const BAND_RANGE: Record<string, [number, number]> = {
+  lt_100k: [0, 100_000], "100k_500k": [100_000, 500_000], "500k_1m": [500_000, 1_000_000],
+  "1m_5m": [1_000_000, 5_000_000], "5m_10m": [5_000_000, 10_000_000], gt_10m: [10_000_000, Infinity],
+};
+
 /**
  * The one identifier a grant has, assigned once and used everywhere.
  *
@@ -314,6 +355,70 @@ export function screenGrant(
   }
   if (GOV_ONLY.test(elig) && p.org_type !== "government" && p.org_type !== "tribal") return null;
 
+  // ---- The hardened screen (patch 44; the feedback-loop session, 14 Nov). ----
+  // Three rules EXCLUDE on unambiguous phrasing; the rest become NAMED
+  // blockers that cap at "check", because a wrongly hidden grant is invisible
+  // frustration while a wrongly surfaced one is visible frustration, and only
+  // unambiguous text earns the invisible kind.
+
+  // Individuals-only: an organization can never apply.
+  if (p.applicant_type !== "individual" && INDIVIDUALS_ONLY.test(elig)) return null;
+  // Current-grantees-only / renewal-only / by invitation: structurally closed to a newcomer.
+  if (GRANTEES_ONLY.test(elig)) return null;
+
+  // The geographic blocker, Shane's unacceptable case: restriction phrasing
+  // naming states that do not include any of the client's. Softened phrasing
+  // ("priority", "preference") and an unknown client state block instead of
+  // excluding. Full state names only; bare codes collide with English.
+  const clientStates = new Set([p.state_code, ...(p.service_area ?? [])].filter((x): x is string => !!x));
+  const namedStates = statesNamed(elig);
+  if (namedStates.length && GEO_RESTRICT.test(elig)) {
+    const overlap = namedStates.some(c => clientStates.has(c));
+    if (!overlap) {
+      const where = namedStates.join(", ");
+      if (clientStates.size && !GEO_SOFT.test(elig)) return null;   // restricted to states that are not yours
+      blockers.push(clientStates.size
+        ? `gives priority to ${where}; you are outside it`
+        : `appears restricted to ${where} and your location is not on file`);
+    }
+  }
+  // County-level place restriction: resolve when we can, never claim when we cannot.
+  const countyM = elig.match(COUNTY_RE);
+  if (countyM) {
+    const county = countyM[1];
+    if (p.county && county.toLowerCase().includes(p.county.toLowerCase().replace(/\s*county\s*$/i, ""))) {
+      positives.push(`names ${county} County, where you are`);
+    } else {
+      blockers.push(`appears restricted to ${county} County; check the boundary against where you work`);
+    }
+  }
+  // Budget floors and ceilings against the profile's band.
+  if (p.budget_band) {
+    const [bandLo, bandHi] = BAND_RANGE[p.budget_band] ?? [0, Infinity];
+    const min = moneyAfter(elig, BUDGET_MIN);
+    if (min !== null && bandHi <= min) blockers.push(`requires an annual budget of at least $${min.toLocaleString("en-US")}; your profile says less`);
+    const max = moneyAfter(elig, BUDGET_MAX);
+    if (max !== null && bandLo >= max) blockers.push(`for organizations with budgets under $${max.toLocaleString("en-US")}; your profile says more`);
+  }
+  // Years in operation, once the profile (usually via the 990 import) knows the founding year.
+  const yearsReq = yearsRequired(elig);
+  if (yearsReq !== null && p.founded_year) {
+    const age = today.getFullYear() - p.founded_year;
+    if (age < yearsReq) blockers.push(`requires ${yearsReq} years of operating history; you are at about ${Math.max(0, age)}`);
+  }
+  // Audited financials: a months-long blocker, not a paperwork detail.
+  if (AUDIT_REQ.test(elig) && p.audited_financials === false) {
+    blockers.push("requires audited financial statements; your profile says you have none yet");
+  }
+  // Must-serve populations: eligibility wearing fit's clothes.
+  const serveM = elig.match(MUST_SERVE);
+  if (serveM) {
+    const after = elig.slice((serveM.index ?? 0), (serveM.index ?? 0) + 120).toLowerCase();
+    const served = (p.populations ?? []).find(x => x.length > 3 && after.includes(x.toLowerCase()));
+    if (served) positives.push(`must-serve requirement matches your work with ${served}`);
+    else blockers.push("requires primarily serving a named population; check that against who you serve");
+  }
+
   // Federal money needs SAM.gov + UEI. Not a disqualifier, but a real blocker
   // that should be visible before anyone starts writing.
   const looksFederal = FEDERAL_HINT.test(elig) || FEDERAL_HINT.test(g.agency ?? "");
@@ -353,6 +458,14 @@ export function screenGrant(
   else if (invited) verdict = "eligible";
   else if (positives.length) verdict = "likely";
   else verdict = "check";
+  // The missing-text cap (patch 44): with NO eligibility text the screen knows
+  // nothing, and must never claim better than "check" off a title word. Short
+  // text is still text: a real positive (the client's own state named) may
+  // stand, and the screen_miss corpus will say if that is too generous.
+  if (!elig.trim() && verdict !== "check") {
+    verdict = "check";
+    blockers.push("eligibility text not captured; needs a human read");
+  }
 
   const reasons = [...blockers, ...positives];
   if (!reasons.length) reasons.push("topical alignment only; eligibility text needs a human read");

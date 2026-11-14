@@ -16,6 +16,8 @@ export default function ClientVerdict({ kind, targetId, view, mode }: {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The feedback loop (patch 44): after a reason, say what it changed.
+  const [thanks, setThanks] = useState<string | null>(null);
 
   if (mode === "admin") {
     return view ? <div className={`cv-admin cv-${view.state}`} title={view.note ?? undefined}>Client: {viewSentence(view)}</div> : null;
@@ -26,6 +28,13 @@ export default function ClientVerdict({ kind, targetId, view, mode }: {
     const r = await setClientViewAction({ kind, targetId, state, reason: reason ?? null });
     setBusy(false);
     if (!r.ok) { setErr(r.error); return; }
+    if (state === "not_for_us") {
+      setThanks(reason === "wrong_place" || reason === "not_eligible"
+        ? "That one is on us. It is gone from your lists, and we have logged it so mismatches like it stop appearing."
+        : reason === "already_known"
+          ? "Noted as a funder you know. We will not present them as a discovery again."
+          : "Noted. It is gone from your lists, and it sharpens what we surface next.");
+    }
     setPicking(false); router.refresh();
   };
   const undo = async () => {
@@ -43,6 +52,7 @@ export default function ClientVerdict({ kind, targetId, view, mode }: {
         {CLIENT_REASONS.map(r => (
           <button key={r.code} type="button" className="cv-reason" disabled={busy} onClick={() => save("not_for_us", r.code)}>{r.label}</button>
         ))}
+        <button type="button" className="cv-reason cv-skip" disabled={busy} onClick={() => save("not_for_us")}>Rather not say</button>
         <button type="button" className="fc-link" onClick={() => setPicking(false)}>cancel</button>
         {err && <div className="ov-err">{err}</div>}
       </div>
@@ -52,7 +62,8 @@ export default function ClientVerdict({ kind, targetId, view, mode }: {
     return (
       <div className="cv-set">
         <span className={`ov-tag cv-tag cv-${view.state}`}>{viewSentence(view)}</span>
-        <button type="button" className="fc-link" disabled={busy} onClick={undo}>undo</button>
+        <button type="button" className="fc-link" disabled={busy} onClick={() => { setThanks(null); void undo(); }}>undo</button>
+        {thanks && <div className="cv-thanks">{thanks}</div>}
         {err && <div className="ov-err">{err}</div>}
       </div>
     );

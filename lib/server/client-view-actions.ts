@@ -21,6 +21,15 @@ export async function setClientViewAction(input: { kind: string; targetId: strin
   }, { onConflict: "tenant_id,kind,target_id" });
   if (error) { console.error("[client-view] save refused", error.message); return { ok: false, error: "That could not be saved. Please try again." }; }
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "client_match_view", detail: `${v.kind}:${v.state}` });
+  // The feedback loop (patch 44): a "Not for us" reason teaches the system.
+  // Best-effort by design; the dismissal above has already landed.
+  if (v.state === "not_for_us" && s.role === "client") {
+    const { learnFromNotForUs } = await import("./screen-miss");
+    await learnFromNotForUs({
+      tenantId: s.tenantId, userId: s.user.id, userName: s.user.full_name,
+      kind: v.kind, targetId: v.targetId, reason: v.reason, note: v.note,
+    });
+  }
   revalidatePath("/funder-matches"); revalidatePath("/funding"); revalidatePath("/funder-matches/report");
   return { ok: true };
 }

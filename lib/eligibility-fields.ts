@@ -78,6 +78,9 @@ export interface EligibilityProfile {
   populations: string[]; cause_areas: string[];
   federal_registration: string; match_capacity_pct: number | null;
   completeness: number;
+  /** Known facts the hardened screen uses (patch 44); null means unknown and fires no rule. */
+  founded_year: number | null;
+  audited_financials: boolean | null;
   /**
    * Where the organization is registered, ISO 3166 alpha-2. Null on profiles
    * saved before 1 November 2026, which were all US: read through homeCountry,
@@ -98,6 +101,7 @@ export const EMPTY_PROFILE: EligibilityProfile = {
   applicant_type: "organization", org_type: null, tax_status: null, ein: null, fiscal_sponsor: null,
   state_code: null, county: null, service_area: [], budget_band: null,
   populations: [], cause_areas: [], federal_registration: "none", match_capacity_pct: null, completeness: 0,
+  founded_year: null, audited_financials: null,
   country_code: null, countries_served: [], regions_served: [], international: false,
   funding_kinds: ["grants"],
 };
@@ -178,6 +182,8 @@ export function cleanProfileInput(input: Partial<EligibilityProfile>): Eligibili
     cause_areas: cleanList(input.cause_areas),
     federal_registration: inOptions(input.federal_registration, FEDERAL_REG) ? input.federal_registration! : "none",
     match_capacity_pct: [0, 10, 25, 50].includes(Number(input.match_capacity_pct)) ? Number(input.match_capacity_pct) : null,
+    founded_year: Number.isInteger(Number(input.founded_year)) && Number(input.founded_year) >= 1700 && Number(input.founded_year) <= 2100 ? Number(input.founded_year) : null,
+    audited_financials: typeof input.audited_financials === "boolean" ? input.audited_financials : null,
     completeness: 0,
     country_code: country,
     countries_served: cleanList(input.countries_served, 80).filter(isCountryCode),

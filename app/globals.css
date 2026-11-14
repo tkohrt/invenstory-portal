@@ -2624,3 +2624,8 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .wc-card textarea,.wc-card input{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;margin:0 0 8px;box-sizing:border-box}
 .wc-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .wc-ok{color:#1f4d2e;font-size:13px;font-weight:600}
+
+/* The feedback loop (patch 44): the thank-you after a reason, the skip chip. */
+.cv-thanks{color:#1f4d2e;font-size:12px;max-width:260px;margin-top:3px}
+.cv-skip{color:var(--muted)}
+.fm-known{display:inline-block;margin-left:8px;background:#eef3ee;border:1px solid #cfe3d5;color:#1f4d2e;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600}

@@ -23,6 +23,10 @@ export async function getEligibilityProfile(tenantId: string): Promise<Eligibili
     international: data.international === true,
     // What it is looking for (0072). Grants when unset, as every profile was.
     funding_kinds: Array.isArray(data.funding_kinds) && data.funding_kinds.length ? data.funding_kinds : ["grants"],
+    // The hardened screen's known facts (0091). Absent before the migration
+    // runs, and null fires no rule either way.
+    founded_year: typeof data.founded_year === "number" ? data.founded_year : null,
+    audited_financials: typeof data.audited_financials === "boolean" ? data.audited_financials : null,
   };
 }
 
