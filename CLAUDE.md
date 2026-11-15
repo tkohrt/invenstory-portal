@@ -210,3 +210,12 @@ that happens; that is expected and not something to act on.
 **Say which button to press afterwards, and why.** A change to the merge rule
 needs `re-merge`, which is free. A change to what is extracted needs `Rebuild`,
 which is minutes and real money. Getting that wrong wastes both.
+
+## Peer organizations (patch 48, 15 November 2026)
+
+- Clients name two or three organizations like theirs. Asked in setup on the Funding Eligibility step (its own group, badged "Helps the most") and editable afterwards on the Funding Eligibility page, by the client or an admin viewing them.
+- Stored in `tenant_setup.answers.peer_orgs` (no migration). Always read through `cleanPeerOrgs` (`lib/peers.ts`) or `getPeerOrgs` (`lib/server/setup.ts`). At most 8, because Ground Truth reads the first 8.
+- A funder search asks Ground Truth one extra question when peers exist: `funders_who_fund_orgs_like_mine` with `peer_orgs` only. It is deliberately separate from the description question; see the comment in `lib/server/matching.ts`. `mergePeerEvidence` puts funders of named peers first in the evidence list.
+- The run log records it as track `peers`. The text holds the peer names, so it stays server-side like every other query text.
+- Saving peers does not clear cached matches; they take effect on the next search.
+

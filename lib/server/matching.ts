@@ -19,6 +19,8 @@ import { applyFunderOverlay, type LedgerRecord } from "@/lib/ledger-merge";
 import { funderRowsFrom, type FunderRow } from "@/lib/funder-rows";
 import { grantQueries, funderQueries, assessProfile } from "@/lib/search-profile";
 import { getSearchProfile } from "./search-profile-read";
+import { getPeerOrgs } from "./setup";
+import { mergePeerEvidence } from "@/lib/peers";
 import { buildDossier, addRationales } from "./match-rationale";
 import {
   findGrants, findFunders, fundersLikeMine, ledgerConfigured, LedgerUnavailable, warmLedger,
@@ -137,9 +139,13 @@ export async function runMatch(
    *
    * Best-effort. A diagnostic that can fail a run is worse than no diagnostic.
    */
+  // The peer organizations this client named (patch 48). None is fine.
+  const peers = await getPeerOrgs(tenantId).catch(() => [] as string[]);
+  const peerText = `who funds: ${peers.join("; ")}`;
   const plannedQueries = [
     ...grantQs.map(text => ({ track: "grants" as const, text })),
     ...funderQs.map(text => ({ track: "funders" as const, text })),
+    ...(peers.length ? [{ track: "peers" as const, text: peerText }] : []),
   ];
   const { data: runRow, error: planErr } = await db.from("match_run").insert({
     tenant_id: tenantId, queries: plannedQueries, used_profile: useProfile,
@@ -164,8 +170,8 @@ export async function runMatch(
   step(0, 5, "checking Ground Truth is awake (it naps when nobody has searched for a while)");
   await warmLedger(RUN_WAKE_MS).catch(() => null);
 
-  step(1, 5, `asking ${grantQs.length + funderQs.length + 1} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
-  const [grantEnvs, watchEnv, funderEnvs, evidenceEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
+  step(1, 5, `asking ${grantQs.length + funderQs.length + 1 + (peers.length ? 1 : 0)} questions of the funding data${openWanted ? ", and public international sources" : ""}`);
+  const [grantEnvs, watchEnv, funderEnvs, describedEnv, peerEnv, overlay, funderOverlay, dossier, openRes] = await Promise.all([
     Promise.all(grantQs.map(need => attempt(`grant query "${need.slice(0, 60)}"`, () => findGrants({ need })))),
     // The watch track (patch 26): one extra question with closed calls allowed,
     // so recently-closed-but-aligned programmes can reach the watchlist. One
@@ -181,6 +187,15 @@ export async function runMatch(
       org_description: funderQs[0] ?? needText(p, orgName, "funders"),
       location: p.state_code ?? undefined,
     })),
+    // Named peers (patch 48): who already funds the organizations this client
+    // says are like it. Its own question, not folded into the one above: the
+    // graph ranks a funder by how many distinct organizations it backs, and up
+    // to thirty look-alikes found from a description would outvote the handful
+    // the client chose. Twenty, not ten: one heavily funded peer can fill ten
+    // places by itself. A failure costs this evidence, never the run.
+    peers.length
+      ? attempt("named peers query", () => fundersLikeMine({ peer_orgs: peers, limit: 20 }))
+      : Promise.resolve({ ok: true as const, results: [] as FunderCard[] }),
     getApprovedOverlay("grant").then(rows => rows.filter(r => additionFits(r, tenantId, p))),
     getApprovedOverlay("funder").then(rows => rows.filter(r => additionFits(r, tenantId, p))),
     buildDossier(tenantId, orgName, p),
@@ -194,6 +209,8 @@ export async function runMatch(
   // Public sources that answered keep a run alive: an international client's
   // shortlist is worth saving even while Ground Truth naps.
   const openAnswered = openRes.calls.some(c => c.ok);
+  // Funders of the named peers lead the evidence; one funder appears once.
+  const evidenceEnv = { ...describedEnv, ok: describedEnv.ok || peerEnv.ok, results: mergePeerEvidence(peerEnv.results, describedEnv.results) };
   if (grantEnvs.length && grantEnvs.every(e => !e.ok) && funderEnvs.every(e => !e.ok) && !openAnswered) {
     throw new LedgerUnavailable(
       ASLEEP_MESSAGE);
@@ -474,6 +491,7 @@ export async function runMatch(
     ...grantQs.map((text, i) => ({ track: "grants" as const, text, ok: grantEnvs[i]?.ok ?? false, results: grantEnvs[i]?.results.length ?? 0 })),
     ...funderQs.map((text, i) => ({ track: "funders" as const, text, ok: funderEnvs[i]?.ok ?? false, results: funderEnvs[i]?.results.length ?? 0 })),
     // The watch track (patch 26), recorded like any other question that ran.
+    ...(peers.length ? [{ track: "peers" as const, text: peerText, ok: peerEnv.ok, results: peerEnv.results.length }] : []),
     ...(grantQs.length ? [{ track: "watch" as const, text: grantQs[0], ok: watchEnv.ok, results: watchEnv.results.length }] : []),
     // What each public source was asked, kept beside Ground Truth's queries.
     ...openRes.calls.map(c => ({ track: `open:${c.source}`, text: c.note ? `${c.text} (${c.note})` : c.text, ok: c.ok, results: c.results })),
@@ -621,7 +639,7 @@ function runSources(queries: unknown): string[] {
   for (const q of queries as { track?: string; ok?: boolean }[]) {
     const t = typeof q?.track === "string" ? q.track : "";
     const label =
-      t === "grants" || t === "funders" || t === "watch" ? "Ground Truth"
+      t === "grants" || t === "funders" || t === "watch" || t === "peers" ? "Ground Truth"
       : t.startsWith("open:") ? (SOURCE_LABEL[t.slice(5)] ?? null)
       : null;
     if (label && q?.ok !== false && !out.includes(label)) out.push(label);

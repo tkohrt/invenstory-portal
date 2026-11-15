@@ -9,6 +9,7 @@ import { readUrl, Plain } from "./read-url";
 import { markStaleOnUpload } from "./artifacts";
 import type { SetupState, SetupAnswers, SetupStepKey, StepState } from "@/lib/setup";
 import { isStepKey } from "@/lib/setup";
+import { cleanPeerOrgs } from "@/lib/peers";
 
 interface Row {
   tenant_id: string; owner_user_id: string | null; status: "in_progress" | "complete";
@@ -46,6 +47,12 @@ export const getSetupState = cache(async (tenantId: string): Promise<SetupState 
   }
   return fromRow(tenantId, data as Row | null);
 });
+
+/** The peer organizations this client named (patch 48). Empty when none, or when setup cannot be read. */
+export async function getPeerOrgs(tenantId: string): Promise<string[]> {
+  const state = await getSetupState(tenantId).catch(() => null);
+  return cleanPeerOrgs(state?.answers.peer_orgs);
+}
 
 /**
  * The first client user to arrive claims the setup. Atomic: the row is made

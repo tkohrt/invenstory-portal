@@ -59,6 +59,8 @@ export interface Invite { email: string; access: "edit" | "view"; requested_at: 
 export interface SetupAnswers {
   role?: string | null;
   known_funders?: KnownFunder[];
+  /** Organizations like this one, named by the client (patch 48). Read through cleanPeerOrgs. */
+  peer_orgs?: string[];
   deadlines?: Deadline[];
   invites?: Invite[];
   goal?: Goal | null;

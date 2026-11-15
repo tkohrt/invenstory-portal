@@ -8,6 +8,9 @@ import { sourcesForKind } from "@/lib/sources";
 import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, FUNDING_KINDS, computeCompleteness, homeCountry, wantsInternational, kindsSought, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
+import PeerOrgsField from "./PeerOrgsField";
+import { savePeerOrgsAction } from "@/lib/server/peer-actions";
+import { cleanPeerOrgs, PEER_ASK } from "@/lib/peers";
 import AllowanceRequest from "./AllowanceRequest";
 
 export function TagField({ label, values, onChange, placeholder, hint }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string; hint?: string }) {
@@ -76,10 +79,25 @@ export function CountryField({ label, values, onChange, exclude }: { label: stri
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt }: {
-  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null;
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [] }: {
+  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[];
 }) {
   const router = useRouter();
+  // Peer organizations (patch 48). Saved on their own: they are not part of
+  // the eligibility screen, so saving them clears no cached match.
+  const [peers, setPeers] = useState<string[]>(peerOrgs);
+  const [peerBusy, setPeerBusy] = useState(false);
+  const [peerMsg, setPeerMsg] = useState<string | null>(null);
+  const named = cleanPeerOrgs(peers).length;
+  const savePeers = async () => {
+    setPeerBusy(true); setPeerMsg(null);
+    const r = await savePeerOrgsAction(peers);
+    setPeerBusy(false);
+    if (!r.ok) { setPeerMsg(r.error); return; }
+    setPeers(r.peers);
+    setPeerMsg(r.peers.length ? "Saved. Your next funder search will use them." : "Saved.");
+    router.refresh();
+  };
   const [p, setP] = useState<EligibilityProfile>(profile);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -119,6 +137,22 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
       </div></div>
 
       <div className="fe-progress"><div className="fe-bar"><span style={{ width: `${completeness}%` }} /></div><b>{completeness}% complete</b></div>
+
+      <section className={`acct-card peer-card ${named >= PEER_ASK ? "ok" : ""}`}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Organizations like yours</h3>
+          <div className="spacer" style={{ flex: 1 }} />
+          <span className={`su-badge ${named >= PEER_ASK ? "ok" : "star"}`}>{named >= PEER_ASK ? `✓ ${named} named` : "Helps the most"}</span>
+        </div>
+        <p className="peer-lede"><b>This is the answer that helps us most.</b> Nothing else on this page does more to find your strongest funder matches and point your fund seeking at funders likely to say yes.</p>
+        <p className="acct-note">Name two or three organizations doing work like yours, and more if you can: a similar mission, a similar size or the size you are growing toward, in your region if possible. We look up who already funds them. Those funders lead your matches, each shown with the grants it actually made.</p>
+        <PeerOrgsField values={peers} onChange={setPeers} />
+        <p className="acct-note">Full names work best, and a US tax ID (EIN) works too. Peers outside the United States count when US foundations have funded them.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+          <button type="button" className="btn inline" onClick={savePeers} disabled={peerBusy}>{peerBusy ? "Saving…" : "Save peer organizations"}</button>
+          {peerMsg && <span className="acct-note" role="status" style={{ margin: 0 }}>{peerMsg}</span>}
+        </div>
+      </section>
 
       <section className="acct-card">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

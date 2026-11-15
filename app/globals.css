@@ -2645,3 +2645,15 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .do-stat-rate{border-color:#cfe3d5;background:#f6faf5}
 .do-sub-h{margin:14px 0 6px;font-size:13.5px}
 .do-purpose{color:#555;font-size:12.5px;max-width:260px}
+
+/* Peer organizations (patch 48): the one optional answer marked as mattering most. */
+.su-peers{border-left:4px solid #b8860b;background:#fdf9ee}
+.su-peers.ok{border-left-color:#1f4d2e;background:#f2f8f3}
+.su-peers-lede,.peer-lede{margin:8px 0 4px;font-size:14px;line-height:1.5;color:var(--ink)}
+.su-badge.star{background:#b8860b;color:#fff}
+.peer-rows{display:grid;gap:6px;margin:8px 0;max-width:520px}
+.peer-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.peer-row input{width:100%}
+.peer-rows>.sb-btn{justify-self:start}
+.peer-card{border-left:4px solid #b8860b}
+.peer-card.ok{border-left-color:#1f4d2e}

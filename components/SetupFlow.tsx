@@ -17,6 +17,8 @@ import { signOutAction } from "@/lib/server/actions";
 import { ORG_TYPES, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, FUNDING_KINDS, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { TagField, CountryField } from "./FundingEligibilityView";
+import PeerOrgsField from "./PeerOrgsField";
+import { cleanPeerOrgs, PEER_ASK } from "@/lib/peers";
 import LivingVoicePrompts from "./LivingVoicePrompts";
 import UploadPanel from "./UploadPanel";
 import Irs990Block from "./Irs990Block";
@@ -161,8 +163,8 @@ export default function SetupFlow(p: Props) {
         <div className="su-count">Step {idx + 1} of {SETUP_STEPS.length}</div>
         {note && <p className="su-note" role="status">{note}</p>}
         {step === "you" && <YouStep {...p} busy={busy} onSave={v => run(() => saveYouAction(v))} />}
-        {step === "eligibility" && <EligibilityStep profile={p.profile} busy={busy} onBack={back}
-          onSave={(v, how) => run(() => saveSetupEligibilityAction(v, how))} />}
+        {step === "eligibility" && <EligibilityStep profile={p.profile} peerOrgs={p.state.answers.peer_orgs ?? []} busy={busy} onBack={back}
+          onSave={(v, how, peers) => run(() => saveSetupEligibilityAction(v, how, peers))} />}
         {/* key={step} so Layer I's link box, errors and pending list never
             carry over into Layer II (the carryover bug from the 7 Nov
             walkthrough: React reuses the component between the two steps). */}
@@ -292,10 +294,13 @@ function YouStep({ tenantName, website, fullName, state, busy, onSave }: Props &
 
 // ---- 2. Funding Eligibility ----
 
-function EligibilityStep({ profile, busy, onBack, onSave }: {
-  profile: EligibilityProfile; busy: boolean; onBack: () => void;
-  onSave: (v: Partial<EligibilityProfile>, how: "done" | "skipped") => void;
+function EligibilityStep({ profile, peerOrgs, busy, onBack, onSave }: {
+  profile: EligibilityProfile; peerOrgs: string[]; busy: boolean; onBack: () => void;
+  onSave: (v: Partial<EligibilityProfile>, how: "done" | "skipped", peers: string[]) => void;
 }) {
+  // Peer organizations (patch 48): the answer that does the most for matching.
+  const [peers, setPeers] = useState<string[]>(peerOrgs);
+  const named = cleanPeerOrgs(peers).length;
   // What the form shows is what is saved: registered in the US and looking for grants unless changed.
   const [p, setP] = useState<EligibilityProfile>(() => ({ ...profile, country_code: profile.country_code ?? "US", funding_kinds: profile.funding_kinds?.length ? profile.funding_kinds : ["grants"] }));
   const [more, setMore] = useState(true);
@@ -337,6 +342,20 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
             ))}
           </div>
         </div>
+        {/* Peer organizations (patch 48). Its own group, marked as the most
+            useful answer here, because it is: the who-funds-whom graph turns
+            two or three names into funders with real grants behind them. */}
+        <div className={`su-group su-peers ${named >= PEER_ASK ? "ok" : ""}`}>
+          <div className="su-group-head">
+            <h3>Organizations like yours</h3>
+            <span className="spacer" />
+            <span className={`su-badge ${named >= PEER_ASK ? "ok" : "star"}`}>{named >= PEER_ASK ? `✓ ${named} named` : "Helps the most"}</span>
+          </div>
+          <p className="su-peers-lede"><b>If you only do one optional thing in setup, do this one.</b> Nothing else you tell us does more to find your strongest funder matches and point your fund seeking at funders likely to say yes.</p>
+          <p className="su-small">Name two or three organizations doing work like yours, and more if you can: a similar mission, a similar size or the size you are growing toward, in your region if possible. We look up who already funds them. Those funders lead your matches, each shown with the grants it actually made.</p>
+          <PeerOrgsField values={peers} onChange={setPeers} />
+          <p className="su-small">Full names work best, and a US tax ID (EIN) works too. {(p.country_code ?? "US") !== "US" ? "Peers outside the United States count: we find the ones US foundations have funded." : "Not sure who counts? Think of who you sit beside at convenings, or who applies for the same grants."}</p>
+        </div>
         {/* The 990 importer (patch 42): nonprofits only, right after they say
             so. No record for the EIN offers the upload steps or a skip. */}
         {p.org_type === "nonprofit" && (
@@ -371,15 +390,17 @@ function EligibilityStep({ profile, busy, onBack, onSave }: {
           </>}
         </div>
         <Foot onBack={onBack}>
-          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => onSave(p, "skipped")}>Complete later</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => onSave(p, "skipped", peers)}>Complete later</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy || !ready}
             title={ready ? undefined : "Add an organization type and a cause area, or choose Complete later."}
-            onClick={() => onSave(p, "done")}>{busy ? "Saving…" : "Save and continue"}</button>
+            onClick={() => onSave(p, "done", peers)}>{busy ? "Saving…" : "Save and continue"}</button>
         </Foot>
       </section>
       <aside className="su-aside">
         <h4>Why eligibility first</h4>
         <p className="su-small">Every search screens funders against these answers. A wrong organization type is the most common reason a promising funder turns out to be a dead end.</p>
+        <h4>Why peer organizations matter most</h4>
+        <p className="su-small">Funders tend to fund more of what they already fund. Knowing who backs organizations like yours is the best evidence there is of who could back you, and it is evidence you can show: real grants, real amounts, real years.</p>
       </aside>
     </div>
   );

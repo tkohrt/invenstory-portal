@@ -20,6 +20,7 @@ import {
   type SetupAnswers, type SetupState, type SetupStepKey, type StepState, type Goal,
 } from "@/lib/setup";
 import { cleanProfileInput, type EligibilityProfile } from "@/lib/eligibility-fields";
+import { cleanPeerOrgs } from "@/lib/peers";
 
 type Result = { ok: true; message?: string; next?: string } | { ok: false; error: string };
 
@@ -89,7 +90,7 @@ export async function saveYouAction(input: { website?: string; fullName?: string
  * Step 2: Funding Eligibility. Merged with what is already saved, because the
  * eligibility save cleans a whole profile from what it is given.
  */
-export async function saveSetupEligibilityAction(input: Partial<EligibilityProfile>, how: StepState): Promise<Result> {
+export async function saveSetupEligibilityAction(input: Partial<EligibilityProfile>, how: StepState, peers?: string[]): Promise<Result> {
   const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
   const { s, state } = o;
   if (!isHow(how)) return { ok: false, error: "Unknown choice." };
@@ -103,7 +104,12 @@ export async function saveSetupEligibilityAction(input: Partial<EligibilityProfi
       if (!r.ok) return { ok: false, error: r.error ?? "Your answers could not be saved." };
     }
   }
-  const err = await write(s.tenantId, { steps: withStep(state, "eligibility", how) });
+  // Peer organizations (patch 48) are kept either way: they change no cached
+  // match, and a person who names them and then chooses Complete later has
+  // still told us the most useful thing on the page.
+  const patch: Record<string, unknown> = { steps: withStep(state, "eligibility", how) };
+  if (peers !== undefined) patch.answers = { ...state.answers, peer_orgs: cleanPeerOrgs(peers) };
+  const err = await write(s.tenantId, patch);
   if (err) return { ok: false, error: "That did not save. Please try again." };
   revalidatePath("/setup");
   return { ok: true };
