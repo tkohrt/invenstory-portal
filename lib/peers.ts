@@ -131,3 +131,13 @@ export function peerCheck(typed: string, exact: string[], similar: string[] = []
   if (names.length > 1) return { kind: "several", options };
   return options.length ? { kind: "suggest", options } : { kind: "missing", ein: false };
 }
+
+/**
+ * Is what is in the boxes different from what is saved? (patch 51). Compared
+ * after cleaning, so an empty row, a stray space or a change of capitals is
+ * not an edit: only something the save would actually store differently is.
+ */
+export function peersChanged(typed: unknown, saved: unknown): boolean {
+  const a = cleanPeerOrgs(typed), b = cleanPeerOrgs(saved);
+  return a.length !== b.length || a.some((x, i) => x !== b[i]);
+}

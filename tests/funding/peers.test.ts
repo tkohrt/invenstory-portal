@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cleanPeerOrgs, peerReason, mergePeerEvidence, PEER_MAX, isEin, matchedOrgs, distinctOrgs, peerCheck } from "@/lib/peers";
+import { cleanPeerOrgs, peerReason, mergePeerEvidence, PEER_MAX, isEin, matchedOrgs, distinctOrgs, peerCheck, peersChanged } from "@/lib/peers";
 import type { FunderCard } from "@/lib/ledger-types";
 
 const card = (ein: string, name: string, grantees: string[], reason?: string): FunderCard => ({
@@ -110,5 +110,23 @@ describe("checking a name against Ground Truth (patch 49)", () => {
   });
   test("nothing exact and nothing close is missing", () => {
     expect(peerCheck("zzqx not a real org", [], [])).toEqual({ kind: "missing", ein: false });
+  });
+});
+
+describe("is there anything to save? (patch 51)", () => {
+  const saved = ["ACE Mentor Program of Cleveland", "Tech Corps Ohio"];
+  test("what is saved, with the empty third row the page adds, is not a change", () => {
+    expect(peersChanged([...saved, ""], saved)).toBe(false);
+    expect(peersChanged(["  ACE Mentor Program of Cleveland ", "Tech Corps Ohio", "ab"], saved)).toBe(false);
+  });
+  test("an edit, an addition, a removal and a reorder are each a change", () => {
+    expect(peersChanged(["ACE Mentor Program of Akron", "Tech Corps Ohio"], saved)).toBe(true);
+    expect(peersChanged([...saved, "NewBridge Cleveland"], saved)).toBe(true);
+    expect(peersChanged(["Tech Corps Ohio"], saved)).toBe(true);
+    expect(peersChanged(["Tech Corps Ohio", "ACE Mentor Program of Cleveland"], saved)).toBe(true);
+  });
+  test("nothing typed and nothing saved is nothing to save", () => {
+    expect(peersChanged(["", "", ""], [])).toBe(false);
+    expect(peersChanged(["Komaza"], [])).toBe(true);
   });
 });

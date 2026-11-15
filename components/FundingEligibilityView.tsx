@@ -10,7 +10,7 @@ import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import PeerOrgsField from "./PeerOrgsField";
 import { savePeerOrgsAction } from "@/lib/server/peer-actions";
-import { cleanPeerOrgs, PEER_ASK } from "@/lib/peers";
+import { cleanPeerOrgs, peersChanged, PEER_ASK } from "@/lib/peers";
 import AllowanceRequest from "./AllowanceRequest";
 
 export function TagField({ label, values, onChange, placeholder, hint }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string; hint?: string }) {
@@ -86,6 +86,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
   // Peer organizations (patch 48). Saved on their own: they are not part of
   // the eligibility screen, so saving them clears no cached match.
   const [peers, setPeers] = useState<string[]>(peerOrgs);
+  // What is stored now. The button only wakes when the boxes differ from it
+  // (patch 51), so a client is never left wondering whether to press Save.
+  const [savedPeers, setSavedPeers] = useState<string[]>(peerOrgs);
+  const peersDirty = peersChanged(peers, savedPeers);
   const [peerBusy, setPeerBusy] = useState(false);
   const [peerMsg, setPeerMsg] = useState<string | null>(null);
   const named = cleanPeerOrgs(peers).length;
@@ -95,6 +99,7 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
     setPeerBusy(false);
     if (!r.ok) { setPeerMsg(r.error); return; }
     setPeers(r.peers);
+    setSavedPeers(r.peers);
     setPeerMsg(r.peers.length ? "Saved. Your next funder search will use them." : "Saved.");
     router.refresh();
   };
@@ -161,8 +166,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         <PeerOrgsField values={peers} onChange={setPeers} />
         <p className="acct-note">Full names work best, and a US tax ID (EIN) works too. Peers outside the United States count when US foundations have funded them.</p>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-          <button type="button" className="btn inline" onClick={savePeers} disabled={peerBusy}>{peerBusy ? "Saving…" : "Save peer organizations"}</button>
-          {peerMsg && <span className="acct-note" role="status" style={{ margin: 0 }}>{peerMsg}</span>}
+          <button type="button" className="btn inline peer-save" onClick={savePeers} disabled={peerBusy || !peersDirty}>
+            {peerBusy ? "Saving…" : !peersDirty && savedPeers.length > 0 ? "✓ Peer organizations saved" : "Save peer organizations"}
+          </button>
+          {peerMsg && !peersDirty && <span className="acct-note" role="status" style={{ margin: 0 }}>{peerMsg}</span>}
         </div>
       </section>
 
