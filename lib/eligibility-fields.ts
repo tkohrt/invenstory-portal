@@ -227,6 +227,29 @@ export function profileChips(p: EligibilityProfile): string[] {
 export type GapTier = "critical" | "essential" | "important" | "enriching";
 export interface Gap { tier: GapTier; key: string; label: string; fix: "profile" | "upload"; layer?: "I" | "II" | "III"; weak?: boolean }
 
+/**
+ * The two lists inside "What's missing" (patch 50). Profile gaps are answers
+ * on the Funding Eligibility page, the thing its percentage measures; document
+ * gaps are what the Inven(s)tory does not cover yet, which is Readiness. Shown
+ * as one list, a profile at 100% sat above four "essential" document gaps and
+ * the two looked like a contradiction.
+ */
+export function splitGaps(gaps: Gap[]): { profile: Gap[]; documents: Gap[] } {
+  const order: Record<GapTier, number> = { critical: 0, essential: 1, important: 2, enriching: 3 };
+  const sorted = [...gaps].sort((a, b) => order[a.tier] - order[b.tier]);
+  return { profile: sorted.filter(g => g.fix === "profile"), documents: sorted.filter(g => g.fix !== "profile") };
+}
+
+/** Days since the documents were last analyzed; null when never, or the date is unreadable. */
+export function analysisAgeDays(computedAt: string | null | undefined, now: Date = new Date()): number | null {
+  if (!computedAt) return null;
+  const t = Date.parse(computedAt);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((now.getTime() - t) / 86_400_000));
+}
+/** After this long the document list is likely out of date and the page says so. */
+export const ANALYSIS_STALE_DAYS = 60;
+
 // Structural gaps come straight from the profile fields (free, always current).
 export function structuralGaps(p: EligibilityProfile): Gap[] {
   const g: Gap[] = [];

@@ -226,3 +226,9 @@ which is minutes and real money. Getting that wrong wastes both.
 - Picking a choice replaces what was typed with that exact name. It is still matched by "contains", so a short exact name can be shared by other records; the UI says so and asks for the EIN. A true fix (match on a chosen record, show city and state) needs a change to the Ground Truth server.
 - Ground Truth not answering shows nothing, never "not found".
 
+## What's missing, split in two (patch 50, 15 November 2026)
+
+- The Funding Eligibility percentage counts the nine profile fields only. The "What's missing" card now shows two lists: profile answers, and documents the Inven(s)tory does not cover (`splitGaps` in `lib/eligibility-fields.ts`). Only a red profile item (organization type, tax status, primary state) blocks matching.
+- Tier dots are drawn (`.tier-dot` in `app/globals.css`), never emoji, and the key uses the same class so colours always match. Four tiers: critical, essential, important, enriching.
+- The card shows when documents were last analyzed and says so when that is over `ANALYSIS_STALE_DAYS` (60) days ago.
+

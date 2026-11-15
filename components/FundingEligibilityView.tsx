@@ -5,7 +5,7 @@ import { saveEligibilityProfileAction } from "@/lib/server/eligibility-actions";
 import { runGapAnalysisAction } from "@/lib/server/gap-actions";
 import { addInvenstoryNoteAction } from "@/lib/server/note-actions";
 import { sourcesForKind } from "@/lib/sources";
-import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, FUNDING_KINDS, computeCompleteness, homeCountry, wantsInternational, kindsSought, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
+import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_STATES, FUNDING_KINDS, computeCompleteness, splitGaps, analysisAgeDays, ANALYSIS_STALE_DAYS, homeCountry, wantsInternational, kindsSought, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import PeerOrgsField from "./PeerOrgsField";
@@ -79,8 +79,8 @@ export function CountryField({ label, values, onChange, exclude }: { label: stri
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [] }: {
-  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[];
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [], readinessPct }: {
+  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[]; readinessPct?: number;
 }) {
   const router = useRouter();
   // Peer organizations (patch 48). Saved on their own: they are not part of
@@ -124,9 +124,20 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
     }
     finally { setAnalyzing(false); }
   };
-  const TIER = { critical: "🔴", essential: "🟠", important: "🟡", enriching: "⚪" } as const;
-  const order = { critical: 0, essential: 1, important: 2, enriching: 3 } as const;
-  const sortedGaps = [...gaps].sort((a, b) => order[a.tier] - order[b.tier]);
+  // Two lists, not one (patch 50): answers on this page, and documents the
+  // Inven(s)tory does not cover yet. The percentage above measures the first.
+  const { profile: profileGaps, documents: documentGaps } = splitGaps(gaps);
+  const blocked = profileGaps.some(g => g.tier === "critical");
+  const ageDays = analysisAgeDays(gapsComputedAt);
+  const analyzedOn = gapsComputedAt && ageDays !== null
+    ? new Date(gapsComputedAt).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" }) : null;
+  const gapRow = (g: Gap) => (
+    <div key={g.key} className={`gap-item ${g.tier}`}>
+      <span className={`tier-dot ${g.tier}`} aria-hidden />
+      <span className="gap-text">{g.label}</span>
+      <a className="gap-fix" href={g.fix === "profile" ? "#top" : "/invenstory"}>{g.fix === "profile" ? "Fill in" : "Upload"} →</a>
+    </div>
+  );
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -136,7 +147,8 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         <p>Answer once. We use these facts to screen out grants you can&rsquo;t win — so you only see opportunities you&rsquo;re actually eligible for.</p>
       </div></div>
 
-      <div className="fe-progress"><div className="fe-bar"><span style={{ width: `${completeness}%` }} /></div><b>{completeness}% complete</b></div>
+      <div className="fe-progress"><div className="fe-bar"><span style={{ width: `${completeness}%` }} /></div><b>Profile {completeness}% complete</b>
+        {gapsComputedAt && typeof readinessPct === "number" && <a className="fe-ready" href="/readiness">Document readiness {readinessPct}%</a>}</div>
 
       <section className={`acct-card peer-card ${named >= PEER_ASK ? "ok" : ""}`}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -169,16 +181,32 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
           )}
         </div>
         {allowance && <AllowanceRequest message={allowance} />}
-        {sortedGaps.length === 0
-          ? <p className="gap-note" style={{ marginTop: 10 }}>Nothing flagged — your profile and Inven(s)tory look complete. {gapsComputedAt ? "" : "Run an analysis to check your documents."}</p>
-          : <div className="gap-list">{sortedGaps.map(g => (
-              <div key={g.key} className={`gap-item ${g.tier}`}>
-                <span className="gap-ic">{TIER[g.tier]}</span>
-                <span className="gap-text">{g.label}</span>
-                <a className="gap-fix" href={g.fix === "profile" ? "#top" : "/invenstory"}>{g.fix === "profile" ? "Fill in" : "Upload"} →</a>
-              </div>))}
-          </div>}
-        <p className="acct-note" style={{ marginTop: 8 }}>🔴 blocks matching · 🟡 important · ⚪ nice to have. Structural gaps update as you edit; document gaps update when you re-analyze.</p>
+        <p className="acct-note" style={{ marginTop: 10 }}>{blocked
+          ? "Funder matching cannot run until the items marked in red are answered."
+          : "Nothing here blocks funder matching. Each item below makes your matches and applications stronger."}</p>
+
+        <h4 className="gap-head">Profile answers <span>the percentage above</span></h4>
+        {profileGaps.length === 0
+          ? <p className="gap-done">✓ Every profile answer is filled in.</p>
+          : <div className="gap-list">{profileGaps.map(gapRow)}</div>}
+
+        <h4 className="gap-head">Documents funders ask for <span>from your Inven(s)tory</span></h4>
+        {!gapsComputedAt
+          ? <p className="gap-done muted">Not analyzed yet. Choose Analyze my Inven(s)tory to check your documents.</p>
+          : documentGaps.length === 0
+            ? <p className="gap-done">✓ Your documents cover everything on the list.</p>
+            : <div className="gap-list">{documentGaps.map(gapRow)}</div>}
+        {analyzedOn && <p className={`gap-asof ${ageDays! >= ANALYSIS_STALE_DAYS ? "stale" : ""}`}>
+          Documents last analyzed {analyzedOn}.{ageDays! >= ANALYSIS_STALE_DAYS ? " That was a while ago, so this list may be out of date. Re-analyze to refresh it." : ""}
+        </p>}
+
+        <p className="gap-key">
+          <span><span className="tier-dot critical" aria-hidden /> Blocks matching</span>
+          <span><span className="tier-dot essential" aria-hidden /> Essential</span>
+          <span><span className="tier-dot important" aria-hidden /> Important</span>
+          <span><span className="tier-dot enriching" aria-hidden /> Nice to have</span>
+        </p>
+        <p className="acct-note" style={{ marginTop: 4 }}>Profile answers update as you edit. Documents update when you re-analyze.</p>
       </section>
 
       <section className="acct-card">

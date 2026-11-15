@@ -2666,3 +2666,23 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .peer-options{display:flex;flex-wrap:wrap;gap:6px;margin:5px 0 3px}
 .peer-option{font:inherit;font-size:12.5px;padding:3px 10px;border-radius:999px;border:1px solid #d9c489;background:#fff;color:var(--ink);cursor:pointer}
 .peer-option:hover{background:#fdf3d6}
+
+/* What's missing, split in two with one set of dots (patch 50). Drawn dots,
+   not emoji: emoji render differently on every device, and the key must show
+   exactly the colour the list does. */
+.tier-dot{display:inline-block;width:11px;height:11px;border-radius:50%;flex:none;vertical-align:-1px}
+.tier-dot.critical{background:#c8442f}
+.tier-dot.essential{background:#e08a1e}
+.tier-dot.important{background:#e3c53a}
+.tier-dot.enriching{background:#fff;border:1.5px solid #b9bec4}
+.gap-head{margin:16px 0 0;font-size:13.5px;font-weight:700}
+.gap-head span{font-weight:400;font-size:12.5px;color:var(--muted);margin-left:6px}
+.gap-done{margin:8px 0 0;font-size:13px;color:#1f4d2e}
+.gap-done.muted{color:var(--muted)}
+.gap-asof{margin:10px 0 0;font-size:12.5px;color:var(--muted)}
+.gap-asof.stale{color:#7a5b10}
+.gap-key{display:flex;flex-wrap:wrap;gap:6px 16px;margin:14px 0 0;font-size:12.5px;color:var(--muted)}
+.gap-key>span{display:inline-flex;align-items:center;gap:6px}
+.gap-item.critical{border-color:#e7c3ba;background:#fdf5f3}
+.fe-ready{font-size:13px;color:#3a7d44;text-decoration:none;white-space:nowrap}
+.fe-ready:hover{text-decoration:underline}
