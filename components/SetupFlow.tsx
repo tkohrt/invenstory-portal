@@ -108,11 +108,17 @@ export default function SetupFlow(p: Props) {
           {p.welcomeNote ? (
             <div className="su-welcome-note">
               {p.welcomeNote.split(/\n+/).map((line, i) => <p key={i}>{line}</p>)}
-              <p className="su-welcome-sign">Shane &amp; Tyler, For Granted</p>
+              <p className="su-welcome-sign">Tyler &amp; Shane, For Granted</p>
             </div>
-          ) : (
+          ) : (<>
+            {/* The founders' line (patch 46): on the default welcome only. A
+                custom note is already a signed greeting, so it never doubles. */}
+            <p className="su-welcome-quote">
+              &ldquo;It is so good that you&rsquo;re here&rdquo;
+              <span className="su-welcome-by">Tyler &amp; Shane, Co-Founders</span>
+            </p>
             <p className="su-lede">This is the Inven(s)tory Portal, {p.tenantName}&rsquo;s home for everything that makes you fundable. A few short steps set it up; everything saves as you go.</p>
-          )}
+          </>)}
           {headStart && <p className="su-headstart">{headStart}</p>}
           {video && (videoIsFile
             ? <video className="su-welcome-video" src={video} controls preload="metadata" />

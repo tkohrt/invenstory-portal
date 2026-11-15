@@ -112,7 +112,7 @@ function NewClientDrawer({ onClose, onCreated }: { onClose: () => void; onCreate
           Editable later on the client's page; blank means the default welcome. */}
       <label>A welcome from you (optional)</label>
       <textarea rows={3} maxLength={2000} value={f.welcomeNote} onChange={e => setF({ ...f, welcomeNote: e.target.value })}
-        placeholder="Shown once, on their first sign-in, signed Shane & Tyler. Blank means the standard welcome." />
+        placeholder="Shown once, on their first sign-in, signed Tyler & Shane. Blank means the standard welcome." />
       <label>Welcome video link (optional)</label>
       <input value={f.welcomeVideoUrl} onChange={e => setF({ ...f, welcomeVideoUrl: e.target.value })} placeholder="https… (a Loom or a hosted mp4)" />
       {result && !result.ok && <div className="metric-gap" style={{ marginTop: 10 }}><b>Problem:</b> {result.error}</div>}
