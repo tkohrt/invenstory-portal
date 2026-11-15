@@ -68,3 +68,66 @@ export function mergePeerEvidence(fromPeers: FunderCard[], fromDescription: Fund
   }
   return out;
 }
+
+// ---- Checking a name against Ground Truth (patch 49) ----
+//
+// Ground Truth finds a peer two ways: a nine-digit EIN exactly, or a name by
+// "contains", case ignored, taking the first three records that contain it.
+// So "ACE Mentor Program" finds three chapters in other cities and never
+// reaches Cleveland's, and "ace mentor cleveland" finds nothing at all. The
+// person typing has no way to know either happened unless we say so.
+
+/** Nine digits, with or without spaces and hyphens: Ground Truth treats it as an EIN. */
+export function isEin(v: string): boolean {
+  return /^[\d\s-]+$/.test(v) && v.replace(/\D/g, "").length === 9;
+}
+
+/** The recipient names Ground Truth says it matched (the wire's `matched_similar_orgs`). */
+export function matchedOrgs(raw: unknown): string[] {
+  const list = (raw as { matched_similar_orgs?: unknown } | null)?.matched_similar_orgs;
+  if (!Array.isArray(list)) return [];
+  return list.filter((x): x is string => typeof x === "string").map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+/** A name with case, punctuation and a trailing Inc or LLC removed, for telling two spellings of one name apart from two names. */
+export function nameKey(v: string): string {
+  return v.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/(incorporated|inc|llc|ltd|corporation|corp|co)$/, "");
+}
+
+/** One entry per name, first spelling kept. */
+export function distinctOrgs(names: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of names) { const k = nameKey(n); if (!k || seen.has(k)) continue; seen.add(k); out.push(n); }
+  return out;
+}
+
+export type PeerCheck =
+  /** One organization, or the exact name typed. `shared` means other records contain the same words. */
+  | { kind: "found"; name: string; shared: boolean }
+  /** The words match more than one organization and none is exactly what was typed. */
+  | { kind: "several"; options: string[] }
+  /** Nothing contains what was typed, but these are close. */
+  | { kind: "suggest"; options: string[] }
+  | { kind: "missing"; ein: boolean }
+  /** Ground Truth did not answer. Say nothing rather than guess. */
+  | { kind: "unchecked" };
+
+const OPTION_MAX = 6;
+
+/**
+ * What to tell the person about one name. `exact` is what Ground Truth matched
+ * for the name as typed; `similar` is what its meaning-based search found for
+ * the same words, used only to offer choices.
+ */
+export function peerCheck(typed: string, exact: string[], similar: string[] = []): PeerCheck {
+  const names = distinctOrgs(exact);
+  if (isEin(typed)) return names.length ? { kind: "found", name: names[0], shared: false } : { kind: "missing", ein: true };
+  const key = nameKey(typed);
+  const same = names.find(n => nameKey(n) === key);
+  if (same) return { kind: "found", name: same, shared: names.length > 1 };
+  if (names.length === 1) return { kind: "found", name: names[0], shared: false };
+  const options = distinctOrgs([...names, ...similar]).slice(0, OPTION_MAX);
+  if (names.length > 1) return { kind: "several", options };
+  return options.length ? { kind: "suggest", options } : { kind: "missing", ein: false };
+}

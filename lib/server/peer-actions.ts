@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { cleanPeerOrgs } from "@/lib/peers";
+import { cleanPeerOrgs, matchedOrgs, peerCheck, type PeerCheck } from "@/lib/peers";
 import type { SetupAnswers } from "@/lib/setup";
 
 export async function savePeerOrgsAction(input: string[]): Promise<{ ok: boolean; error: string | null; peers: string[] }> {
@@ -27,4 +27,32 @@ export async function savePeerOrgsAction(input: string[]): Promise<{ ok: boolean
   await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "peer_orgs_save", detail: `count=${peers.length}` });
   revalidatePath("/funding-eligibility"); revalidatePath("/funding");
   return { ok: true, error: null, peers };
+}
+
+/**
+ * Does Ground Truth know this peer? (patch 49). Asked as the person leaves the
+ * box, in setup and on the Funding Eligibility page, so a name that would find
+ * nothing, or the wrong organization, is caught while it can still be fixed.
+ * Reads only: nothing is saved here. Quiet on every failure, because a check
+ * that cannot be made must not look like a peer that was not found.
+ */
+export async function checkPeerOrgAction(input: string): Promise<PeerCheck> {
+  const s = await getSession();
+  if (!s) return { kind: "unchecked" };
+  const name = cleanPeerOrgs([input])[0];
+  if (!name) return { kind: "unchecked" };
+  try {
+    const { fundersLikeMine, ledgerConfigured } = await import("./ledger");
+    if (!ledgerConfigured()) return { kind: "unchecked" };
+    const exact = matchedOrgs((await fundersLikeMine({ peer_orgs: [name], limit: 1 })).raw);
+    const first = peerCheck(name, exact);
+    // Only a name that did not land cleanly is worth the slower, meaning-based
+    // look for what the person may have meant.
+    if (first.kind === "found" || (first.kind === "missing" && first.ein)) return first;
+    const similar = await fundersLikeMine({ org_description: name, limit: 1 }).then(r => matchedOrgs(r.raw)).catch(() => [] as string[]);
+    return peerCheck(name, exact, similar);
+  } catch (e) {
+    console.error("[peers] check failed", e instanceof Error ? e.message : e);
+    return { kind: "unchecked" };
+  }
 }

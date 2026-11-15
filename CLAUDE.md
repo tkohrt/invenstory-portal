@@ -219,3 +219,10 @@ which is minutes and real money. Getting that wrong wastes both.
 - The run log records it as track `peers`. The text holds the peer names, so it stays server-side like every other query text.
 - Saving peers does not clear cached matches; they take effect on the next search.
 
+## Peer check (patch 49, 15 November 2026)
+
+- Each peer name is checked against Ground Truth when the person leaves the box, and once on page load for saved names: `checkPeerOrgAction` (`lib/server/peer-actions.ts`), rules in `peerCheck` (`lib/peers.ts`). It reads only and saves nothing.
+- How Ground Truth matches a peer: a nine-digit EIN exactly (any spacing), or a name by "contains", case ignored, first three records. There is no fuzzy name match on that path; the check gets its "did you mean" choices from the meaning-based search (`org_description`) instead.
+- Picking a choice replaces what was typed with that exact name. It is still matched by "contains", so a short exact name can be shared by other records; the UI says so and asks for the EIN. A true fix (match on a chosen record, show city and state) needs a change to the Ground Truth server.
+- Ground Truth not answering shows nothing, never "not found".
+

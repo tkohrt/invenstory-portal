@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cleanPeerOrgs, peerReason, mergePeerEvidence, PEER_MAX } from "@/lib/peers";
+import { cleanPeerOrgs, peerReason, mergePeerEvidence, PEER_MAX, isEin, matchedOrgs, distinctOrgs, peerCheck } from "@/lib/peers";
 import type { FunderCard } from "@/lib/ledger-types";
 
 const card = (ein: string, name: string, grantees: string[], reason?: string): FunderCard => ({
@@ -62,5 +62,53 @@ describe("one evidence list from two questions", () => {
   test("no peers named leaves the description's evidence exactly as it was", () => {
     const described = [card("222222222", "Other", ["Lookalike"], "Already funds 1 org(s) like yours: Lookalike")];
     expect(mergePeerEvidence([], described)).toEqual(described);
+  });
+});
+
+// What Ground Truth really answered on 15 November 2026 for each of these.
+describe("checking a name against Ground Truth (patch 49)", () => {
+  test("an EIN is nine digits, however it is spaced", () => {
+    for (const v of ["13-5562976", "135562976", "13 5562976"]) expect(isEin(v)).toBe(true);
+    for (const v of ["1355629", "13-5562976 Inc", "Tech Corps", ""]) expect(isEin(v)).toBe(false);
+  });
+  test("reads the matched names off the wire, and nothing from anything else", () => {
+    expect(matchedOrgs({ matched_similar_orgs: ["TECH CORPS OHIO", " TECH  CORPS OHIO ", 7, null] })).toEqual(["TECH CORPS OHIO", "TECH CORPS OHIO"]);
+    expect(matchedOrgs({ results: [] })).toEqual([]);
+    expect(matchedOrgs(null)).toEqual([]);
+  });
+  test("two spellings of one name are one organization", () => {
+    expect(distinctOrgs(["TECH CORPS OHIO", "Tech Corps Ohio", "Tech Corps Ohio, Inc."])).toEqual(["TECH CORPS OHIO"]);
+  });
+  test("an EIN that matches is found by name; one that does not is said to be missing", () => {
+    expect(peerCheck("13-5562976", ["BOYS AND GIRLS CLUBS OF AMERICA"])).toEqual({ kind: "found", name: "BOYS AND GIRLS CLUBS OF AMERICA", shared: false });
+    expect(peerCheck("99-9999999", [])).toEqual({ kind: "missing", ein: true });
+  });
+  test("a full name that lands on one organization is found", () => {
+    expect(peerCheck("Tech Corps Ohio", ["TECH CORPS OHIO", "TECH CORPS OHIO", "TECH CORPS OHIO"]))
+      .toEqual({ kind: "found", name: "TECH CORPS OHIO", shared: false });
+  });
+  test("a partial name that fits one organization is found, and shown as what it matched", () => {
+    expect(peerCheck("Envision Excellence in STEM", ["ENVISION EXCELLENCE IN STEM EDUCATION", "Envision Excellence in STEM Education"]))
+      .toEqual({ kind: "found", name: "ENVISION EXCELLENCE IN STEM EDUCATION", shared: false });
+  });
+  test("words that fit several organizations ask which one: the miss that started this patch", () => {
+    // Three chapters in other cities; Cleveland's never reached the first three.
+    const r = peerCheck("ACE Mentor Program",
+      ["ACE MENTOR PROGRAM-GREATER WASHINGTON", "ACE MENTOR PROGRAM OF AMER INC DBA", "ACE MENTOR PROGRAM OF WASHINGTON"],
+      ["ACE MENTOR PROGRAM OF CLEVELAND", "ACE MENTOR PROGRAM OF CLEVELAND", "ACE MENTORING"]);
+    expect(r.kind).toBe("several");
+    expect(r.kind === "several" && r.options).toContain("ACE MENTOR PROGRAM OF CLEVELAND");
+    expect(r.kind === "several" && r.options.length).toBeLessThanOrEqual(6);
+  });
+  test("the exact name typed is found, with a warning when others share its words", () => {
+    expect(peerCheck("Open Doors Academy", ["Open Doors Inc aka Open Doors Academy", "OPEN DOORS ACADEMY"]))
+      .toEqual({ kind: "found", name: "OPEN DOORS ACADEMY", shared: true });
+  });
+  test("a name nothing contains offers what is close", () => {
+    expect(peerCheck("ace mentor cleveland", [], ["ACE MENTOR PROGRAM OF CLEVELAND", "ACE MENTOR PROGRAM OF CLEVELAND", "ACE MENTORING"]))
+      .toEqual({ kind: "suggest", options: ["ACE MENTOR PROGRAM OF CLEVELAND", "ACE MENTORING"] });
+  });
+  test("nothing exact and nothing close is missing", () => {
+    expect(peerCheck("zzqx not a real org", [], [])).toEqual({ kind: "missing", ein: false });
   });
 });

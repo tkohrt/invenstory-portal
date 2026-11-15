@@ -2657,3 +2657,12 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .peer-rows>.sb-btn{justify-self:start}
 .peer-card{border-left:4px solid #b8860b}
 .peer-card.ok{border-left-color:#1f4d2e}
+/* Peer check (patch 49): what Ground Truth found for each name, said under it. */
+.peer-item{display:grid;gap:3px}
+.peer-check{font-size:12.5px;line-height:1.45;color:var(--muted);padding:2px 2px 4px}
+.peer-check.found{color:#1f4d2e}
+.peer-check.several,.peer-check.suggest,.peer-check.missing{color:#7a5b10}
+.peer-check-more{display:block;color:var(--muted)}
+.peer-options{display:flex;flex-wrap:wrap;gap:6px;margin:5px 0 3px}
+.peer-option{font:inherit;font-size:12.5px;padding:3px 10px;border-radius:999px;border:1px solid #d9c489;background:#fff;color:var(--ink);cursor:pointer}
+.peer-option:hover{background:#fdf3d6}
