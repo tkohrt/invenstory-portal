@@ -7,6 +7,7 @@
 import { ORG_TYPES, homeLabel, reachLabels, isUsBased, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { countryNames, regionNames, textNames, COUNTRY_NAME } from "@/lib/countries";
 import { statesNamed } from "@/lib/us-states";
+import { isAbroad, hasUsEntity, hasUsSponsor, outsideRestriction, US_ONLY, BEYOND_US } from "@/lib/place-gate";
 import type { GrantCard, RawGrantResult } from "@/lib/ledger-types";
 
 /** "$500,000" -> 500000. Anything unparseable -> null, never NaN. */
@@ -194,6 +195,13 @@ const INVITES: Record<string, RegExp> = {
   fiscally_sponsored: /\bfiscal(ly)? sponsor/i,
 };
 
+// The international screen (patch 47). Outside the US a nonprofit is an NGO,
+// a charity or a civil society organisation, and "501(c)(3)" in a call's text
+// is a requirement it does not meet, never a sign it is invited.
+const C3 = /501\s*\(?c\)?\s*\(?3\)?/i;
+const NGO_INVITE = /\b(nonprofit organi[sz]ations?|non-profit organi[sz]ations?|not-for-profit|NGOs?|non-governmental organi[sz]ations?|civil society organi[sz]ations?|CSOs?|community-based organi[sz]ations?|CBOs?|charit(y|ies)|faith-based)\b/i;
+const ENTERPRISE_INVITE = /\b(SMEs?|small and medium[- ]sized enterprises?|social enterprises?)\b/i;
+
 const GOV_ONLY = /\b(units? of local government|state agencies only|governmental entities only|tribal governments only)\b/i;
 
 // ---- The hardened screen's patterns (patch 44). Conservative on purpose:
@@ -321,7 +329,7 @@ export function qualifyGrantIds<T extends { opportunity_number?: string; title?:
  */
 export function screenGrant(
   g: GrantCard, p: EligibilityProfile, today = new Date(),
-  opts?: { allowClosed?: boolean },
+  opts?: { allowClosed?: boolean; /** For Granted reviewed this record (curated lists): never dropped by the US database default. */ reviewed?: boolean },
 ): ScreenedGrant | null {
   const title = g.title ?? g.name ?? g.opportunity_number ?? "Untitled opportunity";
   // The id is assigned once by qualifyGrantIds, before the merge, and must not
@@ -348,9 +356,19 @@ export function screenGrant(
   const blockers: string[] = [];
   const positives: string[] = [];
 
-  const isNonprofit = p.org_type === "nonprofit_501c3" || p.tax_status === "501c3";
+  // Where the client stands (patch 47). Registered abroad, the tax status is
+  // the only thing that makes an organization a 501(c)(3): the form's one
+  // nonprofit choice is labelled "501(c)(3)", and a Kenyan NGO that picks it
+  // is not one. Registered in the US, nothing changes.
+  const abroad = isAbroad(p);
+  const usEntity = hasUsEntity(p);
+  const usSponsor = hasUsSponsor(p);
+  const home = abroad ? (COUNTRY_NAME[p.country_code as string] ?? "another country") : null;
+  const isNonprofit = abroad ? p.tax_status === "501c3" : (p.org_type === "nonprofit_501c3" || p.tax_status === "501c3");
   if (NONPROFIT_ONLY.test(elig)) {
     if (isNonprofit) positives.push("restricted to 501(c)(3)s, which you are");
+    else if (abroad && !C3.test(elig) && p.org_type === "nonprofit_501c3") positives.push("restricted to nonprofits, which you are");
+    else if (abroad && usSponsor && C3.test(elig)) blockers.push("requires 501(c)(3) status; open to you only through your US fiscal sponsor");
     else return null;                       // structurally impossible, not a "check"
   }
   if (GOV_ONLY.test(elig) && p.org_type !== "government" && p.org_type !== "tribal") return null;
@@ -376,11 +394,46 @@ export function screenGrant(
     const overlap = namedStates.some(c => clientStates.has(c));
     if (!overlap) {
       const where = namedStates.join(", ");
-      if (clientStates.size && !GEO_SOFT.test(elig)) return null;   // restricted to states that are not yours
+      // Patch 47: a client registered abroad has a known location, and it is
+      // not a US state. "Location not on file" is only for a US client with no state.
+      const located = clientStates.size > 0 || abroad;
+      if (located && !GEO_SOFT.test(elig)) return null;   // restricted to states that are not yours
       blockers.push(clientStates.size
         ? `gives priority to ${where}; you are outside it`
+        : abroad ? `gives priority to ${where}; you are registered in ${home}`
         : `appears restricted to ${where} and your location is not on file`);
     }
+  }
+
+  // ---- The international screen (patch 47; Shane, 15 Nov: hold for any
+  // international client, starting with Africa). ----
+
+  // US-only wording, for a client with no US entity. A US fiscal sponsor is a
+  // real route, so it caps at "check" and says so instead of excluding.
+  if (abroad && !usEntity && US_ONLY.test(elig)) {
+    if (usSponsor) blockers.push("limited to US organizations; open to you only through your US fiscal sponsor");
+    else if (GEO_SOFT.test(elig)) blockers.push(`gives priority to US organizations; you are registered in ${home}`);
+    else return null;
+  }
+  // The country gate, for every client: a closed list of countries or regions
+  // ("registered in Ghana, Kenya or Rwanda", "based in West Africa") that the
+  // client is not in. Registration wording is answered by the country of
+  // registration alone; presence and work wording by anywhere the client works.
+  const outside = outsideRestriction(elig, p);
+  if (outside) {
+    if (!GEO_SOFT.test(elig)) return null;
+    blockers.push(`gives priority to ${outside.label}; you are outside it`);
+  }
+  // The US database default: Ground Truth's base is US money. For a client
+  // with no US entity and no US fiscal sponsor, a base record stays only when
+  // its own text names a place the client works or says it funds beyond the
+  // United States (the mirror of the EU rule in lib/open-data.ts). Records For
+  // Granted reviewed (the overlay, curated lists) are never dropped by this:
+  // a person already decided they belong.
+  const fromBase = (g.source ?? "ledger") === "ledger" && !opts?.reviewed && !(g as { _overlay?: unknown })._overlay;
+  if (abroad && !usEntity && !usSponsor && fromBase) {
+    const said = `${title} ${elig} ${g.match_reason ?? ""}`;
+    if (!placeNamed(said, p) && !BEYOND_US.test(said)) return null;
   }
   // County-level place restriction: resolve when we can, never claim when we cannot.
   const countyM = elig.match(COUNTY_RE);
@@ -434,8 +487,11 @@ export function screenGrant(
   // Affirmative signals. Each is weak alone; together they distinguish a lead
   // worth an hour from one worth a glance.
   const haystack = `${title} ${elig}`;
-  const invite = p.org_type ? INVITES[p.org_type] : undefined;
-  const invited = !!invite && invite.test(elig);
+  // Abroad (patch 47): an NGO is invited by NGO words, never by "501(c)(3)";
+  // a company also by the words funders use outside the US.
+  const invite = abroad && !isNonprofit && p.org_type === "nonprofit_501c3" ? NGO_INVITE
+    : p.org_type ? INVITES[p.org_type] : undefined;
+  const invited = (!!invite && invite.test(elig)) || (abroad && p.org_type === "for_profit" && ENTERPRISE_INVITE.test(elig));
   if (invited) positives.push("eligibility text names your organization type");
 
   if (p.state_code && new RegExp(`\\b${p.state_code}\\b`).test(haystack)) {

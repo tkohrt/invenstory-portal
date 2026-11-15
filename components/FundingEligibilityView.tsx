@@ -191,7 +191,7 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         </div>
         <div className="fe-row">
           <div className="fe-field"><label>EIN (optional)</label><input value={p.ein ?? ""} onChange={e => set({ ein: e.target.value })} placeholder="12-3456789" /></div>
-          <div className="fe-field"><label>Fiscal sponsor (if any)</label><input value={p.fiscal_sponsor ?? ""} onChange={e => set({ fiscal_sponsor: e.target.value })} /></div>
+          <div className="fe-field"><label>{homeCountry(p) === "US" ? "Fiscal sponsor (if any)" : "US fiscal sponsor (if any)"}</label><input value={p.fiscal_sponsor ?? ""} onChange={e => set({ fiscal_sponsor: e.target.value })} /></div>
         </div>
       </section>
 

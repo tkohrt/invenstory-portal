@@ -89,7 +89,7 @@ export async function sweepCuratedList(listId: string): Promise<{ ok: true; entr
     const p = await getEligibilityProfile(t.id).catch(() => null);
     if (!p || !p.org_type) continue;
     for (const e of grants) {
-      const s = screenGrant({ ...curatedCard(e.fields), id: e.id } as Parameters<typeof screenGrant>[0], p, today);
+      const s = screenGrant({ ...curatedCard(e.fields), id: e.id } as Parameters<typeof screenGrant>[0], p, today, { reviewed: true });
       if (!s || s.verdict === "watch") continue;
       const { error } = await db.from("curated_match").upsert({
         tenant_id: t.id, list_id: listId, overlay_id: e.id, verdict: s.verdict,
