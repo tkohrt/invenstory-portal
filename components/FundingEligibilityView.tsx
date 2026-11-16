@@ -15,6 +15,9 @@ import type { EligField } from "@/lib/analysis-derive";
 import { savePeerOrgsAction } from "@/lib/server/peer-actions";
 import { cleanPeerOrgs, peersChanged, PEER_ASK } from "@/lib/peers";
 import AllowanceRequest from "./AllowanceRequest";
+import GovReadinessSection from "./GovReadinessSection";
+import GovInterestCard from "./GovInterestCard";
+import type { GovAnswers } from "@/lib/gov-readiness";
 
 export function TagField({ label, values, onChange, placeholder, hint }: { label: string; values: string[]; onChange: (v: string[]) => void; placeholder: string; hint?: string }) {
   const [draft, setDraft] = useState("");
@@ -82,8 +85,10 @@ export function CountryField({ label, values, onChange, exclude }: { label: stri
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [], readinessPct, suggestions = [] }: {
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [], readinessPct, suggestions = [], gov = null }: {
   profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[]; readinessPct?: number; suggestions?: OpenSuggestion[];
+  /** The RFP Engine (patch 53): null before migration 0094. Switch off shows the one interest question; on shows the six gates. */
+  gov?: { engineOn: boolean; interest: "yes" | "no" | null; answers: GovAnswers } | null;
 }) {
   const router = useRouter();
   // Peer organizations (patch 48). Saved on their own: they are not part of
@@ -246,6 +251,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         })}</div>
       </section>
 
+      {/* Asked of every client while the RFP Engine is off (patch 53). A yes
+          tells For Granted; only For Granted turns the engine on. */}
+      {gov && !gov.engineOn && <GovInterestCard interest={gov.interest} adminViewing={adminViewing} />}
+
       <section className="acct-card">
         <h3>Identity</h3>
         <div className="fe-field"><label>Applicant type</label>
@@ -359,6 +368,10 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
         {msg && <span className="gap-note">{msg}</span>}
       </div>
       <p className="acct-note" style={{ marginTop: 14 }}>Funder Matches screens funders against these facts, so keeping them current keeps the matches right.</p>
+
+      {/* The six government gates (patch 53), saved on their own below the
+          profile's Save so the two never look like one form. */}
+      {gov?.engineOn && <GovReadinessSection answers={gov.answers} adminViewing={adminViewing} />}
     </div>
   );
 }

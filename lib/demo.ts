@@ -59,6 +59,9 @@ export const DEMO_WIPE_TABLES: readonly string[] = [
   // Top-level content and state.
   "grant_draft", "document", "match_run", "eligibility_gap", "eligibility_profile",
   "search_profile", "plant_state", "voice_profile", "tenant_setup",
+  // Government readiness (0094): the interest answer and the six gates. The
+  // rfp_engine switch itself is a feature_visibility row and stays, like the rest.
+  "gov_readiness",
 ];
 
 /**

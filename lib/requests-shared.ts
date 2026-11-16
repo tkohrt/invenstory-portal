@@ -28,4 +28,5 @@ export const KIND_LABEL: Record<string, string> = {
   approach_request: "Approach requested",
   eligibility_miss: "Eligibility miss",
   website_lead: "Website lead",
+  gov_interest: "Government-contract interest",
 };

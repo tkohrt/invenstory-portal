@@ -48,6 +48,10 @@ const TENANT_SCOPED = new Set([
   "discovery_run", "discovered_lead",
   // A client's own view of its matches, patch 7 (0075).
   "client_match_view",
+  // Government readiness, the RFP Engine's gate profile (0094). The RFP index
+  // itself (rfp_source, rfp_notice, rfp_ingest_run, 0093) is deliberately
+  // absent: one shared index of public notices with no tenant_id.
+  "gov_readiness",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);

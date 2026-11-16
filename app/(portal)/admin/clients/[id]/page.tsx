@@ -14,6 +14,10 @@ import { db } from "@/lib/server/db";
 import AdminChatFeedback from "@/components/AdminChatFeedback";
 import { chatFeedback } from "@/lib/server/portal-guide";
 import { isDemoTenant } from "@/lib/demo";
+import RfpEngineCard from "@/components/RfpEngineCard";
+import { rfpEngineOn, getGovReadiness } from "@/lib/server/gov-readiness";
+import { gateLines } from "@/lib/gov-readiness";
+import { tenantIsBrain } from "@/lib/server/brain";
 
 export default async function ClientActivityPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ m?: string }>;
@@ -39,6 +43,15 @@ export default async function ClientActivityPage({ params, searchParams }: {
   // tenant-safe: one tenant row by id, admin page.
   const { data: wRow } = await db.from("tenant").select("welcome_note, welcome_video_url").eq("id", id).maybeSingle();
   const w = (wRow as { welcome_note: string | null; welcome_video_url: string | null } | null) ?? null;
+  // The RFP Engine switch (patch 53). Never fatal; not offered for the Brain.
+  // tenant-safe: one tenant row by id, admin page.
+  const { data: nameRow } = await db.from("tenant").select("name").eq("id", id).maybeSingle();
+  const orgName = (nameRow as { name: string } | null)?.name ?? "this client";
+  const [rfpOn, gov, brain] = await Promise.all([
+    rfpEngineOn(id).catch(() => false),
+    getGovReadiness(id).catch(() => ({ available: false as const, interest: null, answers: {}, updatedAt: null })),
+    tenantIsBrain(id).catch(() => false),
+  ]);
   if (!data) notFound();
   return (
     <>
@@ -49,6 +62,7 @@ export default async function ClientActivityPage({ params, searchParams }: {
       )}
       {setup && <AdminSetupPanel tenantId={id} state={setup} ownerName={setupOwner} />}
       <WelcomeCard tenantId={id} note={w?.welcome_note ?? ""} videoUrl={w?.welcome_video_url ?? ""} setupDone={setup?.status === "complete"} />
+      {!brain && <RfpEngineCard tenantId={id} orgName={orgName} on={rfpOn} available={gov.available} interest={gov.interest} gates={gateLines(gov.answers)} />}
       <AdminChatFeedback items={feedback} />
       <ClientActivityView data={data} voice={voice} reader={reader} />
     </>
