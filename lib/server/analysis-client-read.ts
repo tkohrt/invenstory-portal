@@ -18,7 +18,8 @@ import {
   deriveReadiness, deriveEligibility, readinessScore, essentialsAtLeastThin,
   type AnalysedDoc, type ItemState,
 } from "@/lib/analysis-derive";
-import { openSuggestions, unlocks, type OpenSuggestion, type SuggestionDecision } from "@/lib/analysis-client";
+import { openSuggestions, unlocks, typesWaiting, type OpenSuggestion, type SuggestionDecision, type TypeWaiting } from "@/lib/analysis-client";
+import { onAnalysis } from "./analysis-source";
 import { decideClientRun, type CapDecision } from "@/lib/analysis-cap";
 import { checkAllowance, pendingAllowanceRequest } from "./allowance";
 import type { SpeakerRoster } from "@/lib/transcript-speakers";
@@ -138,4 +139,33 @@ export async function getClientAnalysis(tenantId: string): Promise<ClientAnalysi
       lockedByFG: !!d.typeTag && admins.has(taggedBy.get(d.id) ?? ""),
     })).sort((a, b) => Number(!!a.tag) - Number(!!b.tag) || a.title.localeCompare(b.title)),
   };
+}
+
+/**
+ * What a client on the analysis still has to do, for the pages they already
+ * use (patch 52): eligibility answers found in their documents, shown on
+ * Funding Eligibility, and documents waiting for a type, shown on the
+ * Inven(s)tory page. Both lived only on the Analyze page, which is off unless
+ * For Granted turns it on, so a new client had nowhere to do either.
+ *
+ * Empty for a client still on the old reads: there a type changes nothing, and
+ * saying it would mark a 990 as covered would be untrue. Never throws: these
+ * are additions to pages that must open regardless.
+ */
+export async function getClientTasks(tenantId: string): Promise<{ suggestions: OpenSuggestion[]; types: TypeWaiting[] }> {
+  const none = { suggestions: [], types: [] };
+  try {
+    if (!(await onAnalysis(tenantId))) return none;
+    const [{ docs }, profile, { data: decRows }] = await Promise.all([
+      analysedDocs(tenantId),
+      getEligibilityProfile(tenantId),
+      db.from("analysis_suggestion_decision").select("field, value_key, decision").eq("tenant_id", tenantId),
+    ]);
+    const decisions: SuggestionDecision[] = ((decRows ?? []) as { field: string; value_key: string; decision: "confirmed" | "rejected" }[])
+      .map(r => ({ field: r.field, valueKey: r.value_key, decision: r.decision }));
+    return { suggestions: openSuggestions(deriveEligibility(docs, profile), decisions), types: typesWaiting(docs) };
+  } catch (e) {
+    console.error("[analysis] client tasks could not be read", e instanceof Error ? e.message : e);
+    return none;
+  }
 }

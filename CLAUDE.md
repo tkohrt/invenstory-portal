@@ -232,3 +232,13 @@ which is minutes and real money. Getting that wrong wastes both.
 - Tier dots are drawn (`.tier-dot` in `app/globals.css`), never emoji, and the key uses the same class so colours always match. Four tiers: critical, essential, important, enriching.
 - The card shows when documents were last analyzed and says so when that is over `ANALYSIS_STALE_DAYS` (60) days ago.
 
+## Client tasks on the pages clients use (patch 52, 15 November 2026)
+
+First step of moving fully onto the Inven(s)tory Analysis (project doc "Moving Fully onto the Inven(s)tory Analysis, Patch Plan").
+
+- `getClientTasks` (`lib/server/analysis-client-read.ts`) returns, for a client on the analysis only, the open eligibility suggestions and the read documents with no person-set type. Empty for a client on the old reads; never throws.
+- Funding Eligibility shows "Found in your documents" (`components/FoundInDocuments.tsx`); the Inven(s)tory page shows "Confirm what each document is" (`components/DocTypesWaiting.tsx`, using `DocTypePicker`). Each appears only when something is waiting.
+- Nothing is saved to the profile without a person's click. The client confirms their own answers; For Granted can also confirm or turn one down while viewing the client (Shane, 15 Nov 2026), with a note on the card saying it is recorded under their name (`decided_by`, and the audit log).
+- The suggestion actions now also open to a client who is on the analysis with the Analyze page switched off.
+- Confirming on Funding Eligibility also updates the form's own state (`applySuggestion`), because that form saves its whole state: without it, a later Save would put the old value back.
+

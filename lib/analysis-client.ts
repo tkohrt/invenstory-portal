@@ -68,3 +68,20 @@ export function unlocks(input: { analysed: boolean; eligibilityConfirmed: boolea
     ],
   };
 }
+
+// ---- Document types waiting for a person (patch 52) ----
+
+export interface TypeWaiting { id: string; title: string; suggested: string | null }
+
+/**
+ * The read documents nobody has given a type yet, the ones with a suggestion
+ * first because those take one click. On the analysis a file item (a 990, a
+ * budget, a board roster) is covered only by a document a person has typed, so
+ * this list is what stands between a new client and an honest readiness score.
+ */
+export function typesWaiting(docs: { id: string; title: string; typeTag?: string | null; docType?: string | null }[]): TypeWaiting[] {
+  return docs
+    .filter(d => !d.typeTag)
+    .map(d => ({ id: d.id, title: d.title, suggested: d.docType && d.docType !== "other" ? d.docType : null }))
+    .sort((a, b) => Number(!a.suggested) - Number(!b.suggested) || a.title.localeCompare(b.title));
+}

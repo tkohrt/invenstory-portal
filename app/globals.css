@@ -2688,3 +2688,19 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .fe-ready:hover{text-decoration:underline}
 /* The peers Save button rests, greyed, until there is something to save (patch 51). */
 .btn.peer-save:disabled{background:#e6e8ea;color:#7b8087;border-color:#e6e8ea;cursor:default;opacity:1}
+
+/* Client tasks on the pages clients already use (patch 52). */
+.found-card,.types-card{border-left:4px solid #b8860b}
+.found-list{display:grid;gap:10px;margin-top:6px}
+.found-item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;font-size:13.5px}
+.found-now{color:var(--muted);font-weight:400}
+.found-warn{color:#8a5a00;font-size:12.5px;margin-top:3px}
+.found-val{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.found-val-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.found-val-text{font-weight:600}
+.found-acts{display:inline-flex;gap:6px}
+.btn.found-yes,.btn.found-no{width:auto;margin:0;font-size:12.5px;padding:4px 10px;height:auto}
+.found-src{font-size:12px;color:var(--muted);margin-top:4px}
+.types-list{display:grid;gap:6px;margin-top:6px}
+.types-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff;font-size:13.5px}
+.types-title{font-weight:600;min-width:0;overflow-wrap:anywhere}

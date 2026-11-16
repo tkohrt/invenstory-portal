@@ -10,6 +10,7 @@ import { getSession } from "./session";
 import { getFeatureVisible } from "./data";
 import { db } from "./db";
 import { getEligibilityProfile } from "./eligibility";
+import { onAnalysis } from "./analysis-source";
 import { saveEligibilityProfileAction } from "./eligibility-actions";
 import { analysedDocs } from "./analysis-client-read";
 import { deriveEligibility, type EligField } from "@/lib/analysis-derive";
@@ -20,7 +21,9 @@ const PAGE = "/analysis";
 async function clientOrAdmin() {
   const s = await getSession();
   if (!s) throw new Error("Please sign in again.");
-  if (s.role !== "admin" && !(await getFeatureVisible(s.tenantId, "analysis"))) {
+  // A client on the analysis reaches these from Funding Eligibility whether or
+  // not the Analyze page is switched on for them (patch 52).
+  if (s.role !== "admin" && !(await getFeatureVisible(s.tenantId, "analysis")) && !(await onAnalysis(s.tenantId))) {
     throw new Error("Inven(s)tory Analysis is not turned on for this account yet.");
   }
   return s;
@@ -45,6 +48,9 @@ async function currentOpen(tenantId: string) {
  */
 export async function decideSuggestionAction(field: string, value: string, decision: "confirmed" | "rejected") {
   const s = await clientOrAdmin();
+  // The answers are the client's to confirm, and For Granted can confirm or
+  // turn one down while viewing the client (Shane, 15 Nov 2026). Who decided
+  // is on the decision row and in the audit log.
   if (decision !== "confirmed" && decision !== "rejected") throw new Error("Choose confirm or not right.");
   const { profile, open } = await currentOpen(s.tenantId);
   const sug = open.find(x => x.field === field);
@@ -63,7 +69,7 @@ export async function decideSuggestionAction(field: string, value: string, decis
     actor_user_id: s.user.id, tenant_id: s.tenantId, action: "analysis_eligibility",
     detail: `${f}=${decision}`,
   });
-  revalidatePath(PAGE);
+  revalidatePath(PAGE); revalidatePath("/funding-eligibility");
 }
 
 /** "These answers are right": the client has been through every suggestion. */

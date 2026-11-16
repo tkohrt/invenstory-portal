@@ -6,6 +6,8 @@ import { getGaps } from "@/lib/server/eligibility";
 import { asksForClient } from "@/lib/server/asks";
 import ClientAsks from "@/components/ClientAsks";
 import { tenantIsBrain } from "@/lib/server/brain";
+import { getClientTasks } from "@/lib/server/analysis-client-read";
+import DocTypesWaiting from "@/components/DocTypesWaiting";
 
 export default async function InvenstoryPage({ searchParams }: { searchParams: Promise<{ item?: string; brain?: string; upload?: string }> }) {
   const sp = await searchParams;
@@ -16,12 +18,14 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
   if (!session) redirect("/");
   // The Brain (Auto-Draft patch 3) has documents only: no readiness, contact or asks.
   const brain = await tenantIsBrain(session.tenantId);
-  const [tenant, docs, contact, gapData, asks] = await Promise.all([
+  const [tenant, docs, contact, gapData, asks, tasks] = await Promise.all([
     getTenant(session.tenantId),
     getDocumentsWithTags(session.tenantId, session.role !== "admin"),
     brain ? Promise.resolve(null) : getPrimaryContact(session.tenantId),
     brain ? Promise.resolve(null) : getGaps(session.tenantId),
     brain ? Promise.resolve([]) : asksForClient(session.tenantId),
+    // Documents waiting for a type (patch 52): a client on the analysis only.
+    brain ? Promise.resolve({ suggestions: [], types: [] }) : getClientTasks(session.tenantId),
   ]);
   if (!tenant) redirect("/");
   const upload = sp.upload === "I" || sp.upload === "II" || sp.upload === "III" ? sp.upload : null;
@@ -38,7 +42,10 @@ export default async function InvenstoryPage({ searchParams }: { searchParams: P
       isAdmin={session.role === "admin"}
       openUpload={upload}
       brain={brain ? { closedPage: sp.brain === "closed" } : null}
-      asks={asks.length ? <ClientAsks asks={asks} isAdmin={session.role === "admin"} tenantName={tenant.name} /> : null}
+      asks={asks.length || tasks.types.length ? <>
+        <DocTypesWaiting types={tasks.types} />
+        {asks.length ? <ClientAsks asks={asks} isAdmin={session.role === "admin"} tenantName={tenant.name} /> : null}
+      </> : null}
     />
   );
 }

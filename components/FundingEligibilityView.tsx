@@ -9,6 +9,9 @@ import { ORG_TYPES, TAX_STATUS, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, US_ST
 import { COUNTRY_OPTIONS, COUNTRY_NAME, REGIONS } from "@/lib/countries";
 import Busy from "./Busy";
 import PeerOrgsField from "./PeerOrgsField";
+import FoundInDocuments from "./FoundInDocuments";
+import { applySuggestion, type OpenSuggestion } from "@/lib/analysis-client";
+import type { EligField } from "@/lib/analysis-derive";
 import { savePeerOrgsAction } from "@/lib/server/peer-actions";
 import { cleanPeerOrgs, peersChanged, PEER_ASK } from "@/lib/peers";
 import AllowanceRequest from "./AllowanceRequest";
@@ -79,8 +82,8 @@ export function CountryField({ label, values, onChange, exclude }: { label: stri
   );
 }
 
-export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [], readinessPct }: {
-  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[]; readinessPct?: number;
+export default function FundingEligibilityView({ profile, orgName, adminViewing, gaps, gapsComputedAt, peerOrgs = [], readinessPct, suggestions = [] }: {
+  profile: EligibilityProfile; orgName: string; adminViewing: boolean; gaps: Gap[]; gapsComputedAt: string | null; peerOrgs?: string[]; readinessPct?: number; suggestions?: OpenSuggestion[];
 }) {
   const router = useRouter();
   // Peer organizations (patch 48). Saved on their own: they are not part of
@@ -154,6 +157,12 @@ export default function FundingEligibilityView({ profile, orgName, adminViewing,
 
       <div className="fe-progress"><div className="fe-bar"><span style={{ width: `${completeness}%` }} /></div><b>Profile {completeness}% complete</b>
         {gapsComputedAt && typeof readinessPct === "number" && <a className="fe-ready" href="/readiness">Document readiness {readinessPct}%</a>}</div>
+
+      {/* Answers found in the client's documents (patch 52). Confirming one
+          saves it through the profile's own save; the form is told too, so the
+          field shows it and a later Save cannot put the old value back. */}
+      <FoundInDocuments suggestions={suggestions} adminViewing={adminViewing}
+        onConfirmed={(field, value) => setP(cur => applySuggestion(cur, field as EligField, value))} />
 
       <section className={`acct-card peer-card ${named >= PEER_ASK ? "ok" : ""}`}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
