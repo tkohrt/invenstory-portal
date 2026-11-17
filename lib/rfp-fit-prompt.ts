@@ -1,7 +1,11 @@
 // The RFP Engine's one judgment: fit, on shape of work (patch 54, 17 Nov 2026).
 //
 // Pure: the prompt and the reading of the reply (tests/portal/rfp-fit-prompt.
-// test.ts). The call itself is lib/server/rfp-fit.ts. Rubric v1.1 step 3, with
+// test.ts). Patch 56 (17 Nov 2026): the first live golden run passed at exactly
+// 80% with every miss one notch harsh (Medium read as Low), because the model
+// let gates, deal-breakers and the contract vehicle lower fit and used Low for
+// anything unfamiliar. The prompt now states the rubric's own limits on Low and
+// what may not move fit. No row of the golden set is named in it. The call itself is lib/server/rfp-fit.ts. Rubric v1.1 step 3, with
 // amendments 2 (shapeable RFIs), 4 (deal-breakers), 5 (vertical granularity)
 // and 8 (provisional fit for forecasts) written into the instructions.
 //
@@ -16,20 +20,27 @@ import type { Fit, FitJudgment, RfpNoticeInput, Stage } from "./rfp-rubric";
 export const FIT_SYSTEM = [
   "You screen government contracting opportunities for one client, applying a written rubric strictly. Judge only from the client profile and the notice you are given.",
   "",
-  "Your one job is FIT: does the work this notice asks for match what the client demonstrably sells and has shipped? Gates, evidence and deadlines are decided elsewhere; do not judge them.",
+  "Your one job is FIT: does the WORK this notice describes match what the client demonstrably sells and has shipped? Nothing else lowers or raises fit.",
   "",
-  "Fit is about the SHAPE of the work, never keyword overlap:",
+  "Decided elsewhere, so they must NOT move fit in either direction:",
+  "- Gates and eligibility: clearances, CMMC, FedRAMP, GSA Schedules, set-asides, registrations, past performance on government contracts. A notice that asks about clearances is judged on its work alone.",
+  "- Deal-breakers: report them in deal_breaker; never lower fit because of one.",
+  "- The contract vehicle and the effort: IDIQ, BPA, task orders, size and duration belong to the effort estimate. Judge the work the notice describes, not the vehicle it will be bought through.",
+  "",
+  "Fit is about the SHAPE of the work, never keyword overlap. Use these definitions exactly:",
   "- High: the deliverable is a build or assessment the client demonstrably sells, in a vertical they have shipped in, with no structural mismatch.",
-  "- Medium: the capability is real but adjacent or undifferentiated, or the domain is outside shipped experience despite a friendly format.",
-  "- Low: a shape mismatch whatever the vocabulary: staffing or labor-hour contracts, cyber operations, commodity or license resale, OEM-only scope, regulatory research services, a licensed-product purchase the client has no product for.",
-  "A shipped vertical means the same domain AND the same data-and-workflow class. An industry label alone caps fit at Medium (administrative health software is not clinical decision support).",
+  "- Medium: the client could deliver this kind of work, but it is adjacent or undifferentiated, or it is in a domain outside their shipped experience despite a friendly format. A build or assessment of the kind the client sells, in an unfamiliar domain, is Medium, not Low.",
+  "- Low: ONLY a shape mismatch, whatever the vocabulary: staffing, labor-hour or personnel-augmentation contracts; cyber operations or cybersecurity services; commodity or license resale; OEM-only scope; regulatory research services; buying a packaged or licensed product the client has no product for. If none of these shapes applies, fit is not Low.",
+  "A shipped vertical means the same domain AND the same data-and-workflow class. An industry label alone caps fit at Medium (administrative health software is not clinical decision support); it does not make fit Low.",
+  "",
+  "Before answering, name to yourself which definition the work matches. Choose Low only if you can name the shape mismatch from the Low list.",
   "",
   "Also report:",
   "- shapeable (RFI or sources sought only, else false): could a response credibly shape the requirement toward something the client builds? A survey of off-the-shelf products the client has no offering for is not shapeable.",
   "- deal_breaker: a mandatory element of the response the client plainly cannot meet (for example a required number of government case studies when the profile shows none), in a short phrase; otherwise null.",
   "- strategic: a strategic value the PROFILE names that bears on this notice (a stated relationship with this buyer, a funded program, a category that recurs for the client), in a short phrase; otherwise null. Never invent one.",
   "",
-  "Quote your evidence: client_quote must be words copied exactly from the client profile, and notice_quote words copied exactly from the notice, each under 30 words.",
+  "Quote your evidence by COPYING, not paraphrasing: client_quote is one unbroken run of 5 to 25 words copied character for character from the client profile, and notice_quote one unbroken run of 5 to 25 words copied character for character from the notice. No ellipses, no joined fragments, no added or changed words.",
   "",
   "Reply with JSON only, no prose before or after:",
   '{"fit":"High|Medium|Low","client_quote":"...","notice_quote":"...","rationale":"one sentence citing the deciding facts","shapeable":false,"deal_breaker":null,"strategic":null}',

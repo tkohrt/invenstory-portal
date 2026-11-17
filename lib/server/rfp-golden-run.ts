@@ -14,6 +14,7 @@ export interface GoldenRowResult {
   id: string; label: string; expected: Action; accept: Action[]; got: Action | null;
   agreed: boolean; comparable: boolean; fit: string | null; frozenFit: string | null;
   rationale: string | null; quotesVerified: boolean | null; byRules: boolean;
+  evidence: { from: "client" | "notice"; text: string }[];
 }
 export interface GoldenRunResult {
   ok: boolean; error?: string;
@@ -46,12 +47,12 @@ export async function runGolden(userId: string): Promise<GoldenRunResult> {
       const s = screenRfp(r.notice, GOLDEN_GATES, GOLDEN_AS_OF);
       const base = { id: r.id, label: r.label, expected: r.expected, accept, comparable: r.comparable, frozenFit: r.frozen?.fit ?? null };
       if (s.action) {
-        return { ...base, got: s.action, agreed: accept.includes(s.action), fit: null, rationale: s.notes[0] ?? null, quotesVerified: null, byRules: true };
+        return { ...base, got: s.action, agreed: accept.includes(s.action), fit: null, rationale: s.notes[0] ?? null, quotesVerified: null, byRules: true, evidence: [] };
       }
       const j = await judgeFit(profile, r.notice, s.stage);
-      if (!j) return { ...base, got: null, agreed: false, fit: null, rationale: "No usable reply from the model.", quotesVerified: null, byRules: false };
+      if (!j) return { ...base, got: null, agreed: false, fit: null, rationale: "No usable reply from the model.", quotesVerified: null, byRules: false, evidence: [] };
       const v = verdict(s, j);
-      return { ...base, got: v.action, agreed: accept.includes(v.action), fit: j.fit, rationale: j.rationale, quotesVerified: j.quotesVerified, byRules: false };
+      return { ...base, got: v.action, agreed: accept.includes(v.action), fit: j.fit, rationale: j.rationale, quotesVerified: j.quotesVerified, byRules: false, evidence: j.evidence };
     }));
 
   const agreed = rows.filter(r => r.agreed).length;
@@ -65,7 +66,7 @@ export async function runGolden(userId: string): Promise<GoldenRunResult> {
   const { error } = await db.from("rfp_golden_run").insert({
     run_by: userId, rubric_version: RUBRIC_VERSION, model: CHAT_MODEL_ID || "unknown",
     comparable: rows.length, agreed, agreement: Number(agreement.toFixed(4)), bar: GOLDEN_BAR, passed,
-    rows: rows.map(r => ({ id: r.id, expected: r.expected, got: r.got, fit: r.fit, frozen_fit: r.frozenFit, agreed: r.agreed, by_rules: r.byRules, quotes_verified: r.quotesVerified, rationale: r.rationale })),
+    rows: rows.map(r => ({ id: r.id, expected: r.expected, got: r.got, fit: r.fit, frozen_fit: r.frozenFit, agreed: r.agreed, by_rules: r.byRules, quotes_verified: r.quotesVerified, rationale: r.rationale, evidence: r.evidence })),
   });
   if (error) console.error("[rfp-golden] run not recorded", error.message);
   return {

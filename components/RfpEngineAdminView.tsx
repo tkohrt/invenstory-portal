@@ -88,6 +88,11 @@ export default function RfpEngineAdminView({ status }: { status: RfpAdminStatus 
                     {!r.agreed && ` (settled: ${ACTION_LABEL[r.expected]})`}
                     {r.fit && `. Fit ${r.fit}${r.frozenFit && r.fit !== r.frozenFit ? `, settled ${r.frozenFit}` : ""}${r.quotesVerified === false ? ", quotes not found in source" : ""}`}
                     {r.byRules ? ". Decided by the rules." : r.rationale ? `. ${r.rationale}` : ""}
+                    {r.quotesVerified === false && r.evidence.length > 0 && (
+                      <span style={{ display: "block", marginTop: 2 }}>
+                        Quotes given: {r.evidence.map(e => `${e.from === "client" ? "profile" : "notice"}: \u201c${e.text}\u201d`).join("; ")}
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
