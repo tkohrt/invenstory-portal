@@ -15,6 +15,8 @@ import AdminChatFeedback from "@/components/AdminChatFeedback";
 import { chatFeedback } from "@/lib/server/portal-guide";
 import { isDemoTenant } from "@/lib/demo";
 import RfpEngineCard from "@/components/RfpEngineCard";
+import RfpScanCard, { type LastRun } from "@/components/RfpScanCard";
+import { getRfpProfile } from "@/lib/server/rfp-run";
 import { rfpEngineOn, getGovReadiness } from "@/lib/server/gov-readiness";
 import { gateLines } from "@/lib/gov-readiness";
 import { tenantIsBrain } from "@/lib/server/brain";
@@ -52,6 +54,12 @@ export default async function ClientActivityPage({ params, searchParams }: {
     getGovReadiness(id).catch(() => ({ available: false as const, interest: null, answers: {}, updatedAt: null })),
     tenantIsBrain(id).catch(() => false),
   ]);
+  // The RFP scan (patch 58): the profile it reads and its last run, when the engine is on.
+  const rfpProfile = rfpOn ? await getRfpProfile(id).catch(() => null) : null;
+  const { data: lastRfpRun } = rfpOn
+    ? await db.from("rfp_run").select("started_at, status, trigger, candidates, scored, counts, new_ids").eq("tenant_id", id).order("started_at", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+  const lastRun: LastRun | null = lastRfpRun ? { ...(lastRfpRun as Omit<LastRun, "new_count"> & { new_ids: string[] }), new_count: ((lastRfpRun as { new_ids: string[] }).new_ids ?? []).length } : null;
   if (!data) notFound();
   return (
     <>
@@ -63,6 +71,7 @@ export default async function ClientActivityPage({ params, searchParams }: {
       {setup && <AdminSetupPanel tenantId={id} state={setup} ownerName={setupOwner} />}
       <WelcomeCard tenantId={id} note={w?.welcome_note ?? ""} videoUrl={w?.welcome_video_url ?? ""} setupDone={setup?.status === "complete"} />
       {!brain && <RfpEngineCard tenantId={id} orgName={orgName} on={rfpOn} available={gov.available} interest={gov.interest} gates={gateLines(gov.answers)} />}
+      {!brain && rfpOn && rfpProfile && <RfpScanCard tenantId={id} profile={rfpProfile.profile} available={rfpProfile.available} lastRun={lastRun} />}
       <AdminChatFeedback items={feedback} />
       <ClientActivityView data={data} voice={voice} reader={reader} />
     </>

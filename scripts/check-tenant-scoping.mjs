@@ -55,6 +55,8 @@ const TENANT_SCOPED = new Set([
   // RFP Engine results (0095): per-client results and run records. The golden
   // set's tables (rfp_golden_run, rfp_golden_profile) are For Granted's own.
   "rfp_eligible", "rfp_run",
+  // The client's RFP profile (0096).
+  "rfp_profile",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);
@@ -63,7 +65,9 @@ const IDENTITY_OK = new Set(["app_user"]);
 // takes an explicit tenant argument or runs SECURITY INVOKER under RLS. Any
 // OTHER function name called through the service-role client fails the build
 // until it is reviewed and added here.
-const RPC_REVIEWED = new Set(["client_ai_spend_micros", "tenant_word_count"]);
+// rfp_candidates (0096, patch 58): SECURITY INVOKER, reads only the shared
+// RFP index (rfp_notice, rfp_source), which holds no tenant data.
+const RPC_REVIEWED = new Set(["client_ai_spend_micros", "tenant_word_count", "rfp_candidates"]);
 
 // Widened from ["lib/server", "app"] (red-team H2): a "use server" file or a
 // db import can appear anywhere under these roots.
