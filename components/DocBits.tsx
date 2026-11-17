@@ -8,6 +8,7 @@ import { DOC_TYPES } from "@/lib/analysis";
 import { OUTCOMES, asksOutcomeAtUpload, isWinning, parseOutcome } from "@/lib/doc-outcome";
 import { setDocOutcomeAction } from "@/lib/server/doc-outcome-actions";
 import UploadPanel from "./UploadPanel";
+import { unaddedNotice } from "@/lib/upload-stage";
 import { addPortalLinkAction } from "@/lib/server/doc-actions";
 import Busy from "./Busy";
 import LivingVoicePrompts from "./LivingVoicePrompts";
@@ -270,20 +271,31 @@ export function UploadDrawer({ tenantName, onClose, onDone, initialLayer, orgTyp
   voiceOpen?: boolean;
 }) {
   // The unified upload panel (P1.5, patch 38): the same component as
-  // onboarding, with the layer select shown. Files upload as they are dropped
-  // (title from the filename), so the drawer stays open for more and closes
-  // with Done.
+  // onboarding, with the layer select shown. Chosen files wait in a review
+  // list until Add is pressed (patch 59), so the drawer stays open for more
+  // and closes with Done; Done asks first if files are still waiting.
   const [layer, setLayer] = useState<"I" | "II" | "III">(initialLayer ?? "I");
+  const [waiting, setWaiting] = useState(0);
+  const [sure, setSure] = useState(false);
   return (
     <Drawer onClose={onClose}>
       <h3>Upload documents</h3>
-      <p style={{ color: "var(--muted)", marginTop: 2 }}>Add files to {tenantName}&rsquo;s Inven(s)tory. Reading starts as each one arrives.</p>
+      <p style={{ color: "var(--muted)", marginTop: 2 }}>Add files to {tenantName}&rsquo;s Inven(s)tory. Choose them, check them, then press Add; reading starts as each one arrives.</p>
       <UploadPanel initialLayer={initialLayer ?? "I"} typeTag={typeTag} allowLinks addLink={addPortalLinkAction}
-        onLayerChange={setLayer} onUploaded={onDone} />
+        onLayerChange={setLayer} onUploaded={onDone} onStagedChange={setWaiting} />
       {/* What to say, right where a Layer III file is added (1 Nov 2026). */}
       {layer === "III" && <LivingVoicePrompts orgType={orgType} compact={!voiceOpen} onSaved={() => { onDone(); onClose(); }} />}
       <div className="hint">Text is extracted, chunked, and embedded on upload — the document becomes searchable in seconds.</div>
-      <button className="btn secondary" style={{ marginTop: 10 }} onClick={onClose}>Done</button>
+      {sure && waiting > 0 && (
+        <div className="su-unadded" role="alert">
+          <span><b>{unaddedNotice(waiting)}</b> Press the Add button under the files to upload them, or close without them.</span>
+          <span className="su-unadded-btns">
+            <button type="button" className="btn secondary" onClick={() => setSure(false)}>Go back to them</button>
+            <button type="button" className="btn secondary" onClick={onClose}>Close without them</button>
+          </span>
+        </div>
+      )}
+      <button className="btn secondary" style={{ marginTop: 10 }} onClick={() => { if (waiting > 0) setSure(true); else onClose(); }}>Done</button>
     </Drawer>
   );
 }

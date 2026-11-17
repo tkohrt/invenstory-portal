@@ -2341,6 +2341,18 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .su-drop.over{border-color:#1f4d2e;background:#f3f8f4}
 .su-link{display:flex;gap:8px;margin-top:10px}
 .su-link input{flex:1}
+.su-staged{margin-top:12px;border:1px solid #e6d9a8;background:#fffaf0;border-radius:10px;padding:12px 14px}
+.su-staged h4{margin:0}
+.su-staged ul{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}
+.su-staged li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 8px;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 6px 8px 10px}
+.su-staged .su-st-name{min-width:0;display:flex;align-items:baseline;gap:8px}
+.su-staged .su-st-name b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.su-staged .su-st-name i{font-style:normal;font-size:12px;color:var(--muted);flex:none}
+.su-staged .su-st-picks{grid-column:1 / -1;display:flex;gap:8px;flex-wrap:wrap}
+.su-staged select{border:1px solid var(--line,#ddd);border-radius:8px;padding:5px 8px;font-size:13px;flex:1 1 200px;max-width:280px;min-width:0}
+.su-staged .su-st-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px}
+.su-unadded{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;background:#fff6e0;border:1px solid #e6c86a;border-radius:8px;padding:10px 12px;font-size:13px}
+.su-unadded-btns{display:flex;gap:8px;flex-wrap:wrap}
 .su-files{margin-top:12px}
 .su-files h4{margin:0}
 .su-files ul{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:4px}

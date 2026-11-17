@@ -23,6 +23,7 @@ import LivingVoicePrompts from "./LivingVoicePrompts";
 import UploadPanel from "./UploadPanel";
 import Irs990Block from "./Irs990Block";
 import { SUPPORT_EMAIL } from "@/lib/uploads";
+import { unaddedNotice } from "@/lib/upload-stage";
 import type { TenantOrgType } from "@/lib/living-voice";
 
 export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null }
@@ -406,6 +407,27 @@ function EligibilityStep({ profile, peerOrgs, busy, onBack, onSave }: {
   );
 }
 
+/**
+ * Files chosen but not yet added (patch 59): since nothing uploads until the
+ * person presses Add, a step's way-out buttons ask first when files are still
+ * waiting, so nobody leaves a step believing they uploaded something.
+ */
+function useUnadded() {
+  const [count, setCount] = useState(0);
+  const [next, setNext] = useState<(() => void) | null>(null);
+  const guard = (go: () => void) => () => { if (count > 0) setNext(() => go); else go(); };
+  const notice = next && count > 0 ? (
+    <div className="su-unadded" role="alert">
+      <span><b>{unaddedNotice(count)}</b> Press the Add button under the files to upload them, or carry on without them.</span>
+      <span className="su-unadded-btns">
+        <button type="button" className="sb-btn sb-secondary sb-sm" onClick={() => setNext(null)}>Go back to them</button>
+        <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => { const go = next; setNext(null); go(); }}>Carry on without them</button>
+      </span>
+    </div>
+  ) : null;
+  return { count, setCount, guard, notice };
+}
+
 // ---- 3 and 4. Layer I and Layer II ----
 
 const LAYER_COPY = {
@@ -430,6 +452,7 @@ function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
 }) {
   const c = LAYER_COPY[layer];
   const mine = docs.filter(d => d.layer === layer);
+  const un = useUnadded();
   return (
     <div className="su-grid">
       <section className="su-card">
@@ -450,15 +473,16 @@ function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
         <div className={`su-layerbox ${LAYERS[layer]}`}>
           <h3>{c.box}</h3>
           <p className="su-small">{c.boxSub}</p>
-          <Uploader layer={layer} docs={mine} allowLinks={layer === "I"} />
+          <Uploader layer={layer} docs={mine} allowLinks={layer === "I"} onStagedChange={un.setCount} />
           <h4>Good examples</h4>
           <ul className="su-list">{c.examples.map(e => <li key={e}>{e}</li>)}</ul>
         </div>
+        {un.notice}
         <Foot onBack={onBack}>
-          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => onSettle("skipped")}>Skip for now</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={un.guard(() => onSettle("skipped"))}>Skip for now</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy || mine.length === 0}
-            title={mine.length ? undefined : "Add a document first, or choose Skip for now."}
-            onClick={() => onSettle("done")}>{c.cta}</button>
+            title={mine.length ? undefined : un.count ? "Press the Add button under your files first, or choose Skip for now." : "Add a document first, or choose Skip for now."}
+            onClick={un.guard(() => onSettle("done"))}>{c.cta}</button>
         </Foot>
       </section>
       <LayerKey here={layer} grocery={grocery} />
@@ -468,9 +492,9 @@ function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
 
 /** Files and links into one layer. Since P1.5 (patch 38) this is the shared
     UploadPanel with the step's layer fixed; reading starts as each arrives. */
-function Uploader({ layer, docs, allowLinks, typeTag = "" }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean; typeTag?: string }) {
+function Uploader({ layer, docs, allowLinks, typeTag = "", onStagedChange }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean; typeTag?: string; onStagedChange?: (n: number) => void }) {
   return <UploadPanel fixedLayer={layer} typeTag={typeTag} tagsDefault="setup" allowLinks={allowLinks}
-    showTypePicker={!typeTag} addLink={addSetupLinkAction} docs={docs} />;
+    showTypePicker={!typeTag} addLink={addSetupLinkAction} docs={docs} onStagedChange={onStagedChange} />;
 }
 
 // ---- 5. Layer III ----
@@ -483,6 +507,7 @@ function Layer3Step({ state, orgType, docs, grocery, busy, onBack, onSettle }: {
   const [how, setHow] = useState<"record" | "write" | "talk" | null>(null);
   const [msg, setMsg] = useState<string | null>(state.answers.interview_requested_at ? "You asked for an interview. Your For Granted team will email you to find a time." : null);
   const mine = docs.filter(d => d.layer === "III");
+  const un = useUnadded();
 
   const toggleRead = async (v: boolean) => {
     setRead(v);
@@ -523,7 +548,7 @@ function Layer3Step({ state, orgType, docs, grocery, busy, onBack, onSettle }: {
         </div>
         {how === "record" && <>
           <p className="su-small">The portal cannot turn a recording into text yet. If you have a transcript (most phone and meeting apps make one), upload that. Otherwise email the recording to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and your For Granted team will add it.</p>
-          <Uploader layer="III" docs={mine} />
+          <Uploader layer="III" docs={mine} onStagedChange={un.setCount} />
         </>}
         {how === "write" && <LivingVoicePrompts orgType={orgType} onSaved={() => router.refresh()} />}
         {how === "talk" && (
@@ -535,11 +560,12 @@ function Layer3Step({ state, orgType, docs, grocery, busy, onBack, onSettle }: {
         )}
         {msg && <p className="su-note" role="status">{msg}</p>}
         {!canGo && <p className="su-small su-gate">Tick &ldquo;I have read this&rdquo; to carry on.</p>}
+        {un.notice}
         <Foot onBack={onBack}>
-          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} title="You can add your voice later from the Setting up banner." onClick={() => onSettle("skipped")}>Skip for now</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy || !canGo} title="You can add your voice later from the Setting up banner." onClick={un.guard(() => onSettle("skipped"))}>Skip for now</button>
           <button type="button" className="sb-btn sb-primary" disabled={busy || !canGo || mine.length === 0}
-            title={mine.length ? undefined : "Add your voice first, or skip for now."}
-            onClick={() => onSettle("done")}>Continue</button>
+            title={mine.length ? undefined : un.count ? "Press the Add button under your files first, or skip for now." : "Add your voice first, or skip for now."}
+            onClick={un.guard(() => onSettle("done"))}>Continue</button>
         </Foot>
       </section>
       <LayerKey here="III" grocery={grocery} />
@@ -555,6 +581,7 @@ function FundingStep({ state, docs, busy, onBack, onSave }: {
 }) {
   const [funders, setFunders] = useState<KnownFunder[]>(state.answers.known_funders?.length ? state.answers.known_funders : [{ name: "", relationship: "funded" }]);
   const [dates, setDates] = useState<Deadline[]>(state.answers.deadlines?.length ? state.answers.deadlines : [{ what: "", date: null }]);
+  const un = useUnadded();
   // Funder-name type-ahead against Ground Truth (P1, patch 29): suggestions
   // for the name being typed, debounced, so what gets stored matches the
   // record the portal screens against. Typing anything else still works; a
@@ -612,10 +639,11 @@ function FundingStep({ state, docs, busy, onBack, onSave }: {
         </datalist>
         <h3>Have a funder&rsquo;s application in hand?</h3>
         <p className="su-small">Upload the application form, questions or guidelines for anything you are working toward. Your For Granted team sees exactly what the funder asks, and the portal files it as the funder&rsquo;s material, never as your story.</p>
-        <Uploader layer="II" docs={funderForms} typeTag="funder_form" />
+        <Uploader layer="II" docs={funderForms} typeTag="funder_form" onStagedChange={un.setCount} />
+        {un.notice}
         <Foot onBack={onBack}>
-          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={() => onSave({ known_funders: funders, deadlines: dates }, "skipped")}>Skip</button>
-          <button type="button" className="sb-btn sb-primary" disabled={busy} onClick={() => onSave({ known_funders: funders, deadlines: dates }, "done")}>{busy ? "Saving…" : "Save and continue"}</button>
+          <button type="button" className="sb-btn sb-secondary" disabled={busy} onClick={un.guard(() => onSave({ known_funders: funders, deadlines: dates }, "skipped"))}>Skip</button>
+          <button type="button" className="sb-btn sb-primary" disabled={busy} onClick={un.guard(() => onSave({ known_funders: funders, deadlines: dates }, "done"))}>{busy ? "Saving…" : "Save and continue"}</button>
         </Foot>
       </section>
     </div>

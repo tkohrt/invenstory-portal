@@ -1,21 +1,29 @@
 "use client";
 // The unified upload panel (P1.5, patch 38): the onboarding uploader, grown up
 // and shared. One component now carries every upload in the portal: drag or
-// choose several files, reading starts as soon as each arrives, the title
-// comes from the filename, and the layer, document type, tags and (for a past
-// application) outcome are set once and apply to what you drop. Onboarding
-// fixes the layer per step; the portal drawer lets you pick it.
-import { useRef, useState } from "react";
+// choose several files, the title comes from the filename, and the layer and
+// tags are set once and apply to what you add. Onboarding fixes the layer per
+// step; the portal drawer lets you pick it.
+//
+// Since patch 59 (17 Nov 2026, Shane, walking setup as a test client) nothing
+// uploads on choosing: files wait in a "Ready to add" list, each with its own
+// document type (and outcome, for a past application) and a Remove button,
+// and one Add button sends them. Before, a wrong file was stored and read
+// before anybody could stop it, and the type had to be picked BEFORE choosing
+// files, one type for the whole batch. Reading still starts as each arrives.
+// The rules are in lib/upload-stage.ts (tested).
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL, isAccepted } from "@/lib/uploads";
+import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL } from "@/lib/uploads";
 import { browserClient } from "@/lib/supabase-browser";
 import { DOC_TYPES } from "@/lib/analysis";
 import { OUTCOMES, asksOutcomeAtUpload } from "@/lib/doc-outcome";
+import { addLabel, sizeLabel, stageFiles, stageKey, type StagedInfo } from "@/lib/upload-stage";
 
 export interface PanelDoc { id: string; title: string; status: string }
 interface Pending { key: string; name: string; state: "uploading" | "failed"; error?: string }
 
-export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: typeTagDefault = "", tagsDefault = "", allowLinks = false, showTypePicker = true, docs = [], addLink, onUploaded, onLayerChange }: {
+export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: typeTagDefault = "", tagsDefault = "", allowLinks = false, showTypePicker = true, docs = [], addLink, onUploaded, onLayerChange, onStagedChange }: {
   /** Onboarding fixes the layer per step; without it the panel shows the layer select. */
   fixedLayer?: "I" | "II" | "III";
   initialLayer?: "I" | "II" | "III";
@@ -34,13 +42,16 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
   onUploaded?: () => void;
   /** The drawer shows the Living Voice prompts when Layer III is picked. */
   onLayerChange?: (layer: "I" | "II" | "III") => void;
+  /** How many chosen files are waiting to be added, so the page can stop somebody leaving them behind. */
+  onStagedChange?: (count: number) => void;
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [layer, setLayer] = useState<"I" | "II" | "III">(fixedLayer ?? initialLayer);
-  const [typeTag, setTypeTag] = useState(typeTagDefault);
   const [tags, setTags] = useState(tagsDefault);
-  const [outcome, setOutcome] = useState("");
+  // Chosen, not yet sent. The File objects live beside the list, by key.
+  const [staged, setStaged] = useState<StagedInfo[]>([]);
+  const files = useRef(new Map<string, File>());
   const [pending, setPending] = useState<Pending[]>([]);
   const [over, setOver] = useState(false);
   const [link, setLink] = useState("");
@@ -48,12 +59,14 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const effLayer = fixedLayer ?? layer;
 
-  const one = async (file: File) => {
+  const stagedCount = staged.length;
+  const tell = useRef(onStagedChange);
+  useEffect(() => { tell.current = onStagedChange; });
+  useEffect(() => { tell.current?.(stagedCount); }, [stagedCount]);
+  useEffect(() => () => { tell.current?.(0); }, []);
+
+  const one = async (file: File, typeTag: string, outcome: string) => {
     const key = `${file.name}-${file.size}-${Math.random()}`;
-    if (!isAccepted(file.name)) {
-      setPending(x => [...x, { key, name: file.name, state: "failed", error: `Not a type the portal reads. Email it to ${SUPPORT_EMAIL} and we will add it.` }]);
-      return;
-    }
     setPending(x => [...x, { key, name: file.name, state: "uploading" }]);
     try {
       // Straight to storage with a one-time URL: posting the file to the portal
@@ -79,7 +92,30 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
       setPending(x => x.map(p => p.key === key ? { ...p, state: "failed", error: e instanceof Error ? e.message : "Upload failed." } : p));
     }
   };
-  const many = (files: FileList | null) => { if (files) for (const f of Array.from(files)) void one(f); };
+  /** Chosen or dropped: into the waiting list. Nothing is sent yet. */
+  const many = (list: FileList | null) => {
+    if (!list) return;
+    const incoming = Array.from(list);
+    const r = stageFiles(staged, incoming, typeTagDefault);
+    for (const f of incoming) { const k = stageKey(f); if (!files.current.has(k)) files.current.set(k, f); }
+    setStaged(r.staged);
+    if (r.refused.length) {
+      setPending(x => [...x, ...r.refused.map(n => ({ key: `${n.name}-${Math.random()}`, name: n.name, state: "failed" as const, error: n.reason }))]);
+    }
+  };
+  const setOne = (key: string, patch: Partial<StagedInfo>) => setStaged(x => x.map(s => s.key === key ? { ...s, ...patch } : s));
+  const removeOne = (key: string) => { files.current.delete(key); setStaged(x => x.filter(s => s.key !== key)); };
+  const clearAll = () => { files.current.clear(); setStaged([]); };
+  /** The one moment anything is sent: each waiting file, with the type on its own row. */
+  const addAll = () => {
+    const batch = staged;
+    setStaged([]);
+    for (const s of batch) {
+      const file = files.current.get(s.key);
+      files.current.delete(s.key);
+      if (file) void one(file, s.typeTag, asksOutcomeAtUpload(s.typeTag) ? s.outcome : "");
+    }
+  };
 
   const doLink = async () => {
     if (!addLink || effLayer === "III" || !link.trim()) return;
@@ -95,48 +131,60 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
 
   return (
     <div className="su-upload">
-      {(!fixedLayer || showTypePicker) && (
+      {!fixedLayer && (
         <div className="up-settings">
-          {!fixedLayer && (
-            <label>Layer
-              <select value={layer} onChange={e => { const v = e.target.value as "I" | "II" | "III"; setLayer(v); onLayerChange?.(v); }}>
-                <option value="I">Layer I — Public Story</option>
-                <option value="II">Layer II — Internal Strategy</option>
-                <option value="III">Layer III — Living Voice</option>
-              </select>
-            </label>
-          )}
-          {showTypePicker && (
-            <label>What kind of document?
-              <select value={typeTag} onChange={e => setTypeTag(e.target.value)}>
-                <option value="">Not sure (we&rsquo;ll suggest one)</option>
-                {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-              </select>
-            </label>
-          )}
-          {showTypePicker && asksOutcomeAtUpload(typeTag) && (
-            <label>How did it turn out?
-              <select value={outcome} onChange={e => setOutcome(e.target.value)}>
-                <option value="">Not set</option>
-                {OUTCOMES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
-            </label>
-          )}
-          {!fixedLayer && (
-            <label>Tags
-              <input value={tags} onChange={e => setTags(e.target.value)} placeholder="comma-separated, e.g. budget, transportation" />
-            </label>
-          )}
+          <label>Layer
+            <select value={layer} onChange={e => { const v = e.target.value as "I" | "II" | "III"; setLayer(v); onLayerChange?.(v); }}>
+              <option value="I">Layer I — Public Story</option>
+              <option value="II">Layer II — Internal Strategy</option>
+              <option value="III">Layer III — Living Voice</option>
+            </select>
+          </label>
+          <label>Tags
+            <input value={tags} onChange={e => setTags(e.target.value)} placeholder="comma-separated, e.g. budget, transportation" />
+          </label>
         </div>
       )}
       <div className={`su-drop ${over ? "over" : ""}`}
         onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
         onDrop={e => { e.preventDefault(); setOver(false); many(e.dataTransfer.files); }}>
         <b>Drag files here</b>
-        <span className="su-small">{ACCEPTED_LABEL}. Up to 25 MB each. The title comes from the filename.</span>
+        <span className="su-small">{ACCEPTED_LABEL}. Up to 25 MB each. The title comes from the filename. Nothing uploads until you press Add.</span>
         <button type="button" className="sb-btn sb-secondary sb-sm" onClick={() => input.current?.click()}>Choose files</button>
         <input ref={input} type="file" multiple hidden accept={ACCEPT_ATTR} onChange={e => { many(e.target.files); e.target.value = ""; }} />
       </div>
+      {staged.length > 0 && (
+        <div className="su-staged" role="group" aria-label="Files ready to add">
+          <h4>Ready to add</h4>
+          <p className="su-small">Nothing has been uploaded yet. Check these are the right files{showTypePicker ? ", say what each one is if you know," : ""} then add them.</p>
+          <ul>
+            {staged.map(sf => (
+              <li key={sf.key}>
+                <span className="su-st-name"><b>{sf.name}</b><i>{sizeLabel(sf.size)}</i></span>
+                <button type="button" className="sb-btn sb-quiet sb-sm" onClick={() => removeOne(sf.key)} aria-label={`Remove ${sf.name}`}>Remove</button>
+                {showTypePicker && (
+                  <span className="su-st-picks">
+                    <select aria-label={`What kind of document is ${sf.name}?`} value={sf.typeTag} onChange={e => setOne(sf.key, { typeTag: e.target.value })}>
+                      <option value="">Not sure (we&rsquo;ll suggest one)</option>
+                      {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                    </select>
+                    {asksOutcomeAtUpload(sf.typeTag) && (
+                      <select aria-label={`How did ${sf.name} turn out?`} value={sf.outcome} onChange={e => setOne(sf.key, { outcome: e.target.value })}>
+                        <option value="">Outcome not set</option>
+                        {OUTCOMES.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                      </select>
+                    )}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="su-st-foot">
+            {staged.length > 1 && <button type="button" className="sb-btn sb-quiet sb-sm" onClick={clearAll}>Remove all</button>}
+            <button type="button" className="sb-btn sb-primary" onClick={addAll}>{addLabel(staged.length)}</button>
+          </div>
+        </div>
+      )}
       {allowLinks && addLink && effLayer === "I" && (
         <div className="su-link">
           <input value={link} onChange={e => setLink(e.target.value)} placeholder="Or paste a web link, e.g. a press article"
