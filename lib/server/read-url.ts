@@ -32,7 +32,7 @@ function privateIp(ip: string): boolean {
 }
 
 /** A checked hop: the URL plus the exact address the check approved. */
-interface Hop { url: URL; address: string; family: number }
+export interface Hop { url: URL; address: string; family: number }
 
 /**
  * Every hop is checked (3 Nov 2026, review of patch 14): the address as
@@ -59,18 +59,39 @@ async function checkedHop(raw: string): Promise<Hop> {
 class TooLarge extends Error {}
 
 /**
+ * The `lookup` that pins a socket to one approved address.
+ *
+ * Node 20 and later ask with `all: true` (happy-eyeballs address selection is
+ * on by default) and then expect a LIST of { address, family }. Answering with
+ * a bare string, as this did from patch 23 (9 Nov 2026) until patch 55
+ * (17 Nov 2026), makes Node throw ERR_INVALID_IP_ADDRESS before any request
+ * leaves the server, so every link read failed as "did not respond in time".
+ * Both shapes are answered now; tests/portal/read-url.test.ts makes a real
+ * connection through this so it cannot break silently again.
+ */
+export function pinnedLookup(address: string, family: number) {
+  return (_host: string, opts: unknown, cb: (...a: unknown[]) => void): void => {
+    const o = typeof opts === "function" ? undefined : opts as { all?: boolean } | undefined;
+    const done = (typeof opts === "function" ? opts : cb) as (...a: unknown[]) => void;
+    if (o?.all) done(null, [{ address, family }]);
+    else done(null, address, family);
+  };
+}
+
+/**
  * One GET, connected to the exact address checkedHop approved (the `lookup`
  * option pins the socket; TLS still verifies against the hostname). Redirects
  * are not followed here; readUrl re-checks each hop. Compression is declined
  * (accept-encoding: identity) because this path decodes the raw bytes itself.
+ * Exported for the connection test only; everything else goes through readUrl.
  */
-function pinnedGet(hop: Hop, signal: AbortSignal): Promise<{ status: number; location: string | null; contentType: string; body: Uint8Array }> {
+export function pinnedGet(hop: Hop, signal: AbortSignal): Promise<{ status: number; location: string | null; contentType: string; body: Uint8Array }> {
   return new Promise((resolve, reject) => {
     const mod = hop.url.protocol === "https:" ? httpsRequest : httpRequest;
     const req = mod(hop.url, {
       method: "GET",
       signal,
-      lookup: (_host, _opts, cb) => (cb as (e: null, a: string, f: number) => void)(null, hop.address, hop.family),
+      lookup: pinnedLookup(hop.address, hop.family) as never,
       headers: {
         "user-agent": "ForGrantedPortal/1.0 (grant application reader; +https://forgranted.com)",
         accept: "text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
@@ -118,7 +139,13 @@ export async function readUrl(raw: string, instead: string): Promise<{ text: str
       res = await pinnedGet(at, signal);
     } catch (e) {
       if (e instanceof TooLarge) throw new Plain(`That file is too large to read from a link. ${instead}`);
-      throw new Plain(`That page did not respond in time. ${instead}`);
+      // Say which failure it was, and leave the real cause in the logs: until
+      // patch 55 every connection failure read as a slow page, which hid a
+      // reader that could not connect at all for eight days.
+      const err = e as { name?: string; code?: string; message?: string };
+      const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError" || err?.code === "ABORT_ERR";
+      console.error("[read-url] fetch failed", at.url.hostname, err?.code ?? err?.name ?? "", err?.message ?? "");
+      throw new Plain(timedOut ? `That page did not respond in time. ${instead}` : `That page could not be reached. ${instead}`);
     }
     if (!res.location) break;
     if (hop >= MAX_REDIRECTS) throw new Plain(`That page redirects too many times. ${instead}`);
