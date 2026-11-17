@@ -151,7 +151,15 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
           <p className="su-small">We start reading as soon as a file arrives. Carry on; nothing waits for this.</p>
           <ul>
             {pending.map(f => <li key={f.key} className={f.state}><span>{f.name}</span><em>{f.state === "uploading" ? "Uploading" : f.error}</em></li>)}
-            {docs.map(d => <li key={d.id} className={d.status}><span>{d.title}</span><em>{label(d.status)}</em></li>)}
+            {/* A document that has been read is plainly finished (patch 57,
+                17 Nov 2026, Shane): a light green row and a round green tick
+                after "Read". The tick is decoration; the word carries it. */}
+            {docs.map(d => <li key={d.id} className={d.status}><span>{d.title}</span><em>{label(d.status)}{d.status === "ready" && (
+              <svg className="su-tick" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <circle cx="8" cy="8" r="8" fill="currentColor" />
+                <path d="M4.4 8.3l2.3 2.3 4.9-5" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}</em></li>)}
           </ul>
         </div>
       )}
