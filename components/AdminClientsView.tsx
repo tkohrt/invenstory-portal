@@ -34,6 +34,7 @@ export default function AdminClientsView({ portfolio: p, gardens }: { portfolio:
         <div className="spacer" />
         {/* Patch 36 (admin audit): the Bedrock diagnostic keeps no nav slot;
             this quiet link is how it stays reachable. */}
+        <a className="sb-btn sb-quiet sb-sm" href="/admin/rfp" title="The RFP Engine's index health and golden-set check. For Granted only.">RFP Engine</a>
         <a className="sb-btn sb-quiet sb-sm" href="/admin/bedrock" title="Connectivity check for the AI provider. For Granted only.">System check</a>
         <button className="sb-btn sb-secondary" onClick={() => setAdding(true)}>＋ New client</button>
       </div>

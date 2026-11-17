@@ -27,11 +27,13 @@
 /** What a fence holds. Shown to the model in the marker, so plain words. */
 export type UntrustedKind =
   | "DOCUMENT_TEXT" | "APPLICATION_TEXT" | "APPLICATION_QUESTIONS"
-  | "PASSAGES" | "FUNDER_RECORDS" | "FUNDER_CONTEXT" | "CLIENT_CONTEXT" | "WEB_RESULTS";
+  | "PASSAGES" | "FUNDER_RECORDS" | "FUNDER_CONTEXT" | "CLIENT_CONTEXT" | "WEB_RESULTS"
+  | "PROCUREMENT_NOTICE";
 
 export const KINDS: UntrustedKind[] = [
   "DOCUMENT_TEXT", "APPLICATION_TEXT", "APPLICATION_QUESTIONS",
   "PASSAGES", "FUNDER_RECORDS", "FUNDER_CONTEXT", "CLIENT_CONTEXT", "WEB_RESULTS",
+  "PROCUREMENT_NOTICE",
 ];
 
 /** A short random id for one fence. */

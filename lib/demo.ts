@@ -62,6 +62,8 @@ export const DEMO_WIPE_TABLES: readonly string[] = [
   // Government readiness (0094): the interest answer and the six gates. The
   // rfp_engine switch itself is a feature_visibility row and stays, like the rest.
   "gov_readiness",
+  // RFP Engine results (0095).
+  "rfp_eligible", "rfp_run",
 ];
 
 /**

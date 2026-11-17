@@ -52,6 +52,9 @@ const TENANT_SCOPED = new Set([
   // itself (rfp_source, rfp_notice, rfp_ingest_run, 0093) is deliberately
   // absent: one shared index of public notices with no tenant_id.
   "gov_readiness",
+  // RFP Engine results (0095): per-client results and run records. The golden
+  // set's tables (rfp_golden_run, rfp_golden_profile) are For Granted's own.
+  "rfp_eligible", "rfp_run",
 ]);
 // app_user is tenant-scoped but identity lookups legitimately key on auth_id.
 const IDENTITY_OK = new Set(["app_user"]);
