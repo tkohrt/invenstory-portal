@@ -56,9 +56,9 @@ export async function toggleRfpFollowAction(tenantId: string, noticeId: string):
     if (error) return { ok: false, error: "Could not take it off the list. Try again." };
   } else {
     // Only a result this client's scan actually produced.
-    const { data } = await db.from("rfp_eligible").select("notice_id, rfp_notice(title, agency, due_at, description_url)")
+    const { data } = await db.from("rfp_eligible").select("notice_id, rfp_notice(title, agency, due_at, due_date_only, description_url)")
       .eq("tenant_id", tenantId).eq("notice_id", noticeId).maybeSingle();
-    const row = data as unknown as { notice_id: string; rfp_notice: { title: string | null; agency: string | null; due_at: string | null; description_url: string | null } | null } | null;
+    const row = data as unknown as { notice_id: string; rfp_notice: { title: string | null; agency: string | null; due_at: string | null; due_date_only: boolean | null; description_url: string | null } | null } | null;
     if (!row) return { ok: false, error: "That result is not on this client's scan." };
     const snap = rfpSnapshot(row.rfp_notice);
     const { error } = await db.from("saved_item").insert({

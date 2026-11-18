@@ -1,6 +1,6 @@
 /** Following (patch 66): the shared list, its dates and its order. */
 import { describe, expect, it } from "vitest";
-import { dateState, followRow, groupFollowing, followingSummary, rfpSnapshot, type FollowItem } from "@/lib/following";
+import { dateState, deadlineDay, followRow, groupFollowing, followingSummary, rfpSnapshot, type FollowItem } from "@/lib/following";
 
 const NOW = new Date("2026-11-18T12:00:00Z");
 const item = (o: Partial<FollowItem>): FollowItem => ({ kind: "grant", target_id: "g1", title: "Youth Fund", detail: {}, saved_at: "2026-11-10T00:00:00Z", ...o });
@@ -73,7 +73,7 @@ describe("the page's order", () => {
     expect(g.funders.map(r => r.title)).toEqual(["Cleveland Foundation", "Kresge Foundation"]);
   });
   it("the summary counts both groups and what is pressing", () => {
-    expect(followingSummary(g)).toBe("2 funders and 6 opportunities, 2 needing attention in the next two weeks.");
+    expect(followingSummary(g)).toBe("2 funders and 6 opportunities, 1 closing within two weeks and 1 open again.");
     expect(followingSummary(groupFollowing([item({ kind: "funder" })], NOW))).toBe("1 funder and 0 opportunities.");
   });
 });
@@ -83,8 +83,36 @@ describe("the snapshot kept for an RFP", () => {
     expect(rfpSnapshot({ title: " IT modernization support ", agency: "Ohio DAS", due_at: "2026-12-05T17:00:00Z", description_url: "https://sam.gov/opp/1" }))
       .toEqual({ title: "IT modernization support", detail: { funder: "Ohio DAS", url: "https://sam.gov/opp/1", close_date: "2026-12-05T17:00:00Z", money_kind: "contracts" } });
   });
+  it("a notice that gave a date and no time keeps only the date", () => {
+    expect(rfpSnapshot({ title: "X", due_at: "2026-12-05T00:00:00+00:00", due_date_only: true }).detail.close_date).toBe("2026-12-05");
+  });
   it("a missing notice or an unsafe link degrades plainly", () => {
     expect(rfpSnapshot(null)).toEqual({ title: "An RFP", detail: { funder: null, url: null, close_date: null, money_kind: "contracts" } });
     expect(rfpSnapshot({ title: "X", description_url: "http://insecure.example/x" }).detail.url).toBeNull();
+  });
+});
+
+// Review of patch 66: a deadline is read on the calendar it was set on.
+describe("deadlines and time zones", () => {
+  it("an RFP due late in the US evening closes on that day, not the next", () => {
+    // 5 Dec 2026, 11:59 PM Eastern is already 6 Dec in UTC.
+    expect(deadlineDay("2026-12-06T04:59:00Z")).toEqual([2026, 12, 5]);
+    expect(dateState("2026-12-06T04:59:00Z", NOW).when).toBe("Closes Dec 5, 2026");
+  });
+  it("a date with no time is that day wherever it is read, and stays open through the US evening of its own day", () => {
+    expect(deadlineDay("2026-11-18")).toEqual([2026, 11, 18]);
+    // 9 PM Eastern on the 18th is already the 19th in UTC.
+    expect(dateState("2026-11-18", new Date("2026-11-19T02:00:00Z")).when).toBe("Closes today");
+    expect(dateState("2026-11-18", new Date("2026-11-19T06:00:00Z")).state).toBe("closed");
+  });
+  it("summer time is honoured", () => {
+    expect(deadlineDay("2026-07-02T03:30:00Z")).toEqual([2026, 7, 1]);
+  });
+  it("within one group, a dated item always comes before an undated one", () => {
+    const g = groupFollowing([
+      item({ target_id: "u", title: "A undated", detail: { close_date: "2026-05-01" }, reopened_at: "2026-11-16T00:00:00Z", reopened_detail: {} }),
+      item({ target_id: "d", title: "Z dated", detail: { close_date: "2026-05-01" }, reopened_at: "2026-11-16T00:00:00Z", reopened_detail: { close_date: "2027-01-05" } }),
+    ], NOW);
+    expect(g.opportunities.map(r => r.target_id)).toEqual(["d", "u"]);
   });
 });

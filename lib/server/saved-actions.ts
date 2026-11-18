@@ -2,6 +2,9 @@
 import { getSession } from "./session";
 import { db } from "./db";
 import { revalidatePath } from "next/cache";
+import { getFeatureVisible } from "./data";
+import { getJudgments } from "./triage";
+import { suppresses } from "@/lib/triage";
 
 /**
  * The save-for-later star (patch 26). One action toggles: saved rows are
@@ -21,7 +24,12 @@ export async function toggleSavedAction(input: {
 }): Promise<{ saved: boolean } | { error: string }> {
   const s = await getSession();
   if (!s) return { error: "Not signed in." };
-  const kind = input.kind === "funder" ? "funder" : "grant";
+  // Grants only (review of patch 66). A funder is followed through
+  // toggleFollowFunderAction, which reads the funder from this client's own
+  // match record; here the snapshot comes from the browser, and a funder row
+  // built that way could name anything on the team's shared list.
+  if (input.kind !== "grant") return { error: "Follow a funder from its page on Funding." };
+  const kind = "grant" as const;
   const targetId = String(input.target_id ?? "").slice(0, 200);
   if (!targetId) return { error: "Nothing to save." };
 
@@ -86,6 +94,15 @@ export async function toggleFollowFunderAction(funderId: string): Promise<{ foll
     revalidatePath("/following");
     return { following: false };
   }
+  // A client may follow only what its dossier would show it (review of patch
+  // 66): Funders mode on, and not a funder For Granted ruled out. The refusal
+  // reads the same as "not matched", so nothing is learned from trying ids.
+  if (s.role !== "admin") {
+    const NOT_YOURS = { error: "That funder is not on your Funding page." };
+    if (!(await getFeatureVisible(s.tenantId, "funder_compass"))) return NOT_YOURS;
+    const j = (await getJudgments(s.tenantId).catch(() => new Map())).get(`funder:${id}`);
+    if (j && suppresses(j.state)) return NOT_YOURS;
+  }
   const { data: f } = await db.from("matched_funder").select("funder_id, name, website")
     .eq("tenant_id", s.tenantId).eq("funder_id", id).maybeSingle();
   const funder = f as { funder_id: string; name: string | null; website: string | null } | null;
@@ -108,7 +125,10 @@ export async function setFollowUpdatesAction(kind: string, targetId: string, on:
   if (!k) return { error: "That is not on your list." };
   const { error } = await db.from("saved_item").update({ updates: !!on })
     .eq("tenant_id", s.tenantId).eq("kind", k).eq("target_id", String(targetId).slice(0, 200));
-  if (error) { console.error("[saved] updates switch failed", error); return { error: "That did not save. Has migration 0099 been applied?" }; }
+  if (error) {
+    console.error("[saved] updates switch failed (is migration 0099 applied?)", error);
+    return { error: s.role === "admin" ? "That did not save. Has migration 0099 been applied?" : "That did not save. Try again in a moment." };
+  }
   revalidatePath("/following"); revalidatePath("/funding");
   return { ok: true };
 }

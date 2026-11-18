@@ -290,7 +290,9 @@ function Pull990({ funderId, ein }: { funderId: string; ein: string }) {
  */
 function FollowButton({ funderId, name, following, preview }: { funderId: string; name: string; following: boolean; preview: boolean }) {
   const router = useRouter();
-  const [on, setOn] = useState(following);
+  // The server's answer is the truth; `mine` only covers the moment between a press and the refresh.
+  const [mine, setMine] = useState<boolean | null>(null);
+  const on = mine ?? following;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const toggle = async () => {
@@ -298,7 +300,7 @@ function FollowButton({ funderId, name, following, preview }: { funderId: string
     const r = await toggleFollowFunderAction(funderId).catch(() => ({ error: "That did not save. Try again." }));
     setBusy(false);
     if ("error" in r) { setErr(r.error); return; }
-    setOn(r.following);
+    setMine(r.following);
     router.refresh();
   };
   return (

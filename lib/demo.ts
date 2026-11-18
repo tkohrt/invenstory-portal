@@ -55,7 +55,7 @@ export const DEMO_WIPE_TABLES: readonly string[] = [
   // Their parents.
   "answer", "document_chunk", "document_text", "document_version", "document_tag",
   "story_card", "draft_section", "matched_funder", "analysis_doc",
-  "artifact_set", "chat_session", "discovery_run", "job", "eligible_grant",
+  "artifact_set", "chat_session", "discovery_run", "job", "eligible_grant", "saved_item",
   // Top-level content and state.
   "grant_draft", "document", "match_run", "eligibility_gap", "eligibility_profile",
   "search_profile", "plant_state", "voice_profile", "tenant_setup",

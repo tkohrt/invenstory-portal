@@ -114,6 +114,7 @@ export const FEATURES: { key: string; label: string; prefix: string }[] = [
   { key: "search", label: "Search", prefix: "/search" },
   { key: "eligibility", label: "Funding Eligibility", prefix: "/funding-eligibility" },
   { key: "funder_matches", label: "Funding", prefix: "/funding" },
+  { key: "following", label: "Following", prefix: "/following" },
   { key: "funder_matches_old", label: "Funding", prefix: "/funder-matches" },
   { key: "matching_profile", label: "Matching profile", prefix: "/matching-profile" },
   { key: "story_cards", label: "Story Cards", prefix: "/story-cards" },
