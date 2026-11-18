@@ -14,6 +14,7 @@ import { parseListText, fileLeads } from "./curated";
 import { htmlToText } from "@/lib/application-text";
 import {
   textForFingerprint, looksLikeFunding, linksIn, pageDue, weekListName, emailSender, freshTimestamp, normalizeAddress,
+  blueskyDue, postSignal, BLUESKY_FIRST_READ_DAYS,
   type SourceRow, type SignalRow, type SignalStatus, type SourceKind, type SourceCategory, type SourceOrigin,
 } from "@/lib/signals";
 
@@ -81,23 +82,26 @@ async function weekList(): Promise<string | null> {
 export async function fileSignal(a: {
   source: SourceRow; externalId: string; title: string; text: string; url: string | null;
   budget: Budget; hold?: boolean; note?: string | null;
+  /** Record it without parsing: there is nothing in it to read (a post with no page behind it). */
+  skip?: boolean;
 }): Promise<{ status: SignalStatus; entries: number } | null> {
   const base = {
     source_id: a.source.id, external_id: a.externalId.slice(0, 400), title: a.title.slice(0, 300),
     excerpt: a.text.replace(/\s+/g, " ").trim().slice(0, 600), url: a.url?.slice(0, 1000) ?? null, note: a.note?.slice(0, 4000) ?? null,
   };
-  const { data: row, error } = await db.from("signal").insert({ ...base, status: a.hold ? "held" : "new" }).select("id").single();
+  const { data: row, error } = await db.from("signal").insert({ ...base, status: a.hold ? "held" : a.skip ? "skipped" : "new" }).select("id").single();
   if (error || !row) {
     if (error && error.code !== "23505") { console.error("[signals] signal not recorded", error.message); return null; }
     // Already recorded. One left unread (the budget ran out, or the parser
     // was unavailable) is finished now; anything else is simply a repeat.
     const { data: prior } = await db.from("signal").select("id, status").eq("source_id", a.source.id).eq("external_id", base.external_id).maybeSingle();
     const p = prior as { id: string; status: SignalStatus } | null;
-    if (!p || a.hold || (p.status !== "new" && p.status !== "failed")) return null;
+    if (!p || a.hold || a.skip || (p.status !== "new" && p.status !== "failed")) return null;
     return readSignal(p.id, a.text, a.budget);
   }
   const id = (row as { id: string }).id;
   if (a.hold) return { status: "held", entries: 0 };
+  if (a.skip) return { status: "skipped", entries: 0 };
   const done = await readSignal(id, a.text, a.budget);
   await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", a.source.id);
   return done;
@@ -172,6 +176,114 @@ export async function pendingEmail(limit = 20): Promise<string[]> {
     .in("status", ["new", "failed"]).eq("signal_source.kind", "email").eq("signal_source.active", true)
     .gte("seen_at", new Date(Date.now() - 14 * 86_400_000).toISOString()).order("seen_at", { ascending: true }).limit(limit);
   return ((data ?? []) as { id: string }[]).map(r => r.id);
+}
+
+// ---------------------------------------------------------------------------
+// Bluesky (patch 65): the public directory, read without signing in.
+
+const BSKY = "https://public.api.bsky.app/xrpc/";
+/** The For Granted account whose follows are the human-curated source list. */
+const bskyAccount = () => normalizeAddress("bluesky", process.env.BLUESKY_ACCOUNT || "forgranted.com") ?? "forgranted.com";
+
+async function bsky(method: string, params: Record<string, string>): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${BSKY}${method}?${new URLSearchParams(params)}`, { signal: AbortSignal.timeout(12_000), cache: "no-store" });
+    if (!res.ok) { console.error("[signals] bluesky", method, res.status); return null; }
+    return await res.json() as Record<string, unknown>;
+  } catch (e) {
+    console.error("[signals] bluesky", method, e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * Make every account @forgranted.com follows a source. Following an account
+ * on Bluesky is how a person adds one; nothing is ever unfollowed or removed
+ * from here (a source dropped from the follows stays until turned off).
+ */
+export async function syncFollows(): Promise<{ follows: number; added: number } | null> {
+  const handles: { handle: string; name: string }[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const r = await bsky("app.bsky.graph.getFollows", { actor: bskyAccount(), limit: "100", ...(cursor ? { cursor } : {}) });
+    if (!r) return page === 0 ? null : { follows: handles.length, added: 0 };
+    for (const f of (Array.isArray(r.follows) ? r.follows : []) as { handle?: unknown; displayName?: unknown }[]) {
+      const h = typeof f.handle === "string" ? normalizeAddress("bluesky", f.handle) : null;
+      // Bluesky's own account is followed by default on every new account; it is not a funding source.
+      if (h && h !== "bsky.app") handles.push({ handle: h, name: typeof f.displayName === "string" && f.displayName.trim() ? f.displayName.trim() : h });
+    }
+    cursor = typeof r.cursor === "string" ? r.cursor : undefined;
+    if (!cursor) break;
+  }
+  let added = 0;
+  for (const f of handles) {
+    const r = await upsertSource({ kind: "bluesky", address: f.handle, label: f.name, origin: "follows" });
+    if (!r.ok) continue;
+    if (r.created) added += 1;
+    // Found earlier on a dossier or added by hand, and followed since: it is no longer a suggestion.
+    else if (r.source.origin !== "follows") await db.from("signal_source").update({ origin: "follows" }).eq("id", r.source.id);
+  }
+  return { follows: handles.length, added };
+}
+
+const MAX_POSTS_PER_ACCOUNT = 5;
+
+/**
+ * Read one account's new posts. A post that reads like funding news and
+ * points at a page has that PAGE read and parsed (the post is the tip, the
+ * funder's page is the record). One with no page behind it is recorded and
+ * not parsed. Everything else is not recorded at all.
+ */
+export async function checkBluesky(s: SourceRow, budget: Budget): Promise<{ ok: boolean; kept: number; filed: number; error?: string }> {
+  const now = new Date();
+  const r = await bsky("app.bsky.feed.getAuthorFeed", { actor: s.address, limit: "30", filter: "posts_no_replies" });
+  if (!r) {
+    const msg = "Bluesky did not answer for this account (it may have been renamed or removed).";
+    await db.from("signal_source").update({ last_checked_at: now.toISOString(), last_error: msg }).eq("id", s.id);
+    return { ok: false, kept: 0, filed: 0, error: msg };
+  }
+  // For an account, last_hash holds "read up to": the time of the last run in
+  // which everything seen was dealt with. First read: the last two weeks.
+  const upTo = s.last_hash ? Date.parse(s.last_hash) : NaN;
+  const since = Number.isFinite(upTo) ? new Date(upTo) : new Date(now.getTime() - BLUESKY_FIRST_READ_DAYS * 86_400_000);
+  const posts = (Array.isArray(r.feed) ? r.feed : []).map(i => postSignal(i, s.address, since)).filter((p): p is NonNullable<typeof p> => !!p)
+    .filter(p => looksLikeFunding(p.text)).sort((a, b) => a.at.localeCompare(b.at)).slice(-MAX_POSTS_PER_ACCOUNT);
+  let kept = 0, filed = 0, unfinished = false;
+  for (const p of posts) {
+    if (Date.now() > budget.stopAt) { unfinished = true; break; }
+    let text = p.text, url = p.postUrl, skip = !p.link;
+    if (p.link) {
+      try {
+        const page = await readUrl(p.link, "The post is kept without it.");
+        text = `${p.text}\n\n${page.text.slice(0, 15_000)}`; url = page.url;
+      } catch { skip = true; }
+    }
+    const done = await fileSignal({ source: s, externalId: p.uri, title: p.text.replace(/\s+/g, " ").slice(0, 140), text, url, budget, skip, note: p.postUrl });
+    if (done) kept += 1;
+    if (done?.status === "filed") filed += done.entries;
+    if (done?.status === "new" || done?.status === "failed") unfinished = true;
+  }
+  // The clock moves only when everything seen was dealt with; otherwise the
+  // same posts are looked at again next run and the unread ones are finished.
+  await db.from("signal_source").update({
+    last_checked_at: now.toISOString(), last_ok_at: now.toISOString(), last_error: null, ...(unfinished ? {} : { last_hash: now.toISOString() }),
+  }).eq("id", s.id);
+  return { ok: true, kept, filed };
+}
+
+/** The twice-weekly Bluesky read: bring in the follows, then read every account that is due. */
+export async function runBluesky(budget: Budget): Promise<{ follows: number | null; added: number; checked: number; kept: number; filed: number; failed: number }> {
+  const sync = await syncFollows().catch(() => null);
+  const due = (await listSources()).filter(s => blueskyDue(s))
+    .sort((a, b) => (a.last_checked_at ?? "").localeCompare(b.last_checked_at ?? ""));
+  const out = { follows: sync?.follows ?? null, added: sync?.added ?? 0, checked: 0, kept: 0, filed: 0, failed: 0 };
+  for (const s of due) {
+    if (Date.now() > budget.stopAt) { console.error(`[signals] bluesky stopped early; ${due.length - out.checked} account(s) wait for the next run`); break; }
+    const r = await checkBluesky(s, budget);
+    out.checked += 1; out.kept += r.kept; out.filed += r.filed;
+    if (!r.ok) out.failed += 1;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,11 +1,12 @@
 // The signals run (patch 64). Mondays and Thursdays at 12:00 UTC. Vercel calls
 // this with "Authorization: Bearer <CRON_SECRET>"; without that secret, or
 // with the wrong one, nothing runs. Each run: finish any approved mail left
-// unread, then re-read every watched page that is due (weekly per page). One
+// unread, re-read every watched page that is due (weekly per page), then read
+// the Bluesky accounts (patch 65). One
 // shared budget of model calls and time covers the whole run; whatever does
 // not fit waits for the next one, and says so in the log.
 import { NextResponse } from "next/server";
-import { runPageWatch, pendingEmail, readHeldEmail, type Budget } from "@/lib/server/signals";
+import { runPageWatch, runBluesky, pendingEmail, readHeldEmail, type Budget } from "@/lib/server/signals";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,6 +30,8 @@ export async function GET(req: Request) {
     }
     out.mail = mail;
     out.pages = await runPageWatch(budget);
+    // Bluesky (patch 65): bring in @forgranted.com's follows, then read each account that is due.
+    out.bluesky = await runBluesky(budget);
   } catch (e) {
     // Most likely migration 0098 has not been applied yet.
     console.error("[signals] run failed", e);

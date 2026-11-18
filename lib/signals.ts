@@ -146,3 +146,60 @@ export function freshTimestamp(ts: string, nowSec: number): boolean {
   const t = Number(ts);
   return Number.isFinite(t) && /^\d{9,11}$/.test(ts) && Math.abs(nowSec - t) <= 300;
 }
+
+// ---------------------------------------------------------------------------
+// Bluesky (patch 65). Read through Bluesky's public directory: no sign-in, no
+// key, and nothing For Granted's account has to do. Following an account from
+// @forgranted.com is how a person adds one; the portal never follows anyone.
+
+export const BLUESKY_EVERY_DAYS = 2.5;
+export const BLUESKY_FIRST_READ_DAYS = 14;
+
+export function blueskyDue(s: Pick<SourceRow, "active" | "kind" | "last_checked_at">, now = new Date()): boolean {
+  return s.kind === "bluesky" && s.active && daysSince(s.last_checked_at, now) >= BLUESKY_EVERY_DAYS;
+}
+
+export interface PostSignal { uri: string; postUrl: string; text: string; at: string; link: string | null }
+
+/**
+ * One item of an account's feed as a possible signal: the account's OWN new
+ * post. A repost is someone else's words, and a reply is a conversation;
+ * neither is the account announcing something. The link is the page the post
+ * points at (its link card first, else the first address in its text), which
+ * is what gets read: a post is a tip, the page is the record.
+ */
+export function postSignal(item: unknown, handle: string, since: Date): PostSignal | null {
+  const it = item as { reason?: unknown; reply?: unknown; post?: { uri?: unknown; author?: { handle?: unknown }; record?: { text?: unknown; createdAt?: unknown; reply?: unknown; facets?: unknown }; embed?: unknown } } | null;
+  const post = it?.post;
+  if (!post || it?.reason || it?.reply || post.record?.reply) return null;
+  if (typeof post.uri !== "string" || typeof post.record?.createdAt !== "string") return null;
+  if (typeof post.author?.handle === "string" && post.author.handle.toLowerCase() !== handle.toLowerCase()) return null;
+  const at = Date.parse(post.record.createdAt);
+  if (!Number.isFinite(at) || at <= since.getTime()) return null;
+  const text = typeof post.record.text === "string" ? post.record.text : "";
+  const rkey = post.uri.split("/").pop() ?? "";
+  if (!/^[a-z0-9]{6,20}$/i.test(rkey)) return null;
+  const embed = post.embed as { external?: { uri?: unknown }; media?: { external?: { uri?: unknown } } } | undefined;
+  const card = embed?.external?.uri ?? embed?.media?.external?.uri;
+  let link: string | null = typeof card === "string" && /^https?:\/\//i.test(card) ? card : null;
+  if (!link && Array.isArray(post.record.facets)) {
+    for (const f of post.record.facets as { features?: { uri?: unknown }[] }[]) {
+      const u = f?.features?.find(x => typeof x?.uri === "string" && /^https?:\/\//i.test(x.uri as string))?.uri;
+      if (typeof u === "string") { link = u; break; }
+    }
+  }
+  if (!link) link = linksIn(text, 1)[0] ?? null;
+  // A link back into Bluesky is another post, not a page to read.
+  if (link && /^https?:\/\/(bsky\.app|[a-z0-9.-]*bsky\.social)\//i.test(link)) link = null;
+  return { uri: post.uri, postUrl: `https://bsky.app/profile/${handle}/post/${rkey}`, text: text.slice(0, 2000), at: new Date(at).toISOString(), link: link ? link.slice(0, 1000) : null };
+}
+
+/**
+ * Accounts worth following from @forgranted.com: Bluesky sources the portal
+ * reads that the account does not follow yet (found on a funder's dossier, or
+ * added by hand). A list for a person to act on; following stays a human act.
+ */
+export function suggestedFollows(sources: SourceRow[]): SourceRow[] {
+  return sources.filter(s => s.kind === "bluesky" && s.active && s.origin !== "follows")
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}

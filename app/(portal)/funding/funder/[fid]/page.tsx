@@ -69,9 +69,9 @@ export default async function FunderDossierPage({ params, searchParams }: {
   // someone else's website. The links show from the next visit, for every
   // client, because the profile is shared. Best-effort by design.
   if (funder.website && linksStale(profile?.fields.links_checked_at)) {
-    const { ein, funder_id, website } = funder;
+    const { ein, funder_id, website, name } = funder;
     after(async () => {
-      try { await lookupFunderLinks({ ein, funderId: funder_id, website }); }
+      try { await lookupFunderLinks({ ein, funderId: funder_id, website, name }); }
       catch (e) { console.error("[funder-links] lookup failed", e instanceof Error ? e.message : e); }
     });
   }

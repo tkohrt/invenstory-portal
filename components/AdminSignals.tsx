@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { addSourceAction, setSourceActiveAction, checkSourceNowAction, readHeldAction } from "@/lib/server/signals-actions";
 import {
-  KIND_LABEL, CATEGORY_LABEL, CATEGORIES, STATUS_LABEL, HEALTH_LABEL, sourceHealth,
+  KIND_LABEL, CATEGORY_LABEL, CATEGORIES, STATUS_LABEL, HEALTH_LABEL, sourceHealth, suggestedFollows,
   type SourceRow, type SignalRow, type SourceKind,
 } from "@/lib/signals";
 
@@ -54,6 +54,7 @@ export default function AdminSignals({ sources, recent, inbox, ready }: {
   const attention = health.filter(x => x.h.state === "failing" || x.h.state === "quiet").length;
   const waiting = sources.filter(s => s.kind === "email" && !s.active && s.origin === "inbox" && !s.last_signal_at);
   const held = recent.filter(r => r.status === "held");
+  const suggested = suggestedFollows(sources);
 
   return (
     <>
@@ -105,7 +106,7 @@ export default function AdminSignals({ sources, recent, inbox, ready }: {
                   <td className="fm-nowrap">{day(s.last_checked_at)}</td>
                   <td className="fm-nowrap">{day(s.last_signal_at ?? s.last_changed_at)}</td>
                   <td className="sg-acts">
-                    {s.kind === "page" && s.active && (
+                    {(s.kind === "page" || s.kind === "bluesky") && s.active && (
                       <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy === `c${s.id}`} onClick={() => void run(`c${s.id}`, () => checkSourceNowAction(s.id))}>
                         {busy === `c${s.id}` ? "Reading…" : "Read now"}</button>
                     )}
@@ -119,6 +120,23 @@ export default function AdminSignals({ sources, recent, inbox, ready }: {
           </table>
         )}
       </section>
+
+      {suggested.length > 0 && (
+        <section className="cu-card">
+          <div className="cu-head">
+            <h3>Suggested follows</h3>
+            <span className="cu-sub">Bluesky accounts the portal already reads (found on a funder&rsquo;s own site, or added here) that @forgranted.com does not follow yet. Following is yours to do; an account drops off this list after the next run sees the follow.</span>
+          </div>
+          <div className="cu-lists">
+            {suggested.slice(0, 30).map(s => (
+              <div key={s.id} className="cu-row">
+                <div className="cu-row-main"><b>{s.label}</b><span className="cu-counts">@{s.address} · {s.origin === "dossier" ? "found on a funder dossier" : "added by hand"}</span></div>
+                <a className="sb-btn sb-secondary sb-sm" href={`https://bsky.app/profile/${s.address}`} target="_blank" rel="noopener noreferrer">Open to follow ↗</a>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="cu-card">
         <div className="cu-head">

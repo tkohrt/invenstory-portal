@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { upsertSource, checkPage, readHeldEmail, type Budget } from "./signals";
+import { upsertSource, checkPage, checkBluesky, readHeldEmail, type Budget } from "./signals";
 import { CATEGORIES, type SourceCategory, type SourceKind, type SourceRow } from "@/lib/signals";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -40,7 +40,15 @@ export async function checkSourceNowAction(id: string): Promise<Result<{ message
   if (!s) return { ok: false, error: "For Granted only." };
   const { data } = await db.from("signal_source").select("*").eq("id", String(id)).maybeSingle();
   const src = data as SourceRow | null;
-  if (!src || src.kind !== "page") return { ok: false, error: "Only a watched page can be read on demand." };
+  if (src?.kind === "bluesky") {
+    const b = await checkBluesky(src, budget());
+    revalidatePath("/admin/reviews");
+    if (!b.ok) return { ok: false, error: b.error ?? "Bluesky did not answer." };
+    return { ok: true, message: b.kept
+      ? `Read. ${b.kept} new post${b.kept === 1 ? "" : "s"} about funding${b.filed ? `; ${b.filed} entr${b.filed === 1 ? "y" : "ies"} read from the pages they point to` : ""}.`
+      : "Read. No new posts about funding." };
+  }
+  if (!src || src.kind !== "page") return { ok: false, error: "Only a watched page or a Bluesky account can be read on demand." };
   const r = await checkPage(src, budget());
   revalidatePath("/admin/reviews");
   if (r.error) return { ok: false, error: r.error };

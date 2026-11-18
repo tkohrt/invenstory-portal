@@ -7,6 +7,7 @@ vi.mock("@/lib/server/curated", () => ({ parseListText: vi.fn(), fileLeads: vi.f
 import { createHmac } from "node:crypto";
 import {
   normalizeAddress, emailSender, textForFingerprint, looksLikeFunding, linksIn, pageDue, sourceHealth, weekListName, freshTimestamp,
+  blueskyDue, postSignal, suggestedFollows,
   type SourceRow,
 } from "@/lib/signals";
 import { verifyWebhook } from "@/lib/server/signals";
@@ -129,5 +130,56 @@ describe("the inbox's signature check", () => {
     expect(freshTimestamp("1795000000", 1795000000)).toBe(true);
     expect(freshTimestamp("soon", 1795000000)).toBe(false);
     expect(freshTimestamp("1795000000.5", 1795000000)).toBe(false);
+  });
+});
+
+// Patch 65 (18 Nov 2026): the Bluesky reader.
+describe("which posts are signals", () => {
+  const since = new Date("2026-11-10T00:00:00Z");
+  const post = (o: Record<string, unknown> = {}, rec: Record<string, unknown> = {}) => ({
+    post: { uri: "at://did:plc:abc/app.bsky.feed.post/3lxyzabc123", author: { handle: "kresge.org" },
+      record: { text: "Applications open Dec. 1 for artist fellowships. kresge.org/news", createdAt: "2026-11-17T15:00:00.000Z", ...rec }, ...o },
+  });
+  it("the account's own new post, with the page its link card points to", () => {
+    const p = postSignal(post({ embed: { external: { uri: "https://kresge.org/news-views/fellowships/" } } }), "kresge.org", since);
+    expect(p).toEqual({
+      uri: "at://did:plc:abc/app.bsky.feed.post/3lxyzabc123", postUrl: "https://bsky.app/profile/kresge.org/post/3lxyzabc123",
+      text: "Applications open Dec. 1 for artist fellowships. kresge.org/news", at: "2026-11-17T15:00:00.000Z", link: "https://kresge.org/news-views/fellowships/",
+    });
+  });
+  it("falls back to a link facet, then to an address in the text; a link to another post is not a page", () => {
+    expect(postSignal(post({}, { facets: [{ features: [{ $type: "app.bsky.richtext.facet#mention", did: "did:plc:x" }] }, { features: [{ uri: "https://kresge.org/apply" }] }] }), "kresge.org", since)?.link).toBe("https://kresge.org/apply");
+    expect(postSignal(post({}, { text: "Apply: https://kresge.org/a." }), "kresge.org", since)?.link).toBe("https://kresge.org/a");
+    expect(postSignal(post({ embed: { external: { uri: "https://bsky.app/profile/x.org/post/3abc" } } }, { text: "see thread" }), "kresge.org", since)?.link).toBeNull();
+    expect(postSignal(post({}, { text: "no link at all" }), "kresge.org", since)?.link).toBeNull();
+  });
+  it("a repost, a reply, an older post, or someone else's post is not this account announcing something", () => {
+    expect(postSignal({ ...post(), reason: { $type: "app.bsky.feed.defs#reasonRepost" } }, "kresge.org", since)).toBeNull();
+    expect(postSignal({ ...post(), reply: { parent: {} } }, "kresge.org", since)).toBeNull();
+    expect(postSignal(post({}, { reply: { parent: {} } }), "kresge.org", since)).toBeNull();
+    expect(postSignal(post({}, { createdAt: "2026-11-09T00:00:00.000Z" }), "kresge.org", since)).toBeNull();
+    expect(postSignal(post({ author: { handle: "someone.else" } }), "kresge.org", since)).toBeNull();
+    expect(postSignal(null, "kresge.org", since)).toBeNull();
+    expect(postSignal({ post: { uri: "at://x/y/../../etc", record: { createdAt: "2026-11-17T15:00:00.000Z" } } }, "kresge.org", since)).toBeNull();
+  });
+});
+
+describe("Bluesky sources", () => {
+  it("an account is read about twice a week, while it is on", () => {
+    expect(blueskyDue(src({ kind: "bluesky" }), NOW)).toBe(true);
+    expect(blueskyDue(src({ kind: "bluesky", last_checked_at: "2026-11-16T12:00:00Z" }), NOW)).toBe(false);
+    expect(blueskyDue(src({ kind: "bluesky", last_checked_at: "2026-11-15T12:00:00Z" }), NOW)).toBe(true);
+    expect(blueskyDue(src({ kind: "bluesky", active: false }), NOW)).toBe(false);
+    expect(blueskyDue(src({}), NOW)).toBe(false);
+  });
+  it("suggested follows: accounts the portal reads that the account does not follow yet, newest first", () => {
+    const list = [
+      src({ id: "a", kind: "bluesky", address: "kresge.org", origin: "follows" }),
+      src({ id: "b", kind: "bluesky", address: "gund.org", origin: "dossier", created_at: "2026-11-12T00:00:00Z" }),
+      src({ id: "c", kind: "bluesky", address: "x.org", origin: "manual", created_at: "2026-11-15T00:00:00Z" }),
+      src({ id: "d", kind: "bluesky", address: "off.org", origin: "dossier", active: false }),
+      src({ id: "e", kind: "page", origin: "manual" }),
+    ];
+    expect(suggestedFollows(list).map(s => s.id)).toEqual(["c", "b"]);
   });
 });

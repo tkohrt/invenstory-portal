@@ -32,13 +32,13 @@ export async function requestApproachAction(funderId: string, name: string): Pro
 export async function refreshFunderLinksAction(funderId: string): Promise<{ ok: true; found: number; changed: number } | { ok: false; error: string }> {
   const s = await getSession();
   if (!s || s.role !== "admin") return { ok: false, error: "For Granted only." };
-  const { data } = await db.from("matched_funder").select("funder_id, ein, website")
+  const { data } = await db.from("matched_funder").select("funder_id, ein, website, name")
     .eq("tenant_id", s.tenantId).eq("funder_id", String(funderId).slice(0, 220)).maybeSingle();
-  const f = data as { funder_id: string; ein: string | null; website: string | null } | null;
+  const f = data as { funder_id: string; ein: string | null; website: string | null; name: string | null } | null;
   if (!f) return { ok: false, error: "That funder is not on this client's list." };
   if (!f.website) return { ok: false, error: "No website is on record for this funder, so there is nothing to read." };
   const { lookupFunderLinks } = await import("./funder-links");
-  const r = await lookupFunderLinks({ ein: f.ein, funderId: f.funder_id, website: f.website });
+  const r = await lookupFunderLinks({ ein: f.ein, funderId: f.funder_id, website: f.website, name: f.name });
   if (!r.ok) return r;
   return { ok: true, found: Object.keys(r.found).length, changed: r.changed.length };
 }

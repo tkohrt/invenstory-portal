@@ -33,7 +33,7 @@ export type LinksLookup =
  * links is not re-read on every visit; a site that could not be read is left
  * unstamped and tried again next time.
  */
-export async function lookupFunderLinks(a: { ein: string | null | undefined; funderId: string; website: string }): Promise<LinksLookup> {
+export async function lookupFunderLinks(a: { ein: string | null | undefined; funderId: string; website: string; name?: string | null }): Promise<LinksLookup> {
   let page: { html: string; url: string };
   try {
     page = await readHtml(a.website, "Add the links by hand.");
@@ -51,5 +51,18 @@ export async function lookupFunderLinks(a: { ein: string | null | undefined; fun
     incoming: { ...found, links_checked_at: at },
     prov: { how: "funder_site", source_url: page.url, at },
   });
+  // Patch 65: a funder found to be on Bluesky becomes a source the portal
+  // reads, and a suggested follow for @forgranted.com. Best-effort: a missing
+  // 0098 or a refused write never costs the dossier its links.
+  if (found.bluesky_url) {
+    try {
+      const { upsertSource } = await import("./signals");
+      const { profileKey } = await import("@/lib/funder-profile");
+      await upsertSource({
+        kind: "bluesky", address: found.bluesky_url, label: (a.name ?? "").trim() || found.bluesky_url.replace(/^.*\/profile\//, ""),
+        category: "funder", origin: "dossier", funderKey: profileKey(a.ein, a.funderId),
+      });
+    } catch (e) { console.error("[funder-links] bluesky source not recorded", e instanceof Error ? e.message : e); }
+  }
   return { ok: true, found, changed: changed.filter(k => k !== "links_checked_at") };
 }
