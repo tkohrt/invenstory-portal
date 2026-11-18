@@ -19,27 +19,32 @@ export interface CuratedListRow {
   proposed: number; approved: number; rejected: number; matches: number; tenants: number;
 }
 
-/** Parse a pasted list and file each entry as a Ground Truth proposal. */
-export async function createCuratedList(a: {
-  name: string; sourceUrl: string | null; contextNote: string | null; pasted: string; userId: string;
-}): Promise<{ ok: true; listId: string; entries: number } | { ok: false; error: string }> {
+type Lead = ReturnType<typeof curatedLeads>[number];
+
+/**
+ * Read opportunities out of a body of text with the one curated-list parser
+ * (the single model call). Shared since patch 64 by pasted lists and by
+ * signals (a changed page, a newsletter, a post's linked page), so everything
+ * that reaches the review queue was read by the same rules.
+ * "unavailable": the model did not answer. "empty": it answered, nothing in it.
+ */
+export async function parseListText(pasted: string): Promise<{ ok: true; leads: Lead[] } | { ok: false; reason: "unavailable" | "empty" }> {
   const today = new Date().toISOString().slice(0, 10);
   const res = await chatComplete({
-    system: CURATED_PARSE_SYSTEM, user: curatedParseUser(a.pasted.slice(0, 20_000), today),
+    system: CURATED_PARSE_SYSTEM, user: curatedParseUser(pasted.slice(0, 20_000), today),
     maxTokens: 4000, temperature: 0,
   });
-  if (!res?.text) return { ok: false, error: "The list could not be parsed right now (AI parsing is unavailable in this environment). Try again, or file the entries one at a time with Record a verification." };
+  if (!res?.text) return { ok: false, reason: "unavailable" };
   const leads = curatedLeads(parseLeads(res.text), today).slice(0, MAX_ENTRIES);
-  if (!leads.length) return { ok: false, error: "No opportunities could be read from that text. Paste the list itself (titles, funders, links, deadlines)." };
+  return leads.length ? { ok: true, leads } : { ok: false, reason: "empty" };
+}
 
-  // tenant-safe: curated_list is For Granted's shared, admin-only record with no tenant_id.
-  const { data: list, error } = await db.from("curated_list").insert({
-    name: a.name.slice(0, 200), source_url: a.sourceUrl?.slice(0, 1000) || null,
-    context_note: a.contextNote?.slice(0, 4000) || null, created_by: a.userId,
-  }).select("id").single();
-  if (error || !list) return { ok: false, error: "The list could not be saved. Has migration 0087 been applied?" };
-  const listId = (list as { id: string }).id;
-
+/**
+ * File parsed entries into the Ground Truth review queue under one list.
+ * Deduped by the opportunity's own URL: one already known is tied to the list
+ * (when it has none) and not filed twice. Returns how many NEW proposals went in.
+ */
+export async function fileLeads(listId: string, leads: Lead[], userId: string | null): Promise<number> {
   let filed = 0;
   for (const l of leads) {
     const draft = overlayDraft(l, []);
@@ -57,14 +62,34 @@ export async function createCuratedList(a: {
       kind: draft.kind, base_id: null, ein: null,
       opportunity_number: draft.kind === "grant" ? draft.source_url.slice(0, 400) : null,
       title: draft.title.slice(0, 300), fields: draft.fields,
-      source_url: draft.source_url || `curated:${listId}:${filed}`,
+      source_url: draft.source_url || `curated:${listId}:${Date.now()}:${filed}`,
       provenance: "curated_list", curated_list_id: listId, status: "proposed",
-      confidence: "low", proposed_by: a.userId,
+      confidence: "low", proposed_by: userId,
     });
     if (insErr) console.error("[curated] entry not filed", insErr.message);
     else filed += 1;
   }
-  return { ok: true, listId, entries: filed };
+  return filed;
+}
+
+/** Parse a pasted list and file each entry as a Ground Truth proposal. */
+export async function createCuratedList(a: {
+  name: string; sourceUrl: string | null; contextNote: string | null; pasted: string; userId: string;
+}): Promise<{ ok: true; listId: string; entries: number } | { ok: false; error: string }> {
+  const parsed = await parseListText(a.pasted);
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.reason === "unavailable"
+      ? "The list could not be parsed right now (AI parsing is unavailable in this environment). Try again, or file the entries one at a time with Record a verification."
+      : "No opportunities could be read from that text. Paste the list itself (titles, funders, links, deadlines)." };
+  }
+  // tenant-safe: curated_list is For Granted's shared, admin-only record with no tenant_id.
+  const { data: list, error } = await db.from("curated_list").insert({
+    name: a.name.slice(0, 200), source_url: a.sourceUrl?.slice(0, 1000) || null,
+    context_note: a.contextNote?.slice(0, 4000) || null, created_by: a.userId,
+  }).select("id").single();
+  if (error || !list) return { ok: false, error: "The list could not be saved. Has migration 0087 been applied?" };
+  const listId = (list as { id: string }).id;
+  return { ok: true, listId, entries: await fileLeads(listId, parsed.leads, a.userId) };
 }
 
 /** Screen every community member against a list's approved entries. */

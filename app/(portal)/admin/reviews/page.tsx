@@ -15,22 +15,35 @@ import AdminRequestsView from "@/components/AdminRequestsView";
 import { getRequests, openRequestCount } from "@/lib/server/requests";
 import { getCuratedLists, getCommunityMembers } from "@/lib/server/curated";
 import AdminCuratedLists from "@/components/AdminCuratedLists";
+import AdminSignals from "@/components/AdminSignals";
+import { listSources, recentSignals } from "@/lib/server/signals";
+import { sourceHealth } from "@/lib/signals";
 
 export default async function ReviewQueuesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/");
   if (session.role !== "admin") redirect("/invenstory");
   const sp = await searchParams;
-  const tab = sp.tab === "ground-truth" ? "ground-truth" : sp.tab === "requests" ? "requests" : "story";
+  const tab = sp.tab === "ground-truth" ? "ground-truth" : sp.tab === "requests" ? "requests" : sp.tab === "sources" ? "sources" : "story";
 
   // All three counts load regardless of tab, so each pill wears its own badge.
-  const [pending, queue, reqOpen] = await Promise.all([getPendingReviews(), getOverlayQueue(), openRequestCount()]);
+  // Sources (patch 64): null when migration 0098 is not applied yet, so the
+  // other tabs keep working either way.
+  const [pending, queue, reqOpen, sources] = await Promise.all([
+    getPendingReviews(), getOverlayQueue(), openRequestCount(), listSources().catch(() => null),
+  ]);
+  // The badge counts what needs a person: a failing or silent source, or a new sender waiting for approval.
+  const sourcesNeed = (sources ?? []).filter(s => {
+    const h = sourceHealth(s).state;
+    return h === "failing" || h === "quiet" || (s.kind === "email" && !s.active && s.origin === "inbox" && !s.last_signal_at);
+  }).length;
 
   const tabs = (
     <AdminTabs active={tab} tabs={[
       { key: "story", href: "/admin/reviews", label: "Story Intelligence", badge: pending.length },
       { key: "ground-truth", href: "/admin/reviews?tab=ground-truth", label: "Ground Truth", badge: queue.length },
       { key: "requests", href: "/admin/reviews?tab=requests", label: "Client requests", badge: reqOpen },
+      { key: "sources", href: "/admin/reviews?tab=sources", label: "Sources", badge: sourcesNeed },
     ]} />
   );
 
@@ -43,6 +56,18 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
         <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
         {tabs}
         <AdminRequestsView open={open} recent={recent} />
+      </div>
+    );
+  }
+
+  if (tab === "sources") {
+    const recent = sources ? await recentSignals().catch(() => []) : [];
+    return (
+      <div className="rq-page">
+        <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
+        {tabs}
+        <AdminSignals sources={sources ?? []} recent={recent} ready={sources !== null}
+          inbox={{ address: process.env.SIGNALS_INBOX?.trim() || null, configured: !!process.env.RESEND_INBOUND_SECRET }} />
       </div>
     );
   }

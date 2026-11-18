@@ -2618,6 +2618,17 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .do-facts{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0 0 8px;font-size:13.5px}
 .do-facts dt{color:var(--muted);font-weight:600}
 .do-facts dd{margin:0}
+/* Patch 64: the Sources tab. Health tags use the style guide's meaning colours (good, attention, error), each with its word. */
+.sg-table td{vertical-align:top}
+.sg-addr{font-size:12px;color:var(--muted);word-break:break-all}
+.sg-why{display:block;font-size:12px;color:var(--muted);line-height:1.35}
+.sg-acts{white-space:nowrap}
+.sg-acts .sb-btn+.sb-btn{margin-left:6px}
+.ov-tag.sg-ok{background:#e6f2ea;border-color:#b9d8c4;color:#1f4d2e}
+.ov-tag.sg-warn{background:#fff6dc;border-color:#eadfc2;color:#7a6320}
+.ov-tag.sg-bad{background:#fbeceb;border-color:#e6c2bd;color:#8a2f22}
+.ov-tag.sg-off{opacity:.65}
+.sg-held .sg-links{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin-top:4px}
 /* Patch 63: the funder's own channels, one wrapping row under the facts. */
 .do-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:2px 0 10px;font-size:13.5px}
 .do-links b{color:var(--muted);font-weight:600;min-width:136px}
