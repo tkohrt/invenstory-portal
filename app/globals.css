@@ -2244,6 +2244,8 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .fm-page .fm-name a{color:var(--ink);text-decoration:none}
 .fm-page .fm-name a:hover{text-decoration:underline;color:#1f4d2e}
 .fm-page .fm-listed{font-size:12px;word-break:normal;overflow-wrap:break-word}
+/* Patch 62: an accelerator's stated terms in the amount column. Wraps, unlike a figure. */
+.fm-page .fm-terms{font-size:12.5px;line-height:1.35;min-width:150px;max-width:230px;white-space:normal}
 .fm-page .fm-screen,.fm-page .fm-caveat,.fm-page .fm-nohistory,.fm-page .tri-why,.fm-page .tri-reasons-head,.fm-page .fm-new{font-size:12px}
 .fm-page .fm-funder{min-width:120px;max-width:170px}
 .fm-page .fm-decide{min-width:150px}

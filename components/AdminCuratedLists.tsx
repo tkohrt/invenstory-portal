@@ -39,7 +39,7 @@ export default function AdminCuratedLists({ lists, clients }: {
     const r = await sweepCuratedListAction(id).catch(() => ({ ok: false as const, error: "The sweep did not finish. Try again." }));
     setSweeping(null);
     if (!r.ok) { setErr(r.error); return; }
-    setMsg(`Swept ${r.tenants} community member${r.tenants === 1 ? "" : "s"} against ${r.entries} opportunit${r.entries === 1 ? "y" : "ies"}: ${r.matches} match${r.matches === 1 ? "" : "es"}.${r.skipped ? ` ${r.skipped} client${r.skipped === 1 ? " is" : "s are"} not community members and were left out.` : ""}`);
+    setMsg(`Swept ${r.tenants} community member${r.tenants === 1 ? "" : "s"} against ${r.entries} opportunit${r.entries === 1 ? "y" : "ies"}: ${r.matches} match${r.matches === 1 ? "" : "es"}.${r.skipped ? ` ${r.skipped} client${r.skipped === 1 ? " is" : "s are"} not community members and were left out.` : ""}${r.notSought ? ` ${r.notSought} pairing${r.notSought === 1 ? " was" : "s were"} left out because the client is not looking for that kind of funding (set on its Funding Eligibility page).` : ""}`);
     router.refresh();
   };
 

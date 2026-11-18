@@ -12,7 +12,7 @@
 //
 // Pure and free of `server-only`; the calls are lib/server/discovery.ts.
 import {
-  kindsSought, homeLabel, reachLabels, profileCountries, ORG_TYPES, FUNDING_KIND_LABEL,
+  kindsSought, isFundingKind, homeLabel, reachLabels, profileCountries, ORG_TYPES, FUNDING_KIND_LABEL,
   type EligibilityProfile, type FundingKind,
 } from "@/lib/eligibility-fields";
 import { COUNTRY_NAME, REGIONS } from "@/lib/countries";
@@ -69,11 +69,12 @@ Search the web for the question you are given and return what you find as JSON. 
 3. Prefer the funder's own page over a listing site or news article. Leave out paywalled aggregators.
 4. Say what the page says. Do not invent amounts, deadlines or eligibility. If unsure, use null.
 5. "why" is one sentence on why it could fit this client, using only the client facts given. "quote" is a short exact phrase (under 20 words) copied from the page that shows it is real and current.
+5a. For a "programs" opportunity that invests in or takes a stake in the applicant (an accelerator, a fund), put what the page STATES about the deal in "terms": the instrument, the equity or stake taken, and any follow-on, in the page's own words, condensed (for example "$150,000 on a SAFE for 6% equity"). If the page says it takes no equity, say so. null when the page does not state the terms; never infer them.
 5b. For a "funder" item only, you may add "giving_cycle", "programs" and "application_process" when the page STATES them (its own words, condensed). Omit any the page does not state; never infer them.
 6. At most 8 items. Fewer good items beat more weak ones. No em dashes.
 
 Return ONLY this JSON, no other text:
-{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"why":"...","quote":"...","giving_cycle":"..."|null,"programs":"..."|null,"application_process":"..."|null}]}`;
+{"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":"...","funder":"...","url":"https://...","deadline":"YYYY-MM-DD"|"rolling"|null,"amount":"..."|null,"geography":"..."|null,"eligibility":"..."|null,"terms":"..."|null,"why":"...","quote":"...","giving_cycle":"..."|null,"programs":"..."|null,"application_process":"..."|null}]}`;
 
 /** The user turn: today's date, the client in brief (fenced), the question. */
 export function discoverUser(angle: Angle, facts: string[], today: string): string {
@@ -114,6 +115,20 @@ export interface RawLead {
   deadline?: unknown; amount?: unknown; geography?: unknown; eligibility?: unknown; why?: unknown; quote?: unknown;
   // Funder-profile extras (patch 41): only when the page states them.
   giving_cycle?: unknown; programs?: unknown; application_process?: unknown;
+  // Investment terms (patch 62): programs only, only when the page states them.
+  terms?: unknown;
+}
+
+/**
+ * The deal an accelerator or fund offers, as its page states it (patch 62,
+ * Shane 18 Nov 2026: cash-for-equity programs belong in the portal with their
+ * terms shown). Carried only for a "programs" opportunity: on a grant or a
+ * contract the amount is an award and there are no terms to state.
+ */
+export function leadTerms(r: RawLead, moneyKind: string, kind: "opportunity" | "funder"): { terms?: string } {
+  if (kind !== "opportunity" || moneyKind !== "programs") return {};
+  const t = typeof r.terms === "string" ? noLinks(r.terms.replace(/\s+/g, " ").trim().slice(0, 240)) : null;
+  return t ? { terms: t } : {};
 }
 
 /** Funder-profile extras a parse may carry (patch 41): stated-only, optional. */
@@ -147,6 +162,8 @@ export interface Lead {
   giving_cycle?: string;
   programs?: string;
   application_process?: string;
+  /** What a programme gives and takes, as its page states it (patch 62). */
+  terms?: string;
 }
 
 /** The JSON object in a reply, tolerating a fence or a sentence around it. */
@@ -228,6 +245,7 @@ export function groundLeads(raw: RawLead[], sourceUrls: string[], angleKind: Ang
       eligibility: noLinks(s(r.eligibility, 600)), why: noLinks(s(r.why, 400)), quote: noLinks(s(r.quote, 200)),
       grounded,
       ...leadProfileExtras(r),
+      ...leadTerms(r, mk, kind),
     });
   }
   return out;
@@ -313,9 +331,17 @@ export function overlayDraft(l: Lead, topics: string[]): OverlayDraft {
       ...(l.deadline ? { close_date: l.deadline } : {}),
       ...(amount ? { max_award: amount, currency: currencyOf(l.amount) ?? "USD" } : {}),
       money_kind: l.money_kind, source: "web",
+      // Patch 62: the deal as the page states it. A reviewer corrects it here.
+      ...(l.terms ? { investment_terms: l.terms } : {}),
       discovered_via: "web", geography, topics, ...(notes ? { notes } : {}),
     },
   };
+}
+
+/** Is this kind of money one the client said it is looking for? Unlabelled means grants. */
+export function wantsKind(moneyKind: unknown, p: { funding_kinds?: string[] | null }): boolean {
+  const k: FundingKind = isFundingKind(moneyKind) ? moneyKind : "grants";
+  return kindsSought(p).includes(k);
 }
 
 /**
@@ -335,6 +361,11 @@ export function additionFits(
   const f = row.fields ?? {};
   if (f.discovered_via !== "web") return true;
   if (row.surfaced_for_tenant === tenantId) return true;
+  // Patch 62: a find reaches only clients looking for that kind of money. An
+  // accelerator is not put in front of a client who asked for grants alone.
+  // A funder row carries no kind and is left alone: only a labelled
+  // opportunity is held to the kinds the client chose.
+  if (isFundingKind(f.money_kind) && !wantsKind(f.money_kind, p)) return false;
   const geo = Array.isArray(f.geography) ? (f.geography as unknown[]).filter(g => typeof g === "string") as string[] : [];
   if (geo.length) {
     const mine = new Set(profileCountries(p));

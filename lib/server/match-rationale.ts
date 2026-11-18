@@ -137,7 +137,10 @@ export async function addRationales(
     `#${i} ${g.title}`,
     g.funder ? `  Funder/source: ${g.funder}` : null,
     g.close_date ? `  Deadline: ${g.close_date}` : `  Deadline: rolling or unlisted`,
-    g.award_ceiling ? `  Award ceiling: ${g.award_ceiling}` : null,
+    // Patch 62: an accelerator's figure is an investment with terms, and the
+    // explanation must never call it an award.
+    g.terms ? `  Investment terms (an investment in the organization, NOT a grant award; never call it an award or a grant): ${g.terms}`
+      : g.award_ceiling ? `  Award ceiling: ${g.award_ceiling}` : null,
     g.eligibility ? `  Eligibility (AI-extracted, unverified): ${g.eligibility.slice(0, 500)}` : null,
     `  Rule-based screen said: ${g.reason}`,
   ].filter(Boolean).join("\n")).join("\n\n");

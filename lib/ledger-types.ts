@@ -56,6 +56,8 @@ export interface GrantCard {
   confidence?: "strong" | "moderate" | "worth_a_look"; caveat?: string;
   /** Patch 4 (1 Nov 2026): what kind of money, its currency, and which source. */
   money_kind?: string; currency?: string | null; source?: string;
+  /** Patch 62: an accelerator's or fund's deal as its page states it. Reviewed entries only. */
+  investment_terms?: string;
 }
 
 export interface LedgerEnvelope<T> {

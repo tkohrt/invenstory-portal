@@ -368,8 +368,7 @@ export async function runMatch(
     newIds = newRows.map(s => s.grant_id.slice(0, GRANT_ID_MAX)).slice(0, 50);
     newTitles = newRows.map(s => s.title).filter((t): t is string => !!t).slice(0, 10);
 
-    const { error } = await db.from("eligible_grant").upsert(
-      screened.map(s => ({
+    const toSave = screened.map(s => ({
         tenant_id: tenantId, grant_id: s.grant_id.slice(0, GRANT_ID_MAX), verdict: s.verdict,
         reason: s.reason.slice(0, 500), close_date: s.close_date,
         award_ceiling: s.award_ceiling, matched_at: ranAt,
@@ -388,8 +387,19 @@ export async function runMatch(
         source: s.source ?? "ledger",
         money_kind: s.money_kind ?? "grants",
         currency: s.currency ?? null,
-      })),
-      { onConflict: "tenant_id,grant_id" });
+        // Patch 62 (0097): an accelerator's deal, so the table never shows an
+        // investment as if it were an award.
+        terms: s.terms ?? null,
+      }));
+    // tenant-safe: every row in toSave carries tenant_id: tenantId (built just above).
+    let { error } = await db.from("eligible_grant").upsert(toSave, { onConflict: "tenant_id,grant_id" }); // tenant-safe: rows carry this tenant's id
+    // Patch 62: the terms column arrives with migration 0097. If the code is
+    // live before it, save everything else rather than fail every search, and
+    // say so loudly: until 0097 runs, an accelerator shows its figure alone.
+    if (error && /\bterms\b/i.test(error.message)) {
+      console.error("[match] eligible_grant.terms is missing: apply migration 0097. Saved without investment terms.", error.message);
+      ({ error } = await db.from("eligible_grant").upsert(toSave.map(({ terms: _terms, ...rest }) => rest), { onConflict: "tenant_id,grant_id" })); // tenant-safe: the same rows, each with this tenant's id
+    }
     // Never report a successful run over a rejected write. The first version of
     // this swallowed the error and cheerfully claimed "15 opportunities kept"
     // while the table stayed empty.
@@ -556,6 +566,8 @@ export async function getCachedMatches(tenantId: string) {
     source_site: string | null; verified_at: string | null;
     /** Patch 4 (0073). Null on rows stored before it. */
     source?: string | null; money_kind?: string | null; currency?: string | null;
+    /** Patch 62 (0097). Null on rows stored before it and on anything but a programme. */
+    terms?: string | null;
   }[];
 }
 
@@ -708,6 +720,8 @@ export async function fillPendingRationales(
     verdict: r.verdict, reason: String(r.reason ?? ""),
     close_date: r.close_date, award_ceiling: r.award_ceiling,
     funder: r.funder ?? undefined, eligibility: r.eligibility ?? undefined,
+    // Patch 62: the resumed explanation must know an investment from an award.
+    terms: r.terms ?? null, money_kind: r.money_kind ?? undefined,
   })) as unknown as ScreenedGrant[];
 
   await withAiUsage({ tenantId, actor: "admin", feature: "match_rationale" }, () => addRationales(screened, dossier, p, orgName,

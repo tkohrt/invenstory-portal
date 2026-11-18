@@ -30,7 +30,7 @@ export async function createCuratedListAction(a: { name: string; sourceUrl: stri
   return r;
 }
 
-export async function sweepCuratedListAction(listId: string): Promise<Result<{ entries: number; tenants: number; matches: number; skipped: number }>> {
+export async function sweepCuratedListAction(listId: string): Promise<Result<{ entries: number; tenants: number; matches: number; skipped: number; notSought: number }>> {
   const s = await admin();
   if (!s) return { ok: false, error: "For Granted only." };
   const r = await sweepCuratedList(listId);

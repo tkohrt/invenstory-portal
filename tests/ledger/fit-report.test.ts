@@ -119,3 +119,28 @@ describe("buildFitReport", () => {
     expect(lines[1]).toContain('"Say ""hi"""');
   });
 });
+
+// Patch 62 (18 Nov 2026): an investment is never sized as an award.
+import { termsRange, readsAsTerms } from "@/lib/fit-report";
+describe("investment terms in the fit report (patch 62)", () => {
+  test("an accelerator with terms shows them, with no in-range judgement", () => {
+    const r = opportunityRow(match({ money_kind: "programs", award_ceiling: 150_000, terms: "$150,000 on a SAFE for 6% equity" }), p, TODAY);
+    expect(r.range.call).toBe("unknown");
+    expect(r.range.why).toContain("An investment, not a grant");
+    expect(r.range.why).toContain("$150,000 on a SAFE for 6% equity");
+    expect(r.range.why).not.toMatch(/in range|small for|budget/i);
+  });
+  test("a grant, and a prize with no terms, are sized as before", () => {
+    expect(opportunityRow(match({}), p, TODAY).range).toEqual(rangeFit(50_000, p, null));
+    expect(opportunityRow(match({ money_kind: "programs", terms: null }), p, TODAY).range).toEqual(rangeFit(50_000, p, null));
+  });
+  test("a web find whose amount is really terms is treated the same way", () => {
+    expect(readsAsTerms("programs", "$150,000 on a SAFE for 6% equity")).toBe(true);
+    expect(readsAsTerms("programs", "Up to $25,000")).toBe(false);
+    expect(readsAsTerms("grants", "$50,000 for equity-focused work")).toBe(false);
+    expect(readsAsTerms("programs", null)).toBe(false);
+    const r = leadRow(lead({ amount_text: "€100K initial ticket for 9% equity" }), p, TODAY);
+    expect(r.range).toEqual(termsRange("€100K initial ticket for 9% equity"));
+    expect(leadRow(lead({}), p, TODAY).range.why).not.toContain("An investment");
+  });
+});

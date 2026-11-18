@@ -7,7 +7,7 @@ import { db } from "./db";
 import { chatComplete } from "./llm";
 import { getEligibilityProfile } from "./eligibility";
 import { screenGrant } from "@/lib/grant-screen";
-import { parseLeads, overlayDraft } from "@/lib/web-discovery";
+import { parseLeads, overlayDraft, wantsKind } from "@/lib/web-discovery";
 import { CURATED_PARSE_SYSTEM, curatedParseUser, curatedLeads, curatedCard, type CuratedMatchRow } from "@/lib/curated";
 
 const MAX_ENTRIES = 50;
@@ -68,7 +68,7 @@ export async function createCuratedList(a: {
 }
 
 /** Screen every community member against a list's approved entries. */
-export async function sweepCuratedList(listId: string): Promise<{ ok: true; entries: number; tenants: number; matches: number; skipped: number } | { ok: false; error: string }> {
+export async function sweepCuratedList(listId: string): Promise<{ ok: true; entries: number; tenants: number; matches: number; skipped: number; notSought: number } | { ok: false; error: string }> {
   // tenant-safe: admin-only read of the shared review queue, by list.
   const { data: entries } = await db.from("ledger_overlay")
     .select("id, kind, fields").eq("curated_list_id", listId).eq("status", "approved").limit(MAX_ENTRIES);
@@ -85,10 +85,14 @@ export async function sweepCuratedList(listId: string): Promise<{ ok: true; entr
 
   const today = new Date();
   let matches = 0;
+  // Patch 62: entry-and-client pairs left out because the client is not
+  // looking for that kind of money (an accelerator, a grants-only client).
+  let notSought = 0;
   for (const t of members) {
     const p = await getEligibilityProfile(t.id).catch(() => null);
     if (!p || !p.org_type) continue;
     for (const e of grants) {
+      if (!wantsKind(e.fields?.money_kind, p)) { notSought += 1; continue; }
       const s = screenGrant({ ...curatedCard(e.fields), id: e.id } as Parameters<typeof screenGrant>[0], p, today, { reviewed: true });
       if (!s || s.verdict === "watch") continue;
       const { error } = await db.from("curated_match").upsert({
@@ -100,7 +104,7 @@ export async function sweepCuratedList(listId: string): Promise<{ ok: true; entr
   }
   // tenant-safe: the list row is shared admin data.
   await db.from("curated_list").update({ swept_at: new Date().toISOString() }).eq("id", listId);
-  return { ok: true, entries: grants.length, tenants: members.length, matches, skipped };
+  return { ok: true, entries: grants.length, tenants: members.length, matches, skipped, notSought };
 }
 
 /** The admin card's rows: every list with its counts. */
@@ -149,6 +153,9 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
   const byEntry = new Map(((entries ?? []) as { id: string; fields: Record<string, unknown>; status: string }[]).map(e => [e.id, e]));
   const byList = new Map(((lists ?? []) as { id: string; name: string; context_note: string | null }[]).map(l => [l.id, l]));
   const today = new Date().toISOString().slice(0, 10);
+  // Patch 62: a match made before the client's kinds were respected, or before
+  // the client changed them, is not shown. Read-time, so nothing needs re-sweeping.
+  const profile = await getEligibilityProfile(tenantId).catch(() => null);
   const out: CuratedMatchRow[] = [];
   for (const r of rows) {
     const e = byEntry.get(r.overlay_id);
@@ -156,6 +163,7 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
     if (!e || e.status !== "approved" || !l) continue;  // superseded or withdrawn entries drop out
     const c = curatedCard(e.fields);
     if (c.close_date && c.close_date < today) continue; // closed since the sweep
+    if (profile && !wantsKind(c.money_kind, profile)) continue; // not a kind this client is looking for
     const notes = typeof e.fields.notes === "string" ? e.fields.notes : null;
     out.push({
       overlay_id: r.overlay_id, list_id: r.list_id, list_name: l.name,
@@ -163,6 +171,7 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
       title: c.title ?? "Untitled opportunity", funder: c.agency ?? null,
       close_date: c.close_date ?? null, max_award: c.max_award ?? null,
       website: c.website ?? null, notes,
+      money_kind: c.money_kind ?? null, terms: c.investment_terms ?? null,
     });
   }
   return out;

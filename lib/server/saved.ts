@@ -13,7 +13,7 @@ export interface SavedItem {
   target_id: string;
   title: string | null;
   /** Display snapshot at save time. Never authoritative; a live row wins. */
-  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null };
+  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null; terms?: string | null };
   saved_at: string;
   /** The reopen stamp (patch 28, 0083): set when a run finds this saved grant
       open again after its saved close date passed; cleared when it closes. */

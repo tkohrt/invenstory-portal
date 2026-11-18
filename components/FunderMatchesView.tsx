@@ -56,7 +56,7 @@ export interface RunRow {
 /** One saved-for-later row (patch 26), mirroring lib/server/saved.ts. */
 export interface SavedRow {
   kind: "grant" | "funder"; target_id: string; title: string | null;
-  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null };
+  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null; terms?: string | null };
   saved_at: string;
   /** The reopen stamp (patch 28); absent on rows from before migration 0083. */
   reopened_at?: string | null;
@@ -71,6 +71,8 @@ interface Cached {
   rationale: string | null; source_site: string | null; verified_at: string | null;
   /** Patch 4 (0073): which source, what kind of money, its currency. */
   source?: string | null; money_kind?: string | null; currency?: string | null;
+  /** Patch 62 (0097): an accelerator's or fund's deal, as its page states it. */
+  terms?: string | null;
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -158,6 +160,15 @@ function money(n: number | null, currency?: string | null) {
 }
 
 /** Where a row came from, when it is not Ground Truth, and what kind of money it is. */
+/**
+ * The amount cell (patch 62). A programme that invests shows its deal in the
+ * page's own words, never a bare figure that would read as an award.
+ */
+function AmountCell({ m }: { m: { award_ceiling: number | null; currency?: string | null; terms?: string | null } }) {
+  if (m.terms) return <td className="fm-terms" title="An investment, not a grant. These are the terms as the programme's own page states them; confirm them there before applying.">{m.terms}</td>;
+  return <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>;
+}
+
 function originLine(source?: string | null, kind?: string | null): string | null {
   const bits: string[] = [];
   if (source && source !== "ledger" && SOURCE_LABEL[source]) bits.push(`from ${SOURCE_LABEL[source]}`);
@@ -512,18 +523,18 @@ export default function FunderMatchesView({
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const isSaved = (kind: "grant" | "funder", id: string) =>
     savedOverride[savedKeyOf(kind, id)] ?? savedBase.has(savedKeyOf(kind, id));
-  const toggleSave = async (m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null }) => {
+  const toggleSave = async (m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null }) => {
     const key = savedKeyOf("grant", m.grant_id);
     const next = !isSaved("grant", m.grant_id);
     setSavedOverride(o => ({ ...o, [key]: next }));
     const r = await toggleSavedAction({
       kind: "grant", target_id: m.grant_id, title: m.title,
-      detail: { funder: m.funder, url: m.url, close_date: m.close_date, award_ceiling: m.award_ceiling },
+      detail: { funder: m.funder, url: m.url, close_date: m.close_date, award_ceiling: m.award_ceiling, terms: m.terms ?? null },
     });
     if ("error" in r) { setSavedOverride(o => ({ ...o, [key]: !next })); setSaveErr(r.error); }
     else setSaveErr(null);
   };
-  const SaveStar = ({ m }: { m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null } }) => {
+  const SaveStar = ({ m }: { m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null } }) => {
     const on = isSaved("grant", m.grant_id);
     return (
       <button type="button" className={`fm-star${on ? " fm-star-on" : ""}`} aria-pressed={on}
@@ -543,7 +554,7 @@ export default function FunderMatchesView({
         const m = matches.find(x => x.grant_id === id);
         return {
           kind: "grant" as const, target_id: id, title: m?.title ?? id,
-          detail: { funder: m?.funder ?? null, url: m?.url ?? null, close_date: m?.close_date ?? null, award_ceiling: m?.award_ceiling ?? null },
+          detail: { funder: m?.funder ?? null, url: m?.url ?? null, close_date: m?.close_date ?? null, award_ceiling: m?.award_ceiling ?? null, terms: m?.terms ?? null },
           saved_at: new Date().toISOString(),
           reopened_at: null as string | null,
           reopened_detail: {} as SavedRow["reopened_detail"],
@@ -973,7 +984,7 @@ export default function FunderMatchesView({
             <thead>
               <tr>
                 <th>Opportunity</th><th>Funder</th><th>Verdict</th>
-                <th>Deadline</th><th>Ceiling</th><th>Seen and checked</th>
+                <th>Deadline</th><th title="The most one award pays. For an accelerator or fund that invests, the terms it states.">Ceiling or terms</th><th>Seen and checked</th>
                 <th>Why this client</th>{isAdmin ? <th>Decision</th> : <th>Your view</th>}
               </tr>
             </thead>
@@ -997,7 +1008,7 @@ export default function FunderMatchesView({
                     </span>
                   </td>
                   <td className="fm-nowrap">{deadline(m.close_date)}</td>
-                  <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
+                  <AmountCell m={m} />
                   <td className="fm-seen">
                     {/* Patch 12: first seen and verified share a column, so the reason fits beside them. */}
                     <span className={rowIsNew(m) ? "fm-new" : "ov-muted"}
@@ -1054,7 +1065,7 @@ export default function FunderMatchesView({
           <div className="fm-scroll">
           <table className="aq-table fm-table">
             <thead>
-              <tr><th>Opportunity</th><th>Funder</th><th>Last deadline</th><th>Ceiling</th><th>Why this client</th><th>Save</th></tr>
+              <tr><th>Opportunity</th><th>Funder</th><th>Last deadline</th><th>Ceiling or terms</th><th>Why this client</th><th>Save</th></tr>
             </thead>
             <tbody>
               {watchMatches.map(m => (
@@ -1068,7 +1079,7 @@ export default function FunderMatchesView({
                   <td className="fm-nowrap" title="When the last cycle closed. The next cycle's dates are the funder's to announce.">
                     {m.close_date ? new Date(m.close_date).toLocaleDateString() : "Not listed"}
                   </td>
-                  <td className="fm-nowrap">{money(m.award_ceiling, m.currency)}</td>
+                  <AmountCell m={m} />
                   <td className="fm-why">{m.rationale || <span className="ov-muted">{m.reason ?? "No explanation yet"}</span>}</td>
                   <td className="fm-decide"><SaveStar m={m} /></td>
                 </tr>
@@ -1102,7 +1113,7 @@ export default function FunderMatchesView({
           <div className="fm-scroll">
           <table className="aq-table fm-table">
             <thead>
-              <tr><th>Opportunity</th><th>Funder</th><th>Last known deadline</th><th>Ceiling</th><th>Saved</th><th></th></tr>
+              <tr><th>Opportunity</th><th>Funder</th><th>Last known deadline</th><th>Ceiling or terms</th><th>Saved</th><th></th></tr>
             </thead>
             <tbody>
               {savedGrants.map(s2 => (
@@ -1117,10 +1128,10 @@ export default function FunderMatchesView({
                   </td>
                   <td className="fm-funder">{s2.detail.funder || <span className="ov-muted">Unknown</span>}</td>
                   <td className="fm-nowrap">{s2.detail.close_date ? new Date(s2.detail.close_date).toLocaleDateString() : "Not listed"}</td>
-                  <td className="fm-nowrap">{money(s2.detail.award_ceiling ?? null)}</td>
+                  <AmountCell m={{ award_ceiling: s2.detail.award_ceiling ?? null, terms: s2.detail.terms ?? null }} />
                   <td className="fm-nowrap">{new Date(s2.saved_at).toLocaleDateString()}</td>
                   <td className="fm-decide">
-                    <SaveStar m={{ grant_id: s2.target_id, title: s2.title, funder: s2.detail.funder ?? null, url: s2.detail.url ?? null, close_date: s2.detail.close_date ?? null, award_ceiling: s2.detail.award_ceiling ?? null }} />
+                    <SaveStar m={{ grant_id: s2.target_id, title: s2.title, funder: s2.detail.funder ?? null, url: s2.detail.url ?? null, close_date: s2.detail.close_date ?? null, award_ceiling: s2.detail.award_ceiling ?? null, terms: s2.detail.terms ?? null }} />
                   </td>
                 </tr>
               ))}
@@ -1365,8 +1376,11 @@ function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; vi
               <b>{r.title}</b>
               <span className="cu-match-meta">
                 {r.funder && <span>{r.funder}</span>}
+                {r.money_kind && r.money_kind !== "grants" && isFundingKind(r.money_kind) && <span>{FUNDING_KIND_LABEL[r.money_kind]}</span>}
                 {r.close_date && <span>Closes {day(r.close_date)}</span>}
-                {r.max_award != null && <span>Up to ${Math.round(r.max_award).toLocaleString()}</span>}
+                {r.terms
+                  ? <span title="An investment, not a grant. These are the terms as the programme's own page states them; confirm them there before applying.">Terms: {r.terms}</span>
+                  : r.max_award != null && <span>Up to ${Math.round(r.max_award).toLocaleString()}</span>}
               </span>
               {r.notes && <span className="cu-match-notes">{r.notes}</span>}
             </div>

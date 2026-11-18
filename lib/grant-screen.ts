@@ -104,6 +104,8 @@ export interface ScreenedGrant {
   currency?: string | null;
   /** ledger | worldbank | eu_ft (lib/open-data.ts SOURCE_LABEL). */
   source?: string;
+  /** Patch 62: what a programme gives and takes (instrument, equity, follow-on), as stated. */
+  terms?: string | null;
 }
 
 /**
@@ -542,6 +544,8 @@ export function screenGrant(
     funder: g.agency, source_site: g.source_site,
     website: g.website, eligibility: elig || undefined, caveat: g.caveat,
     money_kind: g.money_kind ?? "grants", currency: g.currency ?? null, source: g.source ?? "ledger",
+    // Programmes only: terms left on a record re-labelled a grant are not shown.
+    terms: g.money_kind === "programs" && typeof g.investment_terms === "string" && g.investment_terms.trim() ? g.investment_terms.trim().slice(0, 240) : null,
   };
 }
 

@@ -48,6 +48,13 @@ export interface MatchInput {
   close_date: string | null; award_ceiling: number | null; title: string | null; funder: string | null;
   url: string | null; rationale: string | null; rationale_source?: string | null; verified_at: string | null;
   source?: string | null; money_kind?: string | null; currency?: string | null;
+  /** Patch 62: an accelerator's or fund's stated deal. An investment is never sized as an award. */
+  terms?: string | null;
+}
+
+/** "Size of the money" for a programme that invests: the terms, with no grant-size judgement. */
+export function termsRange(terms: string): { call: RangeCall; why: string } {
+  return { call: "unknown", why: `An investment, not a grant. Terms as the programme states them: ${terms}. Confirm them on its page.` };
 }
 
 export interface LeadInput {
@@ -151,7 +158,7 @@ export function opportunityRow(m: MatchInput, p: EligibilityProfile | null, toda
     id: m.grant_id, kind: "opportunity", title: m.title || m.grant_id, funder: m.funder, url: m.url,
     origin: SOURCE_SHORT[m.source ?? "ledger"] ?? "Ground Truth",
     moneyKind: m.money_kind ?? "grants",
-    eligibility, mission, range: rangeFit(m.award_ceiling, p, m.currency),
+    eligibility, mission, range: m.terms ? termsRange(m.terms) : rangeFit(m.award_ceiling, p, m.currency),
     access: m.close_date ? `Open call, closes ${fmtDay(m.close_date)}` : "Open call, rolling or no date listed",
     deadline: m.close_date,
     next: group === "apply" ? `Confirm eligibility on the funder's page. ${decideBy(m.close_date, today)}`
@@ -193,6 +200,11 @@ export function funderRow(f: FunderRow, p: EligibilityProfile | null): FitRow {
   };
 }
 
+/** A web find stores an accelerator's terms where its amount goes; this tells the two apart. */
+export function readsAsTerms(moneyKind: string, amountText: string | null): boolean {
+  return moneyKind === "programs" && !!amountText && /\b(equity|safe|stake|convertible|invest(s|ment|ing)?|shares?|warrants?)\b/i.test(amountText);
+}
+
 export function leadRow(l: LeadInput, p: EligibilityProfile | null, today = new Date()): FitRow {
   const amount = l.amount_text ? rangeTop(l.amount_text) : null;
   const approved = l.review === "approved";
@@ -201,7 +213,7 @@ export function leadRow(l: LeadInput, p: EligibilityProfile | null, today = new 
     funder: l.funder, url: l.url, origin: "Web", moneyKind: l.money_kind,
     eligibility: { call: "check", why: l.eligibility ? `The page says: ${l.eligibility}` : "Not screened: read who can apply on the page." },
     mission: { call: l.why ? "partial" : "unclear", why: l.why ?? "Found by the web search." },
-    range: rangeFit(amount, p, null, l.amount_text),
+    range: readsAsTerms(l.money_kind, l.amount_text) ? termsRange(l.amount_text!) : rangeFit(amount, p, null, l.amount_text),
     access: l.kind === "funder" ? (l.eligibility ? "See how they take requests" : "Access unknown")
       : l.deadline ? `Open call, closes ${fmtDay(l.deadline)}` : l.rolling ? "Rolling" : "No deadline found",
     deadline: l.deadline,

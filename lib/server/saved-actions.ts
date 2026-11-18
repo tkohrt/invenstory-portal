@@ -16,7 +16,7 @@ export async function toggleSavedAction(input: {
   kind: "grant" | "funder";
   target_id: string;
   title?: string | null;
-  detail?: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null };
+  detail?: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null; terms?: string | null };
 }): Promise<{ saved: boolean } | { error: string }> {
   const s = await getSession();
   if (!s) return { error: "Not signed in." };
@@ -45,6 +45,8 @@ export async function toggleSavedAction(input: {
       url: typeof d.url === "string" && /^https?:\/\//i.test(d.url) ? d.url.slice(0, 500) : null,
       close_date: d.close_date?.slice(0, 40) ?? null,
       award_ceiling: typeof d.award_ceiling === "number" && isFinite(d.award_ceiling) ? d.award_ceiling : null,
+      // Patch 62: an accelerator's stated deal, so a saved one never reads as an award.
+      terms: typeof d.terms === "string" && d.terms.trim() ? d.terms.trim().slice(0, 240) : null,
     },
     saved_by: s.user.id,
   });

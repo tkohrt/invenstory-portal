@@ -134,7 +134,7 @@ export async function runDiscoveryPass(
     const { data: row, error } = await db.from("discovered_lead").upsert({
       tenant_id: tenantId, run_id: runId, angle: angle.key, kind: l.kind, money_kind: l.money_kind,
       title: l.title, funder: l.funder, url: l.url, url_key: l.url_key, deadline: l.deadline,
-      rolling: l.rolling, amount_text: l.amount, geography: l.geography, eligibility: l.eligibility,
+      rolling: l.rolling, amount_text: l.terms ?? l.amount, geography: l.geography, eligibility: l.eligibility,
       why: l.why, quote: l.quote, grounded: l.grounded, last_seen_at: new Date().toISOString(),
     }, { onConflict: "tenant_id,url_key" }).select("id, overlay_id").maybeSingle();
     if (error || !row) { console.error("[discovery] lead not saved", error?.message); continue; }
