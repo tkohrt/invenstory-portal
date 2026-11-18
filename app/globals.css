@@ -2366,8 +2366,11 @@ button.wps-item:hover,button.wps-item:focus-visible{border-color:#1f4d2e}
 .su-files li.su-managed .su-doc-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .su-files li.su-managed em{padding-right:4px}
 .su-files .su-doc-ctl{grid-column:1 / -1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.su-files .su-doc-ctl select{border:1px solid var(--line,#ddd);border-radius:8px;padding:5px 8px;font-size:13px;flex:0 1 280px;min-width:0;background:#fff}
+.su-files .su-doc-ctl select{border:1px solid var(--line,#ddd);border-radius:8px;padding:5px 8px;font-size:13px;flex:0 1 340px;min-width:0;background:#fff}
+.su-files .su-doc-ctl select.su-else{flex:0 1 170px}
 .su-files .su-doc-ctl .sb-btn{margin-left:auto}
+.su-files .su-suggest{display:inline-flex;align-items:center;gap:8px;background:#fff8e6;border:1px solid #ecd9a0;border-radius:8px;padding:3px 4px 3px 10px;font-size:13px}
+.su-files .su-suggest .sb-btn{margin-left:0}
 .su-files .su-doc-ask{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#fdf1ef;border:1px solid #f0c4bd;border-radius:8px;padding:8px 10px;color:#7a1b12}
 .su-files .su-doc-err{grid-column:1 / -1;color:#b42318;font-size:12px}
 .su-files .sb-danger{background:#b42318;border-color:#b42318;color:#fff}

@@ -142,6 +142,20 @@ export function describeLibraryChange(
 
 export type ArrivalPlan = "not_on_analysis" | "nothing_new" | "deferred" | "join" | "start";
 
+export type CatchUpPlan = "not_on_analysis" | "nothing_new" | "already_running" | "start";
+
+/**
+ * The safety net when setup finishes (patch 61): start one run if documents
+ * are still unread. Not held by the daily upload guard (it is a deliberate
+ * read, like pressing Analyze). A run already going is left alone: it reads
+ * late arrivals itself before it finishes (analysis-build.ts).
+ */
+export function catchUpPlan(i: { onAnalysis: boolean; pendingDocs: number; running: boolean }): CatchUpPlan {
+  if (!i.onAnalysis) return "not_on_analysis";
+  if (i.pendingDocs <= 0) return "nothing_new";
+  return i.running ? "already_running" : "start";
+}
+
 /**
  * Read on upload (Phase D patch 4): what to do when a document becomes ready.
  * A client's own uploads keep the existing guard of `uploadReadsPerDay` reads a

@@ -16,10 +16,10 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ACCEPT_ATTR, ACCEPTED_LABEL, SUPPORT_EMAIL } from "@/lib/uploads";
 import { browserClient } from "@/lib/supabase-browser";
-import { DOC_TYPES } from "@/lib/analysis";
+import { DOC_TYPES, DOC_TYPE_MAP } from "@/lib/analysis";
 import { OUTCOMES, asksOutcomeAtUpload } from "@/lib/doc-outcome";
 import { addLabel, sizeLabel, stageFiles, stageKey, type StagedInfo } from "@/lib/upload-stage";
-import { removeQuestion } from "@/lib/setup-docs";
+import { NOT_SURE_LABEL, removeQuestion } from "@/lib/setup-docs";
 
 export interface PanelDoc {
   id: string; title: string; status: string;
@@ -27,6 +27,8 @@ export interface PanelDoc {
   typeTag?: string | null;
   /** True when this person may remove it (setup: their own organization's uploads). */
   removable?: boolean;
+  /** What the analysis thinks it is, offered for one-click confirming (patch 61). Never applied by itself. */
+  suggested?: string | null;
 }
 type RowResult = { ok: true } | { ok: false; error: string };
 interface Pending { key: string; name: string; state: "uploading" | "failed"; error?: string }
@@ -205,7 +207,7 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
                 {showTypePicker && (
                   <span className="su-st-picks">
                     <select aria-label={`What kind of document is ${sf.name}?`} value={sf.typeTag} onChange={e => setOne(sf.key, { typeTag: e.target.value })}>
-                      <option value="">Not sure (we&rsquo;ll suggest one)</option>
+                      <option value="">{NOT_SURE_LABEL}</option>
                       {DOC_TYPES.filter(t => t.key !== "other").map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                     </select>
                     {asksOutcomeAtUpload(sf.typeTag) && (
@@ -249,6 +251,8 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
               const canType = !!onSetType && showTypePicker;
               const canRemove = !!onRemove && !!d.removable;
               const reading = d.status === "processing";
+              // A suggestion is on offer only while nobody has typed the document.
+              const offered = canType && !(typed[d.id] ?? d.typeTag) && !!d.suggested && !!DOC_TYPE_MAP[d.suggested];
               return (
                 <li key={d.id} className={`${d.status}${canType || canRemove ? " su-managed" : ""}`}>
                   <span className="su-doc-title">{d.title}</span>
@@ -260,10 +264,21 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
                   )}</em>
                   {(canType || canRemove) && (
                     <span className="su-doc-ctl">
+                      {/* The analysis's suggestion, confirmed here with one
+                          click (patch 61). A person makes it the type; the
+                          select beside it is "something else". */}
+                      {offered && d.suggested && (
+                        <span className="su-suggest">
+                          <span>Looks like: <b>{DOC_TYPE_MAP[d.suggested].label}</b></span>
+                          <button type="button" className="sb-btn sb-secondary sb-sm" disabled={rowBusy === d.id}
+                            onClick={() => void changeType(d, d.suggested!)} aria-label={`Confirm ${d.title} is ${DOC_TYPE_MAP[d.suggested].label}`}>Confirm</button>
+                        </span>
+                      )}
                       {canType && (
                         <select aria-label={`What kind of document is ${d.title}?`} disabled={rowBusy === d.id}
+                          className={offered ? "su-else" : undefined}
                           value={typed[d.id] ?? d.typeTag ?? ""} onChange={e => void changeType(d, e.target.value)}>
-                          <option value="">Not sure (we&rsquo;ll suggest one)</option>
+                          <option value="">{offered ? "Something else" : NOT_SURE_LABEL}</option>
                           {DOC_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                         </select>
                       )}

@@ -261,6 +261,12 @@ export async function finishSetupAction(goal: string): Promise<Result> {
       if (await tenantIsBrain(s.tenantId)) return;
       const { onAnalysis } = await import("./analysis-source");
       if (await onAnalysis(s.tenantId)) {
+        // The safety net (patch 61): anything the analysis has not read yet is
+        // read now, in one run, so no document from setup is left waiting.
+        // The run updates readiness itself when it finishes; the line below
+        // scores what has been read so far in the meantime.
+        const { readWhatIsLeft } = await import("./analysis-arrival");
+        await readWhatIsLeft(s.tenantId, s.user.id).catch(e => { console.error("[setup] catch-up read not started", e); });
         const { applyReadiness } = await import("./analysis-switch");
         await applyReadiness(s.tenantId);
       } else {

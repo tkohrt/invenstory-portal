@@ -1,6 +1,6 @@
 // Phase D: switching a client over to the analysis (decision 29).
 import { describe, expect, test } from "vitest";
-import { isOnAnalysis, switchGate, coverageFromDerived, describeLibraryChange, arrivalPlan, PROVING_TENANT_ID } from "@/lib/analysis-switch";
+import { isOnAnalysis, switchGate, coverageFromDerived, describeLibraryChange, arrivalPlan, PROVING_TENANT_ID, catchUpPlan } from "@/lib/analysis-switch";
 import { planMerge, type MergeCard } from "@/lib/card-merge";
 import { cardFingerprint } from "@/lib/story-card";
 
@@ -129,5 +129,20 @@ describe("read on upload", () => {
   test("past 30 reads a day a client's read waits; For Granted's never does", () => {
     expect(arrivalPlan({ ...base, readsToday: 30 })).toBe("deferred");
     expect(arrivalPlan({ ...base, actor: "admin", readsToday: 99 })).toBe("start");
+  });
+});
+
+describe("the catch-up run when setup finishes (patch 61)", () => {
+  test("a client not on the analysis has nothing to catch up", () => {
+    expect(catchUpPlan({ onAnalysis: false, pendingDocs: 5, running: false })).toBe("not_on_analysis");
+  });
+  test("nothing unread starts nothing", () => {
+    expect(catchUpPlan({ onAnalysis: true, pendingDocs: 0, running: false })).toBe("nothing_new");
+  });
+  test("unread documents start one run, however many uploads there were that day", () => {
+    expect(catchUpPlan({ onAnalysis: true, pendingDocs: 12, running: false })).toBe("start");
+  });
+  test("a run already going is left to read them itself", () => {
+    expect(catchUpPlan({ onAnalysis: true, pendingDocs: 12, running: true })).toBe("already_running");
   });
 });

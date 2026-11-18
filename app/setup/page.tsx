@@ -11,6 +11,8 @@ import { tenantIsBrain } from "@/lib/server/brain";
 import { setupGate, goalsOn } from "@/lib/setup";
 import SetupFlow from "@/components/SetupFlow";
 import { db } from "@/lib/server/db";
+import { onAnalysis } from "@/lib/server/analysis-source";
+import { analysisProgress } from "@/lib/server/analysis-extract";
 
 export const dynamic = "force-dynamic";
 // Step 1 and the link boxes read a web page and index it inside the action.
@@ -29,6 +31,14 @@ export default async function SetupPage() {
     try {
       const { data } = await db.from("tenant").select("welcome_note, welcome_video_url").eq("id", session.tenantId).maybeSingle();
       return (data as { welcome_note: string | null; welcome_video_url: string | null } | null) ?? null;
+    } catch { return null; }
+  })();
+  // How far the analysis has got (patch 61), for a client on it: keeps the
+  // page refreshing until suggestions arrive, and is said on the last screen.
+  const analysisPromise = (async () => {
+    try {
+      if (!(await onAnalysis(session.tenantId))) return null;
+      return await analysisProgress(session.tenantId);
     } catch { return null; }
   })();
   const [tenant, profile, docs, vis, coverage] = await Promise.all([
@@ -53,6 +63,7 @@ export default async function SetupPage() {
       state={state}
       profile={profile}
       docs={docs}
+      analysis={await analysisPromise}
       welcomeNote={(await welcomePromise)?.welcome_note ?? null}
       welcomeVideoUrl={(await welcomePromise)?.welcome_video_url ?? null}
       grocery={grocery}

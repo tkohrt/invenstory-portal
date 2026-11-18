@@ -25,9 +25,10 @@ import UploadPanel from "./UploadPanel";
 import Irs990Block from "./Irs990Block";
 import { SUPPORT_EMAIL } from "@/lib/uploads";
 import { unaddedNotice } from "@/lib/upload-stage";
+import { analysedLine } from "@/lib/setup-docs";
 import type { TenantOrgType } from "@/lib/living-voice";
 
-export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null; mine?: boolean }
+export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null; mine?: boolean; suggested?: string | null }
 
 /** One readiness-checklist item with its live coverage (P1, patch 29). */
 export interface GroceryItem { key: string; label: string; tier: "essential" | "important" | "enriching"; state: "covered" | "thin" | "missing" }
@@ -41,6 +42,8 @@ interface Props {
   state: SetupState;
   profile: EligibilityProfile;
   docs: SetupDoc[];
+  /** How far the analysis has got, for a client on it (patch 61); null otherwise. */
+  analysis?: { done: number; total: number } | null;
   /** The readiness grocery list, re-read as documents process. */
   grocery?: GroceryItem[];
   /** The welcome screen (patch 43): a note For Granted pre-set, or null for the default. */
@@ -70,13 +73,23 @@ export default function SetupFlow(p: Props) {
   const next = () => go(SETUP_STEPS[Math.min(idx + 1, SETUP_STEPS.length - 1)].key);
   const back = () => go(SETUP_STEPS[Math.max(idx - 1, 0)].key);
 
-  // While anything is still being read, keep the lists fresh.
+  // While anything is still being read, keep the lists fresh. And (patch 61)
+  // while the analysis still has read documents to get through, so its type
+  // suggestion appears on the row without a reload. That second wait is
+  // bounded: four minutes with no document finishing, then it stops asking.
   const reading = p.docs.some(d => d.status === "pending" || d.status === "processing");
+  const analysedSoFar = p.analysis?.done ?? 0;
+  const analysing = !!p.analysis && p.analysis.done < p.analysis.total;
   useEffect(() => {
-    if (!reading) return;
-    const t = setInterval(() => router.refresh(), 6000);
+    if (!reading && !analysing) return;
+    let ticks = 0;
+    const t = setInterval(() => {
+      ticks += 1;
+      if (!reading && ticks > 40) { clearInterval(t); return; }
+      router.refresh();
+    }, 6000);
     return () => clearInterval(t);
-  }, [reading, router]);
+  }, [reading, analysing, analysedSoFar, router]);
 
   /** Run a save; move on when it worked. */
   const run = async (fn: () => Promise<{ ok: boolean; error?: string; message?: string; next?: string }>, after: () => void = next) => {
@@ -178,7 +191,7 @@ export default function SetupFlow(p: Props) {
           onSave={(v, how) => run(() => saveFundingSoFarAction(v, how))} />}
         {step === "team" && <TeamStep state={p.state} busy={busy} onBack={back}
           onSave={(v, how) => run(() => saveTeamAction(v, how))} />}
-        {step === "next" && <NextStep state={p.state} docs={p.docs} goals={p.goals} tools={p.tools} onBack={back} />}
+        {step === "next" && <NextStep state={p.state} docs={p.docs} analysis={p.analysis ?? null} goals={p.goals} tools={p.tools} onBack={back} />}
         {err && <p className="cl-error" role="alert">{err}</p>}
       </main>
     </div>
@@ -505,7 +518,7 @@ function Uploader({ layer, docs, allowLinks, typeTag = "", onStagedChange }: { l
   };
   return <UploadPanel fixedLayer={layer} typeTag={typeTag} tagsDefault="setup" allowLinks={allowLinks}
     showTypePicker={!typeTag} addLink={addSetupLinkAction} onStagedChange={onStagedChange}
-    docs={docs.map(d => ({ id: d.id, title: d.title, status: d.status, typeTag: d.typeTag ?? null, removable: !!d.mine }))}
+    docs={docs.map(d => ({ id: d.id, title: d.title, status: d.status, typeTag: d.typeTag ?? null, removable: !!d.mine, suggested: d.suggested ?? null }))}
     onSetType={setType} onRemove={remove} />;
 }
 
@@ -717,7 +730,7 @@ const STEP_TODO: Partial<Record<SetupStepKey, string>> = {
   team: "Add your team",
 };
 
-function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; docs: SetupDoc[]; goals: Goal[]; tools: Props["tools"]; onBack: () => void }) {
+function NextStep({ state, docs, analysis, goals, tools, onBack }: { state: SetupState; docs: SetupDoc[]; analysis: { done: number; total: number } | null; goals: Goal[]; tools: Props["tools"]; onBack: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -725,6 +738,7 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
   const [goal, setGoal] = useState<Goal>(() => { const g = state.answers.goal as Goal | null | undefined; return g && goals.includes(g) ? g : (shown[0]?.v ?? "organize"); });
   const total = docs.length;
   const read = docs.filter(d => d.status === "ready").length;
+  const analysed = analysis ? analysedLine(analysis.done, Math.max(total, analysis.total)) : null;
   const todo = useMemo(() => Object.entries(state.steps).filter(([, v]) => v === "skipped").map(([k]) => STEP_TODO[k as SetupStepKey]).filter(Boolean) as string[], [state.steps]);
   const g = GOALS.find(x => x.v === goal) ?? GOALS[2];
 
@@ -747,7 +761,12 @@ function NextStep({ state, docs, goals, tools, onBack }: { state: SetupState; do
           <h1>That&rsquo;s it. Your Inven(s)tory is live.</h1>
           <p className="su-lede">Everything you added is being read and woven into one brain: your facts, your numbers, your voice. From here, every search and every draft starts from a place of preparation instead of a blank page.</p>
           <ul className="su-list">
-            {total > 0 && <li>{read === total ? `All ${total} document${total === 1 ? "" : "s"} read.` : `${read} of ${total} documents read so far; the rest finish on their own.`}</li>}
+            {/* On the analysis, say how far it has got (patch 61); anything
+                still unread is being read by the catch-up run that finishing
+                setup starts. Otherwise the plain read count, as before. */}
+            {analysed
+              ? <li>{analysed}</li>
+              : total > 0 && <li>{read === total ? `All ${total} document${total === 1 ? "" : "s"} read.` : `${read} of ${total} documents read so far; the rest finish on their own.`}</li>}
             <li>Your readiness is being assessed now, so your first look at the Inven(s)tory shows a scored checklist.</li>
             {todo.length > 0 && <li>The steps you skipped wait in the Setting up banner at the top of the portal; nothing is lost.</li>}
           </ul>

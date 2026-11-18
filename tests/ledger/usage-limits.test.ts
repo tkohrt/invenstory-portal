@@ -45,9 +45,10 @@ describe("documents", () => {
     expect(decideReprocess("client", 5).ok).toBe(false);
     expect(decideReprocess("admin", 500).ok).toBe(true);
   });
-  test("readiness reads of uploads wait past 30 a day; admins never wait", () => {
-    expect(uploadReadNow("client", 29)).toBe(true);
-    expect(uploadReadNow("client", 30)).toBe(false);
+  test("reads of a client's uploads wait past 50 a day; admins never wait", () => {
+    expect(LIMITS.uploadReadsPerDayPerClient).toBe(50);
+    expect(uploadReadNow("client", 49)).toBe(true);
+    expect(uploadReadNow("client", 50)).toBe(false);
     expect(uploadReadNow("admin", 300)).toBe(true);
   });
   test("months are calendar months in Eastern time, daylight saving included", () => {

@@ -22,7 +22,7 @@
 //                 carries on to a small margin past it (IN_FLIGHT_MARGIN)
 //   build         reading what the client uploads, and the Analyze button:
 //                 counted, never stopped. Building the Inven(s)tory is what For
-//                 Granted wants clients doing; its own guards are the 30 upload
+//                 Granted wants clients doing; its own guards are the 50 upload
 //                 reads a day (lib/usage-limits.ts) and that a press reads only
 //                 what is new.
 //

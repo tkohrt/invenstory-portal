@@ -6,6 +6,8 @@ import { cache } from "react";
 import { db } from "./db";
 import { processDocument } from "./ingest";
 import { readUrl, Plain } from "./read-url";
+import { suggestionFor } from "@/lib/setup-docs";
+import { DOC_TYPE_MAP } from "@/lib/analysis";
 import { markStaleOnUpload } from "./artifacts";
 import type { SetupState, SetupAnswers, SetupStepKey, StepState } from "@/lib/setup";
 import { isStepKey } from "@/lib/setup";
@@ -77,12 +79,20 @@ export async function ownerName(tenantId: string, userId: string | null): Promis
 }
 
 /** Documents per layer, for the step screens. */
-export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string; typeTag: string | null; mine: boolean }[]> {
-  const { data } = await db.from("document").select("id, title, layer, status, type_tag, source")
-    .eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
+export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string; typeTag: string | null; mine: boolean; suggested: string | null }[]> {
+  const [{ data }, { data: read }] = await Promise.all([
+    db.from("document").select("id, title, layer, status, type_tag, source")
+      .eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200),
+    // What the analysis thinks each document is (patch 61). Quiet if the table
+    // cannot be read: setup must never fail for want of a suggestion.
+    db.from("analysis_doc").select("document_id, doc_type").eq("tenant_id", tenantId),
+  ]);
+  const looksLike = new Map(((read ?? []) as { document_id: string; doc_type: string | null }[]).map(r => [r.document_id, r.doc_type]));
   return (data ?? []).map(d => ({
     id: d.id as string, title: d.title as string, layer: d.layer as string, status: d.status as string,
     typeTag: (d as { type_tag?: string | null }).type_tag ?? null,
+    // Offered on the row for one-click confirming; never applied by itself.
+    suggested: suggestionFor((d as { type_tag?: string | null }).type_tag ?? null, looksLike.get(d.id as string) ?? null, k => !!DOC_TYPE_MAP[k]),
     // Added by the client's own people (not For Granted): the only documents
     // the setup list offers to remove (patch 60, lib/setup-docs.ts).
     mine: (d as { source?: string | null }).source === "client",

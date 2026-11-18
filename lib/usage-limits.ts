@@ -20,8 +20,16 @@ export const LIMITS = {
   chatPerMonthPerClient: 500,
   /** "Process again" on a document, per client, rolling 24 hours. */
   reprocessPerDayPerClient: 5,
-  /** Readiness reads of client uploads, per client, rolling 24 hours. Uploads themselves are never blocked. */
-  uploadReadsPerDayPerClient: 30,
+  /**
+   * AI reads started by a client's own uploads, per client, rolling 24 hours.
+   * Uploads themselves are never blocked; past this, the read waits for the
+   * next analysis. 30 until patch 61 (17 Nov 2026), when Shane raised it to
+   * 50: it was set for the older per-upload readiness read (decision 23), a
+   * run now reads only what is new, and onboarding is the one day a client
+   * plausibly uploads more than 30. Finishing setup reads whatever is still
+   * waiting regardless (catchUpPlan).
+   */
+  uploadReadsPerDayPerClient: 50,
   /** Warn when this share of a limit is used. */
   warnAt: 0.8,
 } as const;
