@@ -37,6 +37,8 @@ export const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: "rss_url", label: "News feed (RSS)", kind: "url", group: "links" },
   // When the funder's site was last read for its links, found or not, so the dossier does not re-read it on every visit.
   { key: "links_checked_at", label: "Links last checked", kind: "stamp", group: "meta" },
+  // When the site last could NOT be read, so an unreadable site is retried weekly, not on every visit.
+  { key: "links_failed_at", label: "Links last failed", kind: "stamp", group: "meta" },
 ];
 
 /** The ordinary facts the dossier lists one per row (everything but the links row and bookkeeping). */

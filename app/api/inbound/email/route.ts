@@ -12,7 +12,9 @@ export const maxDuration = 120;
 
 export async function POST(req: Request) {
   const secret = process.env.RESEND_INBOUND_SECRET;
-  if (!secret) return NextResponse.json({ error: "The signals inbox is not set up." }, { status: 503 });
+  // Both settings are required: the secret proves the request is from the mail
+  // service, and the address says which mail is the portal's to read.
+  if (!secret || !process.env.SIGNALS_INBOX?.trim()) return NextResponse.json({ error: "The signals inbox is not set up." }, { status: 503 });
   const raw = await req.text();
   if (raw.length > 200_000) return NextResponse.json({ error: "Too large." }, { status: 413 });
   const ok = verifyWebhook(secret, {

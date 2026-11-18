@@ -28,10 +28,10 @@ type Lead = ReturnType<typeof curatedLeads>[number];
  * that reaches the review queue was read by the same rules.
  * "unavailable": the model did not answer. "empty": it answered, nothing in it.
  */
-export async function parseListText(pasted: string): Promise<{ ok: true; leads: Lead[] } | { ok: false; reason: "unavailable" | "empty" }> {
+export async function parseListText(pasted: string, sourceUrl?: string | null): Promise<{ ok: true; leads: Lead[] } | { ok: false; reason: "unavailable" | "empty" }> {
   const today = new Date().toISOString().slice(0, 10);
   const res = await chatComplete({
-    system: CURATED_PARSE_SYSTEM, user: curatedParseUser(pasted.slice(0, 20_000), today),
+    system: CURATED_PARSE_SYSTEM, user: curatedParseUser(pasted.slice(0, 20_000), today, sourceUrl),
     maxTokens: 4000, temperature: 0,
   });
   if (!res?.text) return { ok: false, reason: "unavailable" };

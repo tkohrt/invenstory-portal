@@ -16,8 +16,8 @@ import { getRequests, openRequestCount } from "@/lib/server/requests";
 import { getCuratedLists, getCommunityMembers } from "@/lib/server/curated";
 import AdminCuratedLists from "@/components/AdminCuratedLists";
 import AdminSignals from "@/components/AdminSignals";
-import { listSources, recentSignals } from "@/lib/server/signals";
-import { sourceHealth } from "@/lib/signals";
+import { listSources, recentSignals, heldSignals } from "@/lib/server/signals";
+import { sourceHealth, awaitingApproval } from "@/lib/signals";
 
 export default async function ReviewQueuesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await getSession();
@@ -35,7 +35,7 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
   // The badge counts what needs a person: a failing or silent source, or a new sender waiting for approval.
   const sourcesNeed = (sources ?? []).filter(s => {
     const h = sourceHealth(s).state;
-    return h === "failing" || h === "quiet" || (s.kind === "email" && !s.active && s.origin === "inbox" && !s.last_signal_at);
+    return h === "failing" || h === "quiet" || awaitingApproval(s);
   }).length;
 
   const tabs = (
@@ -61,13 +61,13 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
   }
 
   if (tab === "sources") {
-    const recent = sources ? await recentSignals().catch(() => []) : [];
+    const [recent, held] = sources ? await Promise.all([recentSignals().catch(() => []), heldSignals().catch(() => [])]) : [[], []];
     return (
       <div className="rq-page">
         <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
         {tabs}
-        <AdminSignals sources={sources ?? []} recent={recent} ready={sources !== null}
-          inbox={{ address: process.env.SIGNALS_INBOX?.trim() || null, configured: !!process.env.RESEND_INBOUND_SECRET }} />
+        <AdminSignals sources={sources ?? []} recent={recent} held={held} ready={sources !== null}
+          inbox={{ address: process.env.SIGNALS_INBOX?.trim() || null, configured: !!process.env.RESEND_INBOUND_SECRET && !!process.env.SIGNALS_INBOX?.trim() }} />
       </div>
     );
   }

@@ -30,6 +30,8 @@ export async function setSourceActiveAction(id: string, active: boolean): Promis
   if (!s) return { ok: false, error: "For Granted only." };
   const { error } = await db.from("signal_source").update({ active: !!active }).eq("id", String(id));
   if (error) return { ok: false, error: "That did not save. Try again." };
+  // Approving a sender releases its held mail to the next run, so nothing held is lost if nobody presses Read it.
+  if (active) await db.from("signal").update({ status: "new" }).eq("source_id", String(id)).eq("status", "held");
   revalidatePath("/admin/reviews");
   return { ok: true };
 }
@@ -45,7 +47,7 @@ export async function checkSourceNowAction(id: string): Promise<Result<{ message
     revalidatePath("/admin/reviews");
     if (!b.ok) return { ok: false, error: b.error ?? "Bluesky did not answer." };
     return { ok: true, message: b.kept
-      ? `Read. ${b.kept} new post${b.kept === 1 ? "" : "s"} about funding${b.filed ? `; ${b.filed} entr${b.filed === 1 ? "y" : "ies"} read from the pages they point to` : ""}.`
+      ? `Read. ${b.kept} new post${b.kept === 1 ? "" : "s"} about funding${b.filed ? `; ${b.filed} new entr${b.filed === 1 ? "y" : "ies"} in the Ground Truth queue` : ""}.`
       : "Read. No new posts about funding." };
   }
   if (!src || src.kind !== "page") return { ok: false, error: "Only a watched page or a Bluesky account can be read on demand." };
@@ -54,8 +56,8 @@ export async function checkSourceNowAction(id: string): Promise<Result<{ message
   if (r.error) return { ok: false, error: r.error };
   if (!r.changed) return { ok: true, message: "Read. Nothing has changed since the last read." };
   return { ok: true, message:
-    r.status === "filed" ? `Changed. ${r.entries} entr${r.entries === 1 ? "y" : "ies"} read from it; new ones are in the Ground Truth queue.`
-    : r.status === "nothing" ? "Changed, but no opportunities could be read from it."
+    r.status === "filed" ? `Changed. ${r.entries} new entr${r.entries === 1 ? "y is" : "ies are"} in the Ground Truth queue.`
+    : r.status === "nothing" ? "Changed, but nothing in it is new to the queue."
     : r.status === "skipped" ? "Changed, but it does not read like funding news, so it was not parsed."
     : "Changed. It will be parsed on the next run." };
 }
@@ -68,8 +70,8 @@ export async function readHeldAction(signalId: string): Promise<Result<{ message
   revalidatePath("/admin/reviews");
   if (!r.ok) return { ok: false, error: r.error ?? "That email could not be read." };
   return { ok: true, message:
-    r.status === "filed" ? `${r.entries} entr${r.entries === 1 ? "y" : "ies"} read from it; new ones are in the Ground Truth queue.`
-    : r.status === "nothing" ? "Read. No opportunities in it."
+    r.status === "filed" ? `${r.entries} new entr${r.entries === 1 ? "y is" : "ies are"} in the Ground Truth queue.`
+    : r.status === "nothing" ? "Read. Nothing in it is new to the queue."
     : r.status === "skipped" ? "It does not read like funding news, so it was not parsed."
     : "It will be parsed on the next run." };
 }

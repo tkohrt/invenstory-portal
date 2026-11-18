@@ -101,7 +101,7 @@ export function extractSiteLinks(html: string, baseUrl: string): SiteLinks {
   const abs = (href: string): URL | null => { try { const u = new URL(decode(href), base); return u.protocol === "https:" || u.protocol === "http:" ? u : null; } catch { return null; } };
 
   // The page's own declared feed.
-  for (const m of page.matchAll(/<link\b[^>]*>/gi)) {
+  for (const m of page.matchAll(/<link\b[^>]{0,1500}>/gi)) {
     const tag = m[0];
     if (!/rel\s*=\s*["']?[^"'>]*alternate/i.test(tag) || !/type\s*=\s*["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
     const href = tag.match(/href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
@@ -119,7 +119,8 @@ export function extractSiteLinks(html: string, baseUrl: string): SiteLinks {
     }
   }
 
-  for (const m of page.matchAll(/<a\b([^>]*)>([\s\S]{0,400}?)<\/a>/gi)) {
+  // Attribute runs are bounded so a broken or hostile page cannot make the scan crawl (review of patch 63).
+  for (const m of page.matchAll(/<a\b([^>]{0,2000})>([\s\S]{0,400}?)<\/a>/gi)) {
     const attrs = m[1];
     const href = attrs.match(/href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
     if (!href) continue;
@@ -161,8 +162,32 @@ export function domainHandle(website: string): string | null {
 /** How long a site check stands before the dossier looks again. */
 export const LINKS_FRESH_DAYS = 90;
 
-export function linksStale(checkedAt: unknown, now = new Date()): boolean {
-  if (typeof checkedAt !== "string") return true;
-  const t = Date.parse(checkedAt);
-  return !Number.isFinite(t) || now.getTime() - t > LINKS_FRESH_DAYS * 86_400_000;
+/** After a site could not be read, how long before it is tried again. */
+export const LINKS_RETRY_DAYS = 7;
+
+/**
+ * Is it time to read the funder's site? Never read, or read more than 90 days
+ * ago. A site that could not be read (it blocks automated reads, it is down)
+ * is left alone for a week, so one unreadable site is not fetched on every
+ * visit by every client.
+ */
+export function linksStale(checkedAt: unknown, now = new Date(), failedAt?: unknown): boolean {
+  const age = (v: unknown) => { const t = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(t) ? now.getTime() - t : Infinity; };
+  if (age(failedAt) < LINKS_RETRY_DAYS * 86_400_000) return false;
+  return age(checkedAt) > LINKS_FRESH_DAYS * 86_400_000;
+}
+
+/**
+ * Which found links may be filed. A link a person set (recorded by hand, or
+ * confirmed in a verification) is never overwritten by a later read of the
+ * site: the site read is the weakest source, and "correct a wrong one in
+ * Ground Truth" has to stick.
+ */
+export function withoutHumanSet(found: SiteLinks, meta: Record<string, { how?: string } | undefined>): SiteLinks {
+  const out: SiteLinks = {};
+  for (const [k, v] of Object.entries(found) as [LinkKey, string][]) {
+    const how = meta[k]?.how;
+    if (how !== "manual" && how !== "verification") out[k] = v;
+  }
+  return out;
 }

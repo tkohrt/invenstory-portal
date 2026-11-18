@@ -9,12 +9,13 @@ import "server-only";
 // proposals a person reviews. Nothing here acts on what a page or email says.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "./db";
-import { readUrl, Plain } from "./read-url";
+import { readUrl, readHtml, Plain } from "./read-url";
 import { parseListText, fileLeads } from "./curated";
 import { htmlToText } from "@/lib/application-text";
+import { urlKey } from "@/lib/web-discovery";
 import {
   textForFingerprint, looksLikeFunding, linksIn, pageDue, weekListName, emailSender, freshTimestamp, normalizeAddress,
-  blueskyDue, postSignal, BLUESKY_FIRST_READ_DAYS,
+  blueskyDue, postSignal, BLUESKY_FIRST_READ_DAYS, inlineLinks, entryUrl, MAX_PENDING_SENDERS,
   type SourceRow, type SignalRow, type SignalStatus, type SourceKind, type SourceCategory, type SourceOrigin,
 } from "@/lib/signals";
 
@@ -28,6 +29,23 @@ export async function listSources(): Promise<SourceRow[]> {
   // Thrown, not swallowed: an empty list must mean "nothing watched", never "migration 0098 missing".
   if (error) throw new Error(`signal_source could not be read: ${error.message}`);
   return (data ?? []) as SourceRow[];
+}
+
+/** Every ACTIVE source of one kind, asked for directly, so no flood of another kind can crowd it out of a run. */
+export async function activeSources(kind: SourceKind): Promise<SourceRow[]> {
+  const { data, error } = await db.from("signal_source").select(SOURCE_COLS).eq("kind", kind).eq("active", true)
+    .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(1000);
+  if (error) throw new Error(`signal_source could not be read: ${error.message}`);
+  return (data ?? []) as SourceRow[];
+}
+
+/** Mail held for an unapproved sender, asked for on its own so it never scrolls out of reach behind newer signals. */
+export async function heldSignals(limit = 60): Promise<(SignalRow & { source_label: string; source_kind: SourceKind })[]> {
+  const { data } = await db.from("signal")
+    .select("id, source_id, external_id, seen_at, title, excerpt, url, status, curated_list_id, entries, note, signal_source(label, kind)")
+    .eq("status", "held").order("seen_at", { ascending: false }).limit(limit);
+  return ((data ?? []) as unknown as (SignalRow & { signal_source: { label: string; kind: SourceKind } | null })[])
+    .map(({ signal_source, ...r }) => ({ ...r, source_label: signal_source?.label ?? "", source_kind: signal_source?.kind ?? "email" }));
 }
 
 export async function recentSignals(limit = 40): Promise<(SignalRow & { source_label: string; source_kind: SourceKind })[]> {
@@ -67,77 +85,123 @@ async function weekList(): Promise<string | null> {
   // tenant-safe: curated_list is For Granted's shared, admin-only record with no tenant_id.
   const { data, error } = await db.from("curated_list").insert({
     name, source_url: null,
-    context_note: "Found by For Granted's watched sources (pages, newsletters, accounts) this week. Each entry was read from the funder's own page and reviewed before it reached you.",
+    // No note: a signals list is many unrelated sources, and a generic line
+    // here would be shown to clients in place of a pasted list's real context.
+    context_note: null,
     created_by: null,
   }).select("id").single();
   if (error || !data) { console.error("[signals] week list not created", error?.message); return null; }
   return (data as { id: string }).id;
 }
 
+/** What became of a signal. "unsettled" statuses mean it is not finished and must be seen again. */
+export type Outcome = { status: SignalStatus; entries: number };
+const UNSETTLED: SignalStatus[] = ["new", "reading", "failed"];
+export const unsettled = (o: Outcome | null) => !!o && UNSETTLED.includes(o.status);
+
 /**
  * Record one thing a source produced and, when it reads like funding news and
- * the budget allows, parse it into review-queue entries. Returns null when
- * this exact signal was already recorded (the unique key is the dedupe).
+ * the budget allows, parse it into review-queue entries. Returns null only
+ * when this exact signal was already recorded AND finished (the unique key is
+ * the dedupe); a signal that could not be recorded comes back "failed", so a
+ * caller never mistakes a lost write for work done.
  */
 export async function fileSignal(a: {
   source: SourceRow; externalId: string; title: string; text: string; url: string | null;
   budget: Budget; hold?: boolean; note?: string | null;
   /** Record it without parsing: there is nothing in it to read (a post with no page behind it). */
   skip?: boolean;
-}): Promise<{ status: SignalStatus; entries: number } | null> {
+}): Promise<Outcome | null> {
   const base = {
     source_id: a.source.id, external_id: a.externalId.slice(0, 400), title: a.title.slice(0, 300),
     excerpt: a.text.replace(/\s+/g, " ").trim().slice(0, 600), url: a.url?.slice(0, 1000) ?? null, note: a.note?.slice(0, 4000) ?? null,
   };
   const { data: row, error } = await db.from("signal").insert({ ...base, status: a.hold ? "held" : a.skip ? "skipped" : "new" }).select("id").single();
   if (error || !row) {
-    if (error && error.code !== "23505") { console.error("[signals] signal not recorded", error.message); return null; }
+    if (!error || error.code !== "23505") { console.error("[signals] signal not recorded", error?.message); return { status: "failed", entries: 0 }; }
     // Already recorded. One left unread (the budget ran out, or the parser
     // was unavailable) is finished now; anything else is simply a repeat.
     const { data: prior } = await db.from("signal").select("id, status").eq("source_id", a.source.id).eq("external_id", base.external_id).maybeSingle();
     const p = prior as { id: string; status: SignalStatus } | null;
-    if (!p || a.hold || a.skip || (p.status !== "new" && p.status !== "failed")) return null;
-    return readSignal(p.id, a.text, a.budget);
+    if (!p || a.hold || a.skip || !UNSETTLED.includes(p.status)) return null;
+    return readSignal(p.id, a.text, a.budget, a.url);
   }
   const id = (row as { id: string }).id;
   if (a.hold) return { status: "held", entries: 0 };
   if (a.skip) return { status: "skipped", entries: 0 };
-  const done = await readSignal(id, a.text, a.budget);
-  await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", a.source.id);
+  const done = await readSignal(id, a.text, a.budget, a.url);
+  if (!unsettled(done)) await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", a.source.id);
   return done;
 }
 
-/** Parse a recorded signal's text and settle its status. "new" means the budget ran out; the next run picks it up. */
-export async function readSignal(signalId: string, text: string, budget: Budget): Promise<{ status: SignalStatus; entries: number }> {
+const CLAIM_STALE_MS = 15 * 60_000;
+
+/**
+ * Parse a recorded signal's text and settle its status. One reader at a time:
+ * the signal is claimed ("reading") before the model is called, so a
+ * redelivered webhook, a Read now pressed during the run, or two runs
+ * overlapping cannot parse it twice. A claim older than fifteen minutes is a
+ * reader that died and may be taken over. "new" back means the budget ran
+ * out, "reading" that someone else has it; either way the next run finishes it.
+ */
+export async function readSignal(signalId: string, text: string, budget: Budget, sourceUrl: string | null = null): Promise<Outcome> {
   const settle = async (status: SignalStatus, entries = 0, listId: string | null = null) => {
     await db.from("signal").update({ status, entries, curated_list_id: listId }).eq("id", signalId);
     return { status, entries };
   };
   if (!looksLikeFunding(text)) return settle("skipped");
   if (budget.parses <= 0 || Date.now() > budget.stopAt) return { status: "new", entries: 0 };
+  const stale = new Date(Date.now() - CLAIM_STALE_MS).toISOString();
+  const { data: claimed } = await db.from("signal").update({ status: "reading", claimed_at: new Date().toISOString() })
+    .eq("id", signalId).or(`status.in.(new,failed),and(status.eq.reading,claimed_at.lt."${stale}")`).select("id");
+  if (!claimed?.length) return { status: "reading", entries: 0 };
   budget.parses -= 1;
-  const parsed = await parseListText(text);
+  const parsed = await parseListText(text, sourceUrl);
   if (!parsed.ok) return parsed.reason === "empty" ? settle("nothing") : settle("failed");
+  // Each entry points where the text really points, or at the page it was read from (lib/signals.ts entryUrl).
+  const leads = parsed.leads.map(l => {
+    const url = entryUrl(l, text, sourceUrl);
+    return { ...l, url, url_key: (url && urlKey(url)) || l.url_key };
+  });
   const listId = await weekList();
   if (!listId) return settle("failed");
-  // Counted as what the parser read, not only what was new to the queue: an
-  // entry already known is still what this signal was about.
-  await fileLeads(listId, parsed.leads, null);
-  return settle("filed", parsed.leads.length, listId);
+  // Counted as what was NEW to the review queue, so "sent to review" is never said of entries already known.
+  const fresh = await fileLeads(listId, leads, null);
+  return fresh ? settle("filed", fresh, listId) : settle("nothing");
+}
+
+/**
+ * Read a page keeping where its links point (each address written after its
+ * words), so an opportunity can be filed with its own link. Also returns the
+ * page's plain text, which is what the change fingerprint is taken from:
+ * link addresses carry tracking codes that change without the page changing.
+ * Anything that is not HTML (a PDF) is read as plain text.
+ */
+async function readPage(url: string, instead: string): Promise<{ text: string; plain: string; url: string }> {
+  try {
+    const page = await readHtml(url, instead);
+    const plain = htmlToText(page.html);
+    if (plain.split(/\s+/).length < 40) throw new Plain(`That page has almost no readable text (it may be built in JavaScript). ${instead}`);
+    return { text: htmlToText(inlineLinks(page.html, page.url)), plain, url: page.url };
+  } catch (e) {
+    if (!(e instanceof Plain) || !/not a web page/i.test(e.message)) throw e;
+    const doc = await readUrl(url, instead);
+    return { text: doc.text, plain: doc.text, url: doc.url };
+  }
 }
 
 /** Re-read one watched page; file a signal when its content has changed. */
 export async function checkPage(s: SourceRow, budget: Budget): Promise<{ changed: boolean; status?: SignalStatus; entries?: number; error?: string }> {
   const now = new Date().toISOString();
-  let page: { text: string; url: string };
+  let page: { text: string; plain: string; url: string };
   try {
-    page = await readUrl(s.address, "It will be tried again on the next run.");
+    page = await readPage(s.address, "It will be tried again on the next run.");
   } catch (e) {
     const msg = e instanceof Plain ? e.message.replace(/ It will be tried again on the next run\.$/, "") : "The page could not be read.";
     await db.from("signal_source").update({ last_checked_at: now, last_error: msg.slice(0, 300) }).eq("id", s.id);
     return { changed: false, error: msg };
   }
-  const hash = createHash("sha256").update(textForFingerprint(page.text)).digest("hex");
+  const hash = createHash("sha256").update(textForFingerprint(page.plain)).digest("hex");
   if (hash === s.last_hash) {
     await db.from("signal_source").update({ last_checked_at: now, last_ok_at: now, last_error: null }).eq("id", s.id);
     return { changed: false };
@@ -146,7 +210,7 @@ export async function checkPage(s: SourceRow, budget: Budget): Promise<{ changed
   // The fingerprint moves only once the change was dealt with: when the budget
   // ran out or the parser was unavailable ("new", "failed"), the next read
   // sees the same change again and the recorded signal is finished then.
-  const settled = !r || (r.status !== "new" && r.status !== "failed");
+  const settled = !unsettled(r);
   await db.from("signal_source").update({
     last_checked_at: now, last_ok_at: now, last_error: null,
     ...(settled ? { last_hash: hash, last_changed_at: now } : {}),
@@ -156,8 +220,7 @@ export async function checkPage(s: SourceRow, budget: Budget): Promise<{ changed
 
 /** The weekly page watch: every active page that is due, oldest check first. */
 export async function runPageWatch(budget: Budget): Promise<{ checked: number; changed: number; filed: number; failed: number }> {
-  const due = (await listSources()).filter(s => pageDue(s))
-    .sort((a, b) => (a.last_checked_at ?? "").localeCompare(b.last_checked_at ?? ""));
+  const due = (await activeSources("page")).filter(s => pageDue(s));
   const out = { checked: 0, changed: 0, filed: 0, failed: 0 };
   for (const s of due) {
     if (Date.now() > budget.stopAt) { console.error(`[signals] page watch stopped early; ${due.length - out.checked} page(s) wait for the next run`); break; }
@@ -170,10 +233,12 @@ export async function runPageWatch(budget: Budget): Promise<{ checked: number; c
   return out;
 }
 
-/** Approved senders' mail left unread (the budget ran out, or the parser was unavailable), for the next run to finish. */
+/** Approved senders' mail left unread (the budget ran out, the parser was unavailable, or a reader died mid-read), for the next run to finish. */
 export async function pendingEmail(limit = 20): Promise<string[]> {
+  const stale = new Date(Date.now() - CLAIM_STALE_MS).toISOString();
   const { data } = await db.from("signal").select("id, signal_source!inner(kind, active)")
-    .in("status", ["new", "failed"]).eq("signal_source.kind", "email").eq("signal_source.active", true)
+    .or(`status.in.(new,failed),and(status.eq.reading,claimed_at.lt."${stale}")`)
+    .eq("signal_source.kind", "email").eq("signal_source.active", true)
     .gte("seen_at", new Date(Date.now() - 14 * 86_400_000).toISOString()).order("seen_at", { ascending: true }).limit(limit);
   return ((data ?? []) as { id: string }[]).map(r => r.id);
 }
@@ -206,7 +271,8 @@ export async function syncFollows(): Promise<{ follows: number; added: number } 
   let cursor: string | undefined;
   for (let page = 0; page < 10; page++) {
     const r = await bsky("app.bsky.graph.getFollows", { actor: bskyAccount(), limit: "100", ...(cursor ? { cursor } : {}) });
-    if (!r) return page === 0 ? null : { follows: handles.length, added: 0 };
+    // A later page that fails still leaves the earlier pages worth bringing in.
+    if (!r) { if (page === 0) return null; break; }
     for (const f of (Array.isArray(r.follows) ? r.follows : []) as { handle?: unknown; displayName?: unknown }[]) {
       const h = typeof f.handle === "string" ? normalizeAddress("bluesky", f.handle) : null;
       // Bluesky's own account is followed by default on every new account; it is not a funding source.
@@ -246,22 +312,31 @@ export async function checkBluesky(s: SourceRow, budget: Budget): Promise<{ ok: 
   // which everything seen was dealt with. First read: the last two weeks.
   const upTo = s.last_hash ? Date.parse(s.last_hash) : NaN;
   const since = Number.isFinite(upTo) ? new Date(upTo) : new Date(now.getTime() - BLUESKY_FIRST_READ_DAYS * 86_400_000);
+  // Oldest first, so a busy account is worked through in order across runs.
   const posts = (Array.isArray(r.feed) ? r.feed : []).map(i => postSignal(i, s.address, since)).filter((p): p is NonNullable<typeof p> => !!p)
-    .filter(p => looksLikeFunding(p.text)).sort((a, b) => a.at.localeCompare(b.at)).slice(-MAX_POSTS_PER_ACCOUNT);
+    .filter(p => looksLikeFunding(p.text)).sort((a, b) => a.at.localeCompare(b.at));
   let kept = 0, filed = 0, unfinished = false;
   for (const p of posts) {
-    if (Date.now() > budget.stopAt) { unfinished = true; break; }
+    // The cap counts posts dealt with THIS run; anything past it waits, and the cursor stays put so it is seen again.
+    if (kept >= MAX_POSTS_PER_ACCOUNT || Date.now() > budget.stopAt) { unfinished = true; break; }
     let text = p.text, url = p.postUrl, skip = !p.link;
     if (p.link) {
       try {
-        const page = await readUrl(p.link, "The post is kept without it.");
+        const page = await readPage(p.link, "The post is kept without it.");
         text = `${p.text}\n\n${page.text.slice(0, 15_000)}`; url = page.url;
-      } catch { skip = true; }
+      } catch {
+        // A page that will not load today may load next run: a recent post is
+        // left for then. An old one is recorded as it is, so one dead link
+        // cannot hold an account's cursor back for good.
+        if (now.getTime() - Date.parse(p.at) < 7 * 86_400_000) { unfinished = true; continue; }
+        skip = true;
+      }
     }
     const done = await fileSignal({ source: s, externalId: p.uri, title: p.text.replace(/\s+/g, " ").slice(0, 140), text, url, budget, skip, note: p.postUrl });
-    if (done) kept += 1;
-    if (done?.status === "filed") filed += done.entries;
-    if (done?.status === "new" || done?.status === "failed") unfinished = true;
+    if (!done) continue; // already recorded and finished on an earlier run
+    kept += 1;
+    if (done.status === "filed") filed += done.entries;
+    if (unsettled(done)) unfinished = true;
   }
   // The clock moves only when everything seen was dealt with; otherwise the
   // same posts are looked at again next run and the unread ones are finished.
@@ -274,8 +349,7 @@ export async function checkBluesky(s: SourceRow, budget: Budget): Promise<{ ok: 
 /** The twice-weekly Bluesky read: bring in the follows, then read every account that is due. */
 export async function runBluesky(budget: Budget): Promise<{ follows: number | null; added: number; checked: number; kept: number; filed: number; failed: number }> {
   const sync = await syncFollows().catch(() => null);
-  const due = (await listSources()).filter(s => blueskyDue(s))
-    .sort((a, b) => (a.last_checked_at ?? "").localeCompare(b.last_checked_at ?? ""));
+  const due = (await activeSources("bluesky")).filter(s => blueskyDue(s));
   const out = { follows: sync?.follows ?? null, added: sync?.added ?? 0, checked: 0, kept: 0, filed: 0, failed: 0 };
   for (const s of due) {
     if (Date.now() > budget.stopAt) { console.error(`[signals] bluesky stopped early; ${due.length - out.checked} account(s) wait for the next run`); break; }
@@ -322,7 +396,10 @@ export async function fetchReceivedEmail(emailId: string): Promise<ReceivedEmail
     });
     if (!res.ok) { console.error("[signals] received email not fetched", res.status); return null; }
     const j = await res.json() as { from?: unknown; to?: unknown; subject?: unknown; text?: unknown; html?: unknown };
-    const text = typeof j.text === "string" && j.text.trim() ? j.text : typeof j.html === "string" ? htmlToText(j.html) : "";
+    // The HTML part first, with each link's address kept beside its words: a
+    // newsletter's opportunities are links, and the plain-text part often drops them.
+    const text = typeof j.html === "string" && j.html.trim() ? htmlToText(inlineLinks(j.html, "https://mail.invalid/"))
+      : typeof j.text === "string" ? j.text : "";
     return {
       from: typeof j.from === "string" ? j.from : "",
       to: Array.isArray(j.to) ? j.to.filter((x): x is string => typeof x === "string") : typeof j.to === "string" ? [j.to] : [],
@@ -346,10 +423,24 @@ export async function fetchReceivedEmail(emailId: string): Promise<ReceivedEmail
 export async function ingestEmail(emailId: string, budget: Budget): Promise<{ ok: boolean; status?: SignalStatus; reason?: string }> {
   const mail = await fetchReceivedEmail(emailId);
   if (!mail) return { ok: false, reason: "could not fetch the email" };
+  // Only mail addressed to the signals inbox is ours. The address is required
+  // (the route refuses to run without it): a receiving domain accepts mail for
+  // any name, and the portal must not read whatever arrives.
   const inbox = (process.env.SIGNALS_INBOX ?? "").trim().toLowerCase();
-  if (inbox && !mail.to.some(t => normalizeAddress("email", t) === inbox)) return { ok: true, reason: "not addressed to the signals inbox" };
+  if (!inbox || !mail.to.some(t => normalizeAddress("email", t) === inbox)) return { ok: true, reason: "not addressed to the signals inbox" };
   const who = emailSender(mail.from);
   if (!who) return { ok: true, reason: "no readable sender" };
+  // A flood of mail from invented senders must not bury the list: past a cap
+  // of senders awaiting approval, mail from yet another new sender is dropped.
+  const { data: known } = await db.from("signal_source").select("id").eq("kind", "email").eq("address", who.address).maybeSingle();
+  if (!known) {
+    const { count } = await db.from("signal_source").select("id", { count: "exact", head: true })
+      .eq("kind", "email").eq("active", false).eq("origin", "inbox").is("last_signal_at", null);
+    if ((count ?? 0) >= MAX_PENDING_SENDERS) {
+      console.error(`[signals] ${count} senders already await approval; mail from a new sender was not recorded`);
+      return { ok: true, reason: "too many senders awaiting approval" };
+    }
+  }
   const src = await upsertSource({ kind: "email", address: who.address, label: who.name, category: "aggregator", origin: "inbox", active: false });
   if (!src.ok) return { ok: false, reason: src.error };
   const now = new Date().toISOString();
@@ -367,11 +458,11 @@ export async function readHeldEmail(signalId: string, budget: Budget): Promise<{
   const row = data as unknown as { id: string; external_id: string; status: SignalStatus; source_id: string; signal_source: { kind: SourceKind; active: boolean } | null } | null;
   if (!row || row.signal_source?.kind !== "email") return { ok: false, error: "That is not held mail." };
   if (!row.signal_source.active) return { ok: false, error: "Approve the sender first." };
-  if (!["held", "new", "failed"].includes(row.status)) return { ok: false, error: "That mail has already been read." };
+  if (!["held", "new", "failed", "reading"].includes(row.status)) return { ok: false, error: "That mail has already been read." };
   const mail = await fetchReceivedEmail(row.external_id);
   if (!mail) return { ok: false, error: "The email could not be fetched from the mail service. Check that RESEND_API_KEY can read received mail." };
-  await db.from("signal").update({ status: "new" }).eq("id", row.id);
+  if (row.status === "held") await db.from("signal").update({ status: "new" }).eq("id", row.id).eq("status", "held");
   const r = await readSignal(row.id, mail.text.slice(0, 20_000), budget);
-  if (r.status !== "new") await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", row.source_id);
+  if (!unsettled(r)) await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", row.source_id);
   return { ok: true, ...r };
 }

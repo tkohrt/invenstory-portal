@@ -2,12 +2,12 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/db", () => ({ db: {} }));
-vi.mock("@/lib/server/read-url", () => ({ readUrl: vi.fn(), Plain: class extends Error {} }));
+vi.mock("@/lib/server/read-url", () => ({ readUrl: vi.fn(), readHtml: vi.fn(), Plain: class extends Error {} }));
 vi.mock("@/lib/server/curated", () => ({ parseListText: vi.fn(), fileLeads: vi.fn() }));
 import { createHmac } from "node:crypto";
 import {
   normalizeAddress, emailSender, textForFingerprint, looksLikeFunding, linksIn, pageDue, sourceHealth, weekListName, freshTimestamp,
-  blueskyDue, postSignal, suggestedFollows,
+  blueskyDue, postSignal, suggestedFollows, inlineLinks, entryUrl, awaitingApproval,
   type SourceRow,
 } from "@/lib/signals";
 import { verifyWebhook } from "@/lib/server/signals";
@@ -181,5 +181,57 @@ describe("Bluesky sources", () => {
       src({ id: "e", kind: "page", origin: "manual" }),
     ];
     expect(suggestedFollows(list).map(s => s.id)).toEqual(["c", "b"]);
+  });
+});
+
+// After the independent review of patches 63 to 65.
+describe("a page read so its links survive", () => {
+  const html = `<p>Open calls:</p><ul>
+    <li><a href="/grants/youth-fund?utm=1">Youth Fund</a> due 3 March</li>
+    <li><a class="btn" href='https://apply.other.org/rural'>Rural Clinics RFP</a></li>
+    <li><a href="#top">Back to top</a> <a href="mailto:x@fund.org">Email us</a> <a href="javascript:void(0)">Menu</a></li></ul>`;
+  const out = inlineLinks(html, "https://fund.org/grants");
+  it("each real link's address follows its words", () => {
+    expect(out).toContain("Youth Fund [https://fund.org/grants/youth-fund?utm=1]");
+    expect(out).toContain("Rural Clinics RFP [https://apply.other.org/rural]");
+  });
+  it("a same-page, mail or script link keeps its words and gains no address", () => {
+    expect(out).toContain("Back to top");
+    expect(out).not.toMatch(/\[mailto:|\[javascript:|\[https:\/\/fund\.org\/grants\]/);
+  });
+  it("a broken page with thousands of unclosed tags is still read quickly", () => {
+    const started = Date.now();
+    inlineLinks("<a ".repeat(200_000), "https://fund.org/");
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+});
+
+describe("where a parsed entry points", () => {
+  const text = "Youth Fund [https://fund.org/grants/youth-fund?utm=1] due 3 March. Rural Clinics RFP.";
+  it("an address that really is in the text is kept", () => {
+    expect(entryUrl({ url: "https://fund.org/grants/youth-fund", title: "Youth Fund", deadline: null }, text, "https://fund.org/grants")).toBe("https://fund.org/grants/youth-fund");
+  });
+  it("an address the text never showed is replaced by the page it was read from, marked with the entry's own title and deadline", () => {
+    expect(entryUrl({ url: "https://evil.example/claim-grant", title: "Rural Clinics RFP", deadline: "2027-03-03" }, text, "https://fund.org/grants#x"))
+      .toBe("https://fund.org/grants#rural-clinics-rfp-2027-03-03");
+    expect(entryUrl({ url: "", title: "Rural Clinics RFP", deadline: null }, text, "https://fund.org/grants")).toBe("https://fund.org/grants#rural-clinics-rfp");
+  });
+  it("two calls on one page, and a moved deadline, get different addresses, so neither is dropped as already known", () => {
+    const a = entryUrl({ url: "", title: "Youth Fund", deadline: "2027-03-03" }, "", "https://fund.org/grants");
+    const b = entryUrl({ url: "", title: "Rural Clinics RFP", deadline: "2027-03-03" }, "", "https://fund.org/grants");
+    const c = entryUrl({ url: "", title: "Youth Fund", deadline: "2027-09-01" }, "", "https://fund.org/grants");
+    expect(new Set([a, b, c]).size).toBe(3);
+  });
+  it("with no page to fall back on (an email), an unverifiable address is dropped, never guessed", () => {
+    expect(entryUrl({ url: "https://evil.example/x", title: "T", deadline: null }, "no links", null)).toBe("");
+  });
+});
+
+describe("a sender awaiting approval", () => {
+  it("is one whose mail has arrived but never been read", () => {
+    expect(awaitingApproval(src({ kind: "email", origin: "inbox", active: false, last_ok_at: "2026-11-18T00:00:00Z" }))).toBe(true);
+    expect(sourceHealth(src({ kind: "email", origin: "inbox", active: false, last_ok_at: "2026-11-18T00:00:00Z" }), NOW).why).toBe("A new sender, waiting for approval.");
+    expect(awaitingApproval(src({ kind: "email", origin: "inbox", active: false, last_signal_at: "2026-11-01T00:00:00Z" }))).toBe(false);
+    expect(awaitingApproval(src({ kind: "email", origin: "inbox", active: true }))).toBe(false);
   });
 });

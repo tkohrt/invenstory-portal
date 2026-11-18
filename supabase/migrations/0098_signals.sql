@@ -45,10 +45,12 @@ create table if not exists public.signal (
   title           text,
   excerpt         text,
   url             text,
-  -- new: not yet read. filed: entries went to the review queue. nothing: read,
-  -- no opportunities in it. skipped: did not read like funding news, not parsed.
+  -- new: not yet read. filed: new entries went to the review queue. nothing: read,
+  -- nothing new in it. skipped: did not read like funding news, not parsed.
   -- held: from a sender not yet approved. failed: could not be read; retried.
-  status          text not null default 'new' check (status in ('new','filed','nothing','skipped','held','failed')),
+  -- reading: claimed by one reader, so two runs never parse the same thing at once.
+  status          text not null default 'new' check (status in ('new','reading','filed','nothing','skipped','held','failed')),
+  claimed_at      timestamptz,
   curated_list_id uuid references public.curated_list(id) on delete set null,
   entries         integer not null default 0,
   note            text,

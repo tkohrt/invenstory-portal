@@ -4,13 +4,21 @@
 import { urlKey, noLinks, leadProfileExtras, leadTerms, type RawLead, type Lead } from "@/lib/web-discovery";
 import type { GrantCard } from "@/lib/ledger-types";
 import type { FundingKind } from "@/lib/eligibility-fields";
+import { untrusted } from "@/lib/untrusted";
 
 export const CURATED_PARSE_SYSTEM = `You turn a pasted list of funding opportunities into structured entries.
 Answer with ONLY a JSON object: {"leads":[{"kind":"opportunity"|"funder","money_kind":"grants"|"contracts"|"programs","title":...,"funder":...,"url":...,"deadline":"YYYY-MM-DD or null","amount":...,"geography":...,"eligibility":...,"terms":...,"why":null,"quote":null}]}.
 Rules: one entry per opportunity in the text, nothing invented. A field the text does not state is null. For a "funder" entry you may also add "giving_cycle", "programs" and "application_process" when the text states them; omit them otherwise. For a "programs" entry that invests in or takes a stake in the applicant (an accelerator, a fund), "terms" is what the text states about the deal: the instrument, the equity taken and any follow-on, condensed (for example "$150,000 on a SAFE for 6% equity"); null when the text does not state it. The url must appear in the text; an entry with no url is still kept (url null). Dates become YYYY-MM-DD when the text makes the date certain, else null. Keep titles under 20 words.`;
 
-export function curatedParseUser(pasted: string, today: string): string {
-  return `Today is ${today}. The pasted list:\n\n${pasted}`;
+/**
+ * The text is fenced as untrusted material (review of patch 64): since
+ * signals, it is no longer only what an admin pasted but whole pages, emails
+ * and posts, and none of it may steer the model. `sourceUrl` names the page
+ * the text was read from, for entries the text gives no address of their own.
+ */
+export function curatedParseUser(pasted: string, today: string, sourceUrl?: string | null): string {
+  const from = sourceUrl ? ` The text was read from this page: ${sourceUrl} . Links in it appear in square brackets after their words.` : "";
+  return `Today is ${today}.${from} The pasted list:\n\n${untrusted("WEB_RESULTS", pasted)}`;
 }
 
 /**

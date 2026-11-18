@@ -23,6 +23,14 @@ import { lookupFunderLinks } from "@/lib/server/funder-links";
  * never the Brain — plus one more rule: a funder For Granted ruled out never
  * renders for a client, even by URL.
  */
+/** A client's browser is never sent For Granted's bookkeeping or the machine feed address (patch 63). */
+function forClient<T extends { fields: Record<string, unknown>; meta: Record<string, unknown> } | null>(p: T): T {
+  if (!p) return p;
+  const drop = new Set(["rss_url", "links_checked_at", "links_failed_at"]);
+  const keep = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !drop.has(k)));
+  return { ...p, fields: keep(p.fields), meta: keep(p.meta) };
+}
+
 export default async function FunderDossierPage({ params, searchParams }: {
   params: Promise<{ fid: string }>;
   searchParams: Promise<{ view?: string }>;
@@ -68,7 +76,7 @@ export default async function FunderDossierPage({ params, searchParams }: {
   // stale reads the funder's site AFTER this page is sent, so nobody waits on
   // someone else's website. The links show from the next visit, for every
   // client, because the profile is shared. Best-effort by design.
-  if (funder.website && linksStale(profile?.fields.links_checked_at)) {
+  if (funder.website && linksStale(profile?.fields.links_checked_at, new Date(), profile?.fields.links_failed_at)) {
     const { ein, funder_id, website, name } = funder;
     after(async () => {
       try { await lookupFunderLinks({ ein, funderId: funder_id, website, name }); }
@@ -79,7 +87,7 @@ export default async function FunderDossierPage({ params, searchParams }: {
 
   return (
     <FunderDossierView funder={funder} shadow={shadow} contacts={contacts}
-      profile={profile} history={history} filingGrants={filingGrants}
+      profile={isAdmin && !viewingAsClient ? profile : forClient(profile)} history={history} filingGrants={filingGrants}
       isAdmin={isAdmin} viewingAsClient={viewingAsClient}
       knownAs={known ? RELATIONSHIP_LABEL[known.relationship] : null} />
   );

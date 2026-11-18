@@ -1,6 +1,6 @@
 /** The funder's own channels (patch 63): what counts as a funder's account, and what the site check keeps. */
 import { describe, expect, it } from "vitest";
-import { classifyLink, extractSiteLinks, domainHandle, linksStale } from "@/lib/funder-links";
+import { classifyLink, extractSiteLinks, domainHandle, linksStale, withoutHumanSet } from "@/lib/funder-links";
 import { mergeProfile, FACT_FIELDS, PROFILE_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
 
 describe("which links are a funder's own account", () => {
@@ -113,7 +113,24 @@ describe("links on the shared funder profile", () => {
     expect(r.fields.x_url).toBe("https://x.com/ourfdn");
   });
   it("links and bookkeeping stay out of the dossier's fact rows", () => {
-    expect(FACT_FIELDS.some(f => f.kind === "url" || f.key === "links_checked_at")).toBe(false);
-    expect(FACT_FIELDS.length).toBe(PROFILE_FIELDS.length - 9);
+    expect(FACT_FIELDS.some(f => f.kind === "url" || f.kind === "stamp")).toBe(false);
+    expect(FACT_FIELDS.length).toBe(PROFILE_FIELDS.length - 10);
+  });
+  it("a link a person set or confirmed is never overwritten by a site read", () => {
+    const found = { x_url: "https://x.com/wrong", linkedin_url: "https://www.linkedin.com/company/a", bluesky_url: "https://bsky.app/profile/a.org" };
+    expect(withoutHumanSet(found, { x_url: { how: "manual" }, linkedin_url: { how: "verification" }, bluesky_url: { how: "funder_site" } }))
+      .toEqual({ bluesky_url: "https://bsky.app/profile/a.org" });
+    expect(withoutHumanSet(found, {})).toEqual(found);
+  });
+  it("a site that could not be read is left alone for a week, then tried again", () => {
+    const now = new Date("2026-11-18T12:00:00Z");
+    expect(linksStale(undefined, now, "2026-11-15T12:00:00Z")).toBe(false);
+    expect(linksStale(undefined, now, "2026-11-10T12:00:00Z")).toBe(true);
+    expect(linksStale("2026-10-01T00:00:00Z", now, "2026-11-01T00:00:00Z")).toBe(false);
+  });
+  it("a broken page with thousands of unclosed tags is still scanned quickly", () => {
+    const started = Date.now();
+    extractSiteLinks("<a ".repeat(200_000) + "<link ".repeat(100_000), "https://ourfdn.org");
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 });

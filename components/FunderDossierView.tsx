@@ -307,7 +307,7 @@ function FunderLinks({ funder, profile, admin }: { funder: FunderRow; profile: F
       <b>Follow this funder</b>
       {keys.length
         ? keys.map(k => <a key={k} href={String(profile?.fields[k])} target="_blank" rel="noopener noreferrer">{LINK_LABEL[k]} ↗</a>)
-        : <span className="do-muted">{funder.website ? (checked ? "Their website links to no accounts that could be recognized." : "Not looked up yet. Their site is read the first time this page is opened; reload in a moment.") : "No website on record to read."}</span>}
+        : <span className="do-muted">{funder.website ? (checked ? "Their website links to no accounts that could be recognized." : typeof profile?.fields.links_failed_at === "string" ? "Their website could not be read automatically; it is tried again weekly." : "Not looked up yet. Their site is read the first time this page is opened; reload in a moment.") : "No website on record to read."}</span>}
       {prov && <span className="do-prov">{provenanceLine(prov)}</span>}
       {admin && funder.website && (
         <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy} onClick={() => void recheck()}

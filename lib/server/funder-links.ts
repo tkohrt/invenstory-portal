@@ -3,8 +3,8 @@ import "server-only";
 // social, newsletter and feed links it publishes on the SHARED funder profile,
 // so one read serves every client's dossier. Rules in lib/funder-links.ts.
 import { readHtml, Plain } from "./read-url";
-import { applyProfileFields } from "./funder-profile";
-import { extractSiteLinks, domainHandle, type SiteLinks } from "@/lib/funder-links";
+import { applyProfileFields, getFunderProfile } from "./funder-profile";
+import { extractSiteLinks, domainHandle, withoutHumanSet, type SiteLinks } from "@/lib/funder-links";
 
 /**
  * Does the funder's own domain answer as a Bluesky handle? A fixed public
@@ -38,6 +38,9 @@ export async function lookupFunderLinks(a: { ein: string | null | undefined; fun
   try {
     page = await readHtml(a.website, "Add the links by hand.");
   } catch (e) {
+    // Remember the failure, so the dossier does not fetch an unreadable site on every visit.
+    const failedAt = new Date().toISOString();
+    await applyProfileFields({ ein: a.ein, funderId: a.funderId, incoming: { links_failed_at: failedAt }, prov: { how: "funder_site", source_url: a.website, at: failedAt } });
     return { ok: false, error: e instanceof Plain ? e.message : "The funder's website could not be read." };
   }
   const found = extractSiteLinks(page.html, page.url);
@@ -48,7 +51,8 @@ export async function lookupFunderLinks(a: { ein: string | null | undefined; fun
   const at = new Date().toISOString();
   const changed = await applyProfileFields({
     ein: a.ein, funderId: a.funderId,
-    incoming: { ...found, links_checked_at: at },
+    // A link a person set by hand or confirmed is never overwritten by a site read.
+    incoming: { ...withoutHumanSet(found, ((await getFunderProfile(a.ein, a.funderId).catch(() => null))?.meta ?? {}) as Record<string, { how?: string }>), links_checked_at: at },
     prov: { how: "funder_site", source_url: page.url, at },
   });
   // Patch 65: a funder found to be on Bluesky becomes a source the portal
@@ -64,5 +68,5 @@ export async function lookupFunderLinks(a: { ein: string | null | undefined; fun
       });
     } catch (e) { console.error("[funder-links] bluesky source not recorded", e instanceof Error ? e.message : e); }
   }
-  return { ok: true, found, changed: changed.filter(k => k !== "links_checked_at") };
+  return { ok: true, found, changed: changed.filter(k => !k.startsWith("links_")) };
 }

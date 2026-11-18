@@ -10,13 +10,13 @@
 export type SourceKind = "page" | "bluesky" | "email";
 export type SourceCategory = "funder" | "accelerator" | "rfp" | "aggregator";
 export type SourceOrigin = "manual" | "dossier" | "follows" | "inbox";
-export type SignalStatus = "new" | "filed" | "nothing" | "skipped" | "held" | "failed";
+export type SignalStatus = "new" | "reading" | "filed" | "nothing" | "skipped" | "held" | "failed";
 
 export const KIND_LABEL: Record<SourceKind, string> = { page: "Watched page", bluesky: "Bluesky account", email: "Newsletter sender" };
 export const CATEGORY_LABEL: Record<SourceCategory, string> = { funder: "Funder", accelerator: "Accelerator", rfp: "RFPs and procurement", aggregator: "Aggregator or sector news" };
 export const CATEGORIES = Object.keys(CATEGORY_LABEL) as SourceCategory[];
 export const STATUS_LABEL: Record<SignalStatus, string> = {
-  new: "Not read yet", filed: "Entries sent to review", nothing: "Read: no opportunities in it",
+  new: "Not read yet", reading: "Being read", filed: "New entries sent to review", nothing: "Read: nothing new in it",
   skipped: "Not funding news", held: "Held: sender not approved", failed: "Could not be read",
 };
 
@@ -108,6 +108,14 @@ export function pageDue(s: Pick<SourceRow, "active" | "kind" | "last_checked_at"
   return s.kind === "page" && s.active && daysSince(s.last_checked_at, now) >= PAGE_EVERY_DAYS;
 }
 
+/** A sender whose first mail arrived and has never been approved: nothing of theirs has been read. */
+export function awaitingApproval(s: Pick<SourceRow, "kind" | "active" | "origin" | "last_signal_at">): boolean {
+  return s.kind === "email" && !s.active && s.origin === "inbox" && !s.last_signal_at;
+}
+
+/** New senders the inbox will record before it stops taking more, so a flood of forged senders cannot bury the list. */
+export const MAX_PENDING_SENDERS = 50;
+
 export type Health = "off" | "new" | "failing" | "quiet" | "ok";
 export const HEALTH_LABEL: Record<Health, string> = { off: "Off", new: "Not read yet", failing: "Failing", quiet: "Gone quiet", ok: "Healthy" };
 
@@ -118,7 +126,7 @@ export const HEALTH_LABEL: Record<Health, string> = { off: "Off", new: "Not read
  * never changes), which is the cue to check it by hand or drop it.
  */
 export function sourceHealth(s: SourceRow, now = new Date()): { state: Health; why: string } {
-  if (!s.active) return { state: "off", why: s.kind === "email" && s.origin === "inbox" && !s.last_ok_at ? "A new sender, waiting for approval." : "Turned off; kept but not read." };
+  if (!s.active) return { state: "off", why: awaitingApproval(s) ? "A new sender, waiting for approval." : "Turned off; kept but not read." };
   if (s.kind !== "email" && !s.last_checked_at) return { state: "new", why: "Will be read on the next run." };
   if (s.kind !== "email" && s.last_checked_at && (!s.last_ok_at || Date.parse(s.last_ok_at) < Date.parse(s.last_checked_at))) {
     return { state: "failing", why: s.last_error || "The last read did not get an answer." };
@@ -148,6 +156,54 @@ export function freshTimestamp(ts: string, nowSec: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Reading a page so its links survive, and keeping a parsed entry honest about
+// where it points (review of patch 64, finding 1).
+
+/**
+ * A page's HTML with each link's address written after its words, in square
+ * brackets, before the markup is stripped. Plain page text drops every
+ * address, which left the parser unable to say where an opportunity lives.
+ * Only real web addresses are kept; a link to the same page, a mail link or a
+ * script link is dropped.
+ */
+export function inlineLinks(html: string, baseUrl: string): string {
+  let base: URL;
+  try { base = new URL(baseUrl); } catch { return html; }
+  const here = `${base.origin}${base.pathname}`;
+  return html.replace(/<a\b([^>]{0,2000})>([\s\S]{0,600}?)<\/a>/gi, (whole, attrs: string, label: string) => {
+    const m = attrs.match(/href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    if (!m) return whole;
+    let u: URL;
+    try { u = new URL((m[1] ?? m[2] ?? m[3] ?? "").replace(/&amp;/gi, "&").trim(), base); } catch { return label; }
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || `${u.origin}${u.pathname}` === here) return label;
+    u.hash = "";
+    return u.href.length <= 300 ? `${label} [${u.href}] ` : label;
+  });
+}
+
+const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
+/**
+ * Where a parsed entry points. An address the parser returned is kept only
+ * when it really is in the text that was read (so planted text cannot invent
+ * a link, and the model cannot guess one). Otherwise the entry points at the
+ * page it was read from, with the entry's own title and deadline as the
+ * fragment: still a working link to that page, and a different address for
+ * each opportunity and each cycle, so two calls on one page are both kept and
+ * a moved deadline shows up as a new entry instead of being dropped as known.
+ */
+export function entryUrl(lead: { url: string; title: string; deadline: string | null }, text: string, sourceUrl: string | null): string {
+  const u = (lead.url ?? "").trim();
+  if (u && /^https?:\/\//i.test(u)) {
+    const bare = u.replace(/[#?].*$/, "").replace(/\/+$/, "").toLowerCase();
+    if (bare.length > 12 && text.toLowerCase().includes(bare)) return u;
+  }
+  if (!sourceUrl) return "";
+  const frag = [slug(lead.title), lead.deadline].filter(Boolean).join("-");
+  return `${sourceUrl.replace(/#.*$/, "")}${frag ? `#${frag}` : ""}`;
+}
+
+// ---------------------------------------------------------------------------
 // Bluesky (patch 65). Read through Bluesky's public directory: no sign-in, no
 // key, and nothing For Granted's account has to do. Following an account from
 // @forgranted.com is how a person adds one; the portal never follows anyone.
@@ -174,7 +230,9 @@ export function postSignal(item: unknown, handle: string, since: Date): PostSign
   if (!post || it?.reason || it?.reply || post.record?.reply) return null;
   if (typeof post.uri !== "string" || typeof post.record?.createdAt !== "string") return null;
   if (typeof post.author?.handle === "string" && post.author.handle.toLowerCase() !== handle.toLowerCase()) return null;
-  const at = Date.parse(post.record.createdAt);
+  // When Bluesky first saw the post, where given: the author sets createdAt, and a backdated post must still be seen.
+  const seen = (post as { indexedAt?: unknown }).indexedAt;
+  const at = Date.parse(typeof seen === "string" ? seen : post.record.createdAt);
   if (!Number.isFinite(at) || at <= since.getTime()) return null;
   const text = typeof post.record.text === "string" ? post.record.text : "";
   const rkey = post.uri.split("/").pop() ?? "";
