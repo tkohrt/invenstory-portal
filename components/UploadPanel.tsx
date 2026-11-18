@@ -19,11 +19,19 @@ import { browserClient } from "@/lib/supabase-browser";
 import { DOC_TYPES } from "@/lib/analysis";
 import { OUTCOMES, asksOutcomeAtUpload } from "@/lib/doc-outcome";
 import { addLabel, sizeLabel, stageFiles, stageKey, type StagedInfo } from "@/lib/upload-stage";
+import { removeQuestion } from "@/lib/setup-docs";
 
-export interface PanelDoc { id: string; title: string; status: string }
+export interface PanelDoc {
+  id: string; title: string; status: string;
+  /** The type a person gave it, if any (for the row's type select). */
+  typeTag?: string | null;
+  /** True when this person may remove it (setup: their own organization's uploads). */
+  removable?: boolean;
+}
+type RowResult = { ok: true } | { ok: false; error: string };
 interface Pending { key: string; name: string; state: "uploading" | "failed"; error?: string }
 
-export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: typeTagDefault = "", tagsDefault = "", allowLinks = false, showTypePicker = true, docs = [], addLink, onUploaded, onLayerChange, onStagedChange }: {
+export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: typeTagDefault = "", tagsDefault = "", allowLinks = false, showTypePicker = true, docs = [], addLink, onUploaded, onLayerChange, onStagedChange, onSetType, onRemove }: {
   /** Onboarding fixes the layer per step; without it the panel shows the layer select. */
   fixedLayer?: "I" | "II" | "III";
   initialLayer?: "I" | "II" | "III";
@@ -44,6 +52,10 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
   onLayerChange?: (layer: "I" | "II" | "III") => void;
   /** How many chosen files are waiting to be added, so the page can stop somebody leaving them behind. */
   onStagedChange?: (count: number) => void;
+  /** Setup only (patch 60): change the type of a document that has already arrived. */
+  onSetType?: (id: string, type: string | null) => Promise<RowResult>;
+  /** Setup only (patch 60): remove a document that has already arrived. Asked for twice on the row. */
+  onRemove?: (id: string) => Promise<RowResult>;
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
@@ -58,6 +70,34 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const effLayer = fixedLayer ?? layer;
+
+  // Arrived documents (patch 60): the type shown at once while it saves, the
+  // row being asked "remove?", rows already removed, and a row's own error.
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [asking, setAsking] = useState<string | null>(null);
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [rowErr, setRowErr] = useState<{ id: string; text: string } | null>(null);
+  const changeType = async (d: PanelDoc, value: string) => {
+    if (!onSetType) return;
+    setRowErr(null); setRowBusy(d.id);
+    setTyped(t => ({ ...t, [d.id]: value }));
+    const r = await onSetType(d.id, value || null).catch((): RowResult => ({ ok: false, error: "The type could not be saved. Please try again." }));
+    if (!r.ok) {
+      setTyped(t => { const n = { ...t }; delete n[d.id]; return n; });
+      setRowErr({ id: d.id, text: r.error });
+    }
+    setRowBusy(null);
+  };
+  const removeDoc = async (d: PanelDoc) => {
+    if (!onRemove) return;
+    setRowErr(null); setRowBusy(d.id);
+    const r = await onRemove(d.id).catch((): RowResult => ({ ok: false, error: "That document could not be removed. Please try again." }));
+    if (r.ok) setGone(g => new Set(g).add(d.id));
+    else setRowErr({ id: d.id, text: r.error });
+    setAsking(null); setRowBusy(null);
+  };
+  const shown = docs.filter(d => !gone.has(d.id));
 
   const stagedCount = staged.length;
   const tell = useRef(onStagedChange);
@@ -193,7 +233,7 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
         </div>
       )}
       {linkErr && <p className="cl-error">{linkErr}</p>}
-      {(pending.length > 0 || docs.length > 0) && (
+      {(pending.length > 0 || shown.length > 0) && (
         <div className="su-files">
           <h4>Being read now</h4>
           <p className="su-small">We start reading as soon as a file arrives. Carry on; nothing waits for this.</p>
@@ -202,12 +242,51 @@ export default function UploadPanel({ fixedLayer, initialLayer = "I", typeTag: t
             {/* A document that has been read is plainly finished (patch 57,
                 17 Nov 2026, Shane): a light green row and a round green tick
                 after "Read". The tick is decoration; the word carries it. */}
-            {docs.map(d => <li key={d.id} className={d.status}><span>{d.title}</span><em>{label(d.status)}{d.status === "ready" && (
-              <svg className="su-tick" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-                <circle cx="8" cy="8" r="8" fill="currentColor" />
-                <path d="M4.4 8.3l2.3 2.3 4.9-5" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}</em></li>)}
+            {/* And it can still be put right (patch 60): where the page
+                passes onSetType / onRemove (setup does), each arrived row
+                carries its own type select and a Remove that asks first. */}
+            {shown.map(d => {
+              const canType = !!onSetType && showTypePicker;
+              const canRemove = !!onRemove && !!d.removable;
+              const reading = d.status === "processing";
+              return (
+                <li key={d.id} className={`${d.status}${canType || canRemove ? " su-managed" : ""}`}>
+                  <span className="su-doc-title">{d.title}</span>
+                  <em>{label(d.status)}{d.status === "ready" && (
+                    <svg className="su-tick" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                      <circle cx="8" cy="8" r="8" fill="currentColor" />
+                      <path d="M4.4 8.3l2.3 2.3 4.9-5" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}</em>
+                  {(canType || canRemove) && (
+                    <span className="su-doc-ctl">
+                      {canType && (
+                        <select aria-label={`What kind of document is ${d.title}?`} disabled={rowBusy === d.id}
+                          value={typed[d.id] ?? d.typeTag ?? ""} onChange={e => void changeType(d, e.target.value)}>
+                          <option value="">Not sure (we&rsquo;ll suggest one)</option>
+                          {DOC_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                        </select>
+                      )}
+                      {canRemove && asking !== d.id && (
+                        <button type="button" className="sb-btn sb-quiet sb-sm" disabled={reading || rowBusy === d.id}
+                          title={reading ? "Available once this document has been read." : undefined}
+                          onClick={() => { setRowErr(null); setAsking(d.id); }} aria-label={`Remove ${d.title}`}>Remove</button>
+                      )}
+                    </span>
+                  )}
+                  {canRemove && asking === d.id && (
+                    <span className="su-doc-ask" role="alert">
+                      <span>{removeQuestion(d.title)}</span>
+                      <span className="su-unadded-btns">
+                        <button type="button" className="sb-btn sb-secondary sb-sm" disabled={rowBusy === d.id} onClick={() => setAsking(null)}>Keep it</button>
+                        <button type="button" className="sb-btn sb-danger sb-sm" disabled={rowBusy === d.id} onClick={() => void removeDoc(d)}>{rowBusy === d.id ? "Removing" : "Yes, remove it"}</button>
+                      </span>
+                    </span>
+                  )}
+                  {rowErr?.id === d.id && <span className="su-doc-err" role="alert">{rowErr.text}</span>}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

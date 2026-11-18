@@ -77,13 +77,36 @@ export async function ownerName(tenantId: string, userId: string | null): Promis
 }
 
 /** Documents per layer, for the step screens. */
-export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string; typeTag: string | null }[]> {
-  const { data } = await db.from("document").select("id, title, layer, status, type_tag")
+export async function setupDocs(tenantId: string): Promise<{ id: string; title: string; layer: string; status: string; typeTag: string | null; mine: boolean }[]> {
+  const { data } = await db.from("document").select("id, title, layer, status, type_tag, source")
     .eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
   return (data ?? []).map(d => ({
     id: d.id as string, title: d.title as string, layer: d.layer as string, status: d.status as string,
     typeTag: (d as { type_tag?: string | null }).type_tag ?? null,
+    // Added by the client's own people (not For Granted): the only documents
+    // the setup list offers to remove (patch 60, lib/setup-docs.ts).
+    mine: (d as { source?: string | null }).source === "client",
   }));
+}
+
+/**
+ * Take one of a tenant's documents out entirely: every stored version, then
+ * the row, which takes its text, chunks, tags, versions, Story Cards and
+ * analysis rows with it (on delete cascade). The same steps as deleteDocAction;
+ * here so the setup list can remove a document under its own, narrower rules.
+ * The caller has already decided this person may do it.
+ */
+export async function removeTenantDocument(tenantId: string, doc: { id: string; storage_key: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const folder = doc.storage_key.split("/").slice(0, 2).join("/");
+  // Never list outside this tenant's own folder, whatever a stored key says.
+  if (folder.split("/")[0] === tenantId) {
+    const { data: objs } = await db.storage.from("documents").list(folder);
+    if (objs?.length) await db.storage.from("documents").remove(objs.map(o => `${folder}/${o.name}`));
+  }
+  const { error } = await db.from("document").delete().eq("tenant_id", tenantId).eq("id", doc.id);
+  if (error) return { ok: false, error: "That document could not be removed. Please try again." };
+  await markStaleOnUpload(tenantId).catch(() => { /* best-effort, as on upload */ });
+  return { ok: true };
 }
 
 /**

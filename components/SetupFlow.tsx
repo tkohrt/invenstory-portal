@@ -10,9 +10,10 @@ import {
   type SetupState, type SetupStepKey, type KnownFunder, type Deadline, type Goal,
 } from "@/lib/setup";
 import {
-  saveYouAction, saveSetupEligibilityAction, addSetupLinkAction, markLayer3ReadAction, requestInterviewAction,
+  saveYouAction, saveSetupEligibilityAction, addSetupLinkAction, removeSetupDocAction, markLayer3ReadAction, requestInterviewAction,
   saveFundingSoFarAction, saveTeamAction, settleStepAction, finishSetupAction, suggestFundersAction,
 } from "@/lib/server/setup-actions";
+import { setDocTypeAction } from "@/lib/server/doc-type-actions";
 import { signOutAction } from "@/lib/server/actions";
 import { ORG_TYPES, BUDGET_BANDS, FEDERAL_REG, MATCH_CAPACITY, FUNDING_KINDS, type EligibilityProfile } from "@/lib/eligibility-fields";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
@@ -26,7 +27,7 @@ import { SUPPORT_EMAIL } from "@/lib/uploads";
 import { unaddedNotice } from "@/lib/upload-stage";
 import type { TenantOrgType } from "@/lib/living-voice";
 
-export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null }
+export interface SetupDoc { id: string; title: string; layer: string; status: string; typeTag?: string | null; mine?: boolean }
 
 /** One readiness-checklist item with its live coverage (P1, patch 29). */
 export interface GroceryItem { key: string; label: string; tier: "essential" | "important" | "enriching"; state: "covered" | "thin" | "missing" }
@@ -493,8 +494,19 @@ function LayerStep({ layer, docs, grocery, busy, onBack, onSettle }: {
 /** Files and links into one layer. Since P1.5 (patch 38) this is the shared
     UploadPanel with the step's layer fixed; reading starts as each arrives. */
 function Uploader({ layer, docs, allowLinks, typeTag = "", onStagedChange }: { layer: "I" | "II" | "III"; docs: SetupDoc[]; allowLinks?: boolean; typeTag?: string; onStagedChange?: (n: number) => void }) {
+  // A document can still be put right after it arrives (patch 60): its type
+  // changed on its row, or removed if this organization added it.
+  const router = useRouter();
+  const setType = async (id: string, type: string | null) => { const r = await setDocTypeAction(id, type); if (r.ok) router.refresh(); return r; };
+  const remove = async (id: string) => {
+    const r = await removeSetupDocAction(id);
+    if (r.ok) { router.refresh(); return { ok: true as const }; }
+    return { ok: false as const, error: r.error };
+  };
   return <UploadPanel fixedLayer={layer} typeTag={typeTag} tagsDefault="setup" allowLinks={allowLinks}
-    showTypePicker={!typeTag} addLink={addSetupLinkAction} docs={docs} onStagedChange={onStagedChange} />;
+    showTypePicker={!typeTag} addLink={addSetupLinkAction} onStagedChange={onStagedChange}
+    docs={docs.map(d => ({ id: d.id, title: d.title, status: d.status, typeTag: d.typeTag ?? null, removable: !!d.mine }))}
+    onSetType={setType} onRemove={remove} />;
 }
 
 // ---- 5. Layer III ----

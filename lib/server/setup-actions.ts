@@ -10,7 +10,9 @@ import { after } from "next/server";
 import { getSession, type PortalSession } from "./session";
 import { db } from "./db";
 import { tempPassword } from "./passwords";
-import { getSetupState, addWebDocument, hasWebsiteDoc } from "./setup";
+import { getSetupState, addWebDocument, hasWebsiteDoc, removeTenantDocument } from "./setup";
+import { refreshIfOnAnalysis } from "./analysis-switch";
+import { canRemoveInSetup, looksLikeDocId } from "@/lib/setup-docs";
 import { getEligibilityProfile } from "./eligibility";
 import { getWorkspaceVisibility } from "./data";
 import { notifyClientRequest } from "./notify";
@@ -49,6 +51,35 @@ async function tenantName(tenantId: string): Promise<string> {
 
 function withStep(state: SetupState, step: SetupStepKey, how: StepState) {
   return { ...state.steps, [step]: how };
+}
+
+/**
+ * Remove a document from the setup list (patch 60). The person doing setup
+ * may remove what their own organization added, never what For Granted
+ * added, and not while it is mid-read (lib/setup-docs.ts). Everything read
+ * from it goes with it, and what was worked out from the whole Inven(s)tory
+ * (Story Intelligence, readiness) is refreshed.
+ */
+export async function removeSetupDocAction(documentId: string): Promise<Result> {
+  const o = await owner(); if ("error" in o) return { ok: false, error: o.error };
+  const { s, state } = o;
+  if (!looksLikeDocId(documentId)) return { ok: false, error: "That document could not be found." };
+  const { data } = await db.from("document").select("id, title, storage_key, source, status")
+    .eq("tenant_id", s.tenantId).eq("id", documentId).maybeSingle();
+  const doc = data as { id: string; title: string; storage_key: string; source: string | null; status: string } | null;
+  if (!doc) return { ok: false, error: "That document could not be found. It may already have been removed." };
+  const may = canRemoveInSetup(doc);
+  if (!may.ok) return { ok: false, error: may.why ?? "That document cannot be removed here." };
+  // Was this the website read on step 1? Then step 1 may read the site again.
+  const { data: tags } = await db.from("document_tag").select("tag").eq("tenant_id", s.tenantId).eq("document_id", doc.id);
+  const wasWebsite = (tags ?? []).some(t => (t as { tag: string }).tag === "website");
+  const gone = await removeTenantDocument(s.tenantId, doc);
+  if (!gone.ok) return { ok: false, error: gone.error };
+  if (wasWebsite) await write(s.tenantId, { answers: { ...state.answers, website_tried: null } });
+  await db.from("audit_log").insert({ actor_user_id: s.user.id, tenant_id: s.tenantId, action: "delete_doc", detail: `${doc.id} (setup): ${doc.title}`.slice(0, 300) });
+  await refreshIfOnAnalysis(s.tenantId, s.user.id);
+  for (const p of ["/setup", "/invenstory", "/search", "/analysis"]) revalidatePath(p);
+  return { ok: true, message: "Removed." };
 }
 
 /** Step 1: the organization's website, the person's name and role. */
