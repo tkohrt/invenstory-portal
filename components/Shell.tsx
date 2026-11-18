@@ -105,6 +105,9 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
     { key: "eligibility",    href: "/funding-eligibility", ic: "◇", label: "Funding Eligibility",   toggle: true },
     // One nav item for both Funding modes; see the visibility special case below.
     { key: "funder_matches", href: "/funding",          ic: "◈", label: "Funding",               toggle: true },
+    // Following (patch 66): the shared list of what the client tracks. It has no
+    // switch of its own: it shows whenever Funding does (see below).
+    { key: "following",      href: "/following",        ic: "★", label: "Following",             toggle: true },
     { key: "card_review",    href: "/story-cards",     ic: "▣", label: "Story Cards",           toggle: true },
     { key: "analysis",       href: "/analysis",        ic: "◎", label: "Analyze my Inven(s)tory", toggle: true },
   ];
@@ -195,7 +198,7 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
           // when EITHER mode is on for this client. The modes themselves are
           // clamped on the page.
           const visible = item.toggle
-            ? item.key === "funder_matches"
+            ? item.key === "funder_matches" || item.key === "following"
               ? (workspaceVis.funder_matches ?? false) || (workspaceVis.funder_compass ?? false)
               : (workspaceVis[item.key!] ?? false)
             : true;
@@ -204,11 +207,11 @@ export default function Shell({ user, role, tenantId, tenants, artifactTypes, pe
             <Link key={item.href} onClick={closeNav}
               className={`${nav(item.href)}${item.toggle && admin && !visible ? " nav-hidden" : ""}`}
               href={item.href}
-              title={collapsed ? item.label : item.adminOnly ? "For Granted only" : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
+              title={collapsed ? item.label : item.adminOnly ? "For Granted only" : item.key === "following" && admin ? (visible ? "Visible to client (shown whenever Funding is)" : "Hidden from client until Funding is turned on") : item.toggle && admin ? (visible ? "Visible to client" : "Hidden from client") : undefined}>
               <span className="ic">{item.ic}</span> {item.label}
               {item.key === "card_review" && storyCardsWaiting > 0 && <span className="badge-count" title="New cards to look at">{storyCardsWaiting}</span>}
               {item.key === "funder_matches" && !admin && fundingLocked && <span className="nav-alert" title="Opens once your eligibility questions are answered and a readiness check has run">!</span>}
-              {item.toggle && admin && (
+              {item.toggle && admin && item.key !== "following" && (
                 <button type="button"
                   className={`vis-dot ${visible ? "on" : "off"}${togglingFeature === item.key ? " busy" : ""}`}
                   onClick={e => toggleFeature(e, item.key!, visible)}

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { getSession } from "@/lib/server/session";
+import { db } from "@/lib/server/db";
 import { gateFeature } from "@/lib/server/gate";
 import { getWorkspaceVisibility } from "@/lib/server/data";
 import { closedInBrain } from "@/lib/server/brain";
@@ -59,7 +60,7 @@ export default async function FunderDossierPage({ params, searchParams }: {
   const j = judgments.get(`funder:${funder.funder_id}`);
   if (!isAdmin && j && suppresses(j.state)) redirect("/funding?mode=funders");
 
-  const [shadow, contacts, profile, history, filingGrants] = await Promise.all([
+  const [shadow, contacts, profile, history, filingGrants, followRow] = await Promise.all([
     getContactShadow(funder.ein),
     // Full records for the admin's own eyes only; a client session never loads them.
     isAdmin && !viewingAsClient && funder.ein ? getContactsForEins([funder.ein]).then(m => m[funder.ein ?? ""] ?? []).catch(() => []) : Promise.resolve([]),
@@ -71,6 +72,9 @@ export default async function FunderDossierPage({ params, searchParams }: {
     isAdmin && !viewingAsClient ? getEngagementHistory(funder.ein, funder.name).catch(() => []) : Promise.resolve([]),
     // 990 phase two (patch 45): the latest ingested grant list. Survives a missing 0092.
     getFunderGrants(funder.ein).catch(() => null),
+    // Patch 66: is this funder on the client's shared Following list.
+    db.from("saved_item").select("target_id").eq("tenant_id", session.tenantId).eq("kind", "funder").eq("target_id", funder.funder_id).maybeSingle()
+      .then(r => r.data, () => null),
   ]);
   // The funder's own channels (patch 63): the first visit after the links go
   // stale reads the funder's site AFTER this page is sent, so nobody waits on
@@ -88,7 +92,7 @@ export default async function FunderDossierPage({ params, searchParams }: {
   return (
     <FunderDossierView funder={funder} shadow={shadow} contacts={contacts}
       profile={isAdmin && !viewingAsClient ? profile : forClient(profile)} history={history} filingGrants={filingGrants}
-      isAdmin={isAdmin} viewingAsClient={viewingAsClient}
+      isAdmin={isAdmin} viewingAsClient={viewingAsClient} following={!!followRow}
       knownAs={known ? RELATIONSHIP_LABEL[known.relationship] : null} />
   );
 }

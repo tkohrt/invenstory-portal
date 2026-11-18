@@ -5,7 +5,7 @@
 // procurement text, rendered as text (React escapes it).
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { triageRfpAction } from "@/lib/server/rfp-actions";
+import { triageRfpAction, toggleRfpFollowAction } from "@/lib/server/rfp-actions";
 import { ACTION_LABEL, BUCKET_LABEL, type Action, type Bucket } from "@/lib/rfp-rubric";
 
 export interface RfpResultRow {
@@ -21,13 +21,25 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: 
 const daysTo = (iso: string) => Math.ceil((Date.parse(iso) - Date.now()) / 86_400_000);
 const safeUrl = (u: string | null) => (u && /^https:\/\//i.test(u) ? u : null);
 
-export default function RfpResultsView({ tenantId, orgName, rows, missing, lastRun }: {
+export default function RfpResultsView({ tenantId, orgName, rows, missing, lastRun, following = [] }: {
   tenantId: string; orgName: string; rows: RfpResultRow[]; missing: boolean;
+  /** Notice ids already on this client's Following list (patch 66). */
+  following?: string[];
   lastRun: { started_at: string; status: string; trigger: string; candidates: number; scored: number; new_ids: string[] } | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const newSet = new Set(lastRun?.new_ids ?? []);
+  const followSet = new Set(following);
+  const [err, setErr] = useState<string | null>(null);
+  // Patch 66: the one way a client comes to see an RFP result for now, chosen here by a person.
+  const follow = async (id: string) => {
+    setBusy(id); setErr(null);
+    const r = await toggleRfpFollowAction(tenantId, id).catch(() => ({ ok: false as const, error: "That did not save. Try again." }));
+    setBusy(null);
+    if (!r.ok) setErr(r.error);
+    router.refresh();
+  };
   const triage = async (id: string, state: "pinned" | "under_review" | "rejected" | null) => {
     setBusy(id); await triageRfpAction(tenantId, id, state).catch(() => null); setBusy(null); router.refresh();
   };
@@ -45,6 +57,7 @@ export default function RfpResultsView({ tenantId, orgName, rows, missing, lastR
         <div className="spacer" />
         <a className="sb-btn sb-quiet sb-sm" href={`/admin/clients/${tenantId}`}>Back to the client</a>
       </div>
+      {err && <p className="cl-error" role="alert">{err}</p>}
       {missing && <p className="cl-error">The results tables are not in the database yet (migrations 0095 and 0096).</p>}
       {!missing && rows.length === 0 && <p className="acct-note">No results. Run the scan from the client&rsquo;s page.</p>}
       {ORDER.map(b => {
@@ -88,6 +101,14 @@ export default function RfpResultsView({ tenantId, orgName, rows, missing, lastR
                         {s === "pinned" ? "Pin" : s === "under_review" ? "Review" : "Reject"}
                       </button>
                     ))}
+                    <span style={{ flex: 1 }} />
+                    <button type="button" className={`chip ${followSet.has(r.notice_id) ? "active" : ""}`} aria-pressed={followSet.has(r.notice_id)}
+                      disabled={busy === r.notice_id} onClick={() => void follow(r.notice_id)}
+                      title={followSet.has(r.notice_id)
+                        ? `On ${orgName}'s Following list: they can see this notice's title, agency, due date and link. Click to take it off.`
+                        : `Add to ${orgName}'s Following list. They will see the notice's title, agency, due date and link there, with none of the scoring.`}>
+                      {followSet.has(r.notice_id) ? "★ On their Following list" : "☆ Add to their Following list"}
+                    </button>
                   </div>
                 </div>
               );

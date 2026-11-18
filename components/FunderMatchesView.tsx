@@ -55,9 +55,11 @@ export interface RunRow {
 
 /** One saved-for-later row (patch 26), mirroring lib/server/saved.ts. */
 export interface SavedRow {
-  kind: "grant" | "funder"; target_id: string; title: string | null;
-  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null; terms?: string | null };
+  kind: "grant" | "funder" | "rfp"; target_id: string; title: string | null;
+  detail: { funder?: string | null; url?: string | null; close_date?: string | null; award_ceiling?: number | null; terms?: string | null; money_kind?: string | null };
   saved_at: string;
+  /** Patch 66: whether this item may raise notices. Absent before migration 0099: on. */
+  updates?: boolean | null;
   /** The reopen stamp (patch 28); absent on rows from before migration 0083. */
   reopened_at?: string | null;
   reopened_detail?: { grant_id?: string | null; title?: string | null; close_date?: string | null; url?: string | null; award_ceiling?: number | null };
@@ -523,18 +525,18 @@ export default function FunderMatchesView({
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const isSaved = (kind: "grant" | "funder", id: string) =>
     savedOverride[savedKeyOf(kind, id)] ?? savedBase.has(savedKeyOf(kind, id));
-  const toggleSave = async (m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null }) => {
+  const toggleSave = async (m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null; money_kind?: string | null }) => {
     const key = savedKeyOf("grant", m.grant_id);
     const next = !isSaved("grant", m.grant_id);
     setSavedOverride(o => ({ ...o, [key]: next }));
     const r = await toggleSavedAction({
       kind: "grant", target_id: m.grant_id, title: m.title,
-      detail: { funder: m.funder, url: m.url, close_date: m.close_date, award_ceiling: m.award_ceiling, terms: m.terms ?? null },
+      detail: { funder: m.funder, url: m.url, close_date: m.close_date, award_ceiling: m.award_ceiling, terms: m.terms ?? null, money_kind: m.money_kind ?? null },
     });
     if ("error" in r) { setSavedOverride(o => ({ ...o, [key]: !next })); setSaveErr(r.error); }
     else setSaveErr(null);
   };
-  const SaveStar = ({ m }: { m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null } }) => {
+  const SaveStar = ({ m }: { m: { grant_id: string; title: string | null; funder: string | null; url: string | null; close_date: string | null; award_ceiling: number | null; terms?: string | null; money_kind?: string | null } }) => {
     const on = isSaved("grant", m.grant_id);
     return (
       <button type="button" className={`fm-star${on ? " fm-star-on" : ""}`} aria-pressed={on}
@@ -601,7 +603,8 @@ export default function FunderMatchesView({
   const notice = ((): { key: string; text: string; cta?: { href: string; label: string } } | null => {
     if (digestFor) return null; // the digest is the bar right now
     if (mode === "grants") {
-      const reopened = savedItems.find(s2 => s2.kind === "grant" && s2.reopened_at
+      // Patch 66: an item whose updates the team switched off on the Following page raises no notice.
+      const reopened = savedItems.find(s2 => s2.kind === "grant" && s2.reopened_at && s2.updates !== false
         && savedOverride[savedKeyOf("grant", s2.target_id)] !== false
         && !isDismissed(`reopen:${s2.target_id}:${s2.reopened_at}`));
       if (reopened) {
@@ -626,6 +629,7 @@ export default function FunderMatchesView({
       }
       for (const m of openMatches) {
         if (!m.close_date || !isSaved("grant", m.grant_id)) continue;
+        if (savedItems.some(s2 => s2.kind === "grant" && s2.target_id === m.grant_id && s2.updates === false)) continue;
         const days = Math.ceil((new Date(m.close_date).getTime() - Date.now()) / 86_400_000);
         if (days < 0 || days > 14) continue;
         const k = `deadline:${m.grant_id}:${m.close_date}`;

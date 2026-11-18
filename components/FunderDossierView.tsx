@@ -11,6 +11,7 @@ import type { ContactRecord } from "@/lib/funder-contact";
 import { ROLE_LABEL } from "@/lib/funder-contact";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
 import { requestApproachAction, refreshFunderLinksAction } from "@/lib/server/dossier-actions";
+import { toggleFollowFunderAction } from "@/lib/server/saved-actions";
 import { pullFunder990Action, pullFunderGrantsAction } from "@/lib/server/irs990-actions";
 import type { getFunderGrants } from "@/lib/server/irs990-grants";
 import type { ContactShadow } from "@/lib/server/dossier";
@@ -23,7 +24,9 @@ const SOURCE_LINE: Record<string, string> = {
   iati: "From IATI, the international aid transparency registry.",
 };
 
-export default function FunderDossierView({ funder, shadow, contacts, profile, history, filingGrants = null, isAdmin, viewingAsClient, knownAs }: {
+export default function FunderDossierView({ funder, shadow, contacts, profile, history, filingGrants = null, isAdmin, viewingAsClient, knownAs, following = false }: {
+  /** Whether this funder is on the client's shared Following list (patch 66). */
+  following?: boolean;
   funder: FunderRow;
   shadow: ContactShadow | null;
   /** Full records, admin sessions only; a client session never loads them. */
@@ -71,6 +74,7 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
           </p>
         </div>
         <div className="spacer" />
+        <FollowButton funderId={funder.funder_id} name={funder.name} following={following} preview={viewingAsClient} />
         {funder.website && <a className="sb-btn sb-secondary sb-sm" href={funder.website} target="_blank" rel="noopener noreferrer">Their website ↗</a>}
         {isAdmin && !viewingAsClient && (
           <a className="sb-btn sb-secondary sb-sm" href={`/draft/new?funder=${encodeURIComponent(funder.funder_id)}`}>Draft toward this funder</a>
@@ -277,6 +281,36 @@ function Pull990({ funderId, ein }: { funderId: string; ein: string }) {
       <span className="su-small"> Fills assets, giving and filing year from the funder&rsquo;s own IRS filing.</span>
       {msg && <span className="do-pull-msg">{msg}</span>}
     </p>
+  );
+}
+
+/**
+ * Follow this funder (patch 66): puts it on the client's shared Following
+ * list, where its updates can be switched on and off. One press each way.
+ */
+function FollowButton({ funderId, name, following, preview }: { funderId: string; name: string; following: boolean; preview: boolean }) {
+  const router = useRouter();
+  const [on, setOn] = useState(following);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const toggle = async () => {
+    setBusy(true); setErr(null);
+    const r = await toggleFollowFunderAction(funderId).catch(() => ({ error: "That did not save. Try again." }));
+    setBusy(false);
+    if ("error" in r) { setErr(r.error); return; }
+    setOn(r.following);
+    router.refresh();
+  };
+  return (
+    <>
+      <button type="button" className={`sb-btn sb-sm ${on ? "sb-secondary" : "sb-primary"}`} aria-pressed={on} disabled={busy || preview}
+        title={preview ? "The as-client preview cannot change the list." : on ? "On your Following list. Click to unfollow. Manage updates on the Following page." : "Add this funder to your team's Following list, to keep track of it and get updates about it."}
+        onClick={() => void toggle()}>
+        {busy ? "Saving…" : on ? "★ Following" : `☆ Follow ${name.length > 28 ? "this funder" : name}`}
+      </button>
+      {on && <a className="sb-btn sb-quiet sb-sm" href="/following">Your Following list</a>}
+      {err && <span className="cl-error" role="alert">{err}</span>}
+    </>
   );
 }
 
