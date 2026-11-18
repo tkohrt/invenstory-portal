@@ -23,3 +23,22 @@ export async function requestApproachAction(funderId: string, name: string): Pro
   });
   return { ok: true };
 }
+
+/**
+ * Re-read a funder's own website for its social, newsletter and feed links
+ * (patch 63). For Granted only. The address read is the one on this tenant's
+ * matched funder record, never one the browser sends.
+ */
+export async function refreshFunderLinksAction(funderId: string): Promise<{ ok: true; found: number; changed: number } | { ok: false; error: string }> {
+  const s = await getSession();
+  if (!s || s.role !== "admin") return { ok: false, error: "For Granted only." };
+  const { data } = await db.from("matched_funder").select("funder_id, ein, website")
+    .eq("tenant_id", s.tenantId).eq("funder_id", String(funderId).slice(0, 220)).maybeSingle();
+  const f = data as { funder_id: string; ein: string | null; website: string | null } | null;
+  if (!f) return { ok: false, error: "That funder is not on this client's list." };
+  if (!f.website) return { ok: false, error: "No website is on record for this funder, so there is nothing to read." };
+  const { lookupFunderLinks } = await import("./funder-links");
+  const r = await lookupFunderLinks({ ein: f.ein, funderId: f.funder_id, website: f.website });
+  if (!r.ok) return r;
+  return { ok: true, found: Object.keys(r.found).length, changed: r.changed.length };
+}

@@ -1,0 +1,55 @@
+import "server-only";
+// A funder's own channels (patch 63): read the funder's website once, keep the
+// social, newsletter and feed links it publishes on the SHARED funder profile,
+// so one read serves every client's dossier. Rules in lib/funder-links.ts.
+import { readHtml, Plain } from "./read-url";
+import { applyProfileFields } from "./funder-profile";
+import { extractSiteLinks, domainHandle, type SiteLinks } from "@/lib/funder-links";
+
+/**
+ * Does the funder's own domain answer as a Bluesky handle? A fixed public
+ * address (Bluesky's own directory), read without signing in. A domain handle
+ * is proof of identity on Bluesky: only whoever controls the domain can set it.
+ */
+async function blueskyByDomain(website: string): Promise<string | null> {
+  const handle = domainHandle(website);
+  if (!handle) return null;
+  try {
+    const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`,
+      { signal: AbortSignal.timeout(8_000), cache: "no-store" });
+    if (!res.ok) return null;
+    const j = await res.json() as { did?: unknown };
+    return typeof j.did === "string" && j.did.startsWith("did:") ? `https://bsky.app/profile/${handle}` : null;
+  } catch { return null; }
+}
+
+export type LinksLookup =
+  | { ok: true; found: SiteLinks; changed: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Read the funder's site and file what it links to. Always stamps
+ * links_checked_at when the site answered, found or not, so a site with no
+ * links is not re-read on every visit; a site that could not be read is left
+ * unstamped and tried again next time.
+ */
+export async function lookupFunderLinks(a: { ein: string | null | undefined; funderId: string; website: string }): Promise<LinksLookup> {
+  let page: { html: string; url: string };
+  try {
+    page = await readHtml(a.website, "Add the links by hand.");
+  } catch (e) {
+    return { ok: false, error: e instanceof Plain ? e.message : "The funder's website could not be read." };
+  }
+  const found = extractSiteLinks(page.html, page.url);
+  if (!found.bluesky_url) {
+    const b = await blueskyByDomain(page.url);
+    if (b) found.bluesky_url = b;
+  }
+  const at = new Date().toISOString();
+  const changed = await applyProfileFields({
+    ein: a.ein, funderId: a.funderId,
+    incoming: { ...found, links_checked_at: at },
+    prov: { how: "funder_site", source_url: page.url, at },
+  });
+  return { ok: true, found, changed: changed.filter(k => k !== "links_checked_at") };
+}

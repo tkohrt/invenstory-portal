@@ -10,12 +10,13 @@ import type { FunderRow } from "@/lib/funder-rows";
 import type { ContactRecord } from "@/lib/funder-contact";
 import { ROLE_LABEL } from "@/lib/funder-contact";
 import { ACCESS_LABEL, ACCESS_HELP } from "@/lib/access-mode";
-import { requestApproachAction } from "@/lib/server/dossier-actions";
+import { requestApproachAction, refreshFunderLinksAction } from "@/lib/server/dossier-actions";
 import { pullFunder990Action, pullFunderGrantsAction } from "@/lib/server/irs990-actions";
 import type { getFunderGrants } from "@/lib/server/irs990-grants";
 import type { ContactShadow } from "@/lib/server/dossier";
 import type { FunderProfileRecord, EngagementRow } from "@/lib/server/funder-profile";
-import { PROFILE_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
+import { FACT_FIELDS, provenanceLine, type FieldProvenance } from "@/lib/funder-profile";
+import { ALL_LINKS, CLIENT_LINKS, LINK_LABEL } from "@/lib/funder-links";
 
 const SOURCE_LINE: Record<string, string> = {
   ledger: "From the funder ledger (GrantX base plus For Granted's corrections).",
@@ -151,7 +152,7 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
           {funder.access_note && <><dt>How they take requests</dt><dd>{funder.access_note}</dd></>}
           {/* The shared profile (patch 41): read live, one fact for every client,
               each with its own provenance. Empty fields simply do not render. */}
-          {PROFILE_FIELDS.map(def => {
+          {FACT_FIELDS.map(def => {
             const v = profile?.fields[def.key];
             if (v === undefined || v === null || v === "") return null;
             const m = profile?.meta[def.key] as FieldProvenance | undefined;
@@ -163,6 +164,7 @@ export default function FunderDossierView({ funder, shadow, contacts, profile, h
           })}
           {funder.ein && <><dt>EIN</dt><dd>{funder.ein}</dd></>}
         </dl>
+        <FunderLinks funder={funder} profile={profile} admin={isAdmin && !viewingAsClient} />
         <p className="do-muted">{SOURCE_LINE[funder.source ?? "ledger"] ?? SOURCE_LINE.ledger}</p>
         {/* The 990 importer (patch 42), decided 13 Nov: mechanical figures from
             the funder's own sworn filing write straight to the shared profile,
@@ -275,6 +277,46 @@ function Pull990({ funderId, ein }: { funderId: string; ein: string }) {
       <span className="su-small"> Fills assets, giving and filing year from the funder&rsquo;s own IRS filing.</span>
       {msg && <span className="do-pull-msg">{msg}</span>}
     </p>
+  );
+}
+
+/**
+ * The funder's own channels (patch 63): the links its own website publishes,
+ * read once and shared across every client. Following a funder before asking
+ * is ordinary relationship work, so clients see the row too; the feed address
+ * and the re-check are For Granted's.
+ */
+function FunderLinks({ funder, profile, admin }: { funder: FunderRow; profile: FunderProfileRecord | null; admin: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const keys = (admin ? ALL_LINKS : CLIENT_LINKS).filter(k => typeof profile?.fields[k] === "string" && /^https?:\/\//i.test(String(profile?.fields[k])));
+  const prov = keys.map(k => profile?.meta[k] as FieldProvenance | undefined).find(Boolean) ?? null;
+  const checked = typeof profile?.fields.links_checked_at === "string" ? String(profile.fields.links_checked_at) : null;
+  if (!keys.length && !admin) return null;
+  const recheck = async () => {
+    setBusy(true); setMsg(null);
+    const r = await refreshFunderLinksAction(funder.funder_id);
+    setBusy(false);
+    if (!r.ok) { setMsg(r.error); return; }
+    setMsg(r.found ? `Found ${r.found} link${r.found === 1 ? "" : "s"} on their site${r.changed ? "" : ", none new"}.` : "Their site links to no social accounts, newsletter or feed that could be recognized.");
+    router.refresh();
+  };
+  return (
+    <div className="do-links">
+      <b>Follow this funder</b>
+      {keys.length
+        ? keys.map(k => <a key={k} href={String(profile?.fields[k])} target="_blank" rel="noopener noreferrer">{LINK_LABEL[k]} ↗</a>)
+        : <span className="do-muted">{funder.website ? (checked ? "Their website links to no accounts that could be recognized." : "Not looked up yet. Their site is read the first time this page is opened; reload in a moment.") : "No website on record to read."}</span>}
+      {prov && <span className="do-prov">{provenanceLine(prov)}</span>}
+      {admin && funder.website && (
+        <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy} onClick={() => void recheck()}
+          title="Read the funder's own website again for its social, newsletter and feed links. Links it no longer shows are kept until corrected in Ground Truth.">
+          {busy ? "Reading their site…" : "Check their site again"}
+        </button>
+      )}
+      {msg && <span className="do-muted" role="status">{msg}</span>}
+    </div>
   );
 }
 

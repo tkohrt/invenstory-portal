@@ -125,11 +125,8 @@ export class Plain extends Error {}
 /** The original file, kept beside what was read so it can be opened later. */
 export interface Original { bytes: Uint8Array; mime: string; name: string }
 
-/**
- * Fetch a web address and read it. `instead` finishes each failure with what
- * to do instead, e.g. "Paste the questions instead."
- */
-export async function readUrl(raw: string, instead: string): Promise<{ text: string; url: string; original?: Original }> {
+/** The checked, pinned fetch both readers share: every hop approved, redirects followed, failures said plainly. */
+async function fetchChecked(raw: string, instead: string): Promise<{ res: Awaited<ReturnType<typeof pinnedGet>>; url: URL }> {
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let at = await checkedHop(raw);
   const check = { url: at.url };
@@ -157,6 +154,31 @@ export async function readUrl(raw: string, instead: string): Promise<{ text: str
       ? `That page needs a sign-in. Open it yourself and ${instead.charAt(0).toLowerCase()}${instead.slice(1)}`
       : `That page answered with an error (${res.status}). ${instead}`);
   }
+  return { res, url: check.url };
+}
+
+/**
+ * A page's raw HTML, through the same link safety as readUrl (patch 63). For
+ * readers that need the markup itself (a funder's own social links live in
+ * its anchors, which readUrl's plain text drops). Throws Plain when the
+ * address is not a web page.
+ */
+export async function readHtml(raw: string, instead: string): Promise<{ html: string; url: string }> {
+  const { res, url } = await fetchChecked(raw, instead);
+  const body = new TextDecoder("utf-8", { fatal: false }).decode(res.body);
+  if (!res.contentType.toLowerCase().includes("html") && !/<html|<body|<a\s/i.test(body.slice(0, 5000))) {
+    throw new Plain(`That address is not a web page. ${instead}`);
+  }
+  return { html: body, url: url.href };
+}
+
+/**
+ * Fetch a web address and read it. `instead` finishes each failure with what
+ * to do instead, e.g. "Paste the questions instead."
+ */
+export async function readUrl(raw: string, instead: string): Promise<{ text: string; url: string; original?: Original }> {
+  const { res, url: finalUrl } = await fetchChecked(raw, instead);
+  const check = { url: finalUrl };
   const buf = res.body;
   const type = res.contentType.toLowerCase();
   const base = (check.url.pathname.split("/").pop() || "page").slice(0, 120);

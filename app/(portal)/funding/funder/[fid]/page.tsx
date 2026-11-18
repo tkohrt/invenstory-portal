@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { getSession } from "@/lib/server/session";
 import { gateFeature } from "@/lib/server/gate";
 import { getWorkspaceVisibility } from "@/lib/server/data";
@@ -13,6 +14,8 @@ import { suppresses } from "@/lib/triage";
 import { getSetupState } from "@/lib/server/setup";
 import { knownFunderMatch, RELATIONSHIP_LABEL } from "@/lib/setup";
 import FunderDossierView from "@/components/FunderDossierView";
+import { linksStale } from "@/lib/funder-links";
+import { lookupFunderLinks } from "@/lib/server/funder-links";
 
 /**
  * The funder dossier (patch 40): one page per matched funder. Gated exactly
@@ -61,6 +64,17 @@ export default async function FunderDossierPage({ params, searchParams }: {
     // 990 phase two (patch 45): the latest ingested grant list. Survives a missing 0092.
     getFunderGrants(funder.ein).catch(() => null),
   ]);
+  // The funder's own channels (patch 63): the first visit after the links go
+  // stale reads the funder's site AFTER this page is sent, so nobody waits on
+  // someone else's website. The links show from the next visit, for every
+  // client, because the profile is shared. Best-effort by design.
+  if (funder.website && linksStale(profile?.fields.links_checked_at)) {
+    const { ein, funder_id, website } = funder;
+    after(async () => {
+      try { await lookupFunderLinks({ ein, funderId: funder_id, website }); }
+      catch (e) { console.error("[funder-links] lookup failed", e instanceof Error ? e.message : e); }
+    });
+  }
   const known = knownFunderMatch(funder.name, setup?.answers.known_funders ?? []);
 
   return (

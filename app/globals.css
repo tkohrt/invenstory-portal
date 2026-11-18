@@ -2618,6 +2618,10 @@ button.cite:focus-visible{outline:2px solid #1f4d2e}
 .do-facts{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0 0 8px;font-size:13.5px}
 .do-facts dt{color:var(--muted);font-weight:600}
 .do-facts dd{margin:0}
+/* Patch 63: the funder's own channels, one wrapping row under the facts. */
+.do-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:2px 0 10px;font-size:13.5px}
+.do-links b{color:var(--muted);font-weight:600;min-width:136px}
+.do-links a{white-space:nowrap}
 .fm-site{margin-left:8px;font-size:12px;color:var(--muted)}
 
 /* The shared funder profile (patch 41): per-field provenance and the
