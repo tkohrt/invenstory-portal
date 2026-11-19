@@ -107,8 +107,10 @@ describe("the queue by who is waiting", () => {
     expect(band(row("a", { src: true }))).toBe("quiet");
     expect(band(row("a", { src: true, pub: true }))).toBe("live");
   });
-  it("moves any entry a client is waiting on to the top", () => {
-    expect(band(row("a", { src: true }), d({ matched: 1 }))).toBe("wanted");
+  it("moves an entry to the top only when a client did something: saved it or asked about it", () => {
+    // Suiting a client is not a client waiting (patch 70).
+    expect(band(row("a", { src: true }), d({ matched: 3 }))).toBe("quiet");
+    expect(band(row("a", { src: true, pub: true }), d({ matched: 3 }))).toBe("live");
     expect(band(row("a", { src: true, pub: true }), d({ followed: 1 }))).toBe("wanted");
     expect(band(row("a"), d({ asked: 1 }))).toBe("wanted");
   });
@@ -121,7 +123,9 @@ describe("the queue by who is waiting", () => {
       row("fits", { src: true }), row("asked", { src: true, pub: true })];
     const q = bandQueue(rows, { fits: d({ matched: 2 }), asked: d({ asked: 1 }) });
     expect(q.map(b => b.band)).toEqual(["wanted", "standard", "live", "quiet"]);
-    expect(q[0].rows.map(r => r.id)).toEqual(["asked", "fits"]);
+    expect(q[0].rows.map(r => r.id)).toEqual(["asked"]);
+    // In a folded band, what suits the most clients is listed first.
+    expect(q[3].rows.map(r => r.id)).toEqual(["fits", "quiet"]);
     expect(q[1].rows.map(r => r.id)).toEqual(["std-new", "std-old"]);
   });
   it("leaves out empty bands", () => {
@@ -130,13 +134,14 @@ describe("the queue by who is waiting", () => {
   });
   it("counts for the badge only what needs a person now", () => {
     const rows = [row("quiet", { src: true }), row("std"), row("live", { src: true, pub: true }), row("fits", { src: true })];
-    expect(needsReviewNow(rows, { fits: d({ matched: 1 }) })).toBe(2);
+    expect(needsReviewNow(rows, { fits: d({ matched: 1 }) })).toBe(1);
+    expect(needsReviewNow(rows, { fits: d({ followed: 1 }) })).toBe(2);
     expect(needsReviewNow(rows, {})).toBe(1);
   });
   it("says who is waiting in a sentence", () => {
     expect(demandLine(NO_DEMAND)).toBeNull();
-    expect(demandLine(d({ matched: 1 }))).toBe("fits 1 client");
-    expect(demandLine(d({ asked: 1, followed: 2, matched: 3 }))).toBe("1 client asked for a draft, 2 clients follow it, fits 3 clients");
+    expect(demandLine(d({ matched: 1 }))).toBe("suits 1 client");
+    expect(demandLine(d({ asked: 1, followed: 2, matched: 3 }))).toBe("1 client asked for a draft, 2 clients follow it, suits 3 clients");
   });
 });
 

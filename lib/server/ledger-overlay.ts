@@ -21,6 +21,7 @@ import type {
 } from "@/lib/types";
 import { needsReviewNow, type Demand } from "@/lib/trust";
 import { changedFacts, changeLine } from "@/lib/opportunity";
+import { fitShown } from "@/lib/mission-fit";
 // The merge itself is pure and lives outside server-only so it can be unit
 // tested; re-exported here so callers have one import for the overlay.
 export { mergeOverlay, OVERLAY_ID_PREFIX } from "@/lib/ledger-merge";
@@ -89,17 +90,29 @@ export async function getOverlayQueue(
  * calls this is admin-only. A failed read counts as nobody, so the queue
  * still draws.
  */
-export async function getQueueDemand(ids: string[]): Promise<Record<string, Demand>> {
+export async function getQueueDemand(entries: { id: string; signal_source_id?: string | null }[]): Promise<Record<string, Demand>> {
   const out: Record<string, Demand> = {};
+  const ids = entries.map(e => e.id);
   if (!ids.length) return out;
+  // Patch 70: for a lead from a watched source, "fits a client" means judged
+  // on mission for that client, not merely eligible. A hand-curated entry
+  // counts every match, as before.
+  const sourced = new Set(entries.filter(e => e.signal_source_id).map(e => e.id));
   const at = (id: string) => (out[id] ??= { matched: 0, followed: 0, asked: 0 });
+  const readMatched = async (part: string[]) => {
+    // tenant-safe: an admin-only count across clients of who each shared entry was matched to; no client content is read.
+    const r = await db.from("curated_match").select("overlay_id, tenant_id, mission_fit").in("overlay_id", part).limit(5000);
+    // Before migration 0103 there is no verdict to read: every match counts, as it did.
+    // tenant-safe: an admin-only count across clients of who each shared entry was matched to; no client content is read.
+    return r.error && /mission_fit/i.test(r.error.message) ? db.from("curated_match").select("overlay_id, tenant_id").in("overlay_id", part).limit(5000) : r;
+  };
   const uniq = (rows: { k: string; t: string | null }[]) => [...new Set(rows.map(r => `${r.k}|${r.t ?? ""}`))].map(x => x.split("|")[0]);
   // A hundred ids at a time: a long queue's ids in one request would outgrow the address it is sent in.
   for (let i = 0; i < ids.length; i += 100) {
     const part = ids.slice(i, i + 100);
     const [m, f, a] = await Promise.all([
       // tenant-safe: an admin-only count across clients of who each shared entry was matched to; no client content is read.
-      db.from("curated_match").select("overlay_id, tenant_id").in("overlay_id", part).limit(5000),
+      readMatched(part),
       // tenant-safe: an admin-only count across clients of who follows each shared entry; no client content is read.
       db.from("saved_item").select("target_id, tenant_id").eq("kind", "grant").in("target_id", part).limit(5000),
       // tenant-safe: an admin-only count of open draft requests per shared entry; the inbox itself is admin-only.
@@ -107,7 +120,8 @@ export async function getQueueDemand(ids: string[]): Promise<Record<string, Dema
     ]);
     // Said in the log, never silently zero: a failed count would fold away entries clients are waiting on.
     for (const r of [m, f, a]) if (r.error) console.error("[overlay] queue demand not read", r.error.message);
-    for (const id of uniq(((m.data ?? []) as { overlay_id: string; tenant_id: string }[]).map(r => ({ k: r.overlay_id, t: r.tenant_id })))) at(id).matched += 1;
+    for (const id of uniq(((m.data ?? []) as { overlay_id: string; tenant_id: string; mission_fit?: boolean | null }[])
+      .filter(r => fitShown(sourced.has(r.overlay_id), r.mission_fit)).map(r => ({ k: r.overlay_id, t: r.tenant_id })))) at(id).matched += 1;
     for (const id of uniq(((f.data ?? []) as { target_id: string; tenant_id: string }[]).map(r => ({ k: r.target_id, t: r.tenant_id })))) at(id).followed += 1;
     for (const id of uniq(((a.data ?? []) as { source_key: string; tenant_id: string | null }[]).map(r => ({ k: r.source_key.replace(/^draft:/, ""), t: r.tenant_id })))) at(id).asked += 1;
   }
@@ -156,7 +170,7 @@ export async function getOverlayPendingCount(): Promise<number> {
     return count ?? 0;
   }
   const rows = (data ?? []) as { id: string; published_at: string | null; signal_source_id: string | null }[];
-  const sourced = rows.filter(r => r.signal_source_id).map(r => r.id);
+  const sourced = rows.filter(r => r.signal_source_id);
   const demand = sourced.length ? await getQueueDemand(sourced).catch(() => ({})) : {};
   return needsReviewNow(rows, demand);
 }

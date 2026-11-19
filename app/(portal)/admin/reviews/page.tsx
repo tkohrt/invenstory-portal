@@ -37,7 +37,7 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
   // Patch 67: who is waiting on each queue entry. The Ground Truth badge
   // counts what needs a person now; a source's entry that no client is
   // waiting on is in the queue and not in the count.
-  const demand = await getQueueDemand(queue.map(q => q.id)).catch(() => ({}));
+  const demand = await getQueueDemand(queue).catch(() => ({}));
   const sourcesNeed = (sources ?? []).filter(s => {
     const h = sourceHealth(s).state;
     return h === "failing" || h === "quiet" || awaitingApproval(s);

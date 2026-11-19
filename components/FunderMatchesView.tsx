@@ -1401,7 +1401,7 @@ function CuratedSection({ rows, viewingAsClient, followed }: { rows: CuratedMatc
       <p className="ov-note" style={{ marginTop: 2 }}>
         {allReviewed
           ? <>Opportunities For Granted found{lists.length === 1 ? ` (${lists[0]})` : ""}, screened against your eligibility. Done once, shared with every community member.</>
-          : <>Opportunities from the funders and programmes For Granted watches, screened against your eligibility. {unreviewed === rows.length ? (unreviewed === 1 ? "This one was" : "These were") : `${unreviewed} of these ${unreviewed === 1 ? "was" : "were"}`} read
+          : <>Opportunities from the funders and programmes For Granted watches, screened against your eligibility and matched to the work your Inven(s)tory describes. {unreviewed === rows.length ? (unreviewed === 1 ? "This one was" : "These were") : `${unreviewed} of these ${unreviewed === 1 ? "was" : "were"}`} read
             automatically from the funder&rsquo;s own page or account and {unreviewed === 1 ? "is" : "are"} marked &ldquo;{UNREVIEWED_LABEL}&rdquo;: confirm the details at the source. Ask For Granted to start a draft and it is reviewed first.</>}
       </p>
       {context && <div className="cu-context"><b>From For Granted:</b> {context}</div>}

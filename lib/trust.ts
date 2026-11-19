@@ -107,22 +107,26 @@ export const BAND_LABEL: Record<Band, string> = {
   wanted: "Clients are waiting on these",
   live: "Live to clients, not yet reviewed",
   standard: "Awaiting review",
-  quiet: "No client match yet",
+  quiet: "Waiting, not shown to clients",
 };
 export const BAND_WHY: Record<Band, string> = {
-  wanted: "A client asked about it or follows it, or it was screened as a fit for a client. Review these first.",
-  live: "Published from a funder's own page or account. No client has it on their page yet.",
+  wanted: "A client saved it to their Following list or asked For Granted to start a draft. Review these first.",
+  live: "Published from a funder's own page or account, labelled as not yet reviewed. Those that suit a client's work are on that client's page; the ones clients can see are listed first.",
   standard: "Entered by hand, found working a client or by the web search. Reviewed as before.",
-  quiet: "From a watched source, and no client it fits yet. These can wait; one moves up the moment a client matches.",
+  quiet: "From a news account or an aggregator, so no client sees it until it is approved. Those that would suit a client's work are listed first.",
 };
 
 /**
- * Where an entry sits in the queue. Only signals entries are ever "quiet" or
+ * Where an entry sits in the queue. An entry a client saved or asked about is
+ * "wanted", whatever it is. Only signals entries are ever "quiet" or
  * "live": everything that came in another way (by hand, a client's web
  * search, a pasted list) is reviewed as it always was.
  */
 export function band(row: { published_at?: string | null; signal_source_id?: string | null }, d: Demand = NO_DEMAND): Band {
-  if (d.asked > 0 || d.followed > 0 || d.matched > 0) return "wanted";
+  // Patch 70: only something a client DID puts an entry at the top. That a
+  // lead suits a client is not a client waiting on it: on the first night
+  // every lead "fitted" someone, and the band meant nothing.
+  if (d.asked > 0 || d.followed > 0) return "wanted";
   if (!row.signal_source_id) return "standard";
   return row.published_at ? "live" : "quiet";
 }
@@ -137,7 +141,7 @@ export function demandLine(d: Demand): string | null {
   const parts = [
     d.asked ? `${n(d.asked, "client", "clients")} asked for a draft` : null,
     d.followed ? `${n(d.followed, "client follows", "clients follow")} it` : null,
-    d.matched ? `fits ${n(d.matched, "client", "clients")}` : null,
+    d.matched ? `suits ${n(d.matched, "client", "clients")}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
 }
@@ -153,7 +157,9 @@ export function bandQueue<T extends { id: string; created_at: string; published_
   for (const r of rows) by[band(r, demand[r.id] ?? NO_DEMAND)].push(r);
   const newest = (a: T, b: T) => b.created_at.localeCompare(a.created_at);
   by.wanted.sort((a, b) => demandScore(demand[b.id] ?? NO_DEMAND) - demandScore(demand[a.id] ?? NO_DEMAND) || newest(a, b));
-  by.standard.sort(newest); by.live.sort(newest); by.quiet.sort(newest);
+  // In the folded bands, what suits the most clients comes first.
+  const bySuit = (a: T, b: T) => (demand[b.id]?.matched ?? 0) - (demand[a.id]?.matched ?? 0) || newest(a, b);
+  by.standard.sort(newest); by.live.sort(bySuit); by.quiet.sort(bySuit);
   return (["wanted", "standard", "live", "quiet"] as Band[]).map(b => ({ band: b, rows: by[b] })).filter(g => g.rows.length);
 }
 

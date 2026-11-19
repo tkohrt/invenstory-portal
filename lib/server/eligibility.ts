@@ -1,10 +1,18 @@
 import "server-only";
 import { userClient } from "./supabase";
+import { db } from "./db";
 import { EMPTY_PROFILE, structuralGaps, type EligibilityProfile, type Gap } from "@/lib/eligibility-fields";
 import { getContentCoverage, coverageGaps, readiness } from "./gap-agent";
 
-export async function getEligibilityProfile(tenantId: string): Promise<EligibilityProfile> {
-  const s = await userClient();
+/**
+ * One client's eligibility profile. Pages read it as the signed-in person
+ * (RLS). A scheduled run has nobody signed in, so RLS returns nothing and the
+ * profile reads as empty: such a caller passes `asService` and the read is
+ * made with the service role, scoped to the one tenant (patch 70: without
+ * this the twice-weekly signals run screened nobody).
+ */
+export async function getEligibilityProfile(tenantId: string, asService = false): Promise<EligibilityProfile> {
+  const s = asService ? db : await userClient();
   const { data } = await s.from("eligibility_profile").select("*").eq("tenant_id", tenantId).maybeSingle();
   if (!data) return { ...EMPTY_PROFILE };
   return {

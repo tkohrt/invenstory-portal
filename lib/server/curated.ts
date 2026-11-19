@@ -10,10 +10,16 @@ import { screenGrant } from "@/lib/grant-screen";
 import { parseLeads, overlayDraft, wantsKind } from "@/lib/web-discovery";
 import { CURATED_PARSE_SYSTEM, curatedParseUser, curatedLeads, curatedCard, type CuratedMatchRow } from "@/lib/curated";
 import { publishes, standing, followStanding, deadlinePassed, type Trust } from "@/lib/trust";
+import { missionBrief, fitUser, parseFit, fitShown, FIT_SYSTEM, FIT_BATCH } from "@/lib/mission-fit";
+import { getSearchProfile } from "./search-profile-read";
 import { oppHost, funderKey, findTwin, changedFacts, applyChanges, addSeen, seenChanged, type Sighting } from "@/lib/opportunity";
 
 /** True when a query failed only because migration 0100 (patch 67) has not been applied. */
 const lacks0100 = (e: { message: string } | null | undefined) => !!e && /published_at|signal_source_id/i.test(e.message);
+/** True when a query failed only because migration 0103 (patch 70) has not been applied. */
+const lacks0103 = (e: { message: string } | null | undefined) => !!e && /mission_fit/i.test(e.message);
+/** Model calls one client may cost in one run of the screen. */
+const MAX_FIT_CALLS = 3;
 /** True when a query failed only because migration 0101 (patch 68) has not been applied. */
 const lacks0101 = (e: { message: string } | null | undefined) => !!e && /opp_host|opp_funder|also_seen|update_of/i.test(e.message);
 
@@ -403,7 +409,9 @@ const SIGNAL_SWEEP_ENTRIES = 400;
 /**
  * Screen every client with the Funding page on (patch 68; community members
  * only in patch 67) against the open opportunities the signals sources
- * produced. No model calls. This is what makes review
+ * produced: first for eligibility (no model calls), then, since patch 70,
+ * for mission fit (one short model call per client per run, only for leads
+ * not yet judged; see lib/mission-fit.ts). This is what makes review
  * follow the clients and not the sources: each entry is screened as it
  * arrives, whether or not anyone has reviewed it.
  *   - A match on a PUBLISHED or approved entry is what the client sees.
@@ -413,7 +421,7 @@ const SIGNAL_SWEEP_ENTRIES = 400;
  * Only NEW matches are written, so a match's date never moves and a notice a
  * client dismissed does not come back with every run. Bounded by `stopAt`.
  */
-export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<{ ok: true; entries: number; tenants: number; matches: number; unfinished: boolean } | { ok: false; error: string }> {
+export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<{ ok: true; entries: number; tenants: number; matches: number; unfinished: boolean; judged: number; off: number } | { ok: false; error: string }> {
   const since = new Date(Date.now() - SIGNAL_SWEEP_DAYS * 86_400_000).toISOString();
   // tenant-safe: the shared review queue (no tenant_id), signals entries only.
   const { data: entries, error } = await db.from("ledger_overlay")
@@ -425,7 +433,7 @@ export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<
   const ymd = today.toISOString().slice(0, 10);
   const open = ((entries ?? []) as { id: string; fields: Record<string, unknown>; curated_list_id: string | null }[])
     .filter(e => e.curated_list_id && !(typeof e.fields?.close_date === "string" && e.fields.close_date < ymd));
-  if (!open.length) return { ok: true, entries: 0, tenants: 0, matches: 0, unfinished: false };
+  if (!open.length) return { ok: true, entries: 0, tenants: 0, matches: 0, unfinished: false, judged: 0, off: 0 };
 
   // Who receives leads from the sources (decided by Shane, 19 Nov 2026):
   // every client whose Funding page is on in Grants mode, which is where
@@ -440,29 +448,83 @@ export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<
   const members = ((tenants ?? []) as { id: string; is_brain: boolean | null }[])
     .filter(t => t.is_brain !== true && fundingOn.has(t.id)).slice(0, MAX_TENANTS);
 
-  let matches = 0, done = 0, unfinished = false;
+  let matches = 0, done = 0, unfinished = false, judged = 0, off = 0;
+  const byId = new Map(open.map(e => [e.id, e]));
   for (const t of members) {
     if (Date.now() > stopAt) { unfinished = true; break; }
     done += 1;
-    const p = await getEligibilityProfile(t.id).catch(() => null);
+    // Read with the service role, scoped to this tenant: the scheduled run has nobody signed in.
+    const p = await getEligibilityProfile(t.id, true).catch(() => null);
     if (!p || !p.org_type) continue;
     // Every match this client already has (a client's list is short; the entries' ids are not sent, as hundreds of them would outgrow one request).
-    const { data: had, error: hadErr } = await db.from("curated_match").select("overlay_id").eq("tenant_id", t.id).limit(5000);
-    if (hadErr) { console.error("[curated] signals sweep: matches not read", hadErr.message); continue; }
-    const known = new Set(((had ?? []) as { overlay_id: string }[]).map(m => m.overlay_id));
-    const rows: { tenant_id: string; list_id: string; overlay_id: string; verdict: string; swept_at: string }[] = [];
+    const readHad = (cols: string) => db.from("curated_match").select(cols).eq("tenant_id", t.id).limit(5000);
+    let had = await readHad("overlay_id, mission_fit");
+    const fitColumn = !lacks0103(had.error);
+    if (!fitColumn) had = await readHad("overlay_id");
+    if (had.error) { console.error("[curated] signals sweep: matches not read", had.error.message); continue; }
+    const hadRows = (had.data ?? []) as unknown as { overlay_id: string; mission_fit?: boolean | null }[];
+    const known = new Set(hadRows.map(m => m.overlay_id));
+
+    // 1. Eligibility (no model calls): which open leads may this client apply for at all?
+    const fresh: { e: typeof open[number]; verdict: string }[] = [];
     for (const e of open) {
       if (known.has(e.id) || !wantsKind(e.fields?.money_kind, p)) continue;
-      const s = screenGrant({ ...curatedCard(e.fields), id: e.id } as Parameters<typeof screenGrant>[0], p, today, { reviewed: true });
-      if (!s || s.verdict === "watch") continue;
-      rows.push({ tenant_id: t.id, list_id: e.curated_list_id as string, overlay_id: e.id, verdict: s.verdict, swept_at: today.toISOString() });
+      const sc = screenGrant({ ...curatedCard(e.fields), id: e.id } as Parameters<typeof screenGrant>[0], p, today, { reviewed: true });
+      if (!sc || sc.verdict === "watch") continue;
+      fresh.push({ e, verdict: sc.verdict });
     }
-    if (!rows.length) continue;
-    const { error: upErr } = await db.from("curated_match").upsert(rows, { onConflict: "tenant_id,overlay_id", ignoreDuplicates: true });
-    if (upErr) console.error("[curated] signals sweep: matches not saved", upErr.message);
-    else matches += rows.length;
+    // Leads matched earlier and never judged (written before patch 70, or while the client's profile was too thin).
+    const waiting = fitColumn ? hadRows.filter(m => m.mission_fit === null && byId.has(m.overlay_id)).map(m => byId.get(m.overlay_id)!) : [];
+
+    // 2. Mission fit (patch 70): is each one for this client's own work?
+    // Judged against the matching profile built from its Inven(s)tory. With
+    // no profile to judge by, or the model unavailable, a lead is left
+    // unjudged: on file, not shown, and asked about again next run.
+    const verdicts = new Map<string, boolean>();
+    const toJudge = [...fresh.map(f => f.e), ...waiting].slice(0, FIT_BATCH * MAX_FIT_CALLS);
+    if (fitColumn && toJudge.length) {
+      const profile = await getSearchProfile(t.id).catch(() => null);
+      const brief = profile ? missionBrief(profile.facts, p) : null;
+      for (let at = 0; brief && at < toJudge.length; at += FIT_BATCH) {
+        if (Date.now() > stopAt) { unfinished = true; break; }
+        const batch = toJudge.slice(at, at + FIT_BATCH);
+        const res = await chatComplete({
+          system: FIT_SYSTEM, maxTokens: 600, temperature: 0,
+          user: fitUser(brief, batch.map(e => { const c = curatedCard(e.fields); return { title: c.title ?? "", funder: c.agency ?? null, eligibility: c.eligibility ?? null, kind: c.money_kind ?? null, terms: c.investment_terms ?? null }; })),
+        }).catch(() => null);
+        const read = res?.text ? parseFit(res.text, batch.length) : null;
+        if (!read) { console.error("[curated] mission fit: no usable answer for a batch; left unjudged"); continue; }
+        read.forEach((v, n) => { if (v !== null) verdicts.set(batch[n].id, v); });
+      }
+    }
+
+    // 3. Write. New matches go in with their verdict (or unjudged); matches
+    // already on file get theirs. Only NEW rows are inserted, so a match's
+    // date never moves.
+    const stamp = today.toISOString();
+    if (fresh.length) {
+      const rows = fresh.map(({ e, verdict }) => ({
+        tenant_id: t.id, list_id: e.curated_list_id as string, overlay_id: e.id, verdict, swept_at: stamp,
+        ...(fitColumn ? { mission_fit: verdicts.has(e.id) ? verdicts.get(e.id) as boolean : null } : {}),
+      }));
+      const { error: upErr } = await db.from("curated_match").upsert(rows, { onConflict: "tenant_id,overlay_id", ignoreDuplicates: true });
+      if (upErr) { console.error("[curated] signals sweep: matches not saved", upErr.message); continue; }
+    }
+    for (const fit of [true, false]) {
+      const ids = waiting.filter(e => verdicts.get(e.id) === fit).map(e => e.id);
+      for (let at = 0; at < ids.length; at += 100) {
+        // The date is moved to now for a lead that becomes visible, so it reads as new to the client on the day it appears.
+        const { error: fitErr } = await db.from("curated_match").update(fit ? { mission_fit: true, swept_at: stamp } : { mission_fit: false })
+          .eq("tenant_id", t.id).in("overlay_id", ids.slice(at, at + 100));
+        if (fitErr) console.error("[curated] signals sweep: verdicts not saved", fitErr.message);
+      }
+    }
+    judged += verdicts.size;
+    const shown = fitColumn ? [...verdicts.values()].filter(Boolean).length : fresh.length;
+    matches += shown;
+    off += verdicts.size - [...verdicts.values()].filter(Boolean).length;
   }
-  return { ok: true, entries: open.length, tenants: done, matches, unfinished };
+  return { ok: true, entries: open.length, tenants: done, matches, unfinished, judged, off };
 }
 
 /** The admin card's rows: every list with its counts. */
@@ -490,7 +552,7 @@ export async function getCuratedLists(): Promise<CuratedListRow[]> {
 
 const MATCH_WINDOW = 600;
 const MACHINE_NOTE = "The exact page was not among the search results: check the link.";
-type EntryRow = { id: string; fields: Record<string, unknown>; status: string; published_at?: string | null };
+type EntryRow = { id: string; fields: Record<string, unknown>; status: string; published_at?: string | null; signal_source_id?: string | null };
 /** Queue entries by id, with the published stamp when migration 0100 is in. */
 async function readEntries(ids: string[]): Promise<{ data: EntryRow[] | null }> {
   // tenant-safe: shared overlay entries, read by the ids this tenant's matches point at; client-safe fields only are shipped to the page.
@@ -498,7 +560,7 @@ async function readEntries(ids: string[]): Promise<{ data: EntryRow[] | null }> 
   // A hundred ids at a time, so a long list never outgrows one request.
   for (let i = 0; i < ids.length; i += 100) {
     const read = (cols: string) => db.from("ledger_overlay").select(cols).in("id", ids.slice(i, i + 100));
-    let r = await read("id, fields, status, published_at");
+    let r = await read("id, fields, status, published_at, signal_source_id");
     if (lacks0100(r.error)) r = await read("id, fields, status");
     if (r.error) { console.error("[curated] entries not read", r.error.message); return { data: null }; }
     out.push(...((r.data ?? []) as unknown as EntryRow[]));
@@ -512,10 +574,14 @@ async function readEntries(ids: string[]): Promise<{ data: EntryRow[] | null }> 
  * client action on a curated entry goes through.
  */
 export async function visibleEntry(tenantId: string, overlayId: string): Promise<(EntryRow & { reviewed: boolean }) | null> {
-  const { data: m } = await db.from("curated_match").select("id").eq("tenant_id", tenantId).eq("overlay_id", overlayId).maybeSingle();
-  if (!m) return null;
+  const one = (cols: string) => db.from("curated_match").select(cols).eq("tenant_id", tenantId).eq("overlay_id", overlayId).maybeSingle();
+  let m = await one("id, mission_fit");
+  if (lacks0103(m.error)) m = await one("id");
+  if (!m.data) return null;
   const e = ((await readEntries([overlayId])).data ?? [])[0];
   if (!e) return null;
+  // Patch 70: a lead from a source that was not judged on mission for this client is not on its page, so it cannot be acted on either.
+  if (!fitShown(!!e.signal_source_id, (m.data as unknown as { mission_fit?: boolean | null }).mission_fit)) return null;
   const seen = standing(e);
   return seen === "hidden" ? null : { ...e, reviewed: seen === "reviewed" };
 }
@@ -545,15 +611,17 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
   // Read wide, filter, then keep 40 (review of patch 67): the signals screen
   // also writes matches on entries still waiting unseen, and a short window
   // taken first would let those push everything visible off the client's page.
-  const { data } = await db.from("curated_match").select("overlay_id, list_id, verdict, swept_at")
+  const readMatches = (cols: string) => db.from("curated_match").select(cols)
     .eq("tenant_id", tenantId).order("swept_at", { ascending: false }).limit(MATCH_WINDOW);
-  let rows = (data ?? []) as { overlay_id: string; list_id: string; verdict: string; swept_at: string }[];
+  let got = await readMatches("overlay_id, list_id, verdict, swept_at, mission_fit");
+  if (lacks0103(got.error)) got = await readMatches("overlay_id, list_id, verdict, swept_at");
+  let rows = (got.data ?? []) as unknown as { overlay_id: string; list_id: string; verdict: string; swept_at: string; mission_fit?: boolean | null }[];
   if (!rows.length) return [];
   // The feedback loop (patch 44): a curated entry the client marked "Not for
   // us" never resurfaces here, in the bar, or on the coming calendar.
+  // (Read by tenant alone: hundreds of entry ids in one request would outgrow it, and the read would fail silently.)
   const { data: dismissed } = await db.from("client_match_view").select("target_id")
-    .eq("tenant_id", tenantId).eq("kind", "grant").eq("state", "not_for_us")
-    .in("target_id", rows.map(r => r.overlay_id));
+    .eq("tenant_id", tenantId).eq("kind", "grant").eq("state", "not_for_us").limit(5000);
   const hidden = new Set(((dismissed ?? []) as { target_id: string }[]).map(d => d.target_id));
   rows = rows.filter(r => !hidden.has(r.overlay_id));
   if (!rows.length) return [];
@@ -577,6 +645,10 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
     // superseded is not shown, though its match row is on file.
     const seen = e ? standing(e) : "hidden";
     if (!e || seen === "hidden" || !l) continue;
+    // Patch 70: a lead from a watched source is shown only once it has been
+    // judged to suit this client's own work. Hand-curated entries are shown
+    // as they always were.
+    if (!fitShown(!!e.signal_source_id, r.mission_fit)) continue;
     const c = curatedCard(e.fields);
     if (c.close_date && c.close_date < today) continue; // closed since the sweep
     if (profile && !wantsKind(c.money_kind, profile)) continue; // not a kind this client is looking for
