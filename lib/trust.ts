@@ -113,7 +113,7 @@ export const BAND_WHY: Record<Band, string> = {
   wanted: "A client saved it to their Following list or asked For Granted to start a draft. Review these first.",
   live: "Published from a funder's own page or account, labelled as not yet reviewed. Those that suit a client's work are on that client's page; the ones clients can see are listed first.",
   standard: "Entered by hand, found working a client or by the web search. Reviewed as before.",
-  quiet: "From a news account or an aggregator, so no client sees it until it is approved. Those that would suit a client's work are listed first.",
+  quiet: "From a watched source and not published, so no client sees it until it is approved. Those that would suit a client's work are listed first.",
 };
 
 /**

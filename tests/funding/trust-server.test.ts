@@ -18,7 +18,10 @@ vi.mock("@/lib/server/llm", () => ({ chatComplete: vi.fn(async (o: { user: strin
 const briefs: Record<string, unknown> = {};
 vi.mock("@/lib/server/search-profile-read", () => ({ getSearchProfile: vi.fn(async (id: string) => briefs[id] ?? null) }));
 const profiles: Record<string, unknown> = {};
-vi.mock("@/lib/server/eligibility", () => ({ getEligibilityProfile: vi.fn(async (id: string) => profiles[id] ?? null) }));
+// As the real one behaves: read as the signed-in person unless told to use the service role. The scheduled run has nobody signed in, so a read without `asService` comes back empty.
+const signedIn = { value: false };
+const eligibilityCalls: [string, boolean][] = [];
+vi.mock("@/lib/server/eligibility", () => ({ getEligibilityProfile: vi.fn(async (id: string, asService = false) => { eligibilityCalls.push([id, asService]); return asService || signedIn.value ? profiles[id] ?? null : { org_type: null }; }) }));
 const holder = { db: new FakeDb() };
 vi.mock("@/lib/server/db", () => ({ db: { from: (t: string) => holder.db.from(t) } }));
 
@@ -43,7 +46,7 @@ beforeEach(() => {
   holder.db = new FakeDb();
   for (const k of Object.keys(profiles)) delete profiles[k];
   for (const k of Object.keys(briefs)) delete briefs[k];
-  calls.length = 0;
+  calls.length = 0; eligibilityCalls.length = 0; signedIn.value = false;
   model.reply = allFit;
 });
 
@@ -174,7 +177,6 @@ describe("sweepSignalEntries", () => {
     expect((await getCuratedMatches(A)).map(x => x.title).sort()).toEqual(["Opportunity 1", "Opportunity 3"]);
     expect(await visibleEntry(A, uuid(2))).toBeNull();
     expect(calls).toHaveLength(1);
-    // The client's own description is in the request; who it serves is not asked for.
     expect(calls[0]).toContain("After-school robotics studios");
   });
   it("judges a lead once: a second run asks the model nothing", async () => {
@@ -223,18 +225,90 @@ describe("sweepSignalEntries", () => {
     await sweepSignalEntries();
     expect(holder.db.rows("curated_match").map(m => m.mission_fit)).toEqual([false]);
   });
-  it("judges per client: one client's verdict is not another's", async () => {
+  it("judges per client, from that client's own description, and writes each verdict to that client's row only", async () => {
     seed([entry(1, { published_at: PUB })], [A, B]);
     holder.db.seed("curated_list", lists);
-    let n = 0;
-    model.reply = () => (n++ === 0 ? "1: fit" : "1: not");
+    // Both clients were matched before the patch: the same lead waits unjudged for each.
+    holder.db.rows("curated_match").push({ ...match(A, 1, PUB, null), id: "ma" }, { ...match(B, 1, PUB, null), id: "mb" });
+    briefs[A] = { facts: [fact("identity", "ALPHA robotics mentoring"), fact("work", "ALPHA studios"), fact("need", "ALPHA second site")] };
+    briefs[B] = { facts: [fact("identity", "BRAVO river conservation"), fact("work", "BRAVO stream surveys"), fact("need", "BRAVO field staff")] };
+    model.reply = user => (user.includes("ALPHA") ? "1: fit" : "1: not");
     await sweepSignalEntries();
-    expect((await getCuratedMatches(A)).length + (await getCuratedMatches(B)).length).toBe(1);
+    expect(calls).toHaveLength(2);
+    expect(calls.find(c => c.includes("ALPHA"))).not.toContain("BRAVO");
+    expect(calls.find(c => c.includes("BRAVO"))).not.toContain("ALPHA");
+    const by = Object.fromEntries(holder.db.rows("curated_match").map(m => [m.tenant_id, m.mission_fit]));
+    expect(by).toEqual({ [A]: true, [B]: false });
+    expect((await getCuratedMatches(A)).map(x => x.title)).toEqual(["Opportunity 1"]);
+    expect(await getCuratedMatches(B)).toEqual([]);
+    for (const q of holder.db.log.filter(l => l.table === "curated_match" && l.op === "update")) expect(q.filters).toContain("eq:tenant_id");
+  });
+  it("reads each client's eligibility with the service role, so the scheduled run (nobody signed in) screens them at all", async () => {
+    seed([entry(1, { published_at: PUB })], [A]);
+    expect(await sweepSignalEntries()).toMatchObject({ ok: true, matches: 1 });
+    expect(eligibilityCalls).toEqual([[A, true]]);
+  });
+  it("judges nothing from a profile that has facts but too few to say what the client does", async () => {
+    seed([entry(1, { published_at: PUB })], [A]);
+    briefs[A] = { facts: [fact("identity", "A nonprofit"), fact("geography", "Ohio"), fact("beneficiaries", "Teenagers")] };
+    expect(await sweepSignalEntries()).toMatchObject({ ok: true, judged: 0 });
+    expect(calls).toHaveLength(0);
+  });
+  it("leaves the date alone on a lead judged off mission and moves it once on one that becomes visible", async () => {
+    seed([entry(1, { published_at: PUB }), entry(2, { published_at: PUB })], [A]);
+    holder.db.rows("curated_match").push({ ...match(A, 1, "2026-11-01T00:00:00Z", null), id: "m1" }, { ...match(A, 2, "2026-11-01T00:00:00Z", null), id: "m2" });
+    model.reply = () => "1: fit\n2: not";
+    await sweepSignalEntries();
+    const [one, two] = holder.db.rows("curated_match");
+    expect(one.swept_at).not.toBe("2026-11-01T00:00:00Z");
+    expect(two.swept_at).toBe("2026-11-01T00:00:00Z");
+  });
+  it("keeps the eligibility matches when the model throws, and asks it only once for that client", async () => {
+    seed([entry(1, { published_at: PUB }), entry(2, { published_at: PUB })], [A]);
+    model.reply = () => { throw new Error("bedrock timeout"); };
+    expect(await sweepSignalEntries()).toMatchObject({ ok: true, matches: 0, judged: 0 });
+    expect(holder.db.rows("curated_match").map(m => m.mission_fit)).toEqual([null, null]);
+    expect(calls).toHaveLength(1);
+  });
+  it("starts no model call with too little time left, and still keeps the eligibility matches", async () => {
+    seed([entry(1, { published_at: PUB })], [A]);
+    expect(await sweepSignalEntries(Date.now() + 5_000)).toMatchObject({ ok: true, unfinished: true, judged: 0 });
+    expect(calls).toHaveLength(0);
+    expect(holder.db.rows("curated_match")).toHaveLength(1);
+  });
+  it("saves each batch as it returns, and judges at most three batches for one client in one run", async () => {
+    seed(Array.from({ length: 100 }, (_, i) => entry(200 + i, { published_at: PUB })), [A]);
+    await sweepSignalEntries();
+    expect(calls).toHaveLength(3);
+    const fits = holder.db.rows("curated_match").map(m => m.mission_fit);
+    expect(fits.filter(f => f === true)).toHaveLength(90);
+    expect(fits.filter(f => f === null)).toHaveLength(10);
+    // The ten left over are judged by the next run, and nothing is asked twice.
+    await sweepSignalEntries();
+    expect(calls).toHaveLength(4);
+    expect(holder.db.rows("curated_match").every(m => m.mission_fit === true)).toBe(true);
+  });
+  it("before migration 0103, matches as it did: no verdict, no model call, everything eligible shown", async () => {
+    seed([entry(1, { published_at: PUB })], [A]);
+    holder.db.seed("curated_list", lists);
+    holder.db.failOn = q => q.table === "curated_match" && (q.cols.includes("mission_fit") || q.filters.some(f => f.includes("mission_fit"))) ? { message: "column curated_match.mission_fit does not exist" } : undefined;
+    expect(await sweepSignalEntries()).toMatchObject({ ok: true, matches: 1, judged: 0 });
+    expect(calls).toHaveLength(0);
+    expect("mission_fit" in holder.db.rows("curated_match")[0]).toBe(false);
+    expect((await getCuratedMatches(A)).map(x => x.title)).toEqual(["Opportunity 1"]);
+    expect(await visibleEntry(A, uuid(1))).not.toBeNull();
+  });
+  it("does not let rows judged off mission crowd a client's visible entries out of the page", async () => {
+    const off = Array.from({ length: 700 }, (_, i) => entry(1000 + i, { published_at: PUB }));
+    holder.db.seed("ledger_overlay", [...off, entry(1, { status: "approved", signal_source_id: null })]).seed("curated_list", lists)
+      .seed("curated_match", [...off.map((_, i) => match(A, 1000 + i, "2026-11-19T12:00:00Z", false)), match(A, 1, "2026-01-01T00:00:00Z", null)]);
+    expect((await getCuratedMatches(A)).map(x => x.title)).toEqual(["Opportunity 1"]);
   });
   it("skips a client with no eligibility profile", async () => {
     seed([entry(1, { published_at: PUB })], [A]);
     delete profiles[A];
     expect(await sweepSignalEntries()).toMatchObject({ ok: true, tenants: 1, matches: 0 });
+    expect(calls).toHaveLength(0);
   });
   it("stops when its time is up and says so", async () => {
     seed([entry(1, { published_at: PUB })], [A, B]);

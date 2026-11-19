@@ -48,10 +48,11 @@ class Query implements PromiseLike<Res<Row[] | null>> {
   neq(col: string, v: unknown) { return this.where(`neq:${col}`, r => r[col] !== v); }
   in(col: string, vs: unknown[]) { return this.where(`in:${col}`, r => vs.includes(r[col])); }
   gte(col: string, v: string) { return this.where(`gte:${col}`, r => String(r[col] ?? "") >= v); }
-  is(col: string, v: null) { return this.where(`is:${col}`, r => (r[col] ?? null) === v); }
+  is(col: string, v: null | boolean) { return this.where(`is:${col}`, r => (r[col] ?? null) === v); }
   not(col: string, op: string, v: unknown) {
-    if (op !== "is" || v !== null) throw new Error(`fake-db: not(${col}, ${op}) is not implemented`);
-    return this.where(`notnull:${col}`, r => (r[col] ?? null) !== null);
+    if (op !== "is" || (v !== null && typeof v !== "boolean")) throw new Error(`fake-db: not(${col}, ${op}) is not implemented`);
+    // As in SQL: "is not false" keeps true AND null; "is not null" keeps anything set.
+    return this.where(v === null ? `notnull:${col}` : `not:${col}:${v}`, r => (r[col] ?? null) !== v);
   }
   like(col: string, pattern: string) {
     const prefix = pattern.replace(/%$/, "").replace(/\\(.)/g, "$1");

@@ -127,5 +127,5 @@ export async function matchSignalsNowAction(): Promise<Result<{ message: string 
   const shut = closed ? ` ${closed} waiting ${closed === 1 ? "entry" : "entries"} past ${closed === 1 ? "its" : "their"} deadline closed.` : "";
   return { ok: true, message: !r.entries ? `There are no open opportunities from the sources to screen.${shut}`
     : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no client with the Funding page switched on to screen them for.${shut}`
-    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "lead", "leads")} newly on a client's page${r.judged ? `, ${r.off} judged not to suit the client and held back` : ""}.${r.unfinished ? " It ran out of time; press again to finish." : ""}${shut}` };
+    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "lead", "leads")} judged to suit a client${r.judged ? `, ${r.off} judged not to and held back` : ""}.${r.unfinished ? " It ran out of time; press again to finish." : ""}${shut}` };
 }

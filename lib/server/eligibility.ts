@@ -12,8 +12,10 @@ import { getContentCoverage, coverageGaps, readiness } from "./gap-agent";
  * this the twice-weekly signals run screened nobody).
  */
 export async function getEligibilityProfile(tenantId: string, asService = false): Promise<EligibilityProfile> {
-  const s = asService ? db : await userClient();
-  const { data } = await s.from("eligibility_profile").select("*").eq("tenant_id", tenantId).maybeSingle();
+  // Written as two literal reads so the build's tenant-scoping check sees the service-role one.
+  const { data } = asService
+    ? await db.from("eligibility_profile").select("*").eq("tenant_id", tenantId).maybeSingle()
+    : await (await userClient()).from("eligibility_profile").select("*").eq("tenant_id", tenantId).maybeSingle();
   if (!data) return { ...EMPTY_PROFILE };
   return {
     applicant_type: data.applicant_type ?? "organization",

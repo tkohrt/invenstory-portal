@@ -153,8 +153,8 @@ export async function getLastScoutRun(): Promise<LedgerScoutRun | null> {
 /**
  * Count for the sidebar badge: what needs a person now (patch 67). Everything
  * that came in by hand, from a client or the web search counts as before. An
- * entry from a watched source counts only when a client is waiting on it
- * (matched, following or asked); the rest sit in the queue's folded bands.
+ * entry from a watched source counts only when a client saved it or asked
+ * for a draft (patch 70); the rest sit in the queue's folded bands.
  * Before migration 0100 it is the plain count it always was.
  */
 export async function getOverlayPendingCount(): Promise<number> {
