@@ -82,6 +82,7 @@ describe("standing", () => {
   it("tells a follower where a kept entry stands", () => {
     expect(followStanding({ status: "proposed", published_at: at })).toBe("unreviewed");
     expect(followStanding({ status: "rejected", published_at: at })).toBe("withdrawn");
+    expect(followStanding({ status: "superseded", published_at: at })).toBeNull();
     expect(followStanding({ status: "approved", published_at: at })).toBeNull();
     expect(followStanding(null)).toBeNull();
   });
@@ -136,5 +137,55 @@ describe("the queue by who is waiting", () => {
     expect(demandLine(NO_DEMAND)).toBeNull();
     expect(demandLine(d({ matched: 1 }))).toBe("fits 1 client");
     expect(demandLine(d({ asked: 1, followed: 2, matched: 3 }))).toBe("1 client asked for a draft, 2 clients follow it, fits 3 clients");
+  });
+});
+
+import { scorecard, scoreLine, demotedNote, deadlinePassed, SCORE_WINDOW } from "@/lib/trust";
+
+describe("scorecard", () => {
+  const d = (status: string, day: number) => ({ status, reviewed_at: `2026-11-${String(day).padStart(2, "0")}T12:00:00Z` });
+  it("counts a person's decisions and nothing else", () => {
+    const c = scorecard([d("approved", 1), d("rejected", 2), d("superseded", 3), d("proposed", 4), { status: "rejected", reviewed_at: null }], null);
+    expect(c).toEqual({ approved: 1, rejected: 1, considered: 2, demote: false });
+    expect(scoreLine(c)).toBe("1 approved, 1 rejected of the last 2 decided");
+  });
+  it("sends a source back to review at three rejections in the window", () => {
+    expect(scorecard([d("rejected", 1), d("rejected", 2), d("approved", 3)], null).demote).toBe(false);
+    const c = scorecard([d("rejected", 1), d("rejected", 2), d("approved", 3), d("rejected", 4)], null);
+    expect(c.demote).toBe(true);
+    expect(demotedNote(c)).toBe("Moved to review automatically: 3 of its last 4 decided leads were rejected.");
+  });
+  it("looks only at the most recent decisions", () => {
+    const old = [d("rejected", 1), d("rejected", 2), d("rejected", 3)];
+    const recent = Array.from({ length: SCORE_WINDOW }, (_, i) => d("approved", 10 + i));
+    expect(scorecard([...old, ...recent], null)).toMatchObject({ rejected: 0, considered: SCORE_WINDOW, demote: false });
+  });
+  it("starts a clean record from the moment a person last chose the tier", () => {
+    const all = [d("rejected", 1), d("rejected", 2), d("rejected", 3), d("approved", 10)];
+    expect(scorecard(all, null).demote).toBe(true);
+    expect(scorecard(all, "2026-11-05T00:00:00Z")).toEqual({ approved: 1, rejected: 0, considered: 1, demote: false });
+  });
+  it("says so when there is nothing to go on", () => {
+    expect(scoreLine(scorecard([], null))).toBe("No decisions yet");
+  });
+});
+
+describe("deadlinePassed", () => {
+  const at = (iso: string) => new Date(iso);
+  it("keeps an entry open through its own deadline day in US Eastern", () => {
+    expect(deadlinePassed("2026-11-19", at("2026-11-19T15:00:00Z"))).toBe(false);
+    // 03:30 UTC on the 20th is still the evening of the 19th in New York.
+    expect(deadlinePassed("2026-11-19", at("2026-11-20T03:30:00Z"))).toBe(false);
+    expect(deadlinePassed("2026-11-19", at("2026-11-20T06:00:00Z"))).toBe(true);
+  });
+  it("reads a timed deadline on the day it falls in the zone", () => {
+    // 11:59 PM Eastern on the 19th is the 20th in UTC.
+    expect(deadlinePassed("2026-11-20T04:59:00Z", at("2026-11-20T03:00:00Z"))).toBe(false);
+    expect(deadlinePassed("2026-11-20T04:59:00Z", at("2026-11-20T12:00:00Z"))).toBe(true);
+  });
+  it("never expires an entry with no deadline or an unreadable one", () => {
+    expect(deadlinePassed(null, at("2030-01-01T00:00:00Z"))).toBe(false);
+    expect(deadlinePassed("rolling", at("2030-01-01T00:00:00Z"))).toBe(false);
+    expect(deadlinePassed("", at("2030-01-01T00:00:00Z"))).toBe(false);
   });
 });

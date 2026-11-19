@@ -13,7 +13,7 @@ import { readUrl, readHtml, Plain } from "./read-url";
 import { parseListText, fileLeads } from "./curated";
 import { htmlToText } from "@/lib/application-text";
 import { urlKey } from "@/lib/web-discovery";
-import { defaultTrust, canBeFirstParty, type Trust } from "@/lib/trust";
+import { defaultTrust, canBeFirstParty, scorecard, demotedNote, type Trust, type Decision, type Scorecard } from "@/lib/trust";
 import {
   textForFingerprint, looksLikeFunding, linksIn, pageDue, weekListName, emailSender, freshTimestamp, normalizeAddress,
   blueskyDue, postSignal, BLUESKY_FIRST_READ_DAYS, inlineLinks, entryUrl, MAX_PENDING_SENDERS,
@@ -26,6 +26,9 @@ export interface Budget { parses: number; stopAt: number }
 const BASE_COLS = "id, kind, address, label, category, active, origin, funder_key, last_checked_at, last_ok_at, last_error, last_hash, last_changed_at, last_signal_at, created_at";
 // `trust` arrives with migration 0100 (patch 67).
 const SOURCE_COLS = `${BASE_COLS}, trust`;
+// The scorecard's columns arrive with migration 0102 (patch 69).
+const SCORED_COLS = `${SOURCE_COLS}, trust_set_at, demoted_at, demoted_note`;
+const lacksScore = (e: { message: string } | null) => !!e && /trust_set_at|demoted_at|demoted_note/i.test(e.message);
 
 type Read<T> = { data: T | null; error: { message: string; code?: string } | null };
 /** True when a read failed only because migration 0100 has not been applied. */
@@ -37,8 +40,9 @@ const lacksTrust = (e: { message: string } | null) => !!e && /\btrust\b/i.test(e
  * and breaks no run.
  */
 async function withTrust<T>(read: (cols: string) => PromiseLike<Read<T>>): Promise<Read<T>> {
-  const first = await read(SOURCE_COLS);
-  return lacksTrust(first.error) ? read(BASE_COLS) : first;
+  let r = await read(SCORED_COLS);
+  if (lacksScore(r.error)) r = await read(SOURCE_COLS);
+  return lacksTrust(r.error) ? read(BASE_COLS) : r;
 }
 
 export async function listSources(): Promise<SourceRow[]> {
@@ -54,6 +58,49 @@ export async function activeSources(kind: SourceKind): Promise<SourceRow[]> {
     .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(1000) as unknown as PromiseLike<Read<SourceRow[]>>);
   if (error) throw new Error(`signal_source could not be read: ${error.message}`);
   return data ?? [];
+}
+
+/**
+ * A source's record and, when it has earned it, its demotion (patch 69).
+ * Called after a rejection. A first-party source with SCORE_REJECTS
+ * rejections among its last SCORE_WINDOW decided opportunities (counting
+ * only decisions since a person last chose its tier) goes back to waiting
+ * for review, with the reason on its row and in the audit log. Entries it
+ * already published are not touched: each is still a person's to decide.
+ * Returns the note when it demoted. Never throws: the rejection that
+ * triggered it has already landed.
+ */
+export async function scoreSource(sourceId: string, actorId: string | null): Promise<string | null> {
+  try {
+    const src = await sourceById(sourceId);
+    if (!src || src.trust !== "first_party") return null;
+    // tenant-safe: the shared review queue (no tenant_id), one source's decided opportunities.
+    const { data, error } = await db.from("ledger_overlay").select("status, reviewed_at")
+      .eq("signal_source_id", sourceId).eq("kind", "grant").in("status", ["approved", "rejected"])
+      .order("reviewed_at", { ascending: false }).limit(60);
+    if (error) return null;
+    const card = scorecard((data ?? []) as Decision[], src.trust_set_at ?? null);
+    if (!card.demote) return null;
+    const note = demotedNote(card);
+    const { error: upErr } = await db.from("signal_source").update({ trust: "review", demoted_at: new Date().toISOString(), demoted_note: note }).eq("id", sourceId).eq("trust", "first_party");
+    if (upErr) { console.error("[signals] source not demoted", upErr.message); return null; }
+    await db.from("audit_log").insert({ actor_user_id: actorId, tenant_id: null, action: "source_demoted", detail: `${src.label.slice(0, 120)}: ${note}` });
+    return note;
+  } catch (e) { console.error("[signals] scorecard failed", e); return null; }
+}
+
+/** Every source's record, by source id, for the Sources tab (patch 69). */
+export async function sourceScorecards(sources: SourceRow[]): Promise<Record<string, Scorecard>> {
+  const out: Record<string, Scorecard> = {};
+  // tenant-safe: the shared review queue (no tenant_id), decided opportunities that came from a source.
+  const { data, error } = await db.from("ledger_overlay").select("signal_source_id, status, reviewed_at")
+    .not("signal_source_id", "is", null).eq("kind", "grant").in("status", ["approved", "rejected"])
+    .order("reviewed_at", { ascending: false }).limit(3000);
+  if (error) return out;
+  const by = new Map<string, Decision[]>();
+  for (const r of (data ?? []) as (Decision & { signal_source_id: string })[]) by.set(r.signal_source_id, [...(by.get(r.signal_source_id) ?? []), r]);
+  for (const s of sources) out[s.id] = scorecard(by.get(s.id) ?? [], s.trust_set_at ?? null);
+  return out;
 }
 
 /** One source by id, with its trust tier when the column exists. */

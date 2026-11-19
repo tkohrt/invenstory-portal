@@ -56,7 +56,10 @@ export async function setSourceTrustAction(id: string, trust: string): Promise<R
   if (!src) return { ok: false, error: "That source is not on file." };
   if (trust === "first_party" && !canBeFirstParty(src.kind)) return { ok: false, error: "Mail always waits for review: a sender's address does not prove who wrote it." };
   if (trust === "first_party" && !canBeFirstParty(src.kind, src.category)) return { ok: false, error: "An aggregator or a procurement portal carries other people's opportunities, so what it yields waits for review." };
-  const { error } = await db.from("signal_source").update({ trust }).eq("id", src.id);
+  // A person's choice starts the source's record afresh and clears any automatic demotion (patch 69).
+  let { error } = await db.from("signal_source").update({ trust, trust_set_at: new Date().toISOString(), demoted_at: null, demoted_note: null }).eq("id", src.id);
+  // Before migration 0102: the tier alone.
+  if (error && /trust_set_at|demoted_at|demoted_note/i.test(error.message)) ({ error } = await db.from("signal_source").update({ trust }).eq("id", src.id));
   if (error) return { ok: false, error: "That did not save. Has migration 0100 been applied?" };
   await db.from("audit_log").insert({
     actor_user_id: s.user.id, tenant_id: null, action: "source_trust",

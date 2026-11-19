@@ -5,7 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { getSession } from "./session";
 import { db } from "./db";
-import { createCuratedList, sweepCuratedList, sweepSignalEntries, visibleEntry } from "./curated";
+import { createCuratedList, sweepCuratedList, sweepSignalEntries, expireSignalEntries, visibleEntry } from "./curated";
 import { curatedCard } from "@/lib/curated";
 import { notifyClientRequest } from "./notify";
 
@@ -119,11 +119,12 @@ export async function toggleCuratedFollowAction(overlayId: string): Promise<{ ok
 export async function matchSignalsNowAction(): Promise<Result<{ message: string }>> {
   const s = await admin();
   if (!s) return { ok: false, error: "For Granted only." };
+  const closed = await expireSignalEntries().catch(() => 0);
   const r = await sweepSignalEntries(Date.now() + 45_000);
   if (!r.ok) return r;
   revalidatePath("/admin/reviews");
   const n = (c: number, one: string, many: string) => `${c} ${c === 1 ? one : many}`;
   return { ok: true, message: !r.entries ? "There are no open opportunities from the sources to screen."
     : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no client with the Funding page switched on to screen them for.`
-    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}` };
+    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}${closed ? ` ${n(closed, "waiting entry", "waiting entries")} past its deadline closed.`.replace("entries past its", "entries past their") : ""}` };
 }

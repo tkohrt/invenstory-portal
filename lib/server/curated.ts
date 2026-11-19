@@ -9,7 +9,7 @@ import { getEligibilityProfile } from "./eligibility";
 import { screenGrant } from "@/lib/grant-screen";
 import { parseLeads, overlayDraft, wantsKind } from "@/lib/web-discovery";
 import { CURATED_PARSE_SYSTEM, curatedParseUser, curatedLeads, curatedCard, type CuratedMatchRow } from "@/lib/curated";
-import { publishes, standing, followStanding, type Trust } from "@/lib/trust";
+import { publishes, standing, followStanding, deadlinePassed, type Trust } from "@/lib/trust";
 import { oppHost, funderKey, findTwin, changedFacts, applyChanges, addSeen, type Sighting } from "@/lib/opportunity";
 
 /** True when a query failed only because migration 0100 (patch 67) has not been applied. */
@@ -329,6 +329,33 @@ export async function sweepCuratedList(listId: string): Promise<{ ok: true; entr
   // tenant-safe: the list row is shared admin data.
   await db.from("curated_list").update({ swept_at: new Date().toISOString() }).eq("id", listId);
   return { ok: true, entries: grants.length, tenants: members.length, matches, skipped, notSought };
+}
+
+/**
+ * Close waiting signals entries whose deadline has passed (patch 69), so the
+ * queue holds only what can still be acted on. Retired as "superseded" with
+ * the reason in the note, not "rejected": it is no judgment of the entry or
+ * of its source, and it does not count on the source's scorecard. Entries
+ * with no deadline, entries a person decided, and everything that did not
+ * come from a source are left alone.
+ */
+export async function expireSignalEntries(now = new Date()): Promise<number> {
+  // tenant-safe: the shared review queue (no tenant_id), waiting signals opportunities.
+  const { data, error } = await db.from("ledger_overlay").select("id, fields")
+    .not("signal_source_id", "is", null).eq("kind", "grant").in("status", ["proposed", "in_review"]).limit(2000);
+  if (error) { if (!lacks0100(error)) console.error("[curated] expiry read failed", error.message); return 0; }
+  const due = ((data ?? []) as { id: string; fields: Record<string, unknown> }[])
+    .filter(e => deadlinePassed(typeof e.fields?.close_date === "string" ? e.fields.close_date : null, now));
+  let closed = 0;
+  for (const e of due) {
+    // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
+    const { error: upErr } = await db.from("ledger_overlay").update({
+      status: "superseded", reviewed_at: now.toISOString(),
+      review_note: `Closed automatically: its deadline (${String(e.fields.close_date).slice(0, 10)}) has passed.`,
+    }).eq("id", e.id).in("status", ["proposed", "in_review"]);
+    if (upErr) console.error("[curated] entry not closed", upErr.message); else closed += 1;
+  }
+  return closed;
 }
 
 const SIGNAL_SWEEP_DAYS = 45;

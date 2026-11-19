@@ -8,7 +8,7 @@
 // 67, every client with Funding on is screened against what was filed.
 import { NextResponse } from "next/server";
 import { runPageWatch, runBluesky, pendingEmail, readHeldEmail, type Budget } from "@/lib/server/signals";
-import { sweepSignalEntries } from "@/lib/server/curated";
+import { sweepSignalEntries, expireSignalEntries } from "@/lib/server/curated";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -48,6 +48,8 @@ export async function GET(req: Request) {
   // the review queue knows which waiting entries a client is waiting on. Runs
   // in the time left before the function's limit; what does not fit is
   // finished by the next run. A failure here never fails the read above.
+  // Patch 69: waiting entries whose deadline has passed close themselves first.
+  out.closed = await expireSignalEntries().catch(e => { console.error("[signals] expiry failed", e); return null; });
   out.matched = await sweepSignalEntries(started + 285_000).catch(e => { console.error("[signals] client screen failed", e); return null; });
   return NextResponse.json({ ok: true, parsesLeft: budget.parses, ...out });
 }

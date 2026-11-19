@@ -17,7 +17,7 @@ import { getRequests, openRequestCount } from "@/lib/server/requests";
 import { getCuratedLists, getCommunityMembers } from "@/lib/server/curated";
 import AdminCuratedLists from "@/components/AdminCuratedLists";
 import AdminSignals from "@/components/AdminSignals";
-import { listSources, recentSignals, heldSignals } from "@/lib/server/signals";
+import { listSources, recentSignals, heldSignals, sourceScorecards } from "@/lib/server/signals";
 import { sourceHealth, awaitingApproval } from "@/lib/signals";
 
 export default async function ReviewQueuesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -67,11 +67,12 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
 
   if (tab === "sources") {
     const [recent, held] = sources ? await Promise.all([recentSignals().catch(() => []), heldSignals().catch(() => [])]) : [[], []];
+    const scores = sources ? await sourceScorecards(sources).catch(() => ({})) : {};
     return (
       <div className="rq-page">
         <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
         {tabs}
-        <AdminSignals sources={sources ?? []} recent={recent} held={held} ready={sources !== null}
+        <AdminSignals sources={sources ?? []} recent={recent} held={held} ready={sources !== null} scores={scores}
           inbox={{ address: process.env.SIGNALS_INBOX?.trim() || null, configured: !!process.env.RESEND_INBOUND_SECRET && !!process.env.SIGNALS_INBOX?.trim() }} />
       </div>
     );

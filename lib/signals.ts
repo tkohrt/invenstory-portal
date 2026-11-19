@@ -29,6 +29,10 @@ export interface SourceRow {
   created_at: string;
   /** Whose words the source carries (patch 67, 0100). Absent before the migration: treated as "review". */
   trust?: Trust | null;
+  /** Patch 69 (0102): when a person last chose the tier; when and why the scorecard moved it to review. */
+  trust_set_at?: string | null;
+  demoted_at?: string | null;
+  demoted_note?: string | null;
 }
 
 export interface SignalRow {

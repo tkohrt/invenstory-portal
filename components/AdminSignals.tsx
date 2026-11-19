@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { addSourceAction, setSourceActiveAction, checkSourceNowAction, readHeldAction, setSourceTrustAction } from "@/lib/server/signals-actions";
 import { matchSignalsNowAction } from "@/lib/server/curated-actions";
-import { TRUST_LABEL, TRUST_WHY, canBeFirstParty } from "@/lib/trust";
+import { TRUST_LABEL, TRUST_WHY, canBeFirstParty, scoreLine, type Scorecard } from "@/lib/trust";
 import {
   KIND_LABEL, CATEGORY_LABEL, CATEGORIES, STATUS_LABEL, HEALTH_LABEL, sourceHealth, suggestedFollows, awaitingApproval,
   type SourceRow, type SignalRow, type SourceKind,
@@ -20,8 +20,10 @@ const day = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(undef
 const hostOf = (u: string) => { try { return new URL(u).hostname; } catch { return ""; } };
 const HEALTH_TAG: Record<string, string> = { ok: "ov-tag sg-ok", failing: "ov-tag sg-bad", quiet: "ov-tag sg-warn", new: "ov-tag", off: "ov-tag sg-off" };
 
-export default function AdminSignals({ sources, recent, held, inbox, ready }: {
+export default function AdminSignals({ sources, recent, held, inbox, ready, scores = {} }: {
   sources: SourceRow[]; recent: Recent[];
+  /** Patch 69: each source's record of approved and rejected leads, by source id. */
+  scores?: Record<string, Scorecard>;
   /** Mail held for unapproved senders, loaded on its own so it cannot scroll out of reach. */
   held: Recent[];
   /** The signals inbox: its address when set, and whether the webhook secret is configured. */
@@ -123,6 +125,8 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
                   <td>{CATEGORY_LABEL[s.category]}</td>
                   <td>
                     <span className={s.trust === "first_party" ? "ov-tag gt-pending" : "ov-tag"} title={TRUST_WHY[s.trust === "first_party" ? "first_party" : "review"]}>{TRUST_LABEL[s.trust === "first_party" ? "first_party" : "review"]}</span>
+                    {scores[s.id]?.considered ? <span className="sg-why">{scoreLine(scores[s.id])}</span> : null}
+                    {s.demoted_at && s.trust !== "first_party" && <span className="sg-why"><span className="ov-tag sg-warn">moved to review</span> {s.demoted_note}</span>}
                     {canBeFirstParty(s.kind, s.category) && (
                       <><br /><button type="button" className="sb-btn sb-quiet sb-sm" disabled={busy === `t${s.id}`}
                         title={s.trust === "first_party" ? "Make everything from this source wait for review." : "Only for the funder's or programme's own page or account, never news or a roundup."}

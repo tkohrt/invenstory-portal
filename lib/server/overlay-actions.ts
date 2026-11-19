@@ -9,6 +9,7 @@ import { db } from "./db";
 import type { OverlayProposal, OverlayConfidence, OverlayManualEntry } from "@/lib/types";
 import { buildOverlayEntry } from "@/lib/overlay-entry";
 import { applyChanges, changedFacts, changeLine } from "@/lib/opportunity";
+import { scoreSource } from "./signals";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -234,6 +235,13 @@ export async function rejectOverlayAction(id: string, note: string) {
     actor_user_id: s.user.id, tenant_id: null, action: "overlay_reject",
     detail: `${row?.kind ?? "?"}:${row?.title ?? row?.base_id ?? id} — ${note.trim().slice(0, 140)}`,
   });
+  // Patch 69: a rejection counts against the source the entry came from. A
+  // first-party source that has had enough of them goes back to waiting for
+  // review. Read on its own so a database without migration 0100 rejects as before.
+  // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
+  const { data: from } = await db.from("ledger_overlay").select("signal_source_id").eq("id", id).maybeSingle();
+  const sourceId = (from as { signal_source_id: string | null } | null)?.signal_source_id ?? null;
+  if (sourceId && row?.kind === "grant") await scoreSource(sourceId, s.user.id);
   revalidatePath("/admin/reviews");
 }
 

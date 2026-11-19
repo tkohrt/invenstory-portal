@@ -83,7 +83,8 @@ export function standing(e: { status: string; published_at?: string | null }): S
 /** What a follower is told once For Granted has looked at an entry they kept. */
 export function followStanding(e: { status: string; published_at?: string | null } | null | undefined): "unreviewed" | "withdrawn" | null {
   if (!e) return null;
-  if (e.status === "rejected" || e.status === "superseded") return "withdrawn";
+  // Only a person's rejection is "taken off". An entry that closed itself when its deadline passed (patch 69) needs no note: the row already says it is closed.
+  if (e.status === "rejected") return "withdrawn";
   return standing(e) === "unreviewed" ? "unreviewed" : null;
 }
 export const WITHDRAWN_LABEL = "Reviewed by For Granted and taken off its list";
@@ -154,4 +155,66 @@ export function bandQueue<T extends { id: string; created_at: string; published_
   by.wanted.sort((a, b) => demandScore(demand[b.id] ?? NO_DEMAND) - demandScore(demand[a.id] ?? NO_DEMAND) || newest(a, b));
   by.standard.sort(newest); by.live.sort(newest); by.quiet.sort(newest);
   return (["wanted", "standard", "live", "quiet"] as Band[]).map(b => ({ band: b, rows: by[b] })).filter(g => g.rows.length);
+}
+
+// ---------------------------------------------------------------------------
+// Source scorecards (patch 69): the safety net under publishing unreviewed.
+
+/** How many of a source's most recent decided opportunities are looked at. */
+export const SCORE_WINDOW = 10;
+/** How many rejections among them send a first-party source back to review. */
+export const SCORE_REJECTS = 3;
+
+export interface Decision { status: string; reviewed_at: string | null }
+export interface Scorecard { approved: number; rejected: number; considered: number; demote: boolean }
+
+/**
+ * A source's record: its last SCORE_WINDOW opportunities a PERSON decided
+ * (approved or rejected; an entry closed automatically or retired as an
+ * update is not a judgment of the source), counting only decisions made
+ * after `since`, the moment a person last chose its tier. Three rejections
+ * in the window say the source is not reliably stating real, open
+ * opportunities, and it should wait for review again.
+ */
+export function scorecard(decisions: Decision[], since: string | null | undefined): Scorecard {
+  const counted = decisions
+    .filter(d => (d.status === "approved" || d.status === "rejected") && !!d.reviewed_at && (!since || (d.reviewed_at as string) > since))
+    .sort((a, b) => (b.reviewed_at as string).localeCompare(a.reviewed_at as string))
+    .slice(0, SCORE_WINDOW);
+  const rejected = counted.filter(d => d.status === "rejected").length;
+  return { approved: counted.length - rejected, rejected, considered: counted.length, demote: rejected >= SCORE_REJECTS };
+}
+
+export function scoreLine(c: Scorecard): string {
+  if (!c.considered) return "No decisions yet";
+  return `${c.approved} approved, ${c.rejected} rejected of the last ${c.considered} decided`;
+}
+
+export function demotedNote(c: Scorecard): string {
+  return `Moved to review automatically: ${c.rejected} of its last ${c.considered} decided leads were rejected.`;
+}
+
+// ---------------------------------------------------------------------------
+// Entries that close themselves (patch 69).
+
+/**
+ * Whether a waiting entry's deadline has passed: the day after it has begun
+ * in the deadline zone (US Eastern, as everywhere deadlines are read). A date
+ * with no time is that calendar day; an entry with no deadline never expires.
+ */
+export function deadlinePassed(closeDate: string | null | undefined, now: Date, zone = "America/New_York"): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(closeDate ?? "");
+  if (!m) return false;
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const part = (t: string) => p.find(x => x.type === t)?.value ?? "";
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  // A timed deadline is read on the day it falls on in the zone.
+  const timed = /T\d/.test(closeDate ?? "") && Number.isFinite(Date.parse(closeDate as string));
+  let due = `${m[1]}-${m[2]}-${m[3]}`;
+  if (timed) {
+    const q = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(closeDate as string));
+    const qp = (t: string) => q.find(x => x.type === t)?.value ?? "";
+    due = `${qp("year")}-${qp("month")}-${qp("day")}`;
+  }
+  return due < today;
 }
