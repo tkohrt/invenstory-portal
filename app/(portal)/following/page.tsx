@@ -6,6 +6,7 @@ import { getSavedItems } from "@/lib/server/saved";
 import FollowingView from "@/components/FollowingView";
 import { getJudgments } from "@/lib/server/triage";
 import { suppresses } from "@/lib/triage";
+import { followedStandings } from "@/lib/server/curated";
 
 /**
  * Following (patch 66): the one list of what a client is tracking, shared
@@ -38,5 +39,9 @@ export default async function FollowingPage({ searchParams }: { searchParams: Pr
     const j = judgments.get(`funder:${i.target_id}`);
     return !(j && suppresses(j.state));
   });
-  return <FollowingView items={shown} preview={preview} />;
+  // Patch 67: a followed curated entry says where it stands with For Granted
+  // today (not yet reviewed, or reviewed and taken off), read fresh each time.
+  const standings = await followedStandings(session.tenantId, shown.filter(i => i.kind === "grant").map(i => i.target_id)).catch(() => ({} as Record<string, "unreviewed" | "withdrawn">));
+  const withStanding = shown.map(i => i.kind === "grant" && standings[i.target_id] ? { ...i, standing: standings[i.target_id] } : i);
+  return <FollowingView items={withStanding} preview={preview} />;
 }

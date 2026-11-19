@@ -81,4 +81,6 @@ export interface CuratedMatchRow {
   max_award: number | null; website: string | null; notes: string | null;
   /** Patch 62: what kind of money, and the deal when the entry is a programme that states one. */
   money_kind: string | null; terms: string | null;
+  /** Patch 67: false when it was published from a funder's own source and nobody at For Granted has checked it yet. */
+  reviewed: boolean;
 }

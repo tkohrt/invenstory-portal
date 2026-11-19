@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { setFollowUpdatesAction, unfollowAction } from "@/lib/server/saved-actions";
 import { groupFollowing, followingSummary, type FollowItem, type FollowRow } from "@/lib/following";
+import { UNREVIEWED_LABEL, UNREVIEWED_WHY, WITHDRAWN_LABEL } from "@/lib/trust";
 
 const STATE_TAG: Record<string, string> = { reopened: "ov-tag sg-ok", closing: "ov-tag sg-warn", open: "ov-tag", closed: "ov-tag sg-off", none: "ov-tag sg-off" };
 
@@ -79,7 +80,9 @@ export default function FollowingView({ items, preview }: { items: FollowItem[];
               {g.opportunities.map(r => (
                 <tr key={keyOf(r)}>
                   <td>{r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer">{r.title} ↗</a> : <b>{r.title}</b>}
-                    {r.terms && <span className="sg-why" title="An investment, not a grant. These are the terms as the programme's own page states them; confirm them there before applying.">Terms: {r.terms}</span>}</td>
+                    {r.terms && <span className="sg-why" title="An investment, not a grant. These are the terms as the programme's own page states them; confirm them there before applying.">Terms: {r.terms}</span>}
+                    {r.standing === "unreviewed" && <span className="sg-why"><span className="ov-tag gt-pending" title={UNREVIEWED_WHY}>{UNREVIEWED_LABEL}</span></span>}
+                    {r.standing === "withdrawn" && <span className="sg-why"><span className="ov-tag sg-off" title="For Granted looked at this and removed it from the opportunities it shows. It stays here until you remove it.">{WITHDRAWN_LABEL}</span></span>}</td>
                   <td>{r.who ?? <span className="do-muted">Not listed</span>}</td>
                   <td>{r.label}</td>
                   <td><span className={STATE_TAG[r.state]}>{r.when}</span></td>

@@ -20,6 +20,13 @@ export interface FollowItem {
   reopened_detail?: { title?: string | null; close_date?: string | null; url?: string | null } | null;
   /** Absent on rows read before migration 0099: treated as on. */
   updates?: boolean | null;
+  /**
+   * Patch 67: where a followed curated entry stands with For Granted, worked
+   * out fresh each time the list is read (never kept in the snapshot):
+   * "unreviewed" while nobody has checked it, "withdrawn" once it was reviewed
+   * and taken off. Absent for everything else.
+   */
+  standing?: "unreviewed" | "withdrawn" | null;
 }
 
 export type DateState = "reopened" | "closing" | "open" | "closed" | "none";
@@ -36,6 +43,7 @@ export interface FollowRow {
   date: string | null; state: DateState; when: string;
   terms: string | null;
   updates: boolean; saved_at: string;
+  standing: "unreviewed" | "withdrawn" | null;
 }
 
 const web = (u: unknown): string | null => typeof u === "string" && /^https?:\/\//i.test(u) ? u : null;
@@ -92,7 +100,7 @@ export function followRow(s: FollowItem, now = new Date()): FollowRow {
     return {
       kind: "funder", target_id: s.target_id, title: s.title || "A funder", who: null, label: "Funder",
       url: web(d.url), href: `/funding/funder/${encodeURIComponent(s.target_id)}`,
-      date: null, state: "none", when: "", terms: null, updates, saved_at: s.saved_at,
+      date: null, state: "none", when: "", terms: null, updates, saved_at: s.saved_at, standing: null,
     };
   }
   // A reopened grant shows its new cycle: the reopen stamp carries the fresh close date and link.
@@ -104,6 +112,7 @@ export function followRow(s: FollowItem, now = new Date()): FollowRow {
     label: s.kind === "rfp" ? "RFP" : d.money_kind === "programs" ? "Accelerator, prize or competition" : d.money_kind === "contracts" ? "Contract" : "Grant",
     url: web(re?.url) ?? web(d.url), href: null,
     date, state, when, terms: d.terms ?? null, updates, saved_at: s.saved_at,
+    standing: s.kind === "grant" ? s.standing ?? null : null,
   };
 }
 

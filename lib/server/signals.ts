@@ -13,6 +13,7 @@ import { readUrl, readHtml, Plain } from "./read-url";
 import { parseListText, fileLeads } from "./curated";
 import { htmlToText } from "@/lib/application-text";
 import { urlKey } from "@/lib/web-discovery";
+import { defaultTrust, canBeFirstParty, type Trust } from "@/lib/trust";
 import {
   textForFingerprint, looksLikeFunding, linksIn, pageDue, weekListName, emailSender, freshTimestamp, normalizeAddress,
   blueskyDue, postSignal, BLUESKY_FIRST_READ_DAYS, inlineLinks, entryUrl, MAX_PENDING_SENDERS,
@@ -22,21 +23,43 @@ import {
 /** How many model calls one run may spend. Shared across everything the run reads. */
 export interface Budget { parses: number; stopAt: number }
 
-const SOURCE_COLS = "id, kind, address, label, category, active, origin, funder_key, last_checked_at, last_ok_at, last_error, last_hash, last_changed_at, last_signal_at, created_at";
+const BASE_COLS = "id, kind, address, label, category, active, origin, funder_key, last_checked_at, last_ok_at, last_error, last_hash, last_changed_at, last_signal_at, created_at";
+// `trust` arrives with migration 0100 (patch 67).
+const SOURCE_COLS = `${BASE_COLS}, trust`;
+
+type Read<T> = { data: T | null; error: { message: string; code?: string } | null };
+/** True when a read failed only because migration 0100 has not been applied. */
+const lacksTrust = (e: { message: string } | null) => !!e && /\btrust\b/i.test(e.message);
+/**
+ * Read sources with their trust tier; before migration 0100 the column is not
+ * there, and the read is made again without it. Every source then counts as
+ * "review", so a deploy ahead of the migration publishes nothing unreviewed
+ * and breaks no run.
+ */
+async function withTrust<T>(read: (cols: string) => PromiseLike<Read<T>>): Promise<Read<T>> {
+  const first = await read(SOURCE_COLS);
+  return lacksTrust(first.error) ? read(BASE_COLS) : first;
+}
 
 export async function listSources(): Promise<SourceRow[]> {
-  const { data, error } = await db.from("signal_source").select(SOURCE_COLS).order("kind").order("label").limit(500);
+  const { data, error } = await withTrust<SourceRow[]>(cols => db.from("signal_source").select(cols).order("kind").order("label").limit(500) as unknown as PromiseLike<Read<SourceRow[]>>);
   // Thrown, not swallowed: an empty list must mean "nothing watched", never "migration 0098 missing".
   if (error) throw new Error(`signal_source could not be read: ${error.message}`);
-  return (data ?? []) as SourceRow[];
+  return data ?? [];
 }
 
 /** Every ACTIVE source of one kind, asked for directly, so no flood of another kind can crowd it out of a run. */
 export async function activeSources(kind: SourceKind): Promise<SourceRow[]> {
-  const { data, error } = await db.from("signal_source").select(SOURCE_COLS).eq("kind", kind).eq("active", true)
-    .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(1000);
+  const { data, error } = await withTrust<SourceRow[]>(cols => db.from("signal_source").select(cols).eq("kind", kind).eq("active", true)
+    .order("last_checked_at", { ascending: true, nullsFirst: true }).limit(1000) as unknown as PromiseLike<Read<SourceRow[]>>);
   if (error) throw new Error(`signal_source could not be read: ${error.message}`);
-  return (data ?? []) as SourceRow[];
+  return data ?? [];
+}
+
+/** One source by id, with its trust tier when the column exists. */
+export async function sourceById(id: string): Promise<SourceRow | null> {
+  const { data } = await withTrust<SourceRow>(cols => db.from("signal_source").select(cols).eq("id", id).maybeSingle() as unknown as PromiseLike<Read<SourceRow>>);
+  return data ?? null;
 }
 
 /** Mail held for an unapproved sender, asked for on its own so it never scrolls out of reach behind newer signals. */
@@ -60,20 +83,27 @@ export async function recentSignals(limit = 40): Promise<(SignalRow & { source_l
 export async function upsertSource(a: {
   kind: SourceKind; address: string; label: string; category?: SourceCategory; origin?: SourceOrigin;
   active?: boolean; funderKey?: string | null; userId?: string | null;
+  /** Whose words it carries. Left out, a new source starts where lib/trust.ts defaultTrust puts it. */
+  trust?: Trust;
 }): Promise<{ ok: true; source: SourceRow; created: boolean } | { ok: false; error: string }> {
   const address = normalizeAddress(a.kind, a.address);
   if (!address) return { ok: false, error: a.kind === "page" ? "That is not a web address." : a.kind === "bluesky" ? "That is not a Bluesky handle (for example kresge.org or name.bsky.social)." : "That is not an email address." };
-  const { data: existing } = await db.from("signal_source").select(SOURCE_COLS).eq("kind", a.kind).eq("address", address).maybeSingle();
-  if (existing) return { ok: true, source: existing as SourceRow, created: false };
-  const { data, error } = await db.from("signal_source").insert({
+  const { data: existing } = await withTrust<SourceRow>(cols => db.from("signal_source").select(cols).eq("kind", a.kind).eq("address", address).maybeSingle() as unknown as PromiseLike<Read<SourceRow>>);
+  if (existing) return { ok: true, source: existing, created: false };
+  const row = {
     kind: a.kind, address, label: (a.label.trim() || address).slice(0, 200), category: a.category ?? "funder",
     origin: a.origin ?? "manual", active: a.active ?? true, funder_key: a.funderKey ?? null, created_by: a.userId ?? null,
-  }).select(SOURCE_COLS).single();
+  };
+  const wanted = a.trust ?? defaultTrust(row);
+  const trust: Trust = wanted === "first_party" && canBeFirstParty(a.kind) ? "first_party" : "review";
+  let { data, error } = await db.from("signal_source").insert({ ...row, trust }).select(SOURCE_COLS).single() as unknown as Read<SourceRow>;
+  // Before migration 0100: saved without a tier, which reads as "review".
+  if (lacksTrust(error)) ({ data, error } = await db.from("signal_source").insert(row).select(BASE_COLS).single() as unknown as Read<SourceRow>);
   if (error || !data) {
     console.error("[signals] source not saved", error?.message);
     return { ok: false, error: "The source could not be saved. Has migration 0098 been applied?" };
   }
-  return { ok: true, source: data as SourceRow, created: true };
+  return { ok: true, source: data, created: true };
 }
 
 /** The rolling list this week's signal entries are filed under: one sweep covers the week. */
@@ -124,12 +154,12 @@ export async function fileSignal(a: {
     const { data: prior } = await db.from("signal").select("id, status").eq("source_id", a.source.id).eq("external_id", base.external_id).maybeSingle();
     const p = prior as { id: string; status: SignalStatus } | null;
     if (!p || a.hold || a.skip || !UNSETTLED.includes(p.status)) return null;
-    return readSignal(p.id, a.text, a.budget, a.url);
+    return readSignal(p.id, a.text, a.budget, a.url, a.source);
   }
   const id = (row as { id: string }).id;
   if (a.hold) return { status: "held", entries: 0 };
   if (a.skip) return { status: "skipped", entries: 0 };
-  const done = await readSignal(id, a.text, a.budget, a.url);
+  const done = await readSignal(id, a.text, a.budget, a.url, a.source);
   if (!unsettled(done)) await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", a.source.id);
   return done;
 }
@@ -143,8 +173,11 @@ const CLAIM_STALE_MS = 15 * 60_000;
  * overlapping cannot parse it twice. A claim older than fifteen minutes is a
  * reader that died and may be taken over. "new" back means the budget ran
  * out, "reading" that someone else has it; either way the next run finishes it.
+ * `from` is the source it came from (patch 67): its entries are filed under
+ * it, and its trust tier decides whether an opportunity goes live with the
+ * "not yet reviewed" label or waits (lib/trust.ts publishes).
  */
-export async function readSignal(signalId: string, text: string, budget: Budget, sourceUrl: string | null = null): Promise<Outcome> {
+export async function readSignal(signalId: string, text: string, budget: Budget, sourceUrl: string | null = null, from: Pick<SourceRow, "id" | "kind" | "trust"> | null = null): Promise<Outcome> {
   const settle = async (status: SignalStatus, entries = 0, listId: string | null = null) => {
     await db.from("signal").update({ status, entries, curated_list_id: listId }).eq("id", signalId);
     return { status, entries };
@@ -166,7 +199,7 @@ export async function readSignal(signalId: string, text: string, budget: Budget,
   const listId = await weekList();
   if (!listId) return settle("failed");
   // Counted as what was NEW to the review queue, so "sent to review" is never said of entries already known.
-  const fresh = await fileLeads(listId, leads, null);
+  const fresh = await fileLeads(listId, leads, null, from);
   return fresh ? settle("filed", fresh, listId) : settle("nothing");
 }
 
@@ -462,7 +495,8 @@ export async function readHeldEmail(signalId: string, budget: Budget): Promise<{
   const mail = await fetchReceivedEmail(row.external_id);
   if (!mail) return { ok: false, error: "The email could not be fetched from the mail service. Check that RESEND_API_KEY can read received mail." };
   if (row.status === "held") await db.from("signal").update({ status: "new" }).eq("id", row.id).eq("status", "held");
-  const r = await readSignal(row.id, mail.text.slice(0, 20_000), budget);
+  // Tied to its sender for the record; mail never publishes unreviewed, whatever the sender's row says (lib/trust.ts).
+  const r = await readSignal(row.id, mail.text.slice(0, 20_000), budget, null, { id: row.source_id, kind: "email", trust: "review" });
   if (!unsettled(r)) await db.from("signal_source").update({ last_signal_at: new Date().toISOString() }).eq("id", row.source_id);
   return { ok: true, ...r };
 }

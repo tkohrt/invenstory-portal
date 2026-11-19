@@ -6,7 +6,8 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { getPendingReviews, getTenants } from "@/lib/server/data";
-import { getOverlayQueue, getOverlayDecided, getLastScoutRun } from "@/lib/server/ledger-overlay";
+import { getOverlayQueue, getOverlayDecided, getLastScoutRun, getQueueDemand } from "@/lib/server/ledger-overlay";
+import { needsReviewNow } from "@/lib/trust";
 import { clientTenants } from "@/lib/brain";
 import AdminReviewsView from "@/components/AdminReviewsView";
 import AdminLedgerOverlayView from "@/components/AdminLedgerOverlayView";
@@ -33,6 +34,10 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
     getPendingReviews(), getOverlayQueue(), openRequestCount(), listSources().catch(() => null),
   ]);
   // The badge counts what needs a person: a failing or silent source, or a new sender waiting for approval.
+  // Patch 67: who is waiting on each queue entry. The Ground Truth badge
+  // counts what needs a person now; a source's entry that no client is
+  // waiting on is in the queue and not in the count.
+  const demand = await getQueueDemand(queue.map(q => q.id)).catch(() => ({}));
   const sourcesNeed = (sources ?? []).filter(s => {
     const h = sourceHealth(s).state;
     return h === "failing" || h === "quiet" || awaitingApproval(s);
@@ -41,7 +46,7 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
   const tabs = (
     <AdminTabs active={tab} tabs={[
       { key: "story", href: "/admin/reviews", label: "Story Intelligence", badge: pending.length },
-      { key: "ground-truth", href: "/admin/reviews?tab=ground-truth", label: "Ground Truth", badge: queue.length },
+      { key: "ground-truth", href: "/admin/reviews?tab=ground-truth", label: "Ground Truth", badge: needsReviewNow(queue, demand) },
       { key: "requests", href: "/admin/reviews?tab=requests", label: "Client requests", badge: reqOpen },
       { key: "sources", href: "/admin/reviews?tab=sources", label: "Sources", badge: sourcesNeed },
     ]} />
@@ -85,7 +90,7 @@ export default async function ReviewQueuesPage({ searchParams }: { searchParams:
         <div className="page-head"><div><h2>Review queues</h2><p>What needs a For Granted decision, in one place.</p></div></div>
         {tabs}
         <AdminCuratedLists lists={curated} clients={communityClients} />
-        <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={clientTenants(tenants)} base={{}} />
+        <AdminLedgerOverlayView queue={queue} decided={decided} lastRun={lastRun} tenants={clientTenants(tenants)} base={{}} demand={demand} />
       </div>
     );
   }

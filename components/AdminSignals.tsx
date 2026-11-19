@@ -5,7 +5,9 @@
 // this tab is where sources are added, approved and kept healthy.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { addSourceAction, setSourceActiveAction, checkSourceNowAction, readHeldAction } from "@/lib/server/signals-actions";
+import { addSourceAction, setSourceActiveAction, checkSourceNowAction, readHeldAction, setSourceTrustAction } from "@/lib/server/signals-actions";
+import { matchSignalsNowAction } from "@/lib/server/curated-actions";
+import { TRUST_LABEL, TRUST_WHY, canBeFirstParty } from "@/lib/trust";
 import {
   KIND_LABEL, CATEGORY_LABEL, CATEGORIES, STATUS_LABEL, HEALTH_LABEL, sourceHealth, suggestedFollows, awaitingApproval,
   type SourceRow, type SignalRow, type SourceKind,
@@ -29,7 +31,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ kind: "page", address: "", label: "", category: "funder" });
+  const [form, setForm] = useState({ kind: "page", address: "", label: "", category: "funder", trust: "review" });
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
   };
   const add = async () => {
     if (await run("add", () => addSourceAction(form), "Added. It will be read on the next run (Mondays and Thursdays).")) {
-      setForm({ kind: "page", address: "", label: "", category: "funder" }); setAdding(false);
+      setForm({ kind: "page", address: "", label: "", category: "funder", trust: "review" }); setAdding(false);
     }
   };
 
@@ -59,6 +61,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
   const waiting = sources.filter(awaitingApproval);
   const web = (u: string | null | undefined): u is string => !!u && /^https?:\/\//i.test(u);
   const suggested = suggestedFollows(sources);
+  const firstParty = sources.filter(s => s.trust === "first_party").length;
 
   return (
     <>
@@ -67,8 +70,12 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
           <h3>Sources</h3>
           <span className="cu-sub">
             {sources.length} watched{attention ? `, ${attention} need${attention === 1 ? "s" : ""} a look` : ""}. Read Mondays and Thursdays; what they yield lands in the Ground Truth queue.
+            {" "}{firstParty} publish with a label: an opportunity from a funder&rsquo;s own page or account reaches the clients it fits at once, marked as not yet reviewed. The rest wait for review.
           </span>
           <span className="spacer" />
+          <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy === "match"}
+            title="Screen community members against what the sources have produced. The run does this itself after every read; no AI is used."
+            onClick={() => void run("match", () => matchSignalsNowAction())}>{busy === "match" ? "Screening…" : "Match to clients now"}</button>
           <button type="button" className="sb-btn sb-primary sb-sm" onClick={() => setAdding(a => !a)}>{adding ? "Cancel" : "Add a source"}</button>
         </div>
         {msg && <p className="cu-msg" role="status">{msg}</p>}
@@ -89,13 +96,21 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
                 placeholder={form.kind === "page" ? "The page's address, e.g. https://www.ycombinator.com/apply" : "The handle, e.g. kresge.org or nehgov.bsky.social"} />
               <input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="What to call it, e.g. Y Combinator: apply page" />
             </div>
+            {(form.category === "funder" || form.category === "accelerator") && (
+              <div className="cu-form-row">
+                <select value={form.trust} onChange={e => setForm({ ...form, trust: e.target.value })} aria-label="Whose page or account this is">
+                  <option value="review">Waits for review (news, a roundup, or not sure)</option>
+                  <option value="first_party">The funder&rsquo;s or programme&rsquo;s own: publish with the &ldquo;not yet reviewed&rdquo; label</option>
+                </select>
+              </div>
+            )}
             <p className="cu-sub">Use the funder&rsquo;s or programme&rsquo;s own page, not an aggregator&rsquo;s copy of it. A newsletter is added by subscribing the signals inbox to it; the sender then appears here for approval.</p>
             <button type="button" className="sb-btn sb-primary sb-sm" onClick={() => void add()} disabled={busy === "add" || !form.address.trim()}>{busy === "add" ? "Adding…" : "Add"}</button>
           </div>
         )}
         {sources.length === 0 ? <p className="cu-sub">Nothing is being watched yet. Add a funder&rsquo;s or an accelerator&rsquo;s application page to start.</p> : (
           <table className="do-table sg-table">
-            <thead><tr><th>Source</th><th>Kind</th><th>Covers</th><th>Health</th><th>Last read</th><th>Last produced</th><th></th></tr></thead>
+            <thead><tr><th>Source</th><th>Kind</th><th>Covers</th><th>What it yields</th><th>Health</th><th>Last read</th><th>Last produced</th><th></th></tr></thead>
             <tbody>
               {health.map(({ s, h }) => (
                 <tr key={s.id}>
@@ -106,6 +121,16 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
                   </td>
                   <td>{KIND_LABEL[s.kind]}</td>
                   <td>{CATEGORY_LABEL[s.category]}</td>
+                  <td>
+                    <span className={s.trust === "first_party" ? "ov-tag gt-pending" : "ov-tag"} title={TRUST_WHY[s.trust === "first_party" ? "first_party" : "review"]}>{TRUST_LABEL[s.trust === "first_party" ? "first_party" : "review"]}</span>
+                    {canBeFirstParty(s.kind) && (
+                      <><br /><button type="button" className="sb-btn sb-quiet sb-sm" disabled={busy === `t${s.id}`}
+                        title={s.trust === "first_party" ? "Make everything from this source wait for review." : "Only for the funder's or programme's own page or account, never news or a roundup."}
+                        onClick={() => void run(`t${s.id}`, () => setSourceTrustAction(s.id, s.trust === "first_party" ? "review" : "first_party"),
+                          s.trust === "first_party" ? "Changed. What this source produces from now on waits for review." : "Changed. Opportunities this source produces from now on reach matched clients with the not-yet-reviewed label.")}>
+                        {s.trust === "first_party" ? "Make it wait for review" : "It is the funder's own"}</button></>
+                    )}
+                  </td>
                   <td><span className={HEALTH_TAG[h.state]} title={h.why}>{HEALTH_LABEL[h.state]}</span><br /><span className="sg-why">{h.why}</span></td>
                   <td className="fm-nowrap">{day(s.last_checked_at)}</td>
                   <td className="fm-nowrap">{day(s.last_signal_at ?? s.last_changed_at)}</td>

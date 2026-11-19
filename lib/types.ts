@@ -278,6 +278,11 @@ export interface LedgerOverlayRow {
   review_note: string | null;
   created_at: string;
   updated_at: string;
+  /** Patch 67 (0100): set when a first-party source's opportunity went live with the "not yet reviewed" label. */
+  published_at?: string | null;
+  /** Patch 67 (0100): the signals source it was read from; null for everything that came in another way. */
+  signal_source_id?: string | null;
+  curated_list_id?: string | null;
 }
 
 // A queue row carries the client it came from and who proposed it. The
@@ -287,6 +292,9 @@ export interface OverlayQueueRow extends LedgerOverlayRow {
   tenant_name: string | null;
   proposed_by_name: string | null;
   proposed_by_role: "client" | "admin" | null;
+  /** Patch 67: the watched source's name and tier, when it came from one. */
+  source_label?: string | null;
+  source_trust?: "first_party" | "review" | null;
 }
 
 export interface LedgerScoutRun {

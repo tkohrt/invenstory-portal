@@ -2,6 +2,10 @@
 // The Funder Ledger review queue. Nothing reaches client-facing matching
 // without passing through this page: the bot and client-surfaced verifications
 // only ever write `proposed` rows, and an admin decides each one.
+// Since patch 67 (review at the point of use) one thing is seen by clients
+// before a decision: an opportunity a first-party source produced, on the
+// "Added by For Granted" list only, labelled as not yet reviewed. The queue
+// is ordered by who is waiting (lib/trust.ts).
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -10,6 +14,7 @@ import {
 import OverlayEntryForm from "./OverlayEntryForm";
 import type { OverlayQueueRow, LedgerScoutRun, OverlayKind, OverlayProvenance, Tenant } from "@/lib/types";
 import { filterQueue, queueCounts, type KindFilter, type TypeFilter } from "@/lib/overlay-queue";
+import { bandQueue, demandLine, BAND_LABEL, BAND_WHY, NO_DEMAND, type Demand, type Band } from "@/lib/trust";
 
 const PROVENANCE_LABEL: Record<OverlayProvenance, string> = {
   client_surfaced: "Found working a client",
@@ -52,7 +57,7 @@ function Fields({ fields, base }: { fields: Record<string, unknown>; base?: Reco
   );
 }
 
-function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknown> | null }) {
+function Row({ row, base, demand = NO_DEMAND }: { row: OverlayQueueRow; base?: Record<string, unknown> | null; demand?: Demand }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -84,6 +89,7 @@ function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknow
   const claim = () => run(() => claimOverlayAction(row.id));
 
   const isCorrection = !!row.base_id;
+  const wanted = demandLine(demand);
   return (
     <div className={`ov-row${open ? " ov-open" : ""}`}>
       <div className="ov-head" onClick={() => setOpen(o => !o)}>
@@ -92,7 +98,10 @@ function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknow
         <span className={`ov-tag ${isCorrection ? "ov-fix" : "ov-new"}`}>{isCorrection ? "correction" : "new record"}</span>
         {row.confidence && <span className={`ov-conf ov-conf-${row.confidence}`}>{row.confidence}</span>}
         {row.status === "in_review" && <span className="ov-tag">in review</span>}
+        {row.published_at && <span className="ov-tag gt-pending" title="A matched client can already see this, labelled as not yet reviewed by For Granted. Approving removes the label; rejecting takes it away from them.">live to clients, unreviewed</span>}
+        {wanted && <span className="ov-tag sg-warn" title="Who is waiting on this entry.">{wanted}</span>}
         <span className="ov-spacer" />
+        {row.source_label && <span className="ov-muted">from {row.source_label}</span>}
         {row.proposed_by_role === "client" && <span className="ov-tag ov-client">client-submitted</span>}
         {row.tenant_name && <span className="ov-muted">via {row.tenant_name}</span>}
         <span className="ov-muted">{new Date(row.created_at).toLocaleDateString()}</span>
@@ -102,7 +111,7 @@ function Row({ row, base }: { row: OverlayQueueRow; base?: Record<string, unknow
       {open && (
         <div className="ov-body">
           <div className="ov-meta">
-            <span>{PROVENANCE_LABEL[row.provenance]}</span>
+            <span>{row.source_label ? `Read from ${row.source_label}${row.source_trust === "first_party" ? " (the funder's own)" : " (news or an aggregator)"}` : PROVENANCE_LABEL[row.provenance]}</span>
             <span>·</span>
             <span>
               proposed by {row.proposed_by_name ?? "unknown"}
@@ -160,10 +169,12 @@ function Tab({ on, onClick, label, n, hint }: {
 }
 
 export default function AdminLedgerOverlayView({
-  queue, decided, lastRun, tenants, base = {},
+  queue, decided, lastRun, tenants, base = {}, demand = {},
 }: {
   queue: OverlayQueueRow[]; decided: OverlayQueueRow[]; lastRun: LedgerScoutRun | null;
   tenants: Tenant[]; base?: Record<string, Record<string, unknown>>;
+  /** Patch 67: who is waiting on each entry (matched, following, asked), by entry id. */
+  demand?: Record<string, Demand>;
 }) {
   const [adding, setAdding] = useState(false);
   const [kindF, setKindF] = useState<KindFilter>("all");
@@ -176,13 +187,31 @@ export default function AdminLedgerOverlayView({
   // filter. Where a record came from tells a reviewer how much to trust it; it
   // does not change the decision they are making, so it earns a label and not
   // a tab.
-  const groups: { key: string; label: string; rows: OverlayQueueRow[] }[] = [];
-  for (const kind of ["grant", "funder"] as OverlayKind[]) {
-    for (const prov of ["client_surfaced", "web_discovery", "scout_bot", "manual"] as OverlayProvenance[]) {
-      const rows = visible.filter(r => r.kind === kind && r.provenance === prov);
-      if (rows.length) groups.push({ key: `${kind}:${prov}`, label: `${kind === "grant" ? "Grants" : "Funders"} · ${PROVENANCE_LABEL[prov]}`, rows });
+  //
+  // Patch 67: the queue is drawn in bands by who is waiting, and within a
+  // band by kind and provenance as before. "curated_list" joins the
+  // provenance order here: it was missing, so entries from a pasted list or a
+  // watched source were counted in the tab's badge and never drawn.
+  const bands = bandQueue(visible, demand).map(b => {
+    const groups: { key: string; label: string; rows: OverlayQueueRow[] }[] = [];
+    for (const kind of ["grant", "funder"] as OverlayKind[]) {
+      for (const prov of ["client_surfaced", "web_discovery", "curated_list", "scout_bot", "manual"] as OverlayProvenance[]) {
+        const rows = b.rows.filter(r => r.kind === kind && r.provenance === prov);
+        if (rows.length) groups.push({ key: `${b.band}:${kind}:${prov}`, label: `${kind === "grant" ? "Grants" : "Funders"} · ${PROVENANCE_LABEL[prov]}`, rows });
+      }
     }
-  }
+    return { ...b, groups };
+  });
+  // One band alone, and the ordinary one, needs no heading: the queue reads as it always did.
+  const plain = bands.length === 1 && bands[0].band === "standard";
+  const drawGroups = (groups: { key: string; label: string; rows: OverlayQueueRow[] }[]) => groups.map(g => (
+    <section key={g.key} className="ov-group">
+      <div className="nav-section-label">{g.label} <span className="badge-count">{g.rows.length}</span></div>
+      {g.rows.map(r => <Row key={r.id} row={r} base={r.base_id ? base[r.base_id] ?? null : null} demand={demand[r.id]} />)}
+    </section>
+  ));
+  // What can wait is folded away, so the page opens on what a person is needed for.
+  const folded = (b: Band) => b === "quiet" || b === "live";
 
   return (
     <div>
@@ -194,7 +223,9 @@ export default function AdminLedgerOverlayView({
             Ground Truth is the funder base (a frozen June 2026 snapshot that never changes)
             plus For Granted&apos;s verified corrections and new finds. These are waiting for
             approval before they merge over the base in client matching. Everything here is a lead until
-            someone checks it at the source.
+            someone checks it at the source. An opportunity read from a funder&apos;s own page or account
+            is shown to the clients it fits straight away, labelled as not yet reviewed; it never joins
+            matching or a fit report until it is approved here.
           </p>
         </div>
         <span className="ov-spacer" />
@@ -236,10 +267,17 @@ export default function AdminLedgerOverlayView({
         <div className="empty">Nothing in the queue matches this filter.</div>
       )}
 
-      {groups.map(g => (
-        <section key={g.key} className="ov-group">
-          <div className="nav-section-label">{g.label} <span className="badge-count">{g.rows.length}</span></div>
-          {g.rows.map(r => <Row key={r.id} row={r} base={r.base_id ? base[r.base_id] ?? null : null} />)}
+      {plain ? drawGroups(bands[0].groups) : bands.map(b => folded(b.band) ? (
+        <details key={b.band} className="cu-members ov-band">
+          <summary>{BAND_LABEL[b.band]} ({b.rows.length})</summary>
+          <p className="cu-sub">{BAND_WHY[b.band]}</p>
+          {drawGroups(b.groups)}
+        </details>
+      ) : (
+        <section key={b.band} className="ov-band">
+          <div className="cu-head"><h3>{BAND_LABEL[b.band]}</h3><span className="badge-count">{b.rows.length}</span></div>
+          <p className="cu-sub">{BAND_WHY[b.band]}</p>
+          {drawGroups(b.groups)}
         </section>
       ))}
 

@@ -790,6 +790,10 @@ tr:hover .tri-set .fc-link,.tri-set:focus-within .fc-link{opacity:1}
 .ov-runbar{font-size:12px;color:var(--muted,#666);background:var(--panel,#faf9f7);
   border:1px solid var(--border,#e6e6e6);border-radius:8px;padding:8px 11px;margin-bottom:14px}
 .ov-group{margin-bottom:10px}
+/* Patch 67: the review queue in bands by who is waiting. */
+.ov-band{margin:18px 0 0}
+.ov-band>summary{font-size:14px;font-weight:600;color:var(--ink)}
+.ov-band>.cu-sub{display:block;margin:4px 0 10px}
 .ov-row{border:1px solid var(--border,#e6e6e6);border-radius:10px;margin-bottom:8px;background:var(--panel,#fff)}
 .ov-row.ov-open{border-color:var(--accent,#1f4d2e)}
 .ov-head{display:flex;align-items:center;gap:9px;padding:11px 13px;cursor:pointer;font-size:13px}

@@ -7,6 +7,7 @@
 // For Granted's own list, verified against the funder's own page, and visibly
 // healthy or not, so no aggregator going dark can take the pipeline with it.
 
+import type { Trust } from "@/lib/trust";
 export type SourceKind = "page" | "bluesky" | "email";
 export type SourceCategory = "funder" | "accelerator" | "rfp" | "aggregator";
 export type SourceOrigin = "manual" | "dossier" | "follows" | "inbox";
@@ -26,6 +27,8 @@ export interface SourceRow {
   last_checked_at: string | null; last_ok_at: string | null; last_error: string | null;
   last_hash: string | null; last_changed_at: string | null; last_signal_at: string | null;
   created_at: string;
+  /** Whose words the source carries (patch 67, 0100). Absent before the migration: treated as "review". */
+  trust?: Trust | null;
 }
 
 export interface SignalRow {

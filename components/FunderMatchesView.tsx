@@ -11,7 +11,8 @@ import { useRouter } from "next/navigation";
 import { clearMatchesAction } from "@/lib/server/match-actions";
 import { markFundingSeenAction, dismissFundingNoticeAction } from "@/lib/server/account-actions";
 import { toggleSavedAction } from "@/lib/server/saved-actions";
-import { requestCuratedDraftAction } from "@/lib/server/curated-actions";
+import { requestCuratedDraftAction, toggleCuratedFollowAction } from "@/lib/server/curated-actions";
+import { UNREVIEWED_LABEL, UNREVIEWED_WHY } from "@/lib/trust";
 import type { CuratedMatchRow } from "@/lib/curated";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
@@ -618,12 +619,20 @@ export default function FunderMatchesView({
       }
       // Curated-list rung (P2.5, patch 39): second in the decided ladder.
       // Keyed by the sweep stamp, so a re-sweep with news shows again.
+      // Patch 67: the bar speaks for what For Granted has reviewed first
+      // (the list arrives reviewed-first). An opportunity nobody has checked
+      // is never called "mission-aligned" or "added by For Granted": it is
+      // news from a funder's own page, and says so.
       const curated = curatedMatches.find(c => !isDismissed(`curated:${c.list_id}:${c.swept_at}`));
       if (curated) {
-        const others = curatedMatches.filter(c => c.list_id === curated.list_id).length - 1;
+        const same = curatedMatches.filter(c => c.list_id === curated.list_id && c.reviewed === curated.reviewed);
+        const others = same.length - 1;
+        const more = others > 0 ? ` (and ${others} more)` : "";
         return {
           key: `curated:${curated.list_id}:${curated.swept_at}`,
-          text: `A new mission-aligned opportunity was added by For Granted: ${curated.title}${others > 0 ? ` (and ${others} more)` : ""}.`,
+          text: curated.reviewed
+            ? `A new mission-aligned opportunity was added by For Granted: ${curated.title}${more}.`
+            : `New from a funder's own page, and not yet reviewed by For Granted: ${curated.title}${more}.`,
           cta: { href: "#fm-curated", label: "See it" },
         };
       }
@@ -1099,7 +1108,8 @@ export default function FunderMatchesView({
           draft button files a request in the inbox rather than relying on
           anyone's memory. */}
       {mode === "grants" && curatedMatches.length > 0 && (
-        <CuratedSection rows={curatedMatches} viewingAsClient={viewingAsClient} />
+        <CuratedSection rows={curatedMatches} viewingAsClient={viewingAsClient}
+          followed={savedItems.filter(s2 => s2.kind === "grant").map(s2 => s2.target_id)} />
       )}
 
       {/* Saved for later (patch 26): the client's own bucket. Not a snapshot;
@@ -1347,11 +1357,19 @@ export default function FunderMatchesView({
   );
 }
 
-/** Added by For Granted (P2.5, patch 39): the curated-list matches. */
-function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; viewingAsClient: boolean }) {
+/**
+ * Added by For Granted (P2.5, patch 39): the curated-list matches. Since
+ * patch 67 some rows were read from a funder's own page or account and have
+ * not been reviewed yet; each of those wears the label, and the section says
+ * so in a sentence. Any row can be added to the Following list.
+ */
+function CuratedSection({ rows, viewingAsClient, followed }: { rows: CuratedMatchRow[]; viewingAsClient: boolean; followed: string[] }) {
   const [asked, setAsked] = useState<string[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // The star answers at once; the server's answer wins.
+  const [follow, setFollow] = useState<Record<string, boolean>>({});
+  const isFollowed = (id: string) => follow[id] ?? followed.includes(id);
   const ask = async (r: CuratedMatchRow) => {
     setBusyId(r.overlay_id); setErr(null);
     const res = await requestCuratedDraftAction(r.overlay_id, r.title).catch(() => ({ ok: false as const, error: "That did not send. Try again." }));
@@ -1359,9 +1377,18 @@ function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; vi
     if (!res.ok) { setErr(res.error); return; }
     setAsked(a => [...a, r.overlay_id]);
   };
+  const toggleFollow = async (r: CuratedMatchRow) => {
+    const next = !isFollowed(r.overlay_id);
+    setErr(null); setFollow(f => ({ ...f, [r.overlay_id]: next }));
+    const res = await toggleCuratedFollowAction(r.overlay_id).catch(() => ({ ok: false as const, error: "That did not save. Try again." }));
+    if (!res.ok) { setFollow(f => ({ ...f, [r.overlay_id]: !next })); setErr(res.error); }
+  };
   const day = (ymd: string) => new Date(`${ymd.slice(0, 10)}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-  const lists = [...new Set(rows.map(r => r.list_name))];
-  const context = rows.find(r => r.context_note)?.context_note ?? null;
+  // A list's name is shown only when every row is a reviewed entry from that one list; a signals week is not a list a client would know.
+  const lists = [...new Set(rows.filter(r => r.reviewed).map(r => r.list_name))];
+  const context = rows.find(r => r.reviewed && r.context_note)?.context_note ?? null;
+  const unreviewed = rows.filter(r => !r.reviewed).length;
+  const allReviewed = unreviewed === 0;
   return (
     <section id="fm-curated" className="fm-sec" aria-labelledby="fm-curated-h">
       <div className="fm-sec-head">
@@ -1369,10 +1396,13 @@ function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; vi
         <span className="fm-count">{rows.length}</span>
       </div>
       <p className="ov-note" style={{ marginTop: 2 }}>
-        Opportunities For Granted found{lists.length === 1 ? ` (${lists[0]})` : ""}, screened against your eligibility. Done once, shared with every community member.
+        {allReviewed
+          ? <>Opportunities For Granted found{lists.length === 1 ? ` (${lists[0]})` : ""}, screened against your eligibility. Done once, shared with every community member.</>
+          : <>Opportunities from the funders and programmes For Granted watches, screened against your eligibility. {unreviewed === rows.length ? "These were" : `${unreviewed} of these ${unreviewed === 1 ? "was" : "were"}`} read
+            automatically from the funder&rsquo;s own page or account and {unreviewed === 1 ? "is" : "are"} marked &ldquo;{UNREVIEWED_LABEL}&rdquo;: confirm the details at the source. Ask For Granted to start a draft and it is reviewed first.</>}
       </p>
       {context && <div className="cu-context"><b>From For Granted:</b> {context}</div>}
-      {err && <p className="cl-error">{err}</p>}
+      {err && <p className="cl-error" role="alert">{err}</p>}
       <div className="cu-match-list">
         {rows.map(r => (
           <div key={r.overlay_id} className="cu-match">
@@ -1386,9 +1416,14 @@ function CuratedSection({ rows, viewingAsClient }: { rows: CuratedMatchRow[]; vi
                   ? <span title="An investment, not a grant. These are the terms as the programme's own page states them; confirm them there before applying.">Terms: {r.terms}</span>
                   : r.max_award != null && <span>Up to ${Math.round(r.max_award).toLocaleString()}</span>}
               </span>
-              {r.notes && <span className="cu-match-notes">{r.notes}</span>}
+              {/* For Granted's own notes are shown only once it has reviewed the entry: before that, "notes" is whatever the page said. */}
+              {r.reviewed && r.notes && <span className="cu-match-notes">{r.notes}</span>}
+              {!r.reviewed && <span><span className="ov-tag gt-pending" title={UNREVIEWED_WHY}>{UNREVIEWED_LABEL}</span></span>}
             </div>
             <div className="cu-match-verbs">
+              <button type="button" className={`fm-star${isFollowed(r.overlay_id) ? " fm-star-on" : ""}`} aria-pressed={isFollowed(r.overlay_id)}
+                title={isFollowed(r.overlay_id) ? "Remove from your Following list." : "Add to your Following list, shared with your team."}
+                onClick={() => void toggleFollow(r)}>{isFollowed(r.overlay_id) ? "★ Saved" : "☆ Save"}</button>
               {!viewingAsClient && <ClientVerdict kind="grant" targetId={r.overlay_id} view={null} mode="client" />}
               {r.website && <a className="sb-btn sb-secondary sb-sm" href={r.website} target="_blank" rel="noopener noreferrer">View the opportunity</a>}
               {asked.includes(r.overlay_id)
