@@ -111,7 +111,7 @@ function Row({ row, base, demand = NO_DEMAND }: { row: OverlayQueueRow; base?: R
       {open && (
         <div className="ov-body">
           <div className="ov-meta">
-            <span>{row.source_label ? `Read from ${row.source_label}${row.source_trust === "first_party" ? " (the funder's own)" : " (news or an aggregator)"}` : PROVENANCE_LABEL[row.provenance]}</span>
+            <span>{row.source_label ? `Read from ${row.source_label}${row.source_trust === "first_party" ? " (the funder's own, publishes with a label)" : " (waits for review)"}` : PROVENANCE_LABEL[row.provenance]}</span>
             <span>·</span>
             <span>
               proposed by {row.proposed_by_name ?? "unknown"}

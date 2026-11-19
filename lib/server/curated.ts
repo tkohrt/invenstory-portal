@@ -60,9 +60,36 @@ export async function fileLeads(
 ): Promise<number> {
   let filed = 0;
   const now = new Date().toISOString();
+  // Entries this source had rejected, by the page they sit on, read once per page (see rejectedTwin).
+  const rejectedOn = new Map<string, { title: string | null; source_url: string }[]>();
+  /**
+   * "A rejected entry stays rejected" has to survive a page being re-read.
+   * An opportunity with no link of its own is filed at "page#its-title-and-
+   * deadline", and the title is the reader's wording: the same thing can come
+   * back under a slightly different address. So a NEW entry on a page where
+   * this source already had an entry rejected under the same title (one title
+   * containing the other counts) is filed waiting, not published.
+   */
+  const rejectedTwin = async (url: string, title: string): Promise<boolean> => {
+    if (!from || !url.includes("#")) return false;
+    const page = url.slice(0, url.indexOf("#"));
+    let known = rejectedOn.get(page);
+    if (!known) {
+      // tenant-safe: the shared review queue (no tenant_id), one source's rejected entries on one page.
+      const { data, error } = await db.from("ledger_overlay").select("title, source_url")
+        .eq("signal_source_id", from.id).eq("status", "rejected").like("source_url", `${page.replace(/[%_\\]/g, "\\$&")}#%`).limit(200);
+      // A lookup that fails holds the entry: unsure is not published.
+      if (error) { console.error("[curated] rejected-entry check failed", error.message); return !lacks0100(error); }
+      known = (data ?? []) as { title: string | null; source_url: string }[];
+      rejectedOn.set(page, known);
+    }
+    const norm = (t: string | null) => (t ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const mine = norm(title);
+    return !!mine && known.some(k => { const theirs = norm(k.title); return !!theirs && (theirs.includes(mine) || mine.includes(theirs)); });
+  };
   for (const l of leads) {
     const draft = overlayDraft(l, []);
-    const live = publishes(from, { kind: draft.kind, title: draft.title, source_url: draft.source_url });
+    let live = publishes(from, { kind: draft.kind, title: draft.title, source_url: draft.source_url });
     type Known = { id: string; kind: string; status: string; curated_list_id: string | null; published_at?: string | null; signal_source_id?: string | null };
     let existing: Known | null = null;
     if (draft.source_url) {
@@ -78,21 +105,26 @@ export async function fileLeads(
       existing = r.data as unknown as Known | null;
     }
     if (existing) {
-      const patch: Record<string, unknown> = {};
       // Already known: tie it to this list too, so the sweep can carry it.
-      if (!existing.curated_list_id) patch.curated_list_id = listId;
-      // Known and still waiting, and now a first-party source states it too:
-      // it goes live with the label. One a person already decided is never
-      // touched, so a rejected entry stays rejected however often it is re-read.
-      const waiting = existing.status === "proposed" || existing.status === "in_review";
-      if (live && waiting && existing.kind === "grant" && existing.published_at === null) {
-        patch.published_at = now;
-        if (!existing.signal_source_id && from) patch.signal_source_id = from.id;
-      }
       // tenant-safe: the shared review queue, one row by id.
-      if (Object.keys(patch).length) await db.from("ledger_overlay").update(patch).eq("id", existing.id);
+      if (!existing.curated_list_id) await db.from("ledger_overlay").update({ curated_list_id: listId }).eq("id", existing.id);
+      // Known, still waiting, first filed by another SIGNALS source, and now
+      // a first-party source states it too: it goes live with the label, and
+      // what clients read is the first-party source's own account of it (its
+      // fields and title replace the earlier reader's), filed under that
+      // source. Never an entry a person already decided, and never one that
+      // came in another way (by hand, a client's web search, a pasted list):
+      // those are reviewed as they always were.
+      const waiting = existing.status === "proposed" || existing.status === "in_review";
+      if (live && from && waiting && existing.kind === "grant" && existing.published_at === null && existing.signal_source_id) {
+        // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
+        await db.from("ledger_overlay").update({
+          published_at: now, signal_source_id: from.id, fields: draft.fields, title: draft.title.slice(0, 300),
+        }).eq("id", existing.id).in("status", ["proposed", "in_review"]);
+      }
       continue;
     }
+    if (live && await rejectedTwin(draft.source_url, draft.title)) live = false;
     const row = {
       kind: draft.kind, base_id: null, ein: null,
       opportunity_number: draft.kind === "grant" ? draft.source_url.slice(0, 400) : null,
@@ -202,7 +234,8 @@ export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<
   if (!open.length) return { ok: true, entries: 0, tenants: 0, matches: 0, unfinished: false };
 
   // tenant-safe: membership flags across all clients are For Granted's own fan-out list.
-  const { data: tenants } = await db.from("tenant").select("id, community_member, is_brain").limit(200);
+  const { data: tenants, error: tenantErr } = await db.from("tenant").select("id, community_member, is_brain").limit(200);
+  if (tenantErr) return { ok: false, error: "The client list could not be read. Try again." };
   const members = ((tenants ?? []) as { id: string; community_member: boolean | null; is_brain: boolean | null }[])
     .filter(t => t.community_member === true && t.is_brain !== true).slice(0, MAX_TENANTS);
 
@@ -212,7 +245,8 @@ export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<
     done += 1;
     const p = await getEligibilityProfile(t.id).catch(() => null);
     if (!p || !p.org_type) continue;
-    const { data: had, error: hadErr } = await db.from("curated_match").select("overlay_id").eq("tenant_id", t.id).in("overlay_id", open.map(e => e.id));
+    // Every match this client already has (a client's list is short; the entries' ids are not sent, as hundreds of them would outgrow one request).
+    const { data: had, error: hadErr } = await db.from("curated_match").select("overlay_id").eq("tenant_id", t.id).limit(5000);
     if (hadErr) { console.error("[curated] signals sweep: matches not read", hadErr.message); continue; }
     const known = new Set(((had ?? []) as { overlay_id: string }[]).map(m => m.overlay_id));
     const rows: { tenant_id: string; list_id: string; overlay_id: string; verdict: string; swept_at: string }[] = [];
@@ -253,15 +287,22 @@ export async function getCuratedLists(): Promise<CuratedListRow[]> {
   }));
 }
 
+const MATCH_WINDOW = 600;
 const MACHINE_NOTE = "The exact page was not among the search results: check the link.";
 type EntryRow = { id: string; fields: Record<string, unknown>; status: string; published_at?: string | null };
 /** Queue entries by id, with the published stamp when migration 0100 is in. */
 async function readEntries(ids: string[]): Promise<{ data: EntryRow[] | null }> {
   // tenant-safe: shared overlay entries, read by the ids this tenant's matches point at; client-safe fields only are shipped to the page.
-  const read = (cols: string) => db.from("ledger_overlay").select(cols).in("id", ids);
-  let r = await read("id, fields, status, published_at");
-  if (lacks0100(r.error)) r = await read("id, fields, status");
-  return { data: (r.data ?? null) as unknown as EntryRow[] | null };
+  const out: EntryRow[] = [];
+  // A hundred ids at a time, so a long list never outgrows one request.
+  for (let i = 0; i < ids.length; i += 100) {
+    const read = (cols: string) => db.from("ledger_overlay").select(cols).in("id", ids.slice(i, i + 100));
+    let r = await read("id, fields, status, published_at");
+    if (lacks0100(r.error)) r = await read("id, fields, status");
+    if (r.error) { console.error("[curated] entries not read", r.error.message); return { data: null }; }
+    out.push(...((r.data ?? []) as unknown as EntryRow[]));
+  }
+  return { data: out };
 }
 
 /**
@@ -285,7 +326,7 @@ export async function visibleEntry(tenantId: string, overlayId: string): Promise
  * up, so a saved id cannot be used to probe the shared queue.
  */
 export async function followedStandings(tenantId: string, ids: string[]): Promise<Record<string, "unreviewed" | "withdrawn">> {
-  const uuids = [...new Set(ids.filter(i => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)))].slice(0, 300);
+  const uuids = [...new Set(ids.filter(i => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)))].slice(0, 100);
   if (!uuids.length) return {};
   const { data: mine } = await db.from("curated_match").select("overlay_id").eq("tenant_id", tenantId).in("overlay_id", uuids);
   const own = ((mine ?? []) as { overlay_id: string }[]).map(m => m.overlay_id);
@@ -300,8 +341,11 @@ export async function followedStandings(tenantId: string, ids: string[]): Promis
 
 /** What this client was matched with, newest sweep first. Open entries only. */
 export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchRow[]> {
+  // Read wide, filter, then keep 40 (review of patch 67): the signals screen
+  // also writes matches on entries still waiting unseen, and a short window
+  // taken first would let those push everything visible off the client's page.
   const { data } = await db.from("curated_match").select("overlay_id, list_id, verdict, swept_at")
-    .eq("tenant_id", tenantId).order("swept_at", { ascending: false }).limit(40);
+    .eq("tenant_id", tenantId).order("swept_at", { ascending: false }).limit(MATCH_WINDOW);
   let rows = (data ?? []) as { overlay_id: string; list_id: string; verdict: string; swept_at: string }[];
   if (!rows.length) return [];
   // The feedback loop (patch 44): a curated entry the client marked "Not for
@@ -342,8 +386,9 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
     const raw = seen === "reviewed" && typeof e.fields.notes === "string" ? e.fields.notes.replace(MACHINE_NOTE, "").trim() : "";
     const notes = raw || null;
     out.push({
-      overlay_id: r.overlay_id, list_id: r.list_id, list_name: l.name,
-      context_note: l.context_note, swept_at: r.swept_at, verdict: r.verdict,
+      // A list's name and note are For Granted's words about entries it reviewed; an unreviewed row carries neither.
+      overlay_id: r.overlay_id, list_id: r.list_id, list_name: seen === "reviewed" ? l.name : "",
+      context_note: seen === "reviewed" ? l.context_note : null, swept_at: r.swept_at, verdict: r.verdict,
       title: c.title ?? "Untitled opportunity", funder: c.agency ?? null,
       close_date: c.close_date ?? null, max_award: c.max_award ?? null,
       website: c.website ?? null, notes,
@@ -352,7 +397,7 @@ export async function getCuratedMatches(tenantId: string): Promise<CuratedMatchR
     });
   }
   // What For Granted has checked comes first; the order within each is unchanged (newest sweep first).
-  return [...out.filter(r => r.reviewed), ...out.filter(r => !r.reviewed)];
+  return [...out.filter(r => r.reviewed), ...out.filter(r => !r.reviewed)].slice(0, 40);
 }
 
 /** The membership manager's rows. */

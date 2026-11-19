@@ -81,18 +81,24 @@ export async function getQueueDemand(ids: string[]): Promise<Record<string, Dema
   const out: Record<string, Demand> = {};
   if (!ids.length) return out;
   const at = (id: string) => (out[id] ??= { matched: 0, followed: 0, asked: 0 });
-  const [m, f, a] = await Promise.all([
-    // tenant-safe: an admin-only count across clients of who each shared entry was matched to; no client content is read.
-    db.from("curated_match").select("overlay_id, tenant_id").in("overlay_id", ids).limit(5000),
-    // tenant-safe: an admin-only count across clients of who follows each shared entry; no client content is read.
-    db.from("saved_item").select("target_id, tenant_id").eq("kind", "grant").in("target_id", ids).limit(5000),
-    // tenant-safe: an admin-only count of open draft requests per shared entry; the inbox itself is admin-only.
-    db.from("client_request").select("source_key, tenant_id").eq("status", "open").in("source_key", ids.map(i => `draft:${i}`)).limit(5000),
-  ]);
   const uniq = (rows: { k: string; t: string | null }[]) => [...new Set(rows.map(r => `${r.k}|${r.t ?? ""}`))].map(x => x.split("|")[0]);
-  for (const id of uniq(((m.data ?? []) as { overlay_id: string; tenant_id: string }[]).map(r => ({ k: r.overlay_id, t: r.tenant_id })))) at(id).matched += 1;
-  for (const id of uniq(((f.data ?? []) as { target_id: string; tenant_id: string }[]).map(r => ({ k: r.target_id, t: r.tenant_id })))) at(id).followed += 1;
-  for (const id of uniq(((a.data ?? []) as { source_key: string; tenant_id: string | null }[]).map(r => ({ k: r.source_key.replace(/^draft:/, ""), t: r.tenant_id })))) at(id).asked += 1;
+  // A hundred ids at a time: a long queue's ids in one request would outgrow the address it is sent in.
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const [m, f, a] = await Promise.all([
+      // tenant-safe: an admin-only count across clients of who each shared entry was matched to; no client content is read.
+      db.from("curated_match").select("overlay_id, tenant_id").in("overlay_id", part).limit(5000),
+      // tenant-safe: an admin-only count across clients of who follows each shared entry; no client content is read.
+      db.from("saved_item").select("target_id, tenant_id").eq("kind", "grant").in("target_id", part).limit(5000),
+      // tenant-safe: an admin-only count of open draft requests per shared entry; the inbox itself is admin-only.
+      db.from("client_request").select("source_key, tenant_id").eq("status", "open").in("source_key", part.map(x => `draft:${x}`)).limit(5000),
+    ]);
+    // Said in the log, never silently zero: a failed count would fold away entries clients are waiting on.
+    for (const r of [m, f, a]) if (r.error) console.error("[overlay] queue demand not read", r.error.message);
+    for (const id of uniq(((m.data ?? []) as { overlay_id: string; tenant_id: string }[]).map(r => ({ k: r.overlay_id, t: r.tenant_id })))) at(id).matched += 1;
+    for (const id of uniq(((f.data ?? []) as { target_id: string; tenant_id: string }[]).map(r => ({ k: r.target_id, t: r.tenant_id })))) at(id).followed += 1;
+    for (const id of uniq(((a.data ?? []) as { source_key: string; tenant_id: string | null }[]).map(r => ({ k: r.source_key.replace(/^draft:/, ""), t: r.tenant_id })))) at(id).asked += 1;
+  }
   return out;
 }
 

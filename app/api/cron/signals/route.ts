@@ -38,6 +38,8 @@ export async function GET(req: Request) {
   } catch (e) {
     // Most likely migration 0098 has not been applied yet.
     console.error("[signals] run failed", e);
+    // What earlier runs filed is still screened for clients, so one bad read does not also cost a run's matching.
+    out.matched = await sweepSignalEntries(started + 285_000).catch(() => null);
     return NextResponse.json({ error: "signals run failed", ...out }, { status: 500 });
   }
   if (budget.parses <= 0) console.error("[signals] the run used its whole parse budget; anything unread waits for the next run");

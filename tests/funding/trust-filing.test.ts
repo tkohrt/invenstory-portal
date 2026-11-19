@@ -20,14 +20,23 @@ vi.mock("@/lib/server/db", () => ({
       if (table !== "ledger_overlay") throw new Error(`unexpected table ${table}`);
       return {
         select(cols: string) {
-          let url: unknown;
+          const eqs: Record<string, unknown> = {};
+          let like: string | null = null;
           const q = {
-            eq(_c: string, v: unknown) { url = v; return q; },
-            limit() { return q; },
+            eq(c: string, v: unknown) { eqs[c] = v; return q; },
+            like(_c: string, pattern: string) { like = pattern; return q; },
+            // Awaited after .limit(): the "rejected entries on this page" list.
+            limit() {
+              const many = async () => {
+                const prefix = (like ?? "").replace(/%$/, "").replace(/\\(.)/g, "$1");
+                return { data: state.rows.filter(x => Object.entries(eqs).every(([k, v]) => x[k] === v) && String(x.source_url).startsWith(prefix)).map(x => ({ ...x })), error: null };
+              };
+              return Object.assign(q, { then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => many().then(ok, bad) });
+            },
             async maybeSingle() {
               if (state.failRead) return { data: null, error: { message: "connection reset" } };
               if (missing(cols)) return { data: null, error: { message: "column ledger_overlay.published_at does not exist" } };
-              const r = state.rows.find(x => x.source_url === url) ?? null;
+              const r = state.rows.find(x => x.source_url === eqs.source_url) ?? null;
               return { data: r ? { ...r } : null, error: null };
             },
           };
@@ -39,7 +48,12 @@ vi.mock("@/lib/server/db", () => ({
           return { error: null };
         },
         update(patch: Row) {
-          return { async eq(_c: string, id: unknown) { const r = state.rows.find(x => x.id === id); if (r) Object.assign(r, patch); return { error: null }; } };
+          return {
+            eq(_c: string, id: unknown) {
+              const apply = (statuses?: unknown[]) => { const r = state.rows.find(x => x.id === id); if (r && (!statuses || statuses.includes(r.status))) Object.assign(r, patch); return { error: null }; };
+              return { in: async (_c2: string, statuses: unknown[]) => apply(statuses), then: (ok: (v: unknown) => unknown) => Promise.resolve(apply()).then(ok) };
+            },
+          };
         },
       };
     },
@@ -80,12 +94,39 @@ describe("fileLeads and the trust tier", () => {
     expect(state.rows[0].kind).toBe("funder");
     expect(state.rows[0].published_at).toBeNull();
   });
-  it("publishes a waiting entry when a first-party source later states it too, keeping its first source", async () => {
-    await fileLeads("list1", leads([{ title: "Fellowship", url: "https://kresge.org/f" }]), null, news);
-    expect(await fileLeads("list1", leads([{ title: "Fellowship", url: "https://kresge.org/f" }]), null, own)).toBe(0);
+  it("publishes a waiting signals entry when a first-party source later states it too, in the first-party source's own words", async () => {
+    await fileLeads("list1", leads([{ title: "Fellowship (as the roundup put it)", url: "https://kresge.org/f" }]), null, news);
+    expect(await fileLeads("list1", leads([{ title: "Kresge Artist Fellowships", url: "https://kresge.org/f" }]), null, own)).toBe(0);
     expect(state.rows).toHaveLength(1);
     expect(typeof state.rows[0].published_at).toBe("string");
-    expect(state.rows[0].signal_source_id).toBe("src-news");
+    expect(state.rows[0].signal_source_id).toBe("src-own");
+    expect(state.rows[0].title).toBe("Kresge Artist Fellowships");
+    expect((state.rows[0].fields as { title: string }).title).toBe("Kresge Artist Fellowships");
+  });
+  it.each(["web_discovery", "manual", "curated_list"])("leaves a waiting entry that came in another way (%s, no source) exactly as it was", async provenance => {
+    state.rows.push({ id: "old", kind: "grant", status: "proposed", provenance, curated_list_id: "list0", published_at: null, signal_source_id: null, title: "Theirs", source_url: "https://www.neh.gov/a" });
+    await fileLeads("list1", leads([{ title: "Collections Stewardship", url: "https://www.neh.gov/a" }]), null, own);
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0].published_at).toBeNull();
+    expect(state.rows[0].signal_source_id).toBeNull();
+    expect(state.rows[0].title).toBe("Theirs");
+  });
+  it("holds a new entry on a page where this source had the same title rejected under another address", async () => {
+    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: "2026-11-01T00:00:00Z", signal_source_id: "src-own",
+      title: "Techstars Boulder", source_url: "https://www.techstars.com/accelerators#techstars-boulder-2026-12-01" });
+    // Two calls: the parser's own dedupe keys on the page, and it is the filing rule under test here.
+    expect(await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator-2027-01-15" }]), null, own)).toBe(1);
+    expect(await fileLeads("list1", leads([{ title: "Techstars Chicago", url: "https://www.techstars.com/accelerators#techstars-chicago" }]), null, own)).toBe(1);
+    const boulder = state.rows.find(r => r.title === "Techstars Boulder Accelerator")!;
+    const chicago = state.rows.find(r => r.title === "Techstars Chicago")!;
+    expect(boulder.published_at).toBeNull();
+    expect(typeof chicago.published_at).toBe("string");
+  });
+  it("does not hold an entry because ANOTHER source had that title rejected", async () => {
+    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: null, signal_source_id: "src-news",
+      title: "Techstars Boulder", source_url: "https://www.techstars.com/accelerators#techstars-boulder" });
+    await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator" }]), null, own);
+    expect(typeof state.rows.find(r => r.title === "Techstars Boulder Accelerator")!.published_at).toBe("string");
   });
   it("does not publish a waiting entry because a review source repeats it", async () => {
     await fileLeads("list1", leads([{ title: "Fellowship", url: "https://kresge.org/f" }]), null, news);

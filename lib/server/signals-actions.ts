@@ -51,10 +51,11 @@ export async function setSourceTrustAction(id: string, trust: string): Promise<R
   const s = await admin();
   if (!s) return { ok: false, error: "For Granted only." };
   if (!isTrust(trust)) return { ok: false, error: "Choose one of the two." };
-  const { data } = await db.from("signal_source").select("id, kind, label").eq("id", String(id)).maybeSingle();
-  const src = data as { id: string; kind: string; label: string } | null;
+  const { data } = await db.from("signal_source").select("id, kind, label, category").eq("id", String(id)).maybeSingle();
+  const src = data as { id: string; kind: string; label: string; category: string } | null;
   if (!src) return { ok: false, error: "That source is not on file." };
   if (trust === "first_party" && !canBeFirstParty(src.kind)) return { ok: false, error: "Mail always waits for review: a sender's address does not prove who wrote it." };
+  if (trust === "first_party" && !canBeFirstParty(src.kind, src.category)) return { ok: false, error: "An aggregator or a procurement portal carries other people's opportunities, so what it yields waits for review." };
   const { error } = await db.from("signal_source").update({ trust }).eq("id", src.id);
   if (error) return { ok: false, error: "That did not save. Has migration 0100 been applied?" };
   await db.from("audit_log").insert({

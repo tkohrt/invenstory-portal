@@ -14,10 +14,11 @@ describe("defaultTrust", () => {
     expect(defaultTrust({ kind: "page", category: "funder", origin: "manual" })).toBe("first_party");
     expect(defaultTrust({ kind: "page", category: "accelerator", origin: "manual" })).toBe("first_party");
   });
-  it("starts a Bluesky account found on a funder's own site as first-party, and a followed one in review", () => {
-    expect(defaultTrust({ kind: "bluesky", category: "funder", origin: "dossier" })).toBe("first_party");
+  it("starts every Bluesky account in review, however it arrived: a person says whose it is", () => {
+    expect(defaultTrust({ kind: "bluesky", category: "funder", origin: "dossier" })).toBe("review");
     expect(defaultTrust({ kind: "bluesky", category: "funder", origin: "follows" })).toBe("review");
     expect(defaultTrust({ kind: "bluesky", category: "funder", origin: "manual" })).toBe("review");
+    expect(defaultTrust({ kind: "page", category: "funder", origin: "dossier" })).toBe("review");
   });
   it("never starts mail, an aggregator or a procurement portal as first-party", () => {
     expect(defaultTrust({ kind: "email", category: "funder", origin: "inbox" })).toBe("review");
@@ -28,6 +29,10 @@ describe("defaultTrust", () => {
     expect(canBeFirstParty("page")).toBe(true);
     expect(canBeFirstParty("bluesky")).toBe(true);
     expect(canBeFirstParty("email")).toBe(false);
+    expect(canBeFirstParty("page", "funder")).toBe(true);
+    expect(canBeFirstParty("bluesky", "accelerator")).toBe(true);
+    expect(canBeFirstParty("bluesky", "aggregator")).toBe(false);
+    expect(canBeFirstParty("page", "rfp")).toBe(false);
     expect(isTrust("first_party")).toBe(true);
     expect(isTrust("trusted")).toBe(false);
   });

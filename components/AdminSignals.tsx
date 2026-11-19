@@ -70,7 +70,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
           <h3>Sources</h3>
           <span className="cu-sub">
             {sources.length} watched{attention ? `, ${attention} need${attention === 1 ? "s" : ""} a look` : ""}. Read Mondays and Thursdays; what they yield lands in the Ground Truth queue.
-            {" "}{firstParty} publish with a label: an opportunity from a funder&rsquo;s own page or account reaches the clients it fits at once, marked as not yet reviewed. The rest wait for review.
+            {" "}{firstParty} {firstParty === 1 ? "publishes" : "publish"} with a label: an opportunity from a funder&rsquo;s own page or account reaches the clients it fits at once, marked as not yet reviewed. The rest wait for review.
           </span>
           <span className="spacer" />
           <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy === "match"}
@@ -123,7 +123,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
                   <td>{CATEGORY_LABEL[s.category]}</td>
                   <td>
                     <span className={s.trust === "first_party" ? "ov-tag gt-pending" : "ov-tag"} title={TRUST_WHY[s.trust === "first_party" ? "first_party" : "review"]}>{TRUST_LABEL[s.trust === "first_party" ? "first_party" : "review"]}</span>
-                    {canBeFirstParty(s.kind) && (
+                    {canBeFirstParty(s.kind, s.category) && (
                       <><br /><button type="button" className="sb-btn sb-quiet sb-sm" disabled={busy === `t${s.id}`}
                         title={s.trust === "first_party" ? "Make everything from this source wait for review." : "Only for the funder's or programme's own page or account, never news or a roundup."}
                         onClick={() => void run(`t${s.id}`, () => setSourceTrustAction(s.id, s.trust === "first_party" ? "review" : "first_party"),

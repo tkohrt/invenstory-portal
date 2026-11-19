@@ -28,24 +28,29 @@ export const UNREVIEWED_WHY = "Read automatically from the funder's own page or 
 export const isTrust = (v: unknown): v is Trust => v === "first_party" || v === "review";
 
 /**
- * What a new source starts as. Only two kinds start as first-party: a page
- * For Granted added as a funder's or an accelerator's own, and a Bluesky
- * handle found on a funder's own website (a dossier lookup). A followed
- * Bluesky account starts in review, because following is also how news
- * accounts are added, and a person says which it is. Mail never publishes
- * unreviewed: a sender's address proves nothing about who wrote it.
+ * What a new source starts as when nobody said. Only a page For Granted
+ * itself added as a funder's or an accelerator's own starts first-party.
+ * Every Bluesky account starts in review, however it arrived: following is
+ * also how news accounts are added, and a handle read off a funder's website
+ * may be a partner's. A person says which it is, once, on the Sources tab.
+ * Mail never publishes unreviewed: a sender's address proves nothing about
+ * who wrote it.
  */
 export function defaultTrust(s: { kind: string; category: string; origin: string }): Trust {
   if (s.kind === "email") return "review";
   if (s.category !== "funder" && s.category !== "accelerator") return "review";
-  if (s.kind === "page") return s.origin === "manual" ? "first_party" : "review";
-  if (s.kind === "bluesky") return s.origin === "dossier" ? "first_party" : "review";
-  return "review";
+  return s.kind === "page" && s.origin === "manual" ? "first_party" : "review";
 }
 
-/** A source may be set first-party only if it is a page or an account, never mail. */
-export function canBeFirstParty(kind: string): boolean {
-  return kind === "page" || kind === "bluesky";
+/**
+ * A source may be first-party only if it is a page or an account (never
+ * mail), and, when its category is given, only a funder's or an
+ * accelerator's: an aggregator or a procurement portal carries other
+ * people's words by definition.
+ */
+export function canBeFirstParty(kind: string, category?: string | null): boolean {
+  if (kind !== "page" && kind !== "bluesky") return false;
+  return category == null || category === "funder" || category === "accelerator";
 }
 
 const web = (u: unknown): u is string => typeof u === "string" && /^https?:\/\//i.test(u);

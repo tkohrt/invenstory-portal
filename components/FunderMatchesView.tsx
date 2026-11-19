@@ -632,7 +632,7 @@ export default function FunderMatchesView({
           key: `curated:${curated.list_id}:${curated.swept_at}`,
           text: curated.reviewed
             ? `A new mission-aligned opportunity was added by For Granted: ${curated.title}${more}.`
-            : `New from a funder's own page, and not yet reviewed by For Granted: ${curated.title}${more}.`,
+            : `New from a funder's own page or account, and not yet reviewed by For Granted: ${curated.title}${more}.`,
           cta: { href: "#fm-curated", label: "See it" },
         };
       }
@@ -1381,7 +1381,9 @@ function CuratedSection({ rows, viewingAsClient, followed }: { rows: CuratedMatc
     const next = !isFollowed(r.overlay_id);
     setErr(null); setFollow(f => ({ ...f, [r.overlay_id]: next }));
     const res = await toggleCuratedFollowAction(r.overlay_id).catch(() => ({ ok: false as const, error: "That did not save. Try again." }));
-    if (!res.ok) { setFollow(f => ({ ...f, [r.overlay_id]: !next })); setErr(res.error); }
+    if (!res.ok) { setFollow(f => ({ ...f, [r.overlay_id]: !next })); setErr(res.error); return; }
+    // The server's answer wins: a teammate may have changed the shared list meanwhile.
+    setFollow(f => ({ ...f, [r.overlay_id]: res.following }));
   };
   const day = (ymd: string) => new Date(`${ymd.slice(0, 10)}T12:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   // A list's name is shown only when every row is a reviewed entry from that one list; a signals week is not a list a client would know.
@@ -1392,13 +1394,13 @@ function CuratedSection({ rows, viewingAsClient, followed }: { rows: CuratedMatc
   return (
     <section id="fm-curated" className="fm-sec" aria-labelledby="fm-curated-h">
       <div className="fm-sec-head">
-        <h3 id="fm-curated-h">Added by For Granted</h3>
+        <h3 id="fm-curated-h">{allReviewed ? "Added by For Granted" : "From For Granted and the funders it watches"}</h3>
         <span className="fm-count">{rows.length}</span>
       </div>
       <p className="ov-note" style={{ marginTop: 2 }}>
         {allReviewed
           ? <>Opportunities For Granted found{lists.length === 1 ? ` (${lists[0]})` : ""}, screened against your eligibility. Done once, shared with every community member.</>
-          : <>Opportunities from the funders and programmes For Granted watches, screened against your eligibility. {unreviewed === rows.length ? "These were" : `${unreviewed} of these ${unreviewed === 1 ? "was" : "were"}`} read
+          : <>Opportunities from the funders and programmes For Granted watches, screened against your eligibility. {unreviewed === rows.length ? (unreviewed === 1 ? "This one was" : "These were") : `${unreviewed} of these ${unreviewed === 1 ? "was" : "were"}`} read
             automatically from the funder&rsquo;s own page or account and {unreviewed === 1 ? "is" : "are"} marked &ldquo;{UNREVIEWED_LABEL}&rdquo;: confirm the details at the source. Ask For Granted to start a draft and it is reviewed first.</>}
       </p>
       {context && <div className="cu-context"><b>From For Granted:</b> {context}</div>}
