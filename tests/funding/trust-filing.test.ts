@@ -9,56 +9,21 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/llm", () => ({ chatComplete: vi.fn() }));
 vi.mock("@/lib/server/eligibility", () => ({ getEligibilityProfile: vi.fn() }));
 
-type Row = Record<string, unknown>;
-const state: { rows: Row[]; has0100: boolean; failRead: boolean } = { rows: [], has0100: true, failRead: false };
-const NEW_COLS = ["published_at", "signal_source_id"];
-const missing = (text: string) => !state.has0100 && NEW_COLS.some(c => text.includes(c));
-
-vi.mock("@/lib/server/db", () => ({
-  db: {
-    from(table: string) {
-      if (table !== "ledger_overlay") throw new Error(`unexpected table ${table}`);
-      return {
-        select(cols: string) {
-          const eqs: Record<string, unknown> = {};
-          let like: string | null = null;
-          const q = {
-            eq(c: string, v: unknown) { eqs[c] = v; return q; },
-            like(_c: string, pattern: string) { like = pattern; return q; },
-            // Awaited after .limit(): the "rejected entries on this page" list.
-            limit() {
-              const many = async () => {
-                const prefix = (like ?? "").replace(/%$/, "").replace(/\\(.)/g, "$1");
-                return { data: state.rows.filter(x => Object.entries(eqs).every(([k, v]) => x[k] === v) && String(x.source_url).startsWith(prefix)).map(x => ({ ...x })), error: null };
-              };
-              return Object.assign(q, { then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => many().then(ok, bad) });
-            },
-            async maybeSingle() {
-              if (state.failRead) return { data: null, error: { message: "connection reset" } };
-              if (missing(cols)) return { data: null, error: { message: "column ledger_overlay.published_at does not exist" } };
-              const r = state.rows.find(x => x.source_url === eqs.source_url) ?? null;
-              return { data: r ? { ...r } : null, error: null };
-            },
-          };
-          return q;
-        },
-        async insert(row: Row) {
-          if (missing(Object.keys(row).join(","))) return { error: { message: "Could not find the 'published_at' column of 'ledger_overlay'" } };
-          state.rows.push({ id: `id${state.rows.length + 1}`, ...row });
-          return { error: null };
-        },
-        update(patch: Row) {
-          return {
-            eq(_c: string, id: unknown) {
-              const apply = (statuses?: unknown[]) => { const r = state.rows.find(x => x.id === id); if (r && (!statuses || statuses.includes(r.status))) Object.assign(r, patch); return { error: null }; };
-              return { in: async (_c2: string, statuses: unknown[]) => apply(statuses), then: (ok: (v: unknown) => unknown) => Promise.resolve(apply()).then(ok) };
-            },
-          };
-        },
-      };
-    },
-  },
-}));
+import { FakeDb, type Row } from "../helpers/fake-db";
+const holder = { db: new FakeDb() };
+vi.mock("@/lib/server/db", () => ({ db: { from: (t: string) => holder.db.from(t) } }));
+// The switches the tests flip: which migrations the database has, and a dropped connection on the dedupe read.
+const state = { has0100: true, has0101: true, failRead: false, get rows(): Row[] { return holder.db.rows("ledger_overlay"); } };
+const COLS_0100 = ["published_at", "signal_source_id"], COLS_0101 = ["opp_host", "opp_funder", "also_seen", "update_of"];
+const arm = () => {
+  holder.db.failOn = q => {
+    const text = `${q.cols},${q.filters.join(",")}`;
+    if (!state.has0101 && COLS_0101.some(c => text.includes(c))) return { message: "column ledger_overlay.opp_host does not exist" };
+    if (!state.has0100 && COLS_0100.some(c => text.includes(c))) return { message: "column ledger_overlay.published_at does not exist" };
+    if (state.failRead && q.op === "select" && q.filters.includes("eq:source_url")) return { message: "connection reset" };
+    return undefined;
+  };
+};
 
 import { fileLeads } from "@/lib/server/curated";
 import { curatedLeads } from "@/lib/curated";
@@ -68,7 +33,7 @@ const leads = (items: { title: string; url: string; kind?: string }[]) =>
 const own = { id: "src-own", kind: "page", trust: "first_party" as const };
 const news = { id: "src-news", kind: "bluesky", trust: "review" as const };
 
-beforeEach(() => { state.rows = []; state.has0100 = true; state.failRead = false; });
+beforeEach(() => { holder.db = new FakeDb(); state.has0100 = true; state.has0101 = true; state.failRead = false; arm(); });
 
 describe("fileLeads and the trust tier", () => {
   it("publishes a first-party source's opportunity as it files it, still waiting for review", async () => {
@@ -152,7 +117,7 @@ describe("fileLeads and the trust tier", () => {
     expect(state.rows).toHaveLength(0);
   });
   it("before migration 0100, files as it always did and publishes nothing", async () => {
-    state.has0100 = false;
+    state.has0100 = false; state.has0101 = false;
     expect(await fileLeads("list1", leads([{ title: "Collections Stewardship", url: "https://www.neh.gov/a" }]), null, own)).toBe(1);
     expect(state.rows).toHaveLength(1);
     expect("published_at" in state.rows[0]).toBe(false);

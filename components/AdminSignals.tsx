@@ -74,7 +74,7 @@ export default function AdminSignals({ sources, recent, held, inbox, ready }: {
           </span>
           <span className="spacer" />
           <button type="button" className="sb-btn sb-secondary sb-sm" disabled={busy === "match"}
-            title="Screen community members against what the sources have produced. The run does this itself after every read; no AI is used."
+            title="Screen every client with the Funding page on against what the sources have produced. The run does this itself after every read; no AI is used."
             onClick={() => void run("match", () => matchSignalsNowAction())}>{busy === "match" ? "Screening…" : "Match to clients now"}</button>
           <button type="button" className="sb-btn sb-primary sb-sm" onClick={() => setAdding(a => !a)}>{adding ? "Cancel" : "Add a source"}</button>
         </div>

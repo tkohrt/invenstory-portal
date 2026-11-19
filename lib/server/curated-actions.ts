@@ -115,7 +115,7 @@ export async function toggleCuratedFollowAction(overlayId: string): Promise<{ ok
   return { ok: true, following: true };
 }
 
-/** Screen community members against what the signals sources produced, now (patch 67). The run does this itself twice a week. */
+/** Screen every client with Funding on against what the signals sources produced, now. The run does this itself twice a week. */
 export async function matchSignalsNowAction(): Promise<Result<{ message: string }>> {
   const s = await admin();
   if (!s) return { ok: false, error: "For Granted only." };
@@ -124,6 +124,6 @@ export async function matchSignalsNowAction(): Promise<Result<{ message: string 
   revalidatePath("/admin/reviews");
   const n = (c: number, one: string, many: string) => `${c} ${c === 1 ? one : many}`;
   return { ok: true, message: !r.entries ? "There are no open opportunities from the sources to screen."
-    : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no community members to screen them for. Tick members under Curated lists on the Ground Truth tab.`
-    : `Screened ${n(r.tenants, "community member", "community members")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}` };
+    : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no client with the Funding page switched on to screen them for.`
+    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}` };
 }

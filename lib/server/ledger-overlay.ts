@@ -20,6 +20,7 @@ import type {
   LedgerOverlayRow, OverlayQueueRow, OverlayStatus, LedgerScoutRun,
 } from "@/lib/types";
 import { needsReviewNow, type Demand } from "@/lib/trust";
+import { changedFacts, changeLine } from "@/lib/opportunity";
 // The merge itself is pure and lives outside server-only so it can be unit
 // tested; re-exported here so callers have one import for the overlay.
 export { mergeOverlay, OVERLAY_ID_PREFIX } from "@/lib/ledger-merge";
@@ -67,7 +68,18 @@ export async function getOverlayQueue(
   // screen, and "nothing to review" is the most dangerous thing this page can
   // say incorrectly.
   if (error) throw new Error(`overlay queue read failed: ${error.message}`);
-  return ((data ?? []) as unknown as WithJoins[]).map(shape);
+  const rows = ((data ?? []) as unknown as WithJoins[]).map(shape);
+  // Patch 68: an update row says what it would change on the approved entry it points at.
+  const targets = [...new Set(rows.map(r => r.update_of).filter((x): x is string => !!x))];
+  if (targets.length) {
+    const on = new Map<string, Record<string, unknown>>();
+    for (let i = 0; i < targets.length; i += 100) {
+      const { data: t } = await s.from("ledger_overlay").select("id, fields").in("id", targets.slice(i, i + 100));
+      for (const x of (t ?? []) as { id: string; fields: Record<string, unknown> }[]) on.set(x.id, x.fields);
+    }
+    for (const r of rows) if (r.update_of) r.update_changes = changedFacts(on.get(r.update_of), r.fields).map(changeLine);
+  }
+  return rows;
 }
 
 /**

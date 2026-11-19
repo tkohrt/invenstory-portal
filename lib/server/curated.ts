@@ -10,9 +10,44 @@ import { screenGrant } from "@/lib/grant-screen";
 import { parseLeads, overlayDraft, wantsKind } from "@/lib/web-discovery";
 import { CURATED_PARSE_SYSTEM, curatedParseUser, curatedLeads, curatedCard, type CuratedMatchRow } from "@/lib/curated";
 import { publishes, standing, followStanding, type Trust } from "@/lib/trust";
+import { oppHost, funderKey, findTwin, changedFacts, applyChanges, addSeen, type Sighting } from "@/lib/opportunity";
 
 /** True when a query failed only because migration 0100 (patch 67) has not been applied. */
 const lacks0100 = (e: { message: string } | null | undefined) => !!e && /published_at|signal_source_id/i.test(e.message);
+/** True when a query failed only because migration 0101 (patch 68) has not been applied. */
+const lacks0101 = (e: { message: string } | null | undefined) => !!e && /opp_host|opp_funder|also_seen|update_of/i.test(e.message);
+
+const TWIN_DAYS = 400;
+type OnFile = Sighting & {
+  id: string; status: string; created_at: string; fields: Record<string, unknown>;
+  published_at: string | null; signal_source_id: string | null; also_seen: unknown; source_url: string;
+};
+/**
+ * Entries on file that a new sighting might be another view of (patch 68):
+ * opportunities on the same site or from the same funder, decided or waiting,
+ * from the last TWIN_DAYS. Rows that are themselves proposed updates are left
+ * out. Null when the lookup could not be made (before migration 0101, or a
+ * failed read): the caller then files by address alone, as before.
+ */
+async function twinCandidates(host: string | null, funder: string | null): Promise<OnFile[] | null> {
+  const since = new Date(Date.now() - TWIN_DAYS * 86_400_000).toISOString();
+  const byId = new Map<string, OnFile>();
+  for (const [col, val] of [["opp_host", host], ["opp_funder", funder]] as const) {
+    if (!val) continue;
+    // tenant-safe: the shared review queue (no tenant_id), opportunities sharing a site or a funder.
+    const { data, error } = await db.from("ledger_overlay")
+      .select("id, status, title, source_url, fields, created_at, published_at, signal_source_id, also_seen")
+      .eq("kind", "grant").eq(col, val).is("update_of", null)
+      .in("status", ["proposed", "in_review", "approved", "rejected"]).gte("created_at", since)
+      .order("created_at", { ascending: true }).limit(300);
+    if (error) { if (!lacks0101(error) && !lacks0100(error)) console.error("[curated] twin lookup failed", error.message); return null; }
+    for (const r of (data ?? []) as unknown as (Omit<OnFile, "url" | "funder" | "close_date"> & { title: string | null })[]) {
+      byId.set(r.id, { ...r, url: r.source_url, funder: typeof r.fields?.agency === "string" ? r.fields.agency : null,
+        close_date: typeof r.fields?.close_date === "string" ? r.fields.close_date : null });
+    }
+  }
+  return [...byId.values()];
+}
 
 const MAX_ENTRIES = 50;
 const MAX_TENANTS = 60;
@@ -53,10 +88,20 @@ export async function parseListText(pasted: string, sourceUrl?: string | null): 
  * with the "not yet reviewed" label as it is filed (lib/trust.ts publishes);
  * it waits in the queue all the same. A pasted list has no `from`, and its
  * entries wait for review exactly as before.
+ *
+ * Patch 68, one opportunity, one entry (lib/opportunity.ts). A sighting is
+ * first met by address, then by what it is (same site or funder, same title,
+ * same round). What it meets decides what happens:
+ *   - rejected: not filed again, whatever the address or wording;
+ *   - approved: the address is recorded; a fact it states differently is
+ *     filed as one waiting UPDATE to that entry (proposeUpdate), never as a
+ *     second entry and never published;
+ *   - waiting: the address is recorded on the one entry; a first-party
+ *     source's reading publishes it, or keeps it current if already live.
  */
 export async function fileLeads(
   listId: string, leads: Lead[], userId: string | null,
-  from: { id: string; kind: string; trust?: Trust | null } | null = null,
+  from: { id: string; kind: string; trust?: Trust | null; label?: string | null } | null = null,
 ): Promise<number> {
   let filed = 0;
   const now = new Date().toISOString();
@@ -87,17 +132,44 @@ export async function fileLeads(
     const mine = norm(title);
     return !!mine && known.some(k => { const theirs = norm(k.title); return !!theirs && (theirs.includes(mine) || mine.includes(theirs)); });
   };
+  /**
+   * An approved entry, and a later reading that states a fact differently:
+   * filed as ONE waiting row that points at the entry (update_of). Never
+   * published, never tied to a source (so it is reviewed in the ordinary
+   * band), and refreshed in place if one is already waiting. Returns true
+   * when a new row went into the queue. Before migration 0101 it does nothing.
+   */
+  const proposeUpdate = async (target: { id: string; title?: string | null }, draft: ReturnType<typeof overlayDraft>): Promise<boolean> => {
+    // tenant-safe: the shared review queue; the update already waiting for this entry, if any.
+    const { data: open, error: openErr } = await db.from("ledger_overlay").select("id").eq("update_of", target.id).in("status", ["proposed", "in_review"]).limit(1).maybeSingle();
+    if (openErr) { if (!lacks0101(openErr)) console.error("[curated] update lookup failed", openErr.message); return false; }
+    const update = { fields: draft.fields, source_url: draft.source_url, title: (target.title ?? draft.title).slice(0, 300) };
+    if (open) {
+      // tenant-safe: the shared review queue, one row by id.
+      await db.from("ledger_overlay").update(update).eq("id", (open as { id: string }).id);
+      return false;
+    }
+    // tenant-safe: the shared review queue (no tenant_id).
+    const { error: upErr } = await db.from("ledger_overlay").insert({
+      kind: "grant", base_id: null, ein: null, opportunity_number: draft.source_url.slice(0, 400), ...update,
+      provenance: "curated_list", curated_list_id: listId, status: "proposed", confidence: "low", proposed_by: userId,
+      update_of: target.id, opp_host: oppHost(draft.source_url), opp_funder: funderKey(typeof draft.fields.agency === "string" ? draft.fields.agency : null),
+    });
+    if (upErr) { console.error("[curated] update not filed", upErr.message); return false; }
+    return true;
+  };
   for (const l of leads) {
     const draft = overlayDraft(l, []);
     let live = publishes(from, { kind: draft.kind, title: draft.title, source_url: draft.source_url });
-    type Known = { id: string; kind: string; status: string; curated_list_id: string | null; published_at?: string | null; signal_source_id?: string | null };
+    type Known = { id: string; kind: string; status: string; title: string | null; fields: Record<string, unknown>; curated_list_id: string | null; published_at?: string | null; signal_source_id?: string | null };
     let existing: Known | null = null;
     if (draft.source_url) {
       // tenant-safe: ledger_overlay is For Granted's shared review queue (no tenant_id); deduped by the page's URL. An entry with no URL has nothing to dedupe on.
-      const read = (cols: string) => db.from("ledger_overlay").select(cols).eq("source_url", draft.source_url).limit(1).maybeSingle();
-      let r = await read("id, kind, status, curated_list_id, published_at, signal_source_id");
-      if (lacks0100(r.error)) r = await read("id, kind, status, curated_list_id");
-      else if (r.error) r = await read("id, kind, status, curated_list_id, published_at, signal_source_id"); // one more try on a hiccup
+      // Oldest first: an update row shares its entry's address, and the entry itself is the one to meet.
+      const read = (cols: string) => db.from("ledger_overlay").select(cols).eq("source_url", draft.source_url).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      let r = await read("id, kind, status, title, fields, curated_list_id, published_at, signal_source_id");
+      if (lacks0100(r.error)) r = await read("id, kind, status, title, fields, curated_list_id");
+      else if (r.error) r = await read("id, kind, status, title, fields, curated_list_id, published_at, signal_source_id"); // one more try on a hiccup
       // A lookup that still fails must not read as "not known": filing the
       // entry again could put one a person rejected back in front of clients.
       // It is skipped, and said so in the log.
@@ -121,10 +193,60 @@ export async function fileLeads(
         await db.from("ledger_overlay").update({
           published_at: now, signal_source_id: from.id, fields: draft.fields, title: draft.title.slice(0, 300),
         }).eq("id", existing.id).in("status", ["proposed", "in_review"]);
+      } else if (existing.kind === "grant" && draft.kind === "grant") {
+        // Patch 68: the same address, read again, stating a fact differently
+        // (the usual way a deadline moves). Approved: proposed as an update.
+        // Live and unreviewed, from the funder's own source: kept current.
+        const changes = changedFacts(existing.fields, draft.fields);
+        if (changes.length && existing.status === "approved") { if (await proposeUpdate(existing, draft)) filed += 1; }
+        else if (changes.length && live && waiting && existing.published_at) {
+          // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
+          await db.from("ledger_overlay").update({ fields: applyChanges(existing.fields, draft.fields) }).eq("id", existing.id).in("status", ["proposed", "in_review"]);
+        }
       }
       continue;
     }
     if (live && await rejectedTwin(draft.source_url, draft.title)) live = false;
+
+    // Patch 68: is this another sighting of an opportunity already on file,
+    // at a different address? (The same address was caught above.)
+    const host = oppHost(draft.source_url);
+    const funder = funderKey(typeof draft.fields.agency === "string" ? draft.fields.agency : null);
+    if (draft.kind === "grant") {
+      const seen: Sighting = { title: draft.title, url: draft.source_url, funder: typeof draft.fields.agency === "string" ? draft.fields.agency : null,
+        close_date: typeof draft.fields.close_date === "string" ? draft.fields.close_date : null };
+      const twin = findTwin(seen, (await twinCandidates(host, funder)) ?? []);
+      if (twin) {
+        const also = addSeen(twin.also_seen, { url: draft.source_url, source: from?.label ?? null, at: now }, twin.source_url);
+        const grew = also.length !== (Array.isArray(twin.also_seen) ? twin.also_seen.length : 0);
+        const changes = changedFacts(twin.fields, draft.fields);
+        if (twin.status === "rejected") {
+          // A person turned this opportunity down. It is not filed again under a new address.
+          console.log("[curated] not filed, rejected before:", draft.title.slice(0, 80));
+        } else if (twin.status === "approved") {
+          // Approved and live to every client. The sighting is recorded; facts
+          // it states differently are proposed as an UPDATE to that entry,
+          // never as a second entry, and never published unreviewed.
+          // tenant-safe: the shared review queue, one row by id.
+          if (grew) await db.from("ledger_overlay").update({ also_seen: also }).eq("id", twin.id);
+          if (changes.length && await proposeUpdate(twin, draft)) filed += 1;
+        } else {
+          // Still waiting. One entry, with this sighting added to it.
+          const patch: Record<string, unknown> = {};
+          if (grew) patch.also_seen = also;
+          if (live && from && twin.signal_source_id && twin.published_at === null) {
+            // A first-party source now states it: it goes live with the label, in that source's own words (as for the same address, above).
+            Object.assign(patch, { published_at: now, signal_source_id: from.id, fields: draft.fields, title: draft.title.slice(0, 300) });
+          } else if (live && twin.published_at && changes.length) {
+            // Already live and unreviewed, and the funder's own source states a fact differently: clients read the current one.
+            patch.fields = applyChanges(twin.fields, draft.fields);
+          }
+          // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
+          if (Object.keys(patch).length) await db.from("ledger_overlay").update(patch).eq("id", twin.id).in("status", ["proposed", "in_review"]);
+        }
+        continue;
+      }
+    }
     const row = {
       kind: draft.kind, base_id: null, ein: null,
       opportunity_number: draft.kind === "grant" ? draft.source_url.slice(0, 400) : null,
@@ -133,8 +255,13 @@ export async function fileLeads(
       provenance: "curated_list", curated_list_id: listId, status: "proposed",
       confidence: "low", proposed_by: userId,
     };
+    const tiered = { ...row, signal_source_id: from?.id ?? null, published_at: live ? now : null };
+    const keyed = draft.kind === "grant" ? { opp_host: host, opp_funder: funder } : {};
     // tenant-safe: the shared review queue (no tenant_id).
-    let { error: insErr } = await db.from("ledger_overlay").insert({ ...row, signal_source_id: from?.id ?? null, published_at: live ? now : null });
+    let { error: insErr } = await db.from("ledger_overlay").insert({ ...tiered, ...keyed });
+    // Before migration 0101: filed without the keys a later sighting is matched by.
+    // tenant-safe: the shared review queue (no tenant_id).
+    if (lacks0101(insErr)) ({ error: insErr } = await db.from("ledger_overlay").insert(tiered));
     // Before migration 0100: filed as before, waiting for review, nothing published.
     // tenant-safe: the shared review queue (no tenant_id).
     if (lacks0100(insErr)) ({ error: insErr } = await db.from("ledger_overlay").insert(row));
@@ -208,8 +335,9 @@ const SIGNAL_SWEEP_DAYS = 45;
 const SIGNAL_SWEEP_ENTRIES = 400;
 
 /**
- * Screen every community member against the open opportunities the signals
- * sources produced (patch 67). No model calls. This is what makes review
+ * Screen every client with the Funding page on (patch 68; community members
+ * only in patch 67) against the open opportunities the signals sources
+ * produced. No model calls. This is what makes review
  * follow the clients and not the sources: each entry is screened as it
  * arrives, whether or not anyone has reviewed it.
  *   - A match on a PUBLISHED or approved entry is what the client sees.
@@ -233,11 +361,18 @@ export async function sweepSignalEntries(stopAt = Date.now() + 40_000): Promise<
     .filter(e => e.curated_list_id && !(typeof e.fields?.close_date === "string" && e.fields.close_date < ymd));
   if (!open.length) return { ok: true, entries: 0, tenants: 0, matches: 0, unfinished: false };
 
-  // tenant-safe: membership flags across all clients are For Granted's own fan-out list.
-  const { data: tenants, error: tenantErr } = await db.from("tenant").select("id, community_member, is_brain").limit(200);
-  if (tenantErr) return { ok: false, error: "The client list could not be read. Try again." };
-  const members = ((tenants ?? []) as { id: string; community_member: boolean | null; is_brain: boolean | null }[])
-    .filter(t => t.community_member === true && t.is_brain !== true).slice(0, MAX_TENANTS);
+  // Who receives leads from the sources (decided by Shane, 19 Nov 2026):
+  // every client whose Funding page is on in Grants mode, which is where
+  // these are shown. Community membership still governs the hand-curated
+  // lists (sweepCuratedList) and no longer gates this.
+  // tenant-safe: For Granted's own fan-out list across clients: which have the Funding page switched on. No client content is read.
+  const { data: on, error: onErr } = await db.from("feature_visibility").select("tenant_id").eq("feature_key", "funder_matches").eq("visible", true).limit(1000);
+  // tenant-safe: brain flags across all clients, to leave the Brain out of the fan-out.
+  const { data: tenants, error: tenantErr } = await db.from("tenant").select("id, is_brain").limit(1000);
+  if (onErr || tenantErr) return { ok: false, error: "The client list could not be read. Try again." };
+  const fundingOn = new Set(((on ?? []) as { tenant_id: string }[]).map(r => r.tenant_id));
+  const members = ((tenants ?? []) as { id: string; is_brain: boolean | null }[])
+    .filter(t => t.is_brain !== true && fundingOn.has(t.id)).slice(0, MAX_TENANTS);
 
   let matches = 0, done = 0, unfinished = false;
   for (const t of members) {

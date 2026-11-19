@@ -283,6 +283,10 @@ export interface LedgerOverlayRow {
   /** Patch 67 (0100): the signals source it was read from; null for everything that came in another way. */
   signal_source_id?: string | null;
   curated_list_id?: string | null;
+  /** Patch 68 (0101): other addresses this entry was sighted at. */
+  also_seen?: { url: string; source: string | null; at: string }[] | null;
+  /** Patch 68 (0101): set on a waiting row that proposes changed facts for an approved entry. */
+  update_of?: string | null;
 }
 
 // A queue row carries the client it came from and who proposed it. The
@@ -295,6 +299,8 @@ export interface OverlayQueueRow extends LedgerOverlayRow {
   /** Patch 67: the watched source's name and tier, when it came from one. */
   source_label?: string | null;
   source_trust?: "first_party" | "review" | null;
+  /** Patch 68: for an update row, what it would change on the approved entry, one sentence per fact. */
+  update_changes?: string[] | null;
 }
 
 export interface LedgerScoutRun {

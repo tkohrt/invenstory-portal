@@ -8,6 +8,7 @@ import { getSession } from "./session";
 import { db } from "./db";
 import type { OverlayProposal, OverlayConfidence, OverlayManualEntry } from "@/lib/types";
 import { buildOverlayEntry } from "@/lib/overlay-entry";
+import { applyChanges, changedFacts, changeLine } from "@/lib/opportunity";
 
 async function requireAdmin() {
   const s = await getSession();
@@ -116,6 +117,36 @@ export async function approveOverlayAction(
     throw new Error(`this candidate is ${row.status} — reopen it before approving`);
 
   const now = new Date().toISOString();
+
+  // Patch 68: a row that proposes changed facts for an entry already approved
+  // (update_of). Approving it writes those facts onto that entry and retires
+  // this row; it never becomes a second live entry. Read on its own so a
+  // database without migration 0101 approves exactly as before.
+  // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
+  const { data: link } = await db.from("ledger_overlay").select("update_of").eq("id", id).maybeSingle();
+  const updateOf = (link as { update_of: string | null } | null)?.update_of ?? null;
+  if (updateOf) {
+    // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
+    const { data: target } = await db.from("ledger_overlay").select("id, status, title, fields").eq("id", updateOf).maybeSingle();
+    const t = target as { id: string; status: string; title: string | null; fields: Record<string, unknown> } | null;
+    if (!t || t.status !== "approved") throw new Error("the entry this would update is no longer live. Reject this update instead.");
+    const later = (edits?.fields ?? row.fields ?? {}) as Record<string, unknown>;
+    const changes = changedFacts(t.fields, later);
+    // tenant-safe: admin-only overlay table; the approved entry, by id, still approved.
+    const { error: applyErr } = await db.from("ledger_overlay").update({ fields: applyChanges(t.fields ?? {}, later) }).eq("id", t.id).eq("status", "approved");
+    if (applyErr) throw new Error(applyErr.message);
+    // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
+    await db.from("ledger_overlay").update({
+      status: "superseded", reviewed_by: s.user.id, reviewed_at: now,
+      review_note: `applied to ${t.id}: ${changes.map(changeLine).join("; ") || "no change"}`.slice(0, 500),
+    }).eq("id", id);
+    await db.from("audit_log").insert({
+      actor_user_id: s.user.id, tenant_id: null, action: "overlay_update_applied",
+      detail: `grant:${(t.title ?? t.id).slice(0, 120)}: ${changes.map(changeLine).join("; ").slice(0, 300)}`,
+    });
+    revalidatePath("/admin/reviews");
+    return;
+  }
 
   // Supersede AFTER the approval lands, never before. The two writes are
   // separate round-trips with no transaction around them; doing it the other

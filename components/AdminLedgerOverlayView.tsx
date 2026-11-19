@@ -57,6 +57,8 @@ function Fields({ fields, base }: { fields: Record<string, unknown>; base?: Reco
   );
 }
 
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return "another page"; } };
+
 function Row({ row, base, demand = NO_DEMAND }: { row: OverlayQueueRow; base?: Record<string, unknown> | null; demand?: Demand }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -100,6 +102,7 @@ function Row({ row, base, demand = NO_DEMAND }: { row: OverlayQueueRow; base?: R
         {row.status === "in_review" && <span className="ov-tag">in review</span>}
         {row.published_at && <span className="ov-tag gt-pending" title="A matched client can already see this, labelled as not yet reviewed by For Granted. Approving removes the label; rejecting takes it away from them.">live to clients, unreviewed</span>}
         {wanted && <span className="ov-tag sg-warn" title="Who is waiting on this entry.">{wanted}</span>}
+        {row.update_of && <span className="ov-tag sg-warn" title="This is not a new opportunity. It proposes changed facts for one already approved; approving it writes them onto that entry.">update to an approved entry</span>}
         <span className="ov-spacer" />
         {row.source_label && <span className="ov-muted">from {row.source_label}</span>}
         {row.proposed_by_role === "client" && <span className="ov-tag ov-client">client-submitted</span>}
@@ -120,6 +123,23 @@ function Row({ row, base, demand = NO_DEMAND }: { row: OverlayQueueRow; base?: R
             <span>·</span>
             <a href={row.source_url} target="_blank" rel="noopener noreferrer">Verify at source ↗</a>
           </div>
+
+          {row.update_of && (
+            <div className="ov-note">
+              <b>An update to an entry already approved.</b>{" "}
+              {row.update_changes?.length
+                ? <>A later reading states: {row.update_changes.join("; ")}. Approve to write {row.update_changes.length === 1 ? "that" : "those"} onto the approved entry, and nothing else. Reject to leave it as it is.</>
+                : <>The approved entry already says the same. Reject this to clear it.</>}
+            </div>
+          )}
+          {!!row.also_seen?.length && (
+            <div className="ov-note">
+              Also seen at:{" "}
+              {row.also_seen.map((a, i) => (
+                <span key={a.url}>{i > 0 && ", "}<a href={a.url} target="_blank" rel="noopener noreferrer">{a.source ?? hostOf(a.url)}</a></span>
+              ))}. One entry, not {row.also_seen.length + 1}.
+            </div>
+          )}
 
           {isCorrection && !base && (
             <div className="ov-note">

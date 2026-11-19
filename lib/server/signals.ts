@@ -177,7 +177,7 @@ const CLAIM_STALE_MS = 15 * 60_000;
  * it, and its trust tier decides whether an opportunity goes live with the
  * "not yet reviewed" label or waits (lib/trust.ts publishes).
  */
-export async function readSignal(signalId: string, text: string, budget: Budget, sourceUrl: string | null = null, from: Pick<SourceRow, "id" | "kind" | "trust"> | null = null): Promise<Outcome> {
+export async function readSignal(signalId: string, text: string, budget: Budget, sourceUrl: string | null = null, from: (Pick<SourceRow, "id" | "kind" | "trust"> & { label?: string | null }) | null = null): Promise<Outcome> {
   const settle = async (status: SignalStatus, entries = 0, listId: string | null = null) => {
     await db.from("signal").update({ status, entries, curated_list_id: listId }).eq("id", signalId);
     return { status, entries };

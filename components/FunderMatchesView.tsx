@@ -12,7 +12,8 @@ import { clearMatchesAction } from "@/lib/server/match-actions";
 import { markFundingSeenAction, dismissFundingNoticeAction } from "@/lib/server/account-actions";
 import { toggleSavedAction } from "@/lib/server/saved-actions";
 import { requestCuratedDraftAction, toggleCuratedFollowAction } from "@/lib/server/curated-actions";
-import { UNREVIEWED_LABEL, UNREVIEWED_WHY } from "@/lib/trust";
+import { UNREVIEWED_LABEL } from "@/lib/trust";
+import UnreviewedTag from "@/components/UnreviewedTag";
 import type { CuratedMatchRow } from "@/lib/curated";
 import JobProgress, { useJob } from "./JobProgress";
 import { useLedgerWake } from "./useLedgerWake";
@@ -1420,7 +1421,7 @@ function CuratedSection({ rows, viewingAsClient, followed }: { rows: CuratedMatc
               </span>
               {/* For Granted's own notes are shown only once it has reviewed the entry: before that, "notes" is whatever the page said. */}
               {r.reviewed && r.notes && <span className="cu-match-notes">{r.notes}</span>}
-              {!r.reviewed && <span><span className="ov-tag gt-pending" title={UNREVIEWED_WHY}>{UNREVIEWED_LABEL}</span></span>}
+              {!r.reviewed && <UnreviewedTag />}
             </div>
             <div className="cu-match-verbs">
               <button type="button" className={`fm-star${isFollowed(r.overlay_id) ? " fm-star-on" : ""}`} aria-pressed={isFollowed(r.overlay_id)}
