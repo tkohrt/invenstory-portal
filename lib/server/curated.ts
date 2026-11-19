@@ -10,7 +10,7 @@ import { screenGrant } from "@/lib/grant-screen";
 import { parseLeads, overlayDraft, wantsKind } from "@/lib/web-discovery";
 import { CURATED_PARSE_SYSTEM, curatedParseUser, curatedLeads, curatedCard, type CuratedMatchRow } from "@/lib/curated";
 import { publishes, standing, followStanding, deadlinePassed, type Trust } from "@/lib/trust";
-import { oppHost, funderKey, findTwin, changedFacts, applyChanges, addSeen, type Sighting } from "@/lib/opportunity";
+import { oppHost, funderKey, findTwin, changedFacts, applyChanges, addSeen, seenChanged, type Sighting } from "@/lib/opportunity";
 
 /** True when a query failed only because migration 0100 (patch 67) has not been applied. */
 const lacks0100 = (e: { message: string } | null | undefined) => !!e && /published_at|signal_source_id/i.test(e.message);
@@ -26,10 +26,12 @@ type OnFile = Sighting & {
  * Entries on file that a new sighting might be another view of (patch 68):
  * opportunities on the same site or from the same funder, decided or waiting,
  * from the last TWIN_DAYS. Rows that are themselves proposed updates are left
- * out. Null when the lookup could not be made (before migration 0101, or a
- * failed read): the caller then files by address alone, as before.
+ * out. "unavailable" before migration 0101 (the caller then files by address
+ * alone, as before); "failed" when the read itself failed (the caller then
+ * files the entry WAITING, never published: it may be something a person
+ * rejected, and unsure is not published).
  */
-async function twinCandidates(host: string | null, funder: string | null): Promise<OnFile[] | null> {
+async function twinCandidates(host: string | null, funder: string | null): Promise<OnFile[] | "unavailable" | "failed"> {
   const since = new Date(Date.now() - TWIN_DAYS * 86_400_000).toISOString();
   const byId = new Map<string, OnFile>();
   for (const [col, val] of [["opp_host", host], ["opp_funder", funder]] as const) {
@@ -39,8 +41,12 @@ async function twinCandidates(host: string | null, funder: string | null): Promi
       .select("id, status, title, source_url, fields, created_at, published_at, signal_source_id, also_seen")
       .eq("kind", "grant").eq(col, val).is("update_of", null)
       .in("status", ["proposed", "in_review", "approved", "rejected"]).gte("created_at", since)
-      .order("created_at", { ascending: true }).limit(300);
-    if (error) { if (!lacks0101(error) && !lacks0100(error)) console.error("[curated] twin lookup failed", error.message); return null; }
+      .order("created_at", { ascending: false }).limit(300); // the newest are the likeliest to be the same round
+    if (error) {
+      if (lacks0101(error) || lacks0100(error)) return "unavailable";
+      console.error("[curated] twin lookup failed", error.message);
+      return "failed";
+    }
     for (const r of (data ?? []) as unknown as (Omit<OnFile, "url" | "funder" | "close_date"> & { title: string | null })[]) {
       byId.set(r.id, { ...r, url: r.source_url, funder: typeof r.fields?.agency === "string" ? r.fields.agency : null,
         close_date: typeof r.fields?.close_date === "string" ? r.fields.close_date : null });
@@ -139,11 +145,17 @@ export async function fileLeads(
    * band), and refreshed in place if one is already waiting. Returns true
    * when a new row went into the queue. Before migration 0101 it does nothing.
    */
-  const proposeUpdate = async (target: { id: string; title?: string | null }, draft: ReturnType<typeof overlayDraft>): Promise<boolean> => {
+  const proposeUpdate = async (target: { id: string; title?: string | null; fields: Record<string, unknown> }, draft: ReturnType<typeof overlayDraft>): Promise<boolean> => {
     // tenant-safe: the shared review queue; the update already waiting for this entry, if any.
     const { data: open, error: openErr } = await db.from("ledger_overlay").select("id").eq("update_of", target.id).in("status", ["proposed", "in_review"]).limit(1).maybeSingle();
     if (openErr) { if (!lacks0101(openErr)) console.error("[curated] update lookup failed", openErr.message); return false; }
     const update = { fields: draft.fields, source_url: draft.source_url, title: (target.title ?? draft.title).slice(0, 300) };
+    // A person already turned down this very change (the page still shows the
+    // old deadline, say): it is not proposed again on every read.
+    const said = (f: Record<string, unknown> | null | undefined) => changedFacts(target.fields, f).map(c => `${c.field}=${c.now}`).sort().join("|");
+    // tenant-safe: the shared review queue; updates to this entry a person rejected.
+    const { data: refused } = await db.from("ledger_overlay").select("fields").eq("update_of", target.id).eq("status", "rejected").limit(30);
+    if (((refused ?? []) as { fields: Record<string, unknown> }[]).some(r => said(r.fields) === said(draft.fields))) return false;
     if (open) {
       // tenant-safe: the shared review queue, one row by id.
       await db.from("ledger_overlay").update(update).eq("id", (open as { id: string }).id);
@@ -153,28 +165,47 @@ export async function fileLeads(
     const { error: upErr } = await db.from("ledger_overlay").insert({
       kind: "grant", base_id: null, ein: null, opportunity_number: draft.source_url.slice(0, 400), ...update,
       provenance: "curated_list", curated_list_id: listId, status: "proposed", confidence: "low", proposed_by: userId,
-      update_of: target.id, opp_host: oppHost(draft.source_url), opp_funder: funderKey(typeof draft.fields.agency === "string" ? draft.fields.agency : null),
+      update_of: target.id,
     });
     if (upErr) { console.error("[curated] update not filed", upErr.message); return false; }
     return true;
   };
+  /** An update waiting for an entry that a fresh reading of its own address now agrees with: the page went back, and the update has nothing left to say. */
+  const retireStaleUpdate = async (targetId: string) => {
+    // tenant-safe: the shared review queue; the waiting update for one entry.
+    const { error } = await db.from("ledger_overlay").update({ status: "superseded", reviewed_at: now, review_note: "Withdrawn automatically: a later reading agrees with the approved entry." })
+      .eq("update_of", targetId).eq("source_url", draftUrl.current).in("status", ["proposed", "in_review"]);
+    if (error && !lacks0101(error)) console.error("[curated] stale update not retired", error.message);
+  };
+  const draftUrl = { current: "" };
+  /** Addresses filed by THIS call. */
+  const filedHere = new Set<string>();
   for (const l of leads) {
     const draft = overlayDraft(l, []);
+    draftUrl.current = draft.source_url;
     let live = publishes(from, { kind: draft.kind, title: draft.title, source_url: draft.source_url });
     type Known = { id: string; kind: string; status: string; title: string | null; fields: Record<string, unknown>; curated_list_id: string | null; published_at?: string | null; signal_source_id?: string | null };
     let existing: Known | null = null;
     if (draft.source_url) {
       // tenant-safe: ledger_overlay is For Granted's shared review queue (no tenant_id); deduped by the page's URL. An entry with no URL has nothing to dedupe on.
-      // Oldest first: an update row shares its entry's address, and the entry itself is the one to meet.
-      const read = (cols: string) => db.from("ledger_overlay").select(cols).eq("source_url", draft.source_url).order("created_at", { ascending: true }).limit(1).maybeSingle();
-      let r = await read("id, kind, status, title, fields, curated_list_id, published_at, signal_source_id");
-      if (lacks0100(r.error)) r = await read("id, kind, status, title, fields, curated_list_id");
-      else if (r.error) r = await read("id, kind, status, title, fields, curated_list_id, published_at, signal_source_id"); // one more try on a hiccup
+      // Every entry at this address, oldest first. Proposed updates are not
+      // entries (they point at one), and a retired entry (superseded: closed
+      // by its deadline, or replaced) does not stand for the address: next
+      // year's round at the same stable address must be met as new.
+      const read = (cols: string, updates: boolean) => {
+        const q = db.from("ledger_overlay").select(cols).eq("source_url", draft.source_url);
+        return (updates ? q : q.is("update_of", null)).order("created_at", { ascending: true }).limit(20);
+      };
+      const FULL = "id, kind, status, title, fields, curated_list_id, published_at, signal_source_id";
+      let r = await read(FULL, false);
+      if (lacks0101(r.error)) r = await read(FULL, true);
+      if (lacks0100(r.error)) r = await read("id, kind, status, title, fields, curated_list_id", true);
+      else if (r.error) r = await read(FULL, false); // one more try on a hiccup
       // A lookup that still fails must not read as "not known": filing the
       // entry again could put one a person rejected back in front of clients.
       // It is skipped, and said so in the log.
       if (r.error) { console.error("[curated] dedupe read failed; entry not filed:", draft.title.slice(0, 80), r.error.message); continue; }
-      existing = r.data as unknown as Known | null;
+      existing = ((r.data ?? []) as unknown as Known[]).find(e => e.status !== "superseded") ?? null;
     }
     if (existing) {
       // Already known: tie it to this list too, so the sweep can carry it.
@@ -188,7 +219,8 @@ export async function fileLeads(
       // came in another way (by hand, a client's web search, a pasted list):
       // those are reviewed as they always were.
       const waiting = existing.status === "proposed" || existing.status === "in_review";
-      if (live && from && waiting && existing.kind === "grant" && existing.published_at === null && existing.signal_source_id) {
+      if (live && from && waiting && existing.kind === "grant" && existing.published_at === null && existing.signal_source_id
+          && !(await rejectedTwin(draft.source_url, draft.title))) {
         // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
         await db.from("ledger_overlay").update({
           published_at: now, signal_source_id: from.id, fields: draft.fields, title: draft.title.slice(0, 300),
@@ -199,6 +231,7 @@ export async function fileLeads(
         // Live and unreviewed, from the funder's own source: kept current.
         const changes = changedFacts(existing.fields, draft.fields);
         if (changes.length && existing.status === "approved") { if (await proposeUpdate(existing, draft)) filed += 1; }
+        else if (existing.status === "approved") await retireStaleUpdate(existing.id);
         else if (changes.length && live && waiting && existing.published_at) {
           // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
           await db.from("ledger_overlay").update({ fields: applyChanges(existing.fields, draft.fields) }).eq("id", existing.id).in("status", ["proposed", "in_review"]);
@@ -209,19 +242,26 @@ export async function fileLeads(
     if (live && await rejectedTwin(draft.source_url, draft.title)) live = false;
 
     // Patch 68: is this another sighting of an opportunity already on file,
-    // at a different address? (The same address was caught above.)
-    const host = oppHost(draft.source_url);
-    const funder = funderKey(typeof draft.fields.agency === "string" ? draft.fields.agency : null);
-    if (draft.kind === "grant") {
-      const seen: Sighting = { title: draft.title, url: draft.source_url, funder: typeof draft.fields.agency === "string" ? draft.fields.agency : null,
+    // at a different address? (The same address was caught above.) Signals
+    // sources only: a list a person pasted is filed by address alone, entry
+    // for entry, as it always was.
+    if (draft.kind === "grant" && from) {
+      const funderName = typeof draft.fields.agency === "string" ? draft.fields.agency : null;
+      const seen: Sighting = { title: draft.title, url: draft.source_url, funder: funderName,
         close_date: typeof draft.fields.close_date === "string" ? draft.fields.close_date : null };
-      const twin = findTwin(seen, (await twinCandidates(host, funder)) ?? []);
+      const found = await twinCandidates(oppHost(draft.source_url), funderKey(funderName));
+      // Unsure is not published: with the lookup down, this may be something a person rejected.
+      if (found === "failed") live = false;
+      // Two entries filed from ONE reading are two things (a page that lists
+      // Track A and Track B): never each other's twin.
+      const onFile = Array.isArray(found) ? found.filter(e => !filedHere.has(e.source_url)) : [];
+      const twin = findTwin(seen, onFile, now.slice(0, 10));
       if (twin) {
-        const also = addSeen(twin.also_seen, { url: draft.source_url, source: from?.label ?? null, at: now }, twin.source_url);
-        const grew = also.length !== (Array.isArray(twin.also_seen) ? twin.also_seen.length : 0);
+        const also = addSeen(twin.also_seen, { url: draft.source_url, source: from.label ?? null, at: now }, twin.source_url);
+        const grew = seenChanged(twin.also_seen, also);
         const changes = changedFacts(twin.fields, draft.fields);
         if (twin.status === "rejected") {
-          // A person turned this opportunity down. It is not filed again under a new address.
+          // A person turned this round down. It is not filed again under a new address.
           console.log("[curated] not filed, rejected before:", draft.title.slice(0, 80));
         } else if (twin.status === "approved") {
           // Approved and live to every client. The sighting is recorded; facts
@@ -229,18 +269,19 @@ export async function fileLeads(
           // never as a second entry, and never published unreviewed.
           // tenant-safe: the shared review queue, one row by id.
           if (grew) await db.from("ledger_overlay").update({ also_seen: also }).eq("id", twin.id);
-          if (changes.length && await proposeUpdate(twin, draft)) filed += 1;
+          if (changes.length) { if (await proposeUpdate(twin, draft)) filed += 1; }
         } else {
           // Still waiting. One entry, with this sighting added to it.
           const patch: Record<string, unknown> = {};
           if (grew) patch.also_seen = also;
-          if (live && from && twin.signal_source_id && twin.published_at === null) {
+          if (live && twin.signal_source_id && twin.published_at === null) {
             // A first-party source now states it: it goes live with the label, in that source's own words (as for the same address, above).
             Object.assign(patch, { published_at: now, signal_source_id: from.id, fields: draft.fields, title: draft.title.slice(0, 300) });
-          } else if (live && twin.published_at && changes.length) {
-            // Already live and unreviewed, and the funder's own source states a fact differently: clients read the current one.
-            patch.fields = applyChanges(twin.fields, draft.fields);
           }
+          // A live entry's facts are NOT rewritten from a match made by
+          // likeness: only a re-read of its own address keeps it current
+          // (above). A likeness is good enough to avoid a duplicate, not to
+          // change what clients are reading.
           // tenant-safe: the shared review queue, one row by id; the status guard keeps a decision made meanwhile.
           if (Object.keys(patch).length) await db.from("ledger_overlay").update(patch).eq("id", twin.id).in("status", ["proposed", "in_review"]);
         }
@@ -255,18 +296,16 @@ export async function fileLeads(
       provenance: "curated_list", curated_list_id: listId, status: "proposed",
       confidence: "low", proposed_by: userId,
     };
+    // (The keys a later sighting is matched by, opp_host and opp_funder, are
+    // generated by the database from the row itself: migration 0101.)
     const tiered = { ...row, signal_source_id: from?.id ?? null, published_at: live ? now : null };
-    const keyed = draft.kind === "grant" ? { opp_host: host, opp_funder: funder } : {};
     // tenant-safe: the shared review queue (no tenant_id).
-    let { error: insErr } = await db.from("ledger_overlay").insert({ ...tiered, ...keyed });
-    // Before migration 0101: filed without the keys a later sighting is matched by.
-    // tenant-safe: the shared review queue (no tenant_id).
-    if (lacks0101(insErr)) ({ error: insErr } = await db.from("ledger_overlay").insert(tiered));
+    let { error: insErr } = await db.from("ledger_overlay").insert(tiered);
     // Before migration 0100: filed as before, waiting for review, nothing published.
     // tenant-safe: the shared review queue (no tenant_id).
     if (lacks0100(insErr)) ({ error: insErr } = await db.from("ledger_overlay").insert(row));
     if (insErr) console.error("[curated] entry not filed", insErr.message);
-    else filed += 1;
+    else { filed += 1; if (draft.source_url) filedHere.add(draft.source_url); }
   }
   return filed;
 }

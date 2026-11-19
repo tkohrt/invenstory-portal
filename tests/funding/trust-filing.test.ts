@@ -9,7 +9,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/llm", () => ({ chatComplete: vi.fn() }));
 vi.mock("@/lib/server/eligibility", () => ({ getEligibilityProfile: vi.fn() }));
 
-import { FakeDb, type Row } from "../helpers/fake-db";
+import { FakeDb, overlayComputed, type Row } from "../helpers/fake-db";
 const holder = { db: new FakeDb() };
 vi.mock("@/lib/server/db", () => ({ db: { from: (t: string) => holder.db.from(t) } }));
 // The switches the tests flip: which migrations the database has, and a dropped connection on the dedupe read.
@@ -33,7 +33,7 @@ const leads = (items: { title: string; url: string; kind?: string }[]) =>
 const own = { id: "src-own", kind: "page", trust: "first_party" as const };
 const news = { id: "src-news", kind: "bluesky", trust: "review" as const };
 
-beforeEach(() => { holder.db = new FakeDb(); state.has0100 = true; state.has0101 = true; state.failRead = false; arm(); });
+beforeEach(() => { holder.db = new FakeDb(); holder.db.computed.ledger_overlay = overlayComputed; state.has0100 = true; state.has0101 = true; state.failRead = false; arm(); });
 
 describe("fileLeads and the trust tier", () => {
   it("publishes a first-party source's opportunity as it files it, still waiting for review", async () => {
@@ -77,21 +77,21 @@ describe("fileLeads and the trust tier", () => {
     expect(state.rows[0].title).toBe("Theirs");
   });
   it("holds a new entry on a page where this source had the same title rejected under another address", async () => {
-    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: "2026-11-01T00:00:00Z", signal_source_id: "src-own",
-      title: "Techstars Boulder", source_url: "https://www.techstars.com/accelerators#techstars-boulder-2026-12-01" });
+    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: "2026-11-01T00:00:00Z", signal_source_id: "src-own", created_at: new Date().toISOString(),
+      title: "Techstars Boulder", fields: { title: "Techstars Boulder" }, source_url: "https://www.techstars.com/accelerators#techstars-boulder-2026-12-01" });
     // Two calls: the parser's own dedupe keys on the page, and it is the filing rule under test here.
-    expect(await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator-2027-01-15" }]), null, own)).toBe(1);
+    // Since patch 68 the reworded entry is recognised as the rejected one and not filed at all.
+    expect(await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator-2027-01-15" }]), null, own)).toBe(0);
     expect(await fileLeads("list1", leads([{ title: "Techstars Chicago", url: "https://www.techstars.com/accelerators#techstars-chicago" }]), null, own)).toBe(1);
-    const boulder = state.rows.find(r => r.title === "Techstars Boulder Accelerator")!;
+    expect(state.rows.find(r => r.title === "Techstars Boulder Accelerator")).toBeUndefined();
     const chicago = state.rows.find(r => r.title === "Techstars Chicago")!;
-    expect(boulder.published_at).toBeNull();
     expect(typeof chicago.published_at).toBe("string");
   });
-  it("does not hold an entry because ANOTHER source had that title rejected", async () => {
-    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: null, signal_source_id: "src-news",
-      title: "Techstars Boulder", source_url: "https://www.techstars.com/accelerators#techstars-boulder" });
-    await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator" }]), null, own);
-    expect(typeof state.rows.find(r => r.title === "Techstars Boulder Accelerator")!.published_at).toBe("string");
+  it("a rejection binds whichever source the rejected entry came from", async () => {
+    state.rows.push({ id: "old", kind: "grant", status: "rejected", curated_list_id: "list0", published_at: null, signal_source_id: "src-news", created_at: new Date().toISOString(),
+      title: "Techstars Boulder", fields: { title: "Techstars Boulder" }, source_url: "https://www.techstars.com/accelerators#techstars-boulder" });
+    expect(await fileLeads("list1", leads([{ title: "Techstars Boulder Accelerator", url: "https://www.techstars.com/accelerators#techstars-boulder-accelerator" }]), null, own)).toBe(0);
+    expect(state.rows).toHaveLength(1);
   });
   it("does not publish a waiting entry because a review source repeats it", async () => {
     await fileLeads("list1", leads([{ title: "Fellowship", url: "https://kresge.org/f" }]), null, news);
@@ -99,7 +99,7 @@ describe("fileLeads and the trust tier", () => {
     expect(state.rows).toHaveLength(1);
     expect(state.rows[0].published_at).toBeNull();
   });
-  it.each(["rejected", "approved", "superseded"])("never touches an entry a person already decided (%s)", async status => {
+  it.each(["rejected", "approved"])("never touches an entry a person already decided (%s)", async status => {
     state.rows.push({ id: "old", kind: "grant", status, curated_list_id: "list0", published_at: null, signal_source_id: null, source_url: "https://www.neh.gov/a" });
     expect(await fileLeads("list1", leads([{ title: "Collections Stewardship", url: "https://www.neh.gov/a" }]), null, own)).toBe(0);
     expect(state.rows).toHaveLength(1);

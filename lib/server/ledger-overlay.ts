@@ -120,6 +120,8 @@ export async function getOverlayDecided(limit = 25): Promise<OverlayQueueRow[]> 
   const { data, error } = await s.from("ledger_overlay")
     .select(QUEUE_SELECT)
     .in("status", ["approved", "rejected", "superseded"])
+    // A person's decisions only (patch 69): entries that closed themselves at their deadline have no reviewer and would crowd these out.
+    .not("reviewed_by", "is", null)
     .order("reviewed_at", { ascending: false, nullsFirst: false })
     .limit(limit);
   if (error) throw new Error(`overlay history read failed: ${error.message}`);

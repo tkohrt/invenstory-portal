@@ -17,6 +17,13 @@ export class FakeDb {
   /** Return an error to make a call fail (a missing column, a dropped connection). `cols` is the select list or the written keys. */
   failOn: ((q: { table: string; op: string; cols: string; filters: string[] }) => Err | undefined) | null = null;
 
+  /**
+   * Columns the real database generates from the row (migration 0101's
+   * opp_host and opp_funder). Worked out at read time, never stored, so a
+   * test cannot pass by writing a column the database would refuse.
+   */
+  computed: Record<string, (r: Row) => Row> = {};
+
   seed(table: string, rows: Row[]) { this.tables[table] = rows.map(r => ({ ...r })); return this; }
   rows(table: string): Row[] { return (this.tables[table] ??= []); }
 
@@ -56,12 +63,14 @@ class Query implements PromiseLike<Res<Row[] | null>> {
   private run(): Row[] {
     this.db.log.push({ table: this.table, op: this.op, filters: [...this.filters] });
     const all = this.db.rows(this.table);
-    const hit = all.filter(r => this.preds.every(p => p(r)));
+    const calc = this.db.computed[this.table];
+    const view = (r: Row) => calc ? { ...r, ...calc(r) } : r;
+    const hit = all.filter(r => this.preds.every(p => p(view(r))));
     if (this.op === "update") { for (const r of hit) Object.assign(r, this.patch); return hit; }
     if (this.op === "delete") { this.db.tables[this.table] = all.filter(r => !hit.includes(r)); return hit; }
     const out = [...hit];
     for (const s of [...this.sort].reverse()) out.sort((a, b) => String(a[s.col] ?? "").localeCompare(String(b[s.col] ?? "")) * (s.asc ? 1 : -1));
-    return (this.max === null ? out : out.slice(0, this.max)).map(r => ({ ...r }));
+    return (this.max === null ? out : out.slice(0, this.max)).map(r => ({ ...view(r) }));
   }
   async maybeSingle(): Promise<Res<Row | null>> { const e = this.failure(); return e ? { data: null, error: e } : { data: this.run()[0] ?? null, error: null }; }
   async single(): Promise<Res<Row | null>> { const e = this.failure(); if (e) return { data: null, error: e }; const r = this.run()[0] ?? null; return { data: r, error: r ? null : { message: "no rows" } }; }
@@ -76,6 +85,8 @@ class Query implements PromiseLike<Res<Row[] | null>> {
     for (const r of Array.isArray(row) ? row : [row]) {
       const e = this.db.failOn?.({ table: this.table, op: "insert", cols: Object.keys(r).join(","), filters: [] });
       if (e) return { error: e };
+      const generated = Object.keys(this.db.computed[this.table]?.(r) ?? {}).find(k => k in r);
+      if (generated) return { error: { message: `cannot insert a non-DEFAULT value into column "${generated}"` } };
     }
     for (const r of Array.isArray(row) ? row : [row]) this.db.rows(this.table).push({ id: this.db.nextId(), created_at: new Date().toISOString(), ...r });
     return { error: null };
@@ -91,3 +102,11 @@ class Query implements PromiseLike<Res<Row[] | null>> {
     return { error: null };
   }
 }
+
+/** ledger_overlay's generated columns, as migration 0101 defines them. */
+export const overlayComputed = (r: Row): Row => {
+  if (r.kind !== "grant") return { opp_host: null, opp_funder: null };
+  const m = /^https?:\/\/(?:www\.)?([^/:#?\s]+)/.exec(String(r.source_url ?? "").toLowerCase());
+  const agency = String((r.fields as Row | undefined)?.agency ?? "").toLowerCase().replace(/^\s*the\s+/, "").replace(/[^a-z0-9]+/g, "");
+  return { opp_host: m ? m[1] : null, opp_funder: agency || null };
+};

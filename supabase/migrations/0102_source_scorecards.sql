@@ -16,4 +16,10 @@ alter table public.signal_source
   add column if not exists demoted_at timestamptz,
   add column if not exists demoted_note text;
 
+-- Every first-party source starts its record on the day this is applied.
+-- Without this, rejections made before tiers existed (duplicates and closed
+-- rounds cleared out of the old queue) would count, and tidying the queue
+-- would send good sources back to review on day one. Fills blanks only.
+update public.signal_source set trust_set_at = now() where trust_set_at is null;
+
 notify pgrst, 'reload schema';

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   oppHost, funderKey, titleParts, sameTitle, sameCycle, sameOrigin, sameOpportunity, findTwin,
-  changedFacts, applyChanges, changeLine, addSeen, MAX_SEEN,
+  changedFacts, applyChanges, changeLine, addSeen, seenChanged, MAX_SEEN,
 } from "@/lib/opportunity";
 
 describe("oppHost and funderKey", () => {
@@ -21,6 +21,17 @@ describe("oppHost and funderKey", () => {
 });
 
 describe("sameTitle", () => {
+  it.each([
+    ["Arts Fund", "Arts Accelerator"], ["Innovation Fund", "Innovation Awards"], ["Community Grants", "Community Fund"],
+    ["Seed Fund", "Seed Grant Program"], ["Capacity Building Grant", "Capacity Building Initiative"],
+    ["Research Grants: Track A", "Research Grants: Track B"], ["Title I Grants", "Title V Grants"],
+    ["Community Arts Education Project Support Tier A", "Community Arts Education Project Support Tier B"],
+  ])("keeps %s and %s apart (found by the independent review)", (a, b) => {
+    expect(sameTitle(a, b)).toBe(false);
+  });
+  it("still matches a short title that is the same word for word", () => {
+    expect(sameTitle("Arts Fund", "arts fund")).toBe(true);
+  });
   it("matches the cases the queue actually had", () => {
     expect(sameTitle("Techstars Boulder", "Techstars Boulder Accelerator")).toBe(true);
     expect(sameTitle("Collections Stewardship", "Collections Stewardship grant program")).toBe(true);
@@ -46,8 +57,10 @@ describe("sameTitle", () => {
   });
   it("splits words and numbers", () => {
     const p = titleParts("The 2027 Kresge Artist Fellowships (Round 3)");
-    expect([...p.words].sort()).toEqual(["artist", "fellowships", "kresge", "round"]);
+    expect([...p.words].sort()).toEqual(["artist", "kresge", "round"]);
     expect([...p.numbers].sort()).toEqual(["2027", "3"]);
+    expect([...p.kinds]).toEqual(["fellowship"]);
+    expect([...titleParts("Title IV, Track B").numbers].sort()).toEqual(["b", "iv"]);
   });
 });
 
@@ -63,7 +76,10 @@ describe("sameCycle and sameOrigin", () => {
     const a = { title: "x", url: "https://www.neh.gov/a", funder: "NEH", close_date: null };
     expect(sameOrigin(a, { ...a, url: "https://neh.gov/b#c", funder: null })).toBe(true);
     expect(sameOrigin(a, { ...a, url: "https://news.example/x", funder: "neh" })).toBe(true);
-    expect(sameOrigin(a, { ...a, url: "https://news.example/x", funder: "National Endowment for the Humanities" })).toBe(false);
+    expect(sameOrigin(a, { ...a, url: "https://news.example/x", funder: "National Endowment for the Humanities" })).toBe(true); // NEH is its initials
+    expect(sameOrigin(a, { ...a, url: "https://news.example/x", funder: "National Science Foundation" })).toBe(false);
+    // The same site is not enough when two different funders are named (an application platform, a news site).
+    expect(sameOrigin({ ...a, funder: "Akron Community Foundation" }, { ...a, funder: "Columbus Foundation" })).toBe(false);
     expect(sameOrigin({ ...a, url: null, funder: null }, { ...a, url: null, funder: null })).toBe(false);
   });
 });
@@ -85,8 +101,11 @@ describe("sameOpportunity and findTwin", () => {
   it("meets a person's decision first when several entries match", () => {
     const row = (id: string, status: string, created_at: string) => ({ ...neh, id, status, created_at });
     const onFile = [row("p", "proposed", "2026-11-01"), row("a", "approved", "2026-11-02"), row("r", "rejected", "2026-11-03"), row("s", "superseded", "2026-10-01")];
-    expect(findTwin(neh, onFile)?.id).toBe("r");
-    expect(findTwin(neh, onFile.filter(e => e.id !== "r"))?.id).toBe("a");
+    // The live approved entry is the standing decision; reviewers reject duplicates of it.
+    expect(findTwin(neh, onFile, "2026-11-19")?.id).toBe("a");
+    expect(findTwin(neh, onFile.filter(e => e.id !== "a"), "2026-11-19")?.id).toBe("r");
+    // A rejection stops binding once the rejected round's own deadline has passed.
+    expect(findTwin(neh, onFile.filter(e => e.id !== "a"), "2027-02-01")?.id).toBe("p");
     expect(findTwin(neh, [row("p2", "proposed", "2026-11-05"), row("p1", "proposed", "2026-11-01")])?.id).toBe("p1");
     expect(findTwin(neh, [row("s", "superseded", "2026-10-01")])).toBeNull();
     expect(findTwin({ ...neh, title: "Something else entirely" }, onFile)).toBeNull();
@@ -97,7 +116,10 @@ describe("changedFacts", () => {
   it("reports only facts the later sighting states differently", () => {
     const was = { close_date: "2026-12-01", max_award: 50000, notes: "x" };
     expect(changedFacts(was, { close_date: "2027-01-15", max_award: 50000 }).map(changeLine)).toEqual(["Deadline was 2026-12-01, now 2027-01-15"]);
-    expect(changedFacts(was, { max_award: 75000 }).map(changeLine)).toEqual(["Largest award was $50,000, now $75,000"]);
+    expect(changedFacts(was, { max_award: 75000 }).map(changeLine)).toEqual(["Largest award was 50,000, now 75,000"]);
+    // The same amount stored another way is not a change.
+    expect(changedFacts(was, { max_award: "50000" })).toEqual([]);
+    expect(changedFacts(was, { max_award: "$50,000" })).toEqual([]);
   });
   it("never treats silence as a change", () => {
     expect(changedFacts({ close_date: "2026-12-01", max_award: 50000 }, { close_date: null, title: "T" })).toEqual([]);
@@ -107,8 +129,12 @@ describe("changedFacts", () => {
   it("reports a fact that was not on file", () => {
     expect(changedFacts({}, { close_date: "2027-01-15" }).map(changeLine)).toEqual(["Deadline now 2027-01-15 (none on file)"]);
   });
-  it("ignores case and spacing in terms", () => {
-    expect(changedFacts({ investment_terms: "$120k for 6%" }, { investment_terms: " $120K for 6% " })).toEqual([]);
+  it("never treats reworded terms as a change", () => {
+    expect(changedFacts({ investment_terms: "$100k for 7% equity" }, { investment_terms: "$100,000 for 7% equity" })).toEqual([]);
+  });
+  it("carries the currency with an amount", () => {
+    expect(applyChanges({ max_award: 50000, currency: "GBP" }, { max_award: 65000, currency: "USD" })).toEqual({ max_award: 65000, currency: "USD" });
+    expect(applyChanges({ close_date: "2026-12-01", currency: "GBP" }, { close_date: "2027-01-01", currency: "USD" }).currency).toBe("GBP");
   });
   it("lays the changes over what is on file and keeps the rest", () => {
     expect(applyChanges({ title: "T", close_date: "2026-12-01", notes: "kept" }, { title: "Other", close_date: "2027-01-15", notes: "dropped" }))
@@ -127,6 +153,14 @@ describe("addSeen", () => {
   it("skips the entry's own address and anything that is not a web address", () => {
     expect(addSeen([], s("https://a.example/1"), "https://a.example/1")).toEqual([]);
     expect(addSeen([], s("curated:x"))).toEqual([]);
+  });
+  it("still says something changed once the list is at its cap", () => {
+    let list: { url: string; source: string | null; at: string }[] = [];
+    for (let i = 0; i < MAX_SEEN; i++) list = addSeen(list, s(`https://a.example/${i}`));
+    const next = addSeen(list, s("https://a.example/new"));
+    expect(next).toHaveLength(MAX_SEEN);
+    expect(seenChanged(list, next)).toBe(true);
+    expect(seenChanged(next, addSeen(next, s("https://a.example/new")))).toBe(false);
   });
   it("keeps the newest and tolerates junk on file", () => {
     let list: unknown = "junk";

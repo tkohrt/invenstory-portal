@@ -124,7 +124,8 @@ export async function matchSignalsNowAction(): Promise<Result<{ message: string 
   if (!r.ok) return r;
   revalidatePath("/admin/reviews");
   const n = (c: number, one: string, many: string) => `${c} ${c === 1 ? one : many}`;
-  return { ok: true, message: !r.entries ? "There are no open opportunities from the sources to screen."
-    : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no client with the Funding page switched on to screen them for.`
-    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}${closed ? ` ${n(closed, "waiting entry", "waiting entries")} past its deadline closed.`.replace("entries past its", "entries past their") : ""}` };
+  const shut = closed ? ` ${closed} waiting ${closed === 1 ? "entry" : "entries"} past ${closed === 1 ? "its" : "their"} deadline closed.` : "";
+  return { ok: true, message: !r.entries ? `There are no open opportunities from the sources to screen.${shut}`
+    : !r.tenants ? `${n(r.entries, "open opportunity", "open opportunities")} from the sources, and no client with the Funding page switched on to screen them for.${shut}`
+    : `Screened ${n(r.tenants, "client", "clients")} against ${n(r.entries, "open opportunity", "open opportunities")}: ${n(r.matches, "new match", "new matches")}.${r.unfinished ? " It ran out of time; press again to finish." : ""}${shut}` };
 }

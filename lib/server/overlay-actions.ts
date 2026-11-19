@@ -124,18 +124,24 @@ export async function approveOverlayAction(
   // this row; it never becomes a second live entry. Read on its own so a
   // database without migration 0101 approves exactly as before.
   // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
-  const { data: link } = await db.from("ledger_overlay").select("update_of").eq("id", id).maybeSingle();
+  const { data: link, error: linkErr } = await db.from("ledger_overlay").select("update_of").eq("id", id).maybeSingle();
+  // A read that failed for any reason but the missing column must stop the
+  // approval: carrying on would approve an update row as an entry of its own,
+  // a second live copy in every client's matching.
+  if (linkErr && !/update_of/i.test(linkErr.message)) throw new Error("Could not check what this entry updates. Nothing was changed; try again.");
   const updateOf = (link as { update_of: string | null } | null)?.update_of ?? null;
   if (updateOf) {
     // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
     const { data: target } = await db.from("ledger_overlay").select("id, status, title, fields").eq("id", updateOf).maybeSingle();
     const t = target as { id: string; status: string; title: string | null; fields: Record<string, unknown> } | null;
-    if (!t || t.status !== "approved") throw new Error("the entry this would update is no longer live. Reject this update instead.");
+    if (!t || t.status !== "approved") throw new Error("The entry this would update is no longer live. Reject this update instead.");
     const later = (edits?.fields ?? row.fields ?? {}) as Record<string, unknown>;
     const changes = changedFacts(t.fields, later);
     // tenant-safe: admin-only overlay table; the approved entry, by id, still approved.
-    const { error: applyErr } = await db.from("ledger_overlay").update({ fields: applyChanges(t.fields ?? {}, later) }).eq("id", t.id).eq("status", "approved");
+    const { data: applied, error: applyErr } = await db.from("ledger_overlay").update({ fields: applyChanges(t.fields ?? {}, later) }).eq("id", t.id).eq("status", "approved").select("id");
     if (applyErr) throw new Error(applyErr.message);
+    // Nothing written (the entry was retired a moment ago): the update is not marked as applied.
+    if (!applied?.length) throw new Error("The entry this would update is no longer live. Reject this update instead.");
     // tenant-safe: admin-only overlay table, no tenant_id; row addressed by id.
     await db.from("ledger_overlay").update({
       status: "superseded", reviewed_by: s.user.id, reviewed_at: now,

@@ -119,6 +119,8 @@ describe("sweepSignalEntries", () => {
   };
   it("screens every client with Funding on, community member or not, and nobody else", async () => {
     seed([entry(1, { published_at: PUB })], [A]);
+    // B has the switch OFF explicitly, and another feature on: neither makes it a recipient.
+    holder.db.rows("feature_visibility").push({ tenant_id: B, feature_key: "funder_matches", visible: false }, { tenant_id: B, feature_key: "funder_compass", visible: true });
     const r = await sweepSignalEntries();
     expect(r).toMatchObject({ ok: true, entries: 1, tenants: 1, matches: 1 });
     expect(holder.db.rows("curated_match").map(m => m.tenant_id)).toEqual([A]);
@@ -146,6 +148,7 @@ describe("sweepSignalEntries", () => {
   it("skips closed entries, rejected ones, funder records, updates, and anything that did not come from a source", async () => {
     const closed = entry(1, { published_at: PUB }); (closed.fields as Row).close_date = "2020-01-01";
     seed([closed, entry(2, { status: "rejected" }), entry(3, { kind: "funder" }), entry(4, { signal_source_id: null }), entry(5, { signal_source_id: null, update_of: uuid(9) })], [A]);
+    holder.db.rows("feature_visibility").push({ tenant_id: B, feature_key: "funder_matches", visible: false }, { tenant_id: B, feature_key: "funder_compass", visible: true });
     expect(await sweepSignalEntries()).toMatchObject({ ok: true, entries: 0, matches: 0 });
   });
   it("skips a client with no eligibility profile", async () => {

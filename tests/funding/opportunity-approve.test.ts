@@ -44,6 +44,19 @@ describe("approving an update", () => {
     expect(rows()[1].status).toBe("proposed");
     expect((rows()[0].fields as Row).close_date).toBe("2027-01-14");
   });
+  it("stops, and approves nothing, when it cannot check what the row updates", async () => {
+    seed();
+    holder.db.failOn = q => q.op === "select" && q.cols === "update_of" ? { message: "connection reset" } : undefined;
+    await expect(approveOverlayAction("up")).rejects.toThrow(/Nothing was changed/);
+    expect(rows().filter(r => r.status === "approved")).toHaveLength(1);
+    expect(rows()[1].status).toBe("proposed");
+  });
+  it("approves as before on a database without the update column", async () => {
+    holder.db.seed("ledger_overlay", [{ id: "x", kind: "grant", status: "proposed", title: "T", source_url: "https://a.example/x", provenance: "manual", fields: {} }] as Row[]).seed("audit_log", []);
+    holder.db.failOn = q => q.cols === "update_of" ? { message: "column ledger_overlay.update_of does not exist" } : undefined;
+    await approveOverlayAction("x");
+    expect(rows()[0].status).toBe("approved");
+  });
   it("is admin only", async () => {
     seed(); session.role = "client";
     await expect(approveOverlayAction("up")).rejects.toThrow(/admin/);
